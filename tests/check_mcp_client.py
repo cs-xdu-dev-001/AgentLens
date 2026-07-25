@@ -1,4 +1,5 @@
 import asyncio,sys,unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/'backend'))
 from knowflow.services.mcp_client import *
@@ -35,6 +36,18 @@ class T(unittest.TestCase):
   fs=[Fake(),Fake()]; cs=[McpRemoteClient(str(i),'https://x',session_factory=lambda u,h,f=f:f,resolver=lambda *a:[(0,0,0,'x',('8.8.8.8',443))]) for i,f in enumerate(fs)]
   with McpRunSessionPool(server_loader=lambda sid:cs[int(sid)]) as p: p.call_tool('0','echo'); p.call_tool('0','echo'); p.call_tool('1','echo')
   self.assertEqual(fs[0].calls,2); self.assertEqual(fs[1].calls,1)
+ def test_pool_closes_session_in_task_that_opened_it(self):
+  f=Fake(); state={}
+  @asynccontextmanager
+  async def factory(url,headers):
+   state['owner']=asyncio.current_task()
+   try: yield f
+   finally:
+    state['same_task']=asyncio.current_task() is state['owner']
+    if not state['same_task']: raise RuntimeError('session closed from a different task')
+  c=McpRemoteClient('s','https://x',session_factory=factory,resolver=lambda *a:[(0,0,0,'x',('8.8.8.8',443))])
+  with McpRunSessionPool(server_loader=lambda sid:c) as p: self.assertEqual(p.call_tool('s','echo')['content'],'ok')
+  self.assertTrue(state.get('same_task'))
  def test_dict_loader(self):
   made=[]
   def cf(*a,**k): made.append((a,k)); return cs[0]
@@ -113,5 +126,5 @@ class T(unittest.TestCase):
   snap=asyncio.run(c.discover_tools()); self.assertEqual(snap[0]['remoteName'],'echo'); self.assertEqual(snap[0]['annotations']['readOnlyHint'],True)
   with McpRunSessionPool(server_loader=lambda sid:c) as p:
    self.assertEqual(p.call_tool('s','echo')['content'],'ok'); self.assertEqual(p.call_tool('s','echo')['content'],'ok')
-  self.assertEqual(f.init,2); self.assertEqual(f.calls,2)
+  self.assertEqual(f.init,3); self.assertEqual(f.calls,2)
 if __name__=='__main__': unittest.main()

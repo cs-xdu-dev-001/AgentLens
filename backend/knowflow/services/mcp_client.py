@@ -108,7 +108,7 @@ class McpRemoteClient:
 class McpRunSessionPool:
  def __init__(self,server_loader=None,oauth=None,connect_timeout=10,request_timeout=30,max_response_bytes=None,max_chars=4000,resolver=None,allow_private=False,client_factory=None,**kwargs):
   if kwargs: raise TypeError(f"unknown kwargs: {','.join(kwargs)}")
-  self.server_loader=server_loader; self.oauth=oauth; self.params=dict(connect_timeout=connect_timeout,request_timeout=request_timeout,max_response_bytes=max_response_bytes,max_chars=max_chars,resolver=resolver,allow_private=allow_private); self.client_factory=client_factory or McpRemoteClient; self._sessions={}; self._clients={}; self._loop=asyncio.new_event_loop(); self._thread=threading.get_ident()
+  self.server_loader=server_loader; self.oauth=oauth; self.params=dict(connect_timeout=connect_timeout,request_timeout=request_timeout,max_response_bytes=max_response_bytes,max_chars=max_chars,resolver=resolver,allow_private=allow_private); self.client_factory=client_factory or McpRemoteClient; self._clients={}; self._loop=asyncio.new_event_loop(); self._thread=threading.get_ident()
  def __enter__(self): return self
  def __exit__(self,*exc): self.close()
  def _make(self,sid):
@@ -121,23 +121,25 @@ class McpRunSessionPool:
   if threading.get_ident()!=self._thread: raise McpClientError("mcp_pool_thread_mismatch","mcp_pool_thread_mismatch")
  def call_tool(self,server_id,remote_name,args=None): self._check_thread(); return self._loop.run_until_complete(self._call(server_id,remote_name,args or {}))
  async def _call(self,sid,remote,args):
-  if sid not in self._sessions:
-   client=self._make(sid); self._clients[sid]=client; self._sessions[sid]=await client._connect()
-  r=await self._sessions[sid].session.call_tool(remote,args); return normalize_result(r,self.params['max_chars'],self._clients[sid].max_response_bytes)
+  if sid not in self._clients: self._clients[sid]=self._make(sid)
+  client=self._clients[sid]; connection=await client._connect()
+  try:
+   r=await connection.session.call_tool(remote,args)
+   return normalize_result(r,self.params['max_chars'],client.max_response_bytes)
+  finally:
+   try: await connection.stack.aclose()
+   finally: await connection.http.aclose()
  def invalidate(self,server_id):
   self._check_thread()
-  if server_id in self._sessions: self._loop.run_until_complete(self._drop(server_id))
+  if server_id in self._clients: self._loop.run_until_complete(self._drop(server_id))
  async def _drop(self,sid):
-  c=self._sessions.pop(sid,None); client=self._clients.pop(sid,None)
-  if c:
-   await c.stack.aclose(); await c.http.aclose()
+  client=self._clients.pop(sid,None)
   if client and hasattr(client,'aclose'): await client.aclose()
  def close(self):
   self._check_thread()
   if not self._loop.is_closed(): self._loop.run_until_complete(self._aclose()); self._loop.close()
  async def _aclose(self):
-  for sid in reversed(list(self._sessions)):
-   c=self._sessions[sid]; await c.stack.aclose(); await c.http.aclose()
+  for sid in reversed(list(self._clients)):
    client=self._clients[sid]
    if hasattr(client,'aclose'): await client.aclose()
-  self._sessions.clear(); self._clients.clear()
+  self._clients.clear()
