@@ -274,7 +274,12 @@ class McpOAuthCoordinator:
         server = self.configs.secret(user_id, server_id)
         if not server:
             raise McpOAuthError("not_found")
-        self.configs.delete_expired_oauth_sessions(user_id)
+        oauth_now = self.now().replace(microsecond=0)
+        oauth_now_str = oauth_now.isoformat(sep=" ")
+        self.configs.delete_expired_oauth_sessions(
+            user_id,
+            now=oauth_now_str,
+        )
 
         credentials = server.get("credentials") or {}
         metadata = self.discover_metadata(server["url"])
@@ -314,8 +319,8 @@ class McpOAuthCoordinator:
             state.encode("utf-8")
         ).hexdigest()
         expires_at = (
-            self.now() + timedelta(minutes=10)
-        ).replace(microsecond=0).isoformat(sep=" ")
+            oauth_now + timedelta(minutes=10)
+        ).isoformat(sep=" ")
 
         session_payload = {
             "verifier": verifier,
@@ -332,6 +337,7 @@ class McpOAuthCoordinator:
             ),
             return_to=return_to,
             expires_at=expires_at,
+            now=oauth_now_str,
         )
         saved_credentials = {
             **credentials,
@@ -425,6 +431,7 @@ class McpOAuthCoordinator:
         session = self.configs.consume_oauth_session_by_state(
             user_id,
             state_hash,
+            now=self.now().replace(microsecond=0).isoformat(sep=" "),
         )
         if not session:
             raise McpOAuthError("invalid_state")

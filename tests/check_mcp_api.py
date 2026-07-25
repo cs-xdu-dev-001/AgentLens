@@ -55,7 +55,9 @@ def main():
     router.mcp_oauth.start_authorization=lambda *a: {'authorizationUrl':'https://idp.example/auth'}
     assert c.post(f'/api/mcp/servers/{oid}/oauth/start',json={'returnTo':'http://127.0.0.1:5173/'}).json()['data']['authorizationUrl']=='https://idp.example/auth'
     dis=c.post(f'/api/mcp/servers/{oid}/disconnect'); assert dis.status_code==200 and dis.json()['data']['enabled'] is False and dis.json()['data']['configured'] is False and dis.json()['data']['status']=='disconnected'
-    assert c.get('/api/mcp/oauth/callback?state=bad').status_code==400
+    cb=c.get('/api/mcp/oauth/callback?state=bad',follow_redirects=False); assert cb.status_code==307
+    target=urlsplit(cb.headers['location']); assert target.path=='/'
+    assert parse_qs(target.query)=={'page':['tools'],'mcpError':['invalid_state']}
     router.mcp_oauth.complete_authorization=lambda *a: {'returnTo':'http://127.0.0.1:5173/ok?from=test#tools'}
     cb=c.get('/api/mcp/oauth/callback?state=ok',follow_redirects=False); assert cb.status_code==307
     target=urlsplit(cb.headers['location']); assert target.path=='/ok' and target.fragment=='tools'

@@ -87,10 +87,10 @@ class McpConfigService:
     def set_status(self, user_id, server_id, status, *, error_code=None):
         self.execute("UPDATE mcp_server SET status=:status,last_error_code=:error_code,updated_at=:updated_at WHERE id=:id AND user_id=:user_id", {"status": status, "error_code": error_code, "updated_at": self.now_str(), "id": server_id, "user_id": user_id}); return self.get_owned(user_id, server_id)
 
-    def create_oauth_session(self, user_id, server_id, *, state_hash, pkce_verifier_cipher, return_to, expires_at):
+    def create_oauth_session(self, user_id, server_id, *, state_hash, pkce_verifier_cipher, return_to, expires_at, now=None):
         if not self._row(user_id, server_id):
             raise ValueError("MCP server does not belong to user")
-        now = self.now_str()
+        now = now or self.now_str()
         session_id = secrets.token_urlsafe(32)
         self.execute(
             "INSERT INTO mcp_oauth_session(id,user_id,server_id,state_hash,pkce_verifier_cipher,return_to,expires_at,created_at) VALUES (:id,:user_id,:server_id,:state_hash,:pkce_verifier_cipher,:return_to,:expires_at,:created_at)",
@@ -114,8 +114,8 @@ class McpConfigService:
         if not row: return None
         return row if self.execute_rowcount("DELETE FROM mcp_oauth_session WHERE id=:id AND user_id=:user_id AND state_hash=:state_hash AND expires_at > :now", params) == 1 else None
 
-    def consume_oauth_session_by_state(self, user_id, state_hash):
-        now = self.now_str(); params = {"user_id": user_id, "state_hash": state_hash, "now": now}
+    def consume_oauth_session_by_state(self, user_id, state_hash, now=None):
+        now = now or self.now_str(); params = {"user_id": user_id, "state_hash": state_hash, "now": now}
         row = self.fetch_one("SELECT * FROM mcp_oauth_session WHERE user_id=:user_id AND state_hash=:state_hash AND expires_at > :now", params)
         if not row: return None
         return row if self.execute_rowcount("DELETE FROM mcp_oauth_session WHERE id=:id AND user_id=:user_id AND state_hash=:state_hash AND expires_at > :now", {**params, "id": row["id"]}) == 1 else None

@@ -482,6 +482,35 @@ class OAuthTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, "invalid_state")
 
+    def test_oauth_state_uses_one_clock_across_server_timezones(self):
+        self.configs.now_str = lambda: "2026-07-24 20:00:00"
+        started = self.start_dynamic()
+        session = dict(
+            self.db.execute(
+                "SELECT * FROM mcp_oauth_session"
+            ).fetchone()
+        )
+        self.assertEqual(session["created_at"], NOW_STR)
+        self.http.queue(
+            "POST",
+            TOKEN_URL,
+            FakeResponse(
+                200,
+                {
+                    "access_token": "timezone-access",
+                    "expires_in": 3600,
+                },
+            ),
+        )
+
+        result = self.oauth.complete_authorization(
+            1,
+            started["state"],
+            code="timezone-code",
+        )
+
+        self.assertEqual(result["status"], "connected")
+
     def test_denial_cross_user_and_expired_state_fail_safely(self):
         started = self.start_dynamic()
         with self.assertRaises(McpOAuthError) as caught:

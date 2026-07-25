@@ -23,6 +23,10 @@ def discover(user,s):
 def oauth_result_url(target,key,value):
  parts=urlsplit(target); query=[(k,v) for k,v in parse_qsl(parts.query,keep_blank_values=True) if k not in ('mcpResult','mcpError')]; query.append((key,value))
  return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
+def oauth_default_return_url():
+ target=next((item for item in OAUTH_RETURN_ORIGINS if is_allowed_oauth_return_url(item)),BASE_URL)
+ parts=urlsplit(target); query=[(k,v) for k,v in parse_qsl(parts.query,keep_blank_values=True) if k!='page']; query.append(('page','tools'))
+ return urlunsplit((parts.scheme,parts.netloc,parts.path or '/',urlencode(query),parts.fragment))
 @router.get('/api/mcp/servers')
 def listing(request:Request): return api_success([out(x) for x in mcp_configs.list_for_user(uid(request))])
 @router.get('/api/mcp/servers/{server_id}')
@@ -125,8 +129,8 @@ def oauth_callback(state:str,request:Request,code:str|None=None,error:str|None=N
  try:r=mcp_oauth.complete_authorization(int(user['id']),state,code,error)
  except McpOAuthError as exc:
   target=exc.return_to
-  if target and is_allowed_oauth_return_url(target): return RedirectResponse(oauth_result_url(target,'mcpError',exc.code))
-  raise HTTPException(400,'Invalid OAuth state')
+  if not target or not is_allowed_oauth_return_url(target): target=oauth_default_return_url()
+  return RedirectResponse(oauth_result_url(target,'mcpError',exc.code))
  except Exception: raise HTTPException(400,'Invalid OAuth state')
  target=(r.get('returnTo') or r.get('return_to') or BASE_URL) if isinstance(r,dict) else BASE_URL
  return RedirectResponse(oauth_result_url(target,'mcpResult','connected') if is_allowed_oauth_return_url(target) else BASE_URL)
