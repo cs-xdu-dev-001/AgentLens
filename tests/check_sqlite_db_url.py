@@ -19,7 +19,9 @@ def main() -> None:
         "from knowflow import runtime; "
         "from pathlib import Path; "
         "print(runtime.DB_URL); "
-        "assert str(Path(runtime.DB_URL.removeprefix('sqlite:///')).parent).endswith('KnowFlow AI\\\\data')"
+        "actual = Path(runtime.DB_URL.removeprefix('sqlite:///')).parent.resolve(); "
+        "expected = runtime.DATA_DIR.resolve(); "
+        "assert actual == expected, f'{actual} != {expected}'"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
