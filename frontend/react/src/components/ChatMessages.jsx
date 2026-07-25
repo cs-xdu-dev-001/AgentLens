@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { renderMarkdown } from "../controller/markdown.js";
+import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
 
@@ -57,7 +57,7 @@ function MessageBubble({ message }) {
           <div
             className={"message-markdown"}
             dangerouslySetInnerHTML={{
-              __html: renderMarkdown(message.rawContent),
+              __html: renderMarkdown(redactEmailAddresses(message.rawContent)),
             }}
           />
         )}

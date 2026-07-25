@@ -1218,6 +1218,48 @@ p {
   color: inherit;
 }
 
+.message-table-scroll {
+  max-width: 100%;
+  margin: 10px 0 14px;
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+}
+
+.message-table-scroll:last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+}
+
+.message.assistant th,
+.message.assistant td {
+  padding: 9px 12px;
+  border-right: 1px solid rgba(15, 23, 42, 0.1);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.message.assistant th {
+  background: rgba(15, 23, 42, 0.05);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.message.assistant th:last-child,
+.message.assistant td:last-child {
+  border-right: 0;
+}
+
+.message.assistant tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 @keyframes messageBreath {
   0%,
   100% {
