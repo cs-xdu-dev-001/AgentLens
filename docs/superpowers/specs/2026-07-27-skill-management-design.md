@@ -82,7 +82,7 @@ metadata:
 - `manifest_json`
 - `created_at`
 
-`package_path` 只保存相对于项目数据目录的路径。个人包使用 `UNIQUE(owner_user_id, slug, content_hash)` 防止重复快照。
+`package_path` 只保存相对于对应受信根目录的路径。个人包使用 `UNIQUE(owner_user_id, slug, content_hash)` 防止重复快照。
 
 ### 4.2 `user_skill`
 
@@ -91,11 +91,12 @@ metadata:
 - `id`
 - `user_id`
 - `skill_package_id`
+- `skill_slug`：与当前快照 slug 一致，用于数据库唯一约束
 - `enabled`
 - `installed_at`
 - `updated_at`
 
-同一用户同一 `slug` 只有一个当前安装关系。更新 Skill 时先创建并验证新快照，再原子切换 `skill_package_id`。
+同一用户同一 `slug` 只有一个当前安装关系，数据库使用 `UNIQUE(user_id, skill_slug)` 约束。更新 Skill 时先创建并验证新快照，再原子切换 `skill_package_id`。前端、管理 API 和 `ChatRequest.skillId` 使用稳定的 `user_skill.id`；运行历史另存版本与内容哈希，不能通过当前安装关系反推历史版本。
 
 ### 4.3 运行记录
 
@@ -123,7 +124,7 @@ data/
           scripts/
 ```
 
-任何上传文件名、Skill slug 或仓库路径都不能直接参与最终磁盘路径拼接。内置 Skill 从仓库内的只读目录加载，并以同一数据模型暴露。
+任何上传文件名、Skill slug 或仓库路径都不能直接参与最终磁盘路径拼接。个人 `package_path` 相对 `KNOWFLOW_SKILL_DIR` 解析；内置 `package_path` 相对仓库内的只读 `backend/knowflow/builtin_skills` 解析。数据库永不保存绝对路径。
 
 ## 5. 导入与更新
 
@@ -142,6 +143,7 @@ data/
 - 拒绝嵌套压缩包。
 - 允许 Markdown、纯文本、JSON、YAML、CSV、常见脚本源码、PNG、JPEG、GIF、WebP、SVG 和 PDF；脚本源码只能作为文本资源读取，不能执行。
 - 拒绝 EXE、DLL、共享库、安装包、磁盘映像以及 ZIP、TAR、GZIP、7Z、RAR 等嵌套归档。
+- 激活后可通过内部只读能力读取当前快照 `references/` 下的 UTF-8 文本；拒绝 `scripts/`、路径穿越、链接、二进制内容和超过 20,000 字符的结果。图片和 PDF 第一版只保存与展示元数据，不送入当前纯文本模型网关。
 - 临时目录和最终目录都由服务端生成。
 - 校验完成前不得进入正式 Skill 目录或数据库安装关系。
 
