@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -72,6 +73,66 @@ metadata:
         == expected_hash
     )
     assert parsed.content_hash == hashlib.sha256(rich.encode("utf-8")).hexdigest()
+
+    aliased = manifest(
+        """
+name: immutable-metadata
+description: Metadata must remain stable.
+metadata:
+  shared: &shared
+    channel: stable
+    channels: [stable, beta]
+  mirror: *shared
+  knowflow:
+    required_tools: [web_search]
+"""
+    )
+    mutation_failures: list[str] = []
+
+    top_level = parse_skill_markdown(aliased, max_body_chars=50_000)
+    try:
+        top_level.raw_metadata["name"] = "mutated"
+    except TypeError:
+        pass
+    else:
+        mutation_failures.append("top-level assignment")
+
+    nested = parse_skill_markdown(aliased, max_body_chars=50_000)
+    shared = nested.raw_metadata["metadata"]["shared"]
+    mirror = nested.raw_metadata["metadata"]["mirror"]
+    try:
+        mirror["channel"] = "nightly"
+    except TypeError:
+        pass
+    else:
+        mutation_failures.append("nested mapping assignment")
+    if shared["channel"] != "stable":
+        mutation_failures.append("YAML alias mutation leaked")
+
+    sequence = parse_skill_markdown(aliased, max_body_chars=50_000)
+    channels = sequence.raw_metadata["metadata"]["shared"]["channels"]
+    try:
+        channels.append("nightly")
+    except (AttributeError, TypeError):
+        pass
+    else:
+        mutation_failures.append("nested sequence append")
+
+    assert not mutation_failures, mutation_failures
+    stable = parse_skill_markdown(aliased, max_body_chars=50_000)
+    stable_again = parse_skill_markdown(aliased, max_body_chars=50_000)
+    assert stable.content_hash == stable_again.content_hash
+    assert stable.raw_metadata == stable_again.raw_metadata
+    assert dict(stable.raw_metadata)["name"] == "immutable-metadata"
+    serialized = json.dumps(
+        stable.raw_metadata,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert json.loads(serialized)["metadata"]["shared"]["channels"] == [
+        "stable",
+        "beta",
+    ]
 
     for invalid in (
         "",

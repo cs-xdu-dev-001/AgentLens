@@ -31,6 +31,53 @@ class SkillManifestError(ValueError):
     code = "skill_invalid_manifest"
 
 
+class _FrozenDict(dict[Any, Any]):
+    __slots__ = ()
+
+    def __new__(cls, values: dict[Any, Any]) -> _FrozenDict:
+        instance = super().__new__(cls)
+        dict.update(instance, values)
+        return instance
+
+    def __init__(self, values: dict[Any, Any]) -> None:
+        pass
+
+    def _reject_mutation(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("metadata is immutable")
+
+    __setitem__ = _reject_mutation
+    __delitem__ = _reject_mutation
+    __ior__ = _reject_mutation
+    clear = _reject_mutation
+    pop = _reject_mutation
+    popitem = _reject_mutation
+    setdefault = _reject_mutation
+    update = _reject_mutation
+
+
+def _deep_freeze(value: Any, active: set[int] | None = None) -> Any:
+    if not isinstance(value, (dict, list)):
+        return value
+
+    if active is None:
+        active = set()
+    identity = id(value)
+    if identity in active:
+        raise SkillManifestError("recursive metadata")
+    active.add(identity)
+    try:
+        if isinstance(value, dict):
+            return _FrozenDict(
+                {
+                    key: _deep_freeze(item, active)
+                    for key, item in value.items()
+                }
+            )
+        return tuple(_deep_freeze(item, active) for item in value)
+    finally:
+        active.remove(identity)
+
+
 def _front_matter_and_body(content: str) -> tuple[str, str]:
     if content.startswith("---\r\n"):
         metadata_start = 5
@@ -150,6 +197,6 @@ def parse_skill_markdown(
         required_tools=_dependencies(knowflow, "required_tools"),
         required_mcp=_dependencies(knowflow, "required_mcp"),
         body=body,
-        raw_metadata=loaded,
+        raw_metadata=_deep_freeze(loaded),
         content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
     )

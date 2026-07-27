@@ -86,6 +86,13 @@ def main() -> None:
             "windows_device": make_zip(
                 [("SKILL.md", VALID_MANIFEST), ("NUL.txt", b"x")]
             ),
+            "casefold_duplicate": make_zip(
+                [
+                    ("SKILL.md", VALID_MANIFEST),
+                    ("A.txt", b"one"),
+                    ("a.TXT", b"two"),
+                ]
+            ),
             "nested_archive": make_zip(
                 [("SKILL.md", VALID_MANIFEST), ("payload.zip", b"PK")]
             ),
@@ -128,6 +135,7 @@ def main() -> None:
             "absolute": "traversal",
             "windows_absolute": "traversal",
             "windows_device": "traversal",
+            "casefold_duplicate": "traversal",
             "nested_archive": "nested_archive",
             "nested_gzip": "nested_archive",
             "binary": "binary",
