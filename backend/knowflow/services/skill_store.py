@@ -307,18 +307,26 @@ class SkillStore:
         except Exception:
             pass
 
-    def _manifest(self, manifest_path: Path) -> SkillManifest:
+    def _manifest_bytes(self, raw: bytes) -> SkillManifest:
         try:
-            raw = manifest_path.read_bytes()
             content = raw.decode("utf-8")
             return parse_skill_markdown(
                 content,
                 max_body_chars=self.max_body_chars,
             )
-        except (OSError, UnicodeDecodeError, SkillManifestError) as exc:
+        except (UnicodeDecodeError, SkillManifestError) as exc:
             raise SkillStoreError(
                 "skill_invalid_manifest", "Skill manifest is invalid."
             ) from exc
+
+    def _manifest(self, manifest_path: Path) -> SkillManifest:
+        try:
+            raw = manifest_path.read_bytes()
+        except OSError as exc:
+            raise SkillStoreError(
+                "skill_invalid_manifest", "Skill manifest is invalid."
+            ) from exc
+        return self._manifest_bytes(raw)
 
     def _dependencies(
         self, user_id: int, manifest: SkillManifest
@@ -805,16 +813,58 @@ class SkillStore:
                 },
             )
 
+    @staticmethod
+    def _builtin_entry(
+        builtin_root: Path,
+        child: Path,
+    ) -> tuple[Path, Path, str] | None:
+        try:
+            child_is_junction = getattr(
+                child, "is_junction", lambda: False
+            )()
+            if child.is_symlink() or child_is_junction:
+                return None
+            child_resolved = child.resolve(strict=True)
+            relative = child_resolved.relative_to(builtin_root)
+            if child_resolved == builtin_root or not child_resolved.is_dir():
+                return None
+
+            manifest = child / "SKILL.md"
+            manifest_is_junction = getattr(
+                manifest, "is_junction", lambda: False
+            )()
+            if manifest.is_symlink() or manifest_is_junction:
+                return None
+            manifest_resolved = manifest.resolve(strict=True)
+            manifest_resolved.relative_to(builtin_root)
+            if (
+                manifest_resolved.parent != child_resolved
+                or not manifest_resolved.is_file()
+            ):
+                return None
+            return child_resolved, manifest_resolved, relative.as_posix()
+        except (OSError, RuntimeError, ValueError):
+            return None
+
     def sync_builtins(self) -> None:
-        if not self.builtin_dir.is_dir():
+        try:
+            builtin_root = self.builtin_dir.resolve(strict=True)
+            if not builtin_root.is_dir():
+                return
+            children = sorted(builtin_root.iterdir())
+        except (OSError, RuntimeError):
             return
         now = _format_time(self._now())
-        for child in sorted(self.builtin_dir.iterdir()):
-            manifest_path = child / "SKILL.md"
-            if not child.is_dir() or not manifest_path.is_file():
+        for child in children:
+            entry = self._builtin_entry(builtin_root, child)
+            if entry is None:
                 continue
-            manifest = self._manifest(manifest_path)
-            relative = child.resolve().relative_to(self.builtin_dir).as_posix()
+            _, manifest_path, relative = entry
+            try:
+                raw_manifest = manifest_path.read_bytes()
+            except OSError:
+                continue
+            manifest = self._manifest_bytes(raw_manifest)
             with self.engine.begin() as conn:
                 existing = conn.execute(
                     text(

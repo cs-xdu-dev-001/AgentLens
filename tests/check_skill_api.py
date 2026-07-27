@@ -78,6 +78,106 @@ def main() -> None:
             sys.modules.pop(name, None)
     app = importlib.import_module("main").app
     runtime = importlib.import_module("knowflow.runtime")
+    builtin_test_root = TEST_ROOT / "builtin-containment"
+    normal_builtin = builtin_test_root / "normal"
+    escaped_builtin = builtin_test_root / "zz-escaped"
+    unreadable_builtin = builtin_test_root / "zz-unreadable"
+    external_directory = TEST_ROOT / "external-builtin-target"
+    normal_builtin.mkdir(parents=True)
+    escaped_builtin.mkdir(parents=True)
+    unreadable_builtin.mkdir(parents=True)
+    external_directory.mkdir()
+    (normal_builtin / "SKILL.md").write_text(
+        "---\n"
+        "name: sync-contained-normal\n"
+        "description: A contained builtin Skill.\n"
+        "---\n"
+        "Use only files in the builtin root.\n",
+        encoding="utf-8",
+    )
+    (escaped_builtin / "SKILL.md").write_text(
+        "---\n"
+        "name: sync-escaped-entry\n"
+        "description: This simulated entry resolves outside.\n"
+        "---\n"
+        "This entry must not be synchronized.\n",
+        encoding="utf-8",
+    )
+    unreadable_manifest = unreadable_builtin / "SKILL.md"
+    unreadable_manifest.write_text(
+        "---\n"
+        "name: sync-unreadable-entry\n"
+        "description: This simulated manifest cannot be read.\n"
+        "---\n"
+        "This entry must not stop builtin synchronization.\n",
+        encoding="utf-8",
+    )
+    external_marker = external_directory / "outside.txt"
+    external_marker.write_text("external data", encoding="utf-8")
+    real_resolve = Path.resolve
+    real_read_bytes = Path.read_bytes
+    escaped_resolved = real_resolve(escaped_builtin)
+    external_resolved = real_resolve(external_directory)
+    unreadable_resolved = real_resolve(unreadable_manifest)
+
+    def simulate_builtin_escape(path: Path, *args, **kwargs) -> Path:
+        resolved = real_resolve(path, *args, **kwargs)
+        if resolved == escaped_resolved:
+            return external_resolved
+        return resolved
+
+    def simulate_unreadable_manifest(path: Path) -> bytes:
+        if real_resolve(path) == unreadable_resolved:
+            raise PermissionError("simulated unreadable builtin manifest")
+        return real_read_bytes(path)
+
+    original_builtin_dir = runtime.skills.builtin_dir
+    runtime.skills.builtin_dir = builtin_test_root
+    Path.resolve = simulate_builtin_escape
+    Path.read_bytes = simulate_unreadable_manifest
+    try:
+        runtime.skills.sync_builtins()
+        runtime.skills.sync_builtins()
+    finally:
+        Path.read_bytes = real_read_bytes
+        Path.resolve = real_resolve
+        runtime.skills.builtin_dir = original_builtin_dir
+    synced_builtins = runtime.fetch_all(
+        """
+        SELECT slug, package_path FROM skill_package
+        WHERE slug IN (
+          'sync-contained-normal',
+          'sync-escaped-entry',
+          'sync-unreadable-entry'
+        )
+        ORDER BY slug
+        """
+    )
+    assert synced_builtins == [
+        {
+            "slug": "sync-contained-normal",
+            "package_path": "normal",
+        }
+    ], synced_builtins
+    assert runtime.fetch_one(
+        """
+        SELECT COUNT(*) AS count FROM skill_package
+        WHERE slug='sync-contained-normal'
+        """
+    )["count"] == 1
+    assert external_marker.read_text(encoding="utf-8") == "external data"
+    assert str(external_resolved) not in str(synced_builtins)
+    runtime.execute(
+        """
+        DELETE FROM skill_package
+        WHERE slug IN (
+          'sync-contained-normal',
+          'sync-escaped-entry',
+          'sync-unreadable-entry'
+        )
+        """
+    )
+
     alice = TestClient(app)
     bob = TestClient(app)
     register(alice, "skill-api-alice")
