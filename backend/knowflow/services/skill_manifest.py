@@ -102,7 +102,7 @@ def parse_skill_markdown(
     *,
     max_body_chars: int,
 ) -> SkillManifest:
-    if not isinstance(content, str) or not isinstance(max_body_chars, int):
+    if not isinstance(content, str) or type(max_body_chars) is not int:
         raise SkillManifestError("invalid manifest input")
     if max_body_chars < 0:
         raise SkillManifestError("invalid body limit")

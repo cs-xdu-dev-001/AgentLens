@@ -5,6 +5,7 @@ import stat
 import sys
 import tempfile
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -107,6 +108,20 @@ def main() -> None:
                     ("outside/README.md", b"x"),
                 ]
             ),
+            "outside_empty_directory": make_zip(
+                [
+                    ("package/", b""),
+                    ("package/SKILL.md", VALID_MANIFEST),
+                    ("outside/", b""),
+                ]
+            ),
+            "deep_manifest": make_zip(
+                [
+                    ("a/", b""),
+                    ("a/b/", b""),
+                    ("a/b/SKILL.md", VALID_MANIFEST),
+                ]
+            ),
         }
         expected_reasons = {
             "traversal": "traversal",
@@ -119,6 +134,8 @@ def main() -> None:
             "missing_manifest": "missing_manifest",
             "ambiguous_manifest": "ambiguous_manifest",
             "ambiguous_root": "ambiguous_manifest",
+            "outside_empty_directory": "ambiguous_manifest",
+            "deep_manifest": "ambiguous_manifest",
         }
         for label, archive in unsafe_cases.items():
             expect_rejected(
@@ -189,6 +206,20 @@ def main() -> None:
             base / "extracted-size",
             "extracted_size",
         )
+        limit_fields = (
+            "max_archive_bytes",
+            "max_extracted_bytes",
+            "max_files",
+            "max_file_bytes",
+            "max_depth",
+        )
+        for field in limit_fields:
+            expect_rejected(
+                make_zip([("SKILL.md", VALID_MANIFEST)]),
+                base / f"boolean-{field}",
+                "invalid_limits",
+                limits=replace(LIMITS, **{field: True}),
+            )
 
         existing = base / "existing"
         existing.mkdir()
@@ -211,6 +242,25 @@ def main() -> None:
         )
         corrupt = corrupt.replace(b"unique-payload", b"broken-payload", 1)
         expect_rejected(corrupt, base / "corrupt", "invalid_zip")
+
+        root_archive = make_zip(
+            [
+                ("SKILL.md", VALID_MANIFEST),
+                ("references/", b""),
+                ("references/root-guide.md", b"root guide"),
+            ]
+        )
+        root_extracted = inspect_and_extract_zip(
+            root_archive,
+            destination=base / "root-good",
+            limits=LIMITS,
+        )
+        assert root_extracted.root == (base / "root-good").resolve()
+        assert root_extracted.manifest_path == root_extracted.root / "SKILL.md"
+        assert root_extracted.file_count == 2
+        assert root_extracted.extracted_bytes == (
+            len(VALID_MANIFEST) + len(b"root guide")
+        )
 
         good = make_zip(
             [

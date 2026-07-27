@@ -109,7 +109,7 @@ def _reject_invalid_limits(limits: SkillArchiveLimits) -> None:
         limits.max_file_bytes,
         limits.max_depth,
     )
-    if any(not isinstance(value, int) or value < 0 for value in values):
+    if any(type(value) is not int or value < 0 for value in values):
         raise SkillArchiveError("invalid_limits")
 
 
@@ -206,9 +206,11 @@ def _validate_members(
         raise SkillArchiveError("ambiguous_manifest")
 
     manifest = manifests[0].path
+    if len(manifest.parts) not in {1, 2}:
+        raise SkillArchiveError("ambiguous_manifest")
     root = manifest.parent
     root_parts = () if root == PurePosixPath(".") else root.parts
-    for member in files:
+    for member in validated:
         if member.path.parts[: len(root_parts)] != root_parts:
             raise SkillArchiveError("ambiguous_manifest")
     return validated, manifest, len(files)

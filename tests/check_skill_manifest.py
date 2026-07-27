@@ -128,6 +128,10 @@ metadata:
         max_body_chars=5,
     )
     assert bounded.body == "12345"
+    expect_invalid(
+        manifest("name: boolean-limit\ndescription: fine", ""),
+        max_body_chars=True,
+    )
 
     oversized_front_matter = (
         "---\nname: bounded\ndescription: fine\nextra: "
