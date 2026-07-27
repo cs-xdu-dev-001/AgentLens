@@ -278,6 +278,7 @@ class SkillStore:
 
     @staticmethod
     def _inside(root: Path, relative: str) -> Path:
+        root = Path(root).resolve()
         candidate_relative = Path(relative)
         if candidate_relative.is_absolute():
             raise SkillStoreError("skill_invalid_path")
@@ -286,6 +287,8 @@ class SkillStore:
             candidate.relative_to(root)
         except ValueError as exc:
             raise SkillStoreError("skill_invalid_path") from exc
+        if candidate == root:
+            raise SkillStoreError("skill_invalid_path")
         return candidate
 
     def _cleanup_inside(self, root: Path, relative: str) -> None:

@@ -111,10 +111,84 @@ def main() -> None:
             sys.modules.pop(name, None)
     app = importlib.import_module("main").app
     runtime = importlib.import_module("knowflow.runtime")
+    from knowflow.services.skill_store import SkillStoreError
+
+    unsafe_root_aliases = (
+        "foo/..",
+        ".",
+        "",
+        "foo\\..",
+    )
+    for storage_root in (
+        runtime.skills.skill_dir,
+        runtime.skills.import_dir,
+    ):
+        for index, unsafe in enumerate(
+            (*unsafe_root_aliases, str(storage_root))
+        ):
+            storage_root.mkdir(parents=True, exist_ok=True)
+            sentinel = storage_root / f"root-sentinel-{index}.txt"
+            sentinel.write_text("keep root", encoding="utf-8")
+            other_skill = storage_root / "other-skill"
+            other_skill.mkdir(exist_ok=True)
+            other_sentinel = other_skill / "keep.txt"
+            other_sentinel.write_text("keep sibling", encoding="utf-8")
+            try:
+                runtime.skills._cleanup_inside(storage_root, unsafe)
+            except SkillStoreError as exc:
+                assert exc.code == "skill_invalid_path"
+            assert storage_root.is_dir(), (storage_root, unsafe)
+            assert sentinel.read_text(encoding="utf-8") == "keep root"
+            assert other_sentinel.read_text(encoding="utf-8") == "keep sibling"
+            try:
+                runtime.skills._inside(storage_root, unsafe)
+            except SkillStoreError as exc:
+                assert exc.code == "skill_invalid_path"
+            else:
+                raise AssertionError(
+                    f"storage root alias unexpectedly accepted: {unsafe!r}"
+                )
+
+        removable = storage_root / "valid-child"
+        removable.mkdir()
+        (removable / "file.txt").write_text("remove child", encoding="utf-8")
+        assert runtime.skills._inside(
+            storage_root, "valid-child"
+        ) == removable.resolve()
+        runtime.skills._cleanup_inside(storage_root, "valid-child")
+        assert not removable.exists()
+        assert storage_root.is_dir()
+        assert (storage_root / "other-skill" / "keep.txt").is_file()
+
     alice = TestClient(app)
     bob = TestClient(app)
     register(alice, "skill-import-alice")
     register(bob, "skill-import-bob")
+
+    guarded_import = alice.post(
+        "/api/skills/import/upload/inspect",
+        files={
+            "file": (
+                "guarded.zip",
+                skill_zip(slug="guarded-import"),
+                "application/zip",
+            )
+        },
+    ).json()["data"]
+    runtime.execute(
+        "UPDATE skill_import SET staged_path='foo/..' WHERE id=:id",
+        {"id": guarded_import["importId"]},
+    )
+    import_root_sentinel = runtime.skills.import_dir / "api-root-sentinel.txt"
+    import_root_sentinel.write_text("keep import root", encoding="utf-8")
+    guarded_install = alice.post(
+        f"/api/skills/import/{guarded_import['importId']}/install",
+        json={"enabled": False},
+    )
+    assert guarded_install.status_code == 400, guarded_install.text
+    assert guarded_install.json()["code"] == "skill_invalid_path"
+    assert str(TEST_ROOT) not in guarded_install.text
+    assert import_root_sentinel.read_text(encoding="utf-8") == "keep import root"
 
     github_archive = skill_zip(github_root=True)
     runtime.skills.session_factory = lambda: FakeSession(github_archive)

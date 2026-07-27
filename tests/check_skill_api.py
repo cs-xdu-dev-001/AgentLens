@@ -92,6 +92,35 @@ def main() -> None:
         bob,
         archive("bob-private", "Only Bob can see this."),
     )
+    stored_package = runtime.fetch_one(
+        "SELECT package_path FROM skill_package WHERE id=:id",
+        {"id": alice_personal["id"]},
+    )
+    runtime.execute(
+        "UPDATE skill_package SET package_path='foo/..' WHERE id=:id",
+        {"id": alice_personal["id"]},
+    )
+    guarded_alice = TestClient(app, raise_server_exceptions=False)
+    guarded_alice.cookies.update(alice.cookies)
+    for guarded_url in (
+        "/api/skills",
+        f"/api/skills/{alice_personal['id']}",
+        f"/api/skills/{alice_personal['id']}/content",
+    ):
+        guarded = guarded_alice.get(guarded_url)
+        assert guarded.status_code == 400, (guarded_url, guarded.text)
+        assert guarded.json()["code"] == "skill_invalid_path"
+        assert str(TEST_ROOT) not in guarded.text
+    runtime.execute(
+        "UPDATE skill_package SET package_path=:package_path WHERE id=:id",
+        {
+            "package_path": stored_package["package_path"],
+            "id": alice_personal["id"],
+        },
+    )
+    assert (TEST_ROOT / "skills").is_dir()
+    assert (TEST_ROOT / "skills" / stored_package["package_path"]).is_dir()
+
     alice_items = alice.get("/api/skills").json()["data"]
     bob_items = bob.get("/api/skills").json()["data"]
     assert {item["slug"] for item in alice_items} == {
@@ -168,6 +197,25 @@ def main() -> None:
         alice.get(f"/api/skills/{wrong_id}").json()["data"]["packageId"]
         == package_id
     )
+
+    guarded_delete = install_upload(
+        alice,
+        archive("delete-root-guard", "Delete must preserve the root."),
+    )
+    bob_package_path = runtime.fetch_one(
+        "SELECT package_path FROM skill_package WHERE id=:id",
+        {"id": bob_personal["id"]},
+    )["package_path"]
+    runtime.execute(
+        "UPDATE skill_package SET package_path='foo/..' WHERE id=:id",
+        {"id": guarded_delete["id"]},
+    )
+    skill_root_sentinel = runtime.skills.skill_dir / "delete-root-sentinel.txt"
+    skill_root_sentinel.write_text("keep skill root", encoding="utf-8")
+    deleted_guard = alice.delete(f"/api/skills/{guarded_delete['id']}")
+    assert deleted_guard.status_code == 200, deleted_guard.text
+    assert skill_root_sentinel.read_text(encoding="utf-8") == "keep skill root"
+    assert (runtime.skills.skill_dir / bob_package_path).is_dir()
 
     original_cleanup = runtime.skills._cleanup_personal_package
     runtime.skills._cleanup_personal_package = lambda *args: (_ for _ in ()).throw(

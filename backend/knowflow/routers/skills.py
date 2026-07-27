@@ -74,7 +74,11 @@ async def _read_bounded_upload(file: UploadFile) -> bytes:
 
 @router.get("/")
 def list_skills(request: Request) -> dict:
-    return api_success(skills.list_for_user(current_user_id(request)))
+    try:
+        data = skills.list_for_user(current_user_id(request))
+    except SkillStoreError as exc:
+        _raise_store_error(exc)
+    return api_success(data)
 
 
 @router.post("/import/github/inspect")
@@ -125,7 +129,10 @@ def install_skill(
 
 @router.get("/{skill_id}")
 def get_skill(skill_id: int, request: Request) -> dict:
-    data = skills.get_for_user(current_user_id(request), skill_id)
+    try:
+        data = skills.get_for_user(current_user_id(request), skill_id)
+    except SkillStoreError as exc:
+        _raise_store_error(exc)
     if data is None:
         _raise_store_error(SkillStoreError("skill_not_found"))
     return api_success(data)
