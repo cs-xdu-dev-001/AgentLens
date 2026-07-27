@@ -66,14 +66,20 @@ class Database:
                 self.add_column_if_missing(conn, table, column, definition)
 
     def record_schema_version(self, conn: Any) -> None:
-        conn.execute(
-            text(
-                """
+        if self.is_mysql:
+            insert_sql = """
                 INSERT INTO schema_version(version, description)
-                SELECT :version, :description
-                WHERE NOT EXISTS (SELECT 1 FROM schema_version WHERE version=:version)
-                """
-            ),
+                VALUES (:version, :description)
+                ON DUPLICATE KEY UPDATE version = VALUES(version)
+            """
+        else:
+            insert_sql = """
+                INSERT INTO schema_version(version, description)
+                VALUES (:version, :description)
+                ON CONFLICT(version) DO NOTHING
+            """
+        conn.execute(
+            text(insert_sql),
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
