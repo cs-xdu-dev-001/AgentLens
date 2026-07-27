@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS chat_message (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   trace_json TEXT,
+  skill_id INTEGER,
+  skill_slug TEXT,
+  skill_version TEXT,
+  skill_content_hash TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS message_reference (
@@ -110,6 +114,10 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   status TEXT DEFAULT 'success',
   error_message TEXT,
   latency_ms INTEGER,
+  skill_id INTEGER,
+  skill_slug TEXT,
+  skill_version TEXT,
+  skill_content_hash TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS tool_config (
@@ -187,6 +195,43 @@ CREATE TABLE IF NOT EXISTS mcp_server (
 );
 CREATE TABLE IF NOT EXISTS mcp_oauth_session (
  id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, server_id INTEGER NOT NULL, state_hash TEXT NOT NULL UNIQUE, pkce_verifier_cipher TEXT NOT NULL, return_to TEXT, expires_at TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS skill_package (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_user_id INTEGER NOT NULL,
+  slug TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  description TEXT,
+  version TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_url TEXT,
+  source_ref TEXT,
+  source_subpath TEXT,
+  content_hash TEXT NOT NULL,
+  package_path TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (owner_user_id, slug, content_hash)
+);
+CREATE TABLE IF NOT EXISTS user_skill (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  skill_package_id INTEGER NOT NULL,
+  skill_slug TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  installed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, skill_slug)
+);
+CREATE TABLE IF NOT EXISTS skill_import (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  source_kind TEXT NOT NULL,
+  staged_path TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  preview_json TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_oauth_user ON mcp_oauth_session(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_oauth_expires ON mcp_oauth_session(expires_at);
@@ -278,6 +323,10 @@ CREATE TABLE IF NOT EXISTS chat_message (
   role VARCHAR(20) NOT NULL,
   content LONGTEXT NOT NULL,
   trace_json LONGTEXT,
+  skill_id BIGINT,
+  skill_slug VARCHAR(255),
+  skill_version VARCHAR(100),
+  skill_content_hash VARCHAR(128),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   KEY idx_message_session_time (session_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -316,6 +365,10 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   status VARCHAR(30) DEFAULT 'success',
   error_message TEXT,
   latency_ms INT,
+  skill_id BIGINT,
+  skill_slug VARCHAR(255),
+  skill_version VARCHAR(100),
+  skill_content_hash VARCHAR(128),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   KEY idx_tool_session_time (session_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -394,4 +447,42 @@ CREATE TABLE IF NOT EXISTS auth_session (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS mcp_server (id BIGINT PRIMARY KEY AUTO_INCREMENT,user_id BIGINT NOT NULL,name VARCHAR(255) NOT NULL,slug VARCHAR(255) NOT NULL,url VARCHAR(500) NOT NULL,auth_type VARCHAR(30) NOT NULL,enabled TINYINT DEFAULT 1,status VARCHAR(30) DEFAULT 'unknown',credentials_cipher LONGTEXT,tools_json LONGTEXT,enabled_tools_json LONGTEXT,last_error_code VARCHAR(100),last_connected_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY uk_mcp_server_user_slug (user_id,slug)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS mcp_oauth_session (id VARCHAR(128) PRIMARY KEY,user_id BIGINT NOT NULL,server_id BIGINT NOT NULL,state_hash VARCHAR(255) NOT NULL UNIQUE,pkce_verifier_cipher LONGTEXT NOT NULL,return_to VARCHAR(500),expires_at DATETIME NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,KEY idx_mcp_oauth_user (user_id),KEY idx_mcp_oauth_expires (expires_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+;
+CREATE TABLE IF NOT EXISTS skill_package (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  owner_user_id BIGINT NOT NULL,
+  slug VARCHAR(255) NOT NULL,
+  display_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  version VARCHAR(100) NOT NULL,
+  source_kind VARCHAR(30) NOT NULL,
+  source_url VARCHAR(1000),
+  source_ref VARCHAR(255),
+  source_subpath VARCHAR(1000),
+  content_hash VARCHAR(128) NOT NULL,
+  package_path VARCHAR(1000) NOT NULL,
+  manifest_json LONGTEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_skill_package_owner_slug_hash (owner_user_id, slug, content_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS user_skill (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  skill_package_id BIGINT NOT NULL,
+  skill_slug VARCHAR(255) NOT NULL,
+  enabled TINYINT DEFAULT 1,
+  installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_user_skill_user_slug (user_id, skill_slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS skill_import (
+  id VARCHAR(128) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  source_kind VARCHAR(30) NOT NULL,
+  staged_path VARCHAR(1000) NOT NULL,
+  content_hash VARCHAR(128) NOT NULL,
+  preview_json LONGTEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """

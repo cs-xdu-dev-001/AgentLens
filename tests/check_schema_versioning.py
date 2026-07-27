@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 4, CURRENT_SCHEMA_VERSION
-    assert "mcp" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 5, CURRENT_SCHEMA_VERSION
+    assert "skill" in row["description"].lower(), row
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
     assert columns == {
         "id",

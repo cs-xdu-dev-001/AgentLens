@@ -34,6 +34,10 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, env_int(name, default)))
+
+
 def env_float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
@@ -61,6 +65,45 @@ def now_str() -> str:
 
 
 DB_URL = normalize_sqlite_db_url(os.getenv("KNOWFLOW_DB_URL", f"sqlite:///{(DATA_DIR / 'knowflow.db').as_posix()}"))
+SKILL_DIR = Path(os.getenv("KNOWFLOW_SKILL_DIR", str(DATA_DIR / "skills"))).expanduser()
+if not SKILL_DIR.is_absolute():
+    SKILL_DIR = (PROJECT_DIR / SKILL_DIR).resolve()
+SKILL_IMPORT_DIR = DATA_DIR / "skill-imports"
+SKILL_MAX_ARCHIVE_BYTES = bounded_env_int(
+    "KNOWFLOW_SKILL_MAX_ARCHIVE_BYTES",
+    5 * 1024 * 1024,
+    1024,
+    20 * 1024 * 1024,
+)
+SKILL_MAX_EXTRACTED_BYTES = bounded_env_int(
+    "KNOWFLOW_SKILL_MAX_EXTRACTED_BYTES",
+    20 * 1024 * 1024,
+    1024,
+    100 * 1024 * 1024,
+)
+SKILL_MAX_FILES = bounded_env_int("KNOWFLOW_SKILL_MAX_FILES", 200, 1, 1000)
+SKILL_MAX_FILE_BYTES = bounded_env_int(
+    "KNOWFLOW_SKILL_MAX_FILE_BYTES",
+    2 * 1024 * 1024,
+    1024,
+    10 * 1024 * 1024,
+)
+SKILL_MAX_DEPTH = bounded_env_int("KNOWFLOW_SKILL_MAX_DEPTH", 8, 1, 16)
+SKILL_MAX_BODY_CHARS = bounded_env_int(
+    "KNOWFLOW_SKILL_MAX_BODY_CHARS",
+    50_000,
+    1000,
+    200_000,
+)
+SKILL_IMPORT_TTL = bounded_env_int("KNOWFLOW_SKILL_IMPORT_TTL", 900, 60, 3600)
+SKILL_GITHUB_TIMEOUT = bounded_env_int(
+    "KNOWFLOW_SKILL_GITHUB_TIMEOUT",
+    15,
+    1,
+    60,
+)
+SKILL_DIR.mkdir(parents=True, exist_ok=True)
+SKILL_IMPORT_DIR.mkdir(parents=True, exist_ok=True)
 VECTOR_BACKEND = os.getenv("KNOWFLOW_VECTOR_BACKEND", "local").lower()
 CHROMA_DIR = Path(os.getenv("KNOWFLOW_CHROMA_DIR", str(DATA_DIR / "chroma")))
 SECRET_KEY = os.getenv("KNOWFLOW_SECRET_KEY", "change-this-dev-secret")

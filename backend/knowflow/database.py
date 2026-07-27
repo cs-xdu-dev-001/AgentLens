@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class Database:
@@ -55,6 +55,15 @@ class Database:
             "trace_json",
             trace_type,
         )
+        snapshot_columns = {
+            "skill_id": id_type,
+            "skill_slug": "VARCHAR(255)" if self.is_mysql else "TEXT",
+            "skill_version": "VARCHAR(100)" if self.is_mysql else "TEXT",
+            "skill_content_hash": "VARCHAR(128)" if self.is_mysql else "TEXT",
+        }
+        for table in ["chat_message", "agent_tool_call"]:
+            for column, definition in snapshot_columns.items():
+                self.add_column_if_missing(conn, table, column, definition)
 
     def record_schema_version(self, conn: Any) -> None:
         conn.execute(
@@ -68,7 +77,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Add per-user remote MCP servers, encrypted credentials, and OAuth sessions."
+                    "Add per-user Skill packages, installations, staged imports, and run snapshots."
                 ),
             },
         )
