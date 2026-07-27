@@ -10,6 +10,7 @@ OPENAPI_TAGS = [
     {"name": "Chat", "description": "Chat, RAG answers, streaming output, and answer references."},
     {"name": "Sessions", "description": "Session history, messages, rename, and delete operations."},
     {"name": "Extensions", "description": "Reserved integration endpoints outside the first core workflow."},
+    {"name": "Skills", "description": "Inspect, install, and manage per-user Skills."},
 ]
 
 

@@ -41,6 +41,8 @@ from .services.tool_config import ToolConfigService
 from .services.mcp_config import McpConfigService
 from .services.mcp_oauth import McpOAuthCoordinator
 from .services.approval import ApprovalBroker
+from .services.skill_archive import SkillArchiveLimits
+from .services.skill_store import SkillStore
 
 
 
@@ -190,6 +192,58 @@ mcp_configs = McpConfigService(
     cipher=cipher,
     now_str=now_str,
 )
+
+
+def resolve_skill_dependencies(user_id: int) -> dict[str, set[str]]:
+    tools = {
+        str(row["tool_name"])
+        for row in fetch_all(
+            """
+            SELECT tool_name FROM tool_config
+            WHERE user_id=:user_id AND enabled=1
+            """,
+            {"user_id": user_id},
+        )
+    }
+    mcp = {
+        str(row["slug"])
+        for row in fetch_all(
+            """
+            SELECT slug FROM mcp_server
+            WHERE user_id=:user_id AND enabled=1 AND status='connected'
+            """,
+            {"user_id": user_id},
+        )
+    }
+    return {"tools": tools, "mcp": mcp}
+
+
+skills = SkillStore(
+    fetch_one=fetch_one,
+    fetch_all=fetch_all,
+    execute=execute,
+    execute_rowcount=execute_rowcount,
+    engine=db.engine,
+    is_mysql=db.is_mysql,
+    clock=datetime.now,
+    skill_dir=SKILL_DIR,
+    import_dir=Path(
+        os.getenv("KNOWFLOW_SKILL_IMPORT_DIR", str(SKILL_IMPORT_DIR))
+    ).expanduser(),
+    builtin_dir=PACKAGE_DIR / "builtin_skills",
+    archive_limits=SkillArchiveLimits(
+        max_archive_bytes=SKILL_MAX_ARCHIVE_BYTES,
+        max_extracted_bytes=SKILL_MAX_EXTRACTED_BYTES,
+        max_files=SKILL_MAX_FILES,
+        max_file_bytes=SKILL_MAX_FILE_BYTES,
+        max_depth=SKILL_MAX_DEPTH,
+    ),
+    import_ttl=SKILL_IMPORT_TTL,
+    max_body_chars=SKILL_MAX_BODY_CHARS,
+    github_timeout=SKILL_GITHUB_TIMEOUT,
+    dependency_resolver=resolve_skill_dependencies,
+)
+skills.sync_builtins()
 
 mcp_oauth = McpOAuthCoordinator(
     configs=mcp_configs,

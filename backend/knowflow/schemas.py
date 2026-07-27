@@ -133,4 +133,27 @@ class AgentApprovalDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal["allow_once", "deny"]
 
+
+class SkillGitHubInspect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=500)
+    ref: str = Field(default="main", min_length=1, max_length=200)
+    subpath: str = Field(default="", max_length=500)
+
+
+class SkillInstallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+
+
+class SkillPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+class SkillUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
 McpServerIn = McpServerCreate
