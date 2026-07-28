@@ -85,6 +85,8 @@ def check_text_scan_uses_git_index(tracked: list[str]) -> None:
         ) as ignored_dir:
             ignored_path = Path(ignored_dir) / "ignored-secret.md"
             ignored_path.write_text(fake_secret, encoding="utf-8")
+            late_nul_path = Path(ignored_dir) / "late-nul.md"
+            late_nul_path.write_bytes((b"a" * 9000) + b"\0" + b"hidden-content")
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 encoding="utf-8",
@@ -100,14 +102,19 @@ def check_text_scan_uses_git_index(tracked: list[str]) -> None:
                 )
                 untracked_path = Path(untracked_file.name)
 
-            text_files = list(iter_text_files(tracked))
-            scanned = {path.resolve() for path in text_files}
+            injected_tracked = [
+                *tracked,
+                late_nul_path.relative_to(ROOT).as_posix(),
+            ]
+            text_files = list(iter_text_files(injected_tracked))
+            scanned = {path.resolve() for path, _text in text_files}
             assert (ROOT / "README.md").resolve() in scanned
             assert ignored_path.resolve() not in scanned
             assert untracked_path.resolve() not in scanned
+            assert late_nul_path.resolve() not in scanned
             assert untracked_path.resolve() not in {
                 path.resolve()
-                for path in authenticated_testclient_files(text_files)
+                for path, _text in authenticated_testclient_files(text_files)
             }
     finally:
         if untracked_path is not None:
@@ -136,12 +143,12 @@ def iter_text_files(tracked: list[str]):
         }:
             continue
         try:
-            with path.open("rb") as stream:
-                if b"\0" in stream.read(8192):
-                    continue
+            content = path.read_bytes()
         except OSError:
             continue
-        yield path
+        if b"\0" in content:
+            continue
+        yield path, content.decode("utf-8", errors="replace")
 
 
 def tracked_files() -> list[str]:
@@ -175,17 +182,18 @@ def tracked_files() -> list[str]:
     ]
 
 
-def authenticated_testclient_files(text_files: list[Path]) -> list[Path]:
+def authenticated_testclient_files(
+    text_files: list[tuple[Path, str]],
+) -> list[tuple[Path, str]]:
     result = []
     tests_root = (ROOT / "tests").resolve()
-    for path in text_files:
+    for path, text in text_files:
         if (
             path.parent != tests_root
             or not path.name.startswith("check_")
             or path.suffix != ".py"
         ):
             continue
-        text = path.read_text(encoding="utf-8")
         tree = ast.parse(text, filename=str(path))
         relative = path.relative_to(ROOT).as_posix()
         imports_testclient = any(
@@ -205,12 +213,12 @@ def authenticated_testclient_files(text_files: list[Path]) -> list[Path]:
             and instantiates_testclient
             and relative not in TESTCLIENT_COOKIE_EXEMPT
         ):
-            result.append(path)
+            result.append((path, text))
     return result
 
 
-def isolates_secure_cookie_before_app_import(path: Path) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def isolates_secure_cookie_before_app_import(path: Path, text: str) -> bool:
+    tree = ast.parse(text, filename=str(path))
     cookie_lines = []
     app_import_lines = []
     for node in ast.walk(tree):
@@ -267,8 +275,7 @@ def main() -> None:
     check_text_scan_uses_git_index(tracked)
     text_files = list(iter_text_files(tracked))
     text_offenders = []
-    for path in text_files:
-        text = path.read_text(encoding="utf-8", errors="replace")
+    for path, text in text_files:
         for token in FORBIDDEN_TEXT:
             if token in text:
                 text_offenders.append(f"{path.relative_to(ROOT).as_posix()}: contains {token!r}")
@@ -281,8 +288,8 @@ def main() -> None:
 
     cookie_env_offenders = [
         path.relative_to(ROOT).as_posix()
-        for path in authenticated_testclient_files(text_files)
-        if not isolates_secure_cookie_before_app_import(path)
+        for path, text in authenticated_testclient_files(text_files)
+        if not isolates_secure_cookie_before_app_import(path, text)
     ]
     if cookie_env_offenders:
         raise AssertionError(
