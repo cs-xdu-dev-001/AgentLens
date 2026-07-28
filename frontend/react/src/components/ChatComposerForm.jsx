@@ -17,7 +17,7 @@ export function ChatComposerForm() {
   const [selectedSkill, setSelectedSkill] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [slashRange, setSlashRange] = useState(null);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -39,7 +39,7 @@ export function ChatComposerForm() {
   const closeSkillPicker = useCallback(() => {
     setPickerOpen(false);
     setPickerQuery("");
-    setActiveIndex(0);
+    setActiveIndex(-1);
     setSlashRange(null);
   }, []);
 
@@ -48,10 +48,14 @@ export function ChatComposerForm() {
     try {
       const skills = await skillApi.list();
       if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
-      setAvailableSkills(
-        (Array.isArray(skills) ? skills : []).filter(
-          (skill) => skill.enabled && skill.available,
-        ),
+      const nextSkills = (Array.isArray(skills) ? skills : []).filter(
+        (skill) => skill.enabled && skill.available,
+      );
+      setAvailableSkills(nextSkills);
+      setSelectedSkill((current) =>
+        current && !nextSkills.some((skill) => skill.id === current.id)
+          ? null
+          : current,
       );
       skillsLoadedRef.current = true;
     } catch {
@@ -181,7 +185,7 @@ export function ChatComposerForm() {
     const query = match[2];
     setPickerOpen(true);
     setPickerQuery(query);
-    setActiveIndex(0);
+    setActiveIndex(-1);
     setSlashRange({
       start: cursor - query.length - 1,
       end: cursor,
@@ -205,17 +209,27 @@ export function ChatComposerForm() {
     if (pickerOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setActiveIndex((current) => filteredSkills.length ? (current + 1) % filteredSkills.length : 0);
+        setActiveIndex((current) => {
+          if (!filteredSkills.length) return -1;
+          return current < 0 ? 0 : (current + 1) % filteredSkills.length;
+        });
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setActiveIndex((current) => filteredSkills.length ? (current - 1 + filteredSkills.length) % filteredSkills.length : 0);
+        setActiveIndex((current) => {
+          if (!filteredSkills.length) return -1;
+          return current < 0
+            ? filteredSkills.length - 1
+            : (current - 1 + filteredSkills.length) % filteredSkills.length;
+        });
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        if (filteredSkills[activeIndex]) selectSkill(filteredSkills[activeIndex]);
+        if (activeIndex >= 0 && filteredSkills[activeIndex]) {
+          selectSkill(filteredSkills[activeIndex]);
+        }
         return;
       }
       if (event.key === "Escape") {
@@ -249,12 +263,15 @@ export function ChatComposerForm() {
   }, [availableSkills, pickerQuery]);
 
   useEffect(() => {
-    if (!filteredSkills.length) {
-      setActiveIndex(0);
+    if (!pickerOpen || !filteredSkills.length) {
+      setActiveIndex(-1);
       return;
     }
-    setActiveIndex((current) => Math.min(current, filteredSkills.length - 1));
-  }, [filteredSkills.length]);
+    setActiveIndex((current) => {
+      if (current < 0 || current >= filteredSkills.length) return 0;
+      return current;
+    });
+  }, [filteredSkills, pickerOpen]);
 
   const selectSkill = (skill) => {
     if (!slashRange) return;
@@ -293,7 +310,7 @@ export function ChatComposerForm() {
   const composerPlusClassName = menuOpen ? "composer-plus active" : "composer-plus";
   const composerMenuClassName = menuOpen ? "composer-menu open" : "composer-menu";
   const activeOptionId =
-    pickerOpen && filteredSkills[activeIndex]
+    pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
       ? `skill-option-${filteredSkills[activeIndex].id}`
       : undefined;
 

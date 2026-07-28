@@ -67,6 +67,7 @@ def main() -> None:
         require(composer, state, f"{state} state")
     for needle, label in [
         ('const slashPattern = /(^|\\s)\\/([^\\s/]*)$/;', "slash word-boundary pattern"),
+        ("const [activeIndex, setActiveIndex] = useState(-1);", "closed picker active index"),
         ("selectionStart", "cursor-aware slash analysis"),
         ("slice(0, cursor)", "text before cursor only"),
         ("skillApi.list()", "lazy Skill list"),
@@ -92,12 +93,17 @@ def main() -> None:
         (".detail.skillId = selectedSkill?.id ?? null", "Skill id event payload"),
         ('aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}', "textarea picker controls"),
         ("aria-expanded={pickerOpen}", "textarea picker expanded state"),
+        ("pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]", "active option aria guard"),
         ("aria-activedescendant={activeOptionId}", "textarea active descendant"),
         ('detail: { page: "skills" }', "event-driven Skills navigation"),
     ]:
         require(composer, needle, label)
     if composer_text.count(".detail.skillId = selectedSkill?.id ?? null") < 2:
         raise AssertionError("both submit event paths must include selected Skill id")
+    if composer_text.count("setActiveIndex(-1);") < 3:
+        raise AssertionError(
+            "close, slash open, and empty filtering must all clear the active option"
+        )
     require_in_order(
         composer_text,
         (
@@ -115,6 +121,49 @@ def main() -> None:
             "closeSkillPicker();",
         ),
         "composer reset clears question, Skill pill, and picker",
+    )
+    require_in_order(
+        composer_text,
+        (
+            "const nextSkills = (Array.isArray(skills) ? skills : []).filter(",
+            "(skill) => skill.enabled && skill.available,",
+            "setAvailableSkills(nextSkills);",
+            "setSelectedSkill((current) =>",
+            "!nextSkills.some((skill) => skill.id === current.id)",
+            "? null",
+            ": current",
+        ),
+        "successful Skill refresh invalidates a stale selection functionally",
+    )
+    require_in_order(
+        composer_text,
+        (
+            'if (event.key === "ArrowDown") {',
+            "if (!filteredSkills.length) return -1;",
+            "return current < 0 ? 0 : (current + 1) % filteredSkills.length;",
+            'if (event.key === "ArrowUp") {',
+            "if (!filteredSkills.length) return -1;",
+            "return current < 0",
+            "? filteredSkills.length - 1",
+            ": (current - 1 + filteredSkills.length) % filteredSkills.length;",
+            'if (event.key === "Enter") {',
+            "event.preventDefault();",
+            "if (activeIndex >= 0 && filteredSkills[activeIndex])",
+        ),
+        "empty-safe picker keyboard navigation and selection",
+    )
+    require_in_order(
+        composer_text,
+        (
+            "if (!pickerOpen || !filteredSkills.length) {",
+            "setActiveIndex(-1);",
+            "return;",
+            "setActiveIndex((current) => {",
+            "if (current < 0 || current >= filteredSkills.length) return 0;",
+            "return current;",
+            "}, [filteredSkills, pickerOpen]);",
+        ),
+        "every filtered option set recomputes the active index",
     )
 
     for needle, label in [
