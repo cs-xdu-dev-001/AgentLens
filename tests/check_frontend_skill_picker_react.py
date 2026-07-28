@@ -1,0 +1,155 @@
+from pathlib import Path
+import re
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read(path: str) -> str:
+    target = ROOT / path
+    if not target.exists():
+        raise AssertionError(f"missing required file: {path}")
+    return target.read_text(encoding="utf-8")
+
+
+def require(path: str, needle: str, label: str) -> None:
+    if needle not in read(path):
+        raise AssertionError(f"missing {label} in {path}: {needle}")
+
+
+def forbid(path: str, needle: str, label: str) -> None:
+    if needle in read(path):
+        raise AssertionError(f"unexpected {label} in {path}: {needle}")
+
+
+def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
+    position = 0
+    for needle in needles:
+        found = text.find(needle, position)
+        if found < 0:
+            raise AssertionError(f"missing or out-of-order {label}: {needle}")
+        position = found + len(needle)
+
+
+def main() -> None:
+    picker = "frontend/react/src/components/SkillPicker.jsx"
+    composer = "frontend/react/src/components/ChatComposerForm.jsx"
+    styles = "frontend/styles.css"
+
+    for needle, label in [
+        ("export function SkillPicker", "SkillPicker component"),
+        ('id={"skill-picker-listbox"}', "stable listbox id"),
+        ('role={"listbox"}', "listbox role"),
+        ('aria-label={"Skills"}', "listbox accessible name"),
+        ('role={"option"}', "option role"),
+        ("`skill-option-${skill.id}`", "stable option id"),
+        ("aria-selected={active}", "selected option state"),
+        ('className={active ? "skill-picker-option active" : "skill-picker-option"}', "active option class"),
+        ("key={skill.id}", "option key"),
+        ("event.preventDefault()", "focus-preserving pointer selection"),
+        ("onSelect(skill)", "option selection callback"),
+        ('{"前往安装Skill"}', "empty-state install action"),
+        ('{"管理Skills"}', "management footer"),
+        ("onManage", "management callback"),
+    ]:
+        require(picker, needle, label)
+    forbid(picker, "dangerouslySetInnerHTML", "unsafe picker HTML")
+
+    composer_text = read(composer)
+    for state in (
+        "availableSkills",
+        "selectedSkill",
+        "pickerOpen",
+        "pickerQuery",
+        "activeIndex",
+        "slashRange",
+    ):
+        require(composer, state, f"{state} state")
+    for needle, label in [
+        ('const slashPattern = /(^|\\s)\\/([^\\s/]*)$/;', "slash word-boundary pattern"),
+        ("selectionStart", "cursor-aware slash analysis"),
+        ("slice(0, cursor)", "text before cursor only"),
+        ("skillApi.list()", "lazy Skill list"),
+        ("skill.enabled && skill.available", "enabled and available filtering"),
+        ('knowflow:react-skills-updated', "Skill update refresh"),
+        ("requestGenerationRef", "latest-request guard"),
+        ("mountedRef", "unmount guard"),
+        ("skill.name", "name query matching"),
+        ("skill.slug", "slug query matching"),
+        ("skill.description", "description query matching"),
+        ('event.key === "ArrowDown"', "ArrowDown picker navigation"),
+        ('event.key === "ArrowUp"', "ArrowUp picker navigation"),
+        ('event.key === "Enter"', "Enter picker selection"),
+        ('event.key === "Escape"', "Escape picker dismissal"),
+        ('event.key === "Backspace"', "Backspace selected Skill removal"),
+        ("event.isComposing", "IME composition guard"),
+        ("question.slice(0, slashRange.start)", "slash range prefix preservation"),
+        ("question.slice(slashRange.end)", "slash range suffix preservation"),
+        ("setSelectedSkill(skill)", "selected Skill assignment"),
+        ("setSelectionRange(cursor, cursor)", "cursor restoration"),
+        ('className={"selected-skill-pill"}', "selected Skill pill"),
+        ("removeSelectedSkill", "explicit selected Skill removal"),
+        (".detail.skillId = selectedSkill?.id ?? null", "Skill id event payload"),
+        ('aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}', "textarea picker controls"),
+        ("aria-expanded={pickerOpen}", "textarea picker expanded state"),
+        ("aria-activedescendant={activeOptionId}", "textarea active descendant"),
+        ('detail: { page: "skills" }', "event-driven Skills navigation"),
+    ]:
+        require(composer, needle, label)
+    if composer_text.count(".detail.skillId = selectedSkill?.id ?? null") < 2:
+        raise AssertionError("both submit event paths must include selected Skill id")
+    require_in_order(
+        composer_text,
+        (
+            "const beforeCursor = value.slice(0, cursor);",
+            "const match = beforeCursor.match(slashPattern);",
+            "if (!match)",
+        ),
+        "selectionStart-only slash matching",
+    )
+    require_in_order(
+        composer_text,
+        (
+            "setQuestion(\"\");",
+            "setSelectedSkill(null);",
+            "closeSkillPicker();",
+        ),
+        "composer reset clears question, Skill pill, and picker",
+    )
+
+    for needle, label in [
+        (".skill-picker", "picker surface"),
+        ("max-height:", "scroll height limit"),
+        ("overflow-y: auto", "scrollable option list"),
+        (".skill-picker-option.active", "selected option styling"),
+        (".skill-picker-description", "ellipsized description"),
+        ("text-overflow: ellipsis", "description ellipsis"),
+        (".selected-skill-pill", "selected Skill pill styling"),
+        (":focus-visible", "keyboard focus styling"),
+        ("transform: scale(0.96)", "press feedback"),
+        ("@media (prefers-reduced-motion: reduce)", "reduced motion"),
+        ("@media (max-width: 760px)", "mobile width guard"),
+        ("left: 0", "mobile left containment"),
+        ("right: 0", "mobile right containment"),
+        (':root[data-theme="mono-dark"] .skill-picker', "dark picker surface"),
+    ]:
+        require(styles, needle, label)
+    for path in (picker, composer):
+        forbid(path, "dangerouslySetInnerHTML", "unsafe HTML rendering")
+        forbid(path, "stats-card", "statistics card")
+
+    # The slash expression must reject URL/path fragments while accepting a
+    # whitespace-delimited command token. Mirror the source expression here.
+    pattern = re.compile(r"(^|\s)/([^\s/]*)$")
+    assert pattern.search("/")
+    assert pattern.search("提问 /skill")
+    assert pattern.search("前缀 /skill")
+    assert not pattern.search("https://example.com")
+    assert not pattern.search("abc/foo")
+    assert not pattern.search("abc /foo/bar")
+
+    print("React slash Skill picker contract is present")
+
+
+if __name__ == "__main__":
+    main()

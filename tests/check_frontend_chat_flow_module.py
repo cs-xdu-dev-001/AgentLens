@@ -13,6 +13,15 @@ def require(path: str, needle: str, label: str) -> None:
         raise AssertionError(f"missing {label} in {path}: {needle}")
 
 
+def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
+    position = 0
+    for needle in needles:
+        found = text.find(needle, position)
+        if found < 0:
+            raise AssertionError(f"missing or out-of-order {label}: {needle}")
+        position = found + len(needle)
+
+
 def forbid(path: str, needle: str, label: str) -> None:
     text = read(path)
     if needle in text:
@@ -22,6 +31,7 @@ def forbid(path: str, needle: str, label: str) -> None:
 def main() -> None:
     controller = "frontend/react/src/controller/knowflowController.js"
     chat_flow = "frontend/react/src/controller/chatFlow.js"
+    bridge = "frontend/react/src/controller/bridgeBindings.js"
 
     require(chat_flow, "export function createChatFlow", "chat flow factory")
     for token, label in [
@@ -35,6 +45,35 @@ def main() -> None:
         ("state.selectedChatModelConfigId ? Number(state.selectedChatModelConfigId) : null", "React-owned model id snapshot"),
     ]:
         require(chat_flow, token, label)
+
+    chat_flow_text = read(chat_flow)
+    require(
+        chat_flow,
+        "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
+        "retry-safe Skill id resolution",
+    )
+    require(chat_flow, "if (skillId) payload.skillId = skillId;", "truthy Skill id payload")
+    require_in_order(
+        chat_flow_text,
+        (
+            "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
+            "const payload = {",
+            "if (skillId) payload.skillId = skillId;",
+            "const requestSnapshot = { question, payload: { ...payload } };",
+            "messageRetryRequests.set(answer.messageId, requestSnapshot);",
+        ),
+        "Skill id request snapshot and retry storage",
+    )
+    require(
+        bridge,
+        "submitChat({ question: event.detail?.question, skillId: event.detail?.skillId })",
+        "bridge forwards Skill id",
+    )
+    if read(bridge).count(
+        "submitChat({ question: event.detail?.question, skillId: event.detail?.skillId })"
+    ) < 2:
+        raise AssertionError("both submit bridges must forward Skill id")
+    forbid(bridge, "selectedSkill", "legacy bridge Skill state")
 
     require(controller, "createChatFlow", "controller imports chat flow factory")
     require(controller, "chatFlow.continueSession", "controller exposes continue flow to bridges")

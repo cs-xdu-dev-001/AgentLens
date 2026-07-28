@@ -172,6 +172,7 @@ export function createChatFlow({
 
     const knowledgeBaseId = retryRequest?.payload?.knowledgeBaseId ?? (state.selectedChatKnowledgeBaseId ? Number(state.selectedChatKnowledgeBaseId) : null);
     const chatModelConfigId = retryRequest?.payload?.chatModelConfigId ?? (state.selectedChatModelConfigId ? Number(state.selectedChatModelConfigId) : null);
+    const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;
     const attachments =
       retryRequest?.payload?.attachments ||
       state.chatAttachments.map(({ filename, fileType, mimeType, content, previewUrl }) => ({
@@ -194,6 +195,7 @@ export function createChatFlow({
       enabledTools: [],
       attachments: attachments,
     };
+    if (skillId) payload.skillId = skillId;
     if (retryRequest?.payload) {
       payload.enableTools = true;
       payload.autoAgent = true;

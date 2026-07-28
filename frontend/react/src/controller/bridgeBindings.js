@@ -117,13 +117,13 @@ export function bindReactControllerEvents({
   });
 
   window.addEventListener("knowflow:react-chat-submit", (event) =>
-    submitChat({ question: event.detail?.question }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
+    submitChat({ question: event.detail?.question, skillId: event.detail?.skillId }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
   );
   window.addEventListener("knowflow:react-chat-paste", (event) =>
     handleComposerPaste(event.detail || {}).catch((error) => toast(error.message || "粘贴失败", 4200, "error")),
   );
   window.addEventListener("knowflow:react-chat-enter-submit", (event) =>
-    submitChat({ question: event.detail?.question }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
+    submitChat({ question: event.detail?.question, skillId: event.detail?.skillId }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
   );
 
   window.addEventListener("knowflow:react-attachment-remove", (event) => removeChatAttachment(event.detail?.attachmentId));

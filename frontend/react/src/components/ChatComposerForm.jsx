@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { skillApi } from "../api/client.js";
+import { SkillPicker } from "./SkillPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
+const slashPattern = /(^|\s)\/([^\s/]*)$/;
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
   const wanted = valueOf(currentValue);
@@ -10,18 +13,76 @@ function pickKnowledgeValue(knowledgeBases, currentValue) {
 
 export function ChatComposerForm() {
   const [attachments, setAttachments] = useState([]);
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [slashRange, setSlashRange] = useState(null);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
+  const mountedRef = useRef(false);
+  const pickerOpenRef = useRef(false);
+  const skillsLoadedRef = useRef(false);
+  const requestGenerationRef = useRef(0);
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
     node.style.height = "auto";
     node.style.height = Math.min(node.scrollHeight, 150) + "px";
   };
+
+  const closeSkillPicker = useCallback(() => {
+    setPickerOpen(false);
+    setPickerQuery("");
+    setActiveIndex(0);
+    setSlashRange(null);
+  }, []);
+
+  const loadAvailableSkills = useCallback(async () => {
+    const requestId = ++requestGenerationRef.current;
+    try {
+      const skills = await skillApi.list();
+      if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
+      setAvailableSkills(
+        (Array.isArray(skills) ? skills : []).filter(
+          (skill) => skill.enabled && skill.available,
+        ),
+      );
+      skillsLoadedRef.current = true;
+    } catch {
+      if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
+      setAvailableSkills([]);
+      skillsLoadedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestGenerationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    pickerOpenRef.current = pickerOpen;
+    if (pickerOpen && !skillsLoadedRef.current) loadAvailableSkills();
+  }, [loadAvailableSkills, pickerOpen]);
+
+  useEffect(() => {
+    const handleSkillsUpdated = () => {
+      const shouldRefresh = skillsLoadedRef.current || pickerOpenRef.current;
+      skillsLoadedRef.current = false;
+      if (shouldRefresh) loadAvailableSkills();
+    };
+    window.addEventListener("knowflow:react-skills-updated", handleSkillsUpdated);
+    return () => window.removeEventListener("knowflow:react-skills-updated", handleSkillsUpdated);
+  }, [loadAvailableSkills]);
 
   useEffect(() => {
     const handleDocumentClick = () => setMenuOpen(false);
@@ -39,6 +100,8 @@ export function ChatComposerForm() {
     const handleComposerReset = (event) => {
       const shouldFocus = Boolean(event.detail?.focus);
       setQuestion("");
+      setSelectedSkill(null);
+      closeSkillPicker();
       window.requestAnimationFrame(() => {
         resizeTextarea();
         if (shouldFocus) textareaRef.current?.focus();
@@ -46,7 +109,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, []);
+  }, [closeSkillPicker]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -101,12 +164,36 @@ export function ChatComposerForm() {
 
   const handleChatSubmit = (event) => {
     event.preventDefault();
-    window.dispatchEvent(new CustomEvent("knowflow:react-chat-submit", { detail: { question: question.trim() } }));
+    const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
+      detail: { question: question.trim() },
+    });
+    submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    window.dispatchEvent(submitEvent);
+  };
+
+  const updateSkillPicker = (value, cursor) => {
+    const beforeCursor = value.slice(0, cursor);
+    const match = beforeCursor.match(slashPattern);
+    if (!match) {
+      closeSkillPicker();
+      return;
+    }
+    const query = match[2];
+    setPickerOpen(true);
+    setPickerQuery(query);
+    setActiveIndex(0);
+    setSlashRange({
+      start: cursor - query.length - 1,
+      end: cursor,
+    });
   };
 
   const handleChatInput = (event) => {
-    setQuestion(event.target.value);
+    const value = event.target.value;
+    const cursor = event.target.selectionStart ?? value.length;
+    setQuestion(value);
     resizeTextarea(event.target);
+    updateSkillPicker(value, cursor);
   };
 
   const handleChatPaste = (event) => {
@@ -114,9 +201,89 @@ export function ChatComposerForm() {
   };
 
   const handleChatKeyDown = (event) => {
+    if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if (pickerOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveIndex((current) => filteredSkills.length ? (current + 1) % filteredSkills.length : 0);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveIndex((current) => filteredSkills.length ? (current - 1 + filteredSkills.length) % filteredSkills.length : 0);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (filteredSkills[activeIndex]) selectSkill(filteredSkills[activeIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSkillPicker();
+        return;
+      }
+    }
+    if (event.key === "Backspace" && !pickerOpen && !question && selectedSkill) {
+      event.preventDefault();
+      setSelectedSkill(null);
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
-    window.dispatchEvent(new CustomEvent("knowflow:react-chat-enter-submit", { detail: { question: question.trim() } }));
+    const submitEvent = new CustomEvent("knowflow:react-chat-enter-submit", {
+      detail: { question: question.trim() },
+    });
+    submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    window.dispatchEvent(submitEvent);
+  };
+
+  const filteredSkills = useMemo(() => {
+    const query = pickerQuery.trim().toLocaleLowerCase();
+    if (!query) return availableSkills;
+    return availableSkills.filter((skill) =>
+      [skill.name, skill.slug, skill.description].some((value) =>
+        String(value || "").toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [availableSkills, pickerQuery]);
+
+  useEffect(() => {
+    if (!filteredSkills.length) {
+      setActiveIndex(0);
+      return;
+    }
+    setActiveIndex((current) => Math.min(current, filteredSkills.length - 1));
+  }, [filteredSkills.length]);
+
+  const selectSkill = (skill) => {
+    if (!slashRange) return;
+    const nextQuestion =
+      question.slice(0, slashRange.start) +
+      question.slice(slashRange.end);
+    const cursor = slashRange.start;
+    setQuestion(nextQuestion);
+    setSelectedSkill(skill);
+    closeSkillPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const removeSelectedSkill = () => {
+    setSelectedSkill(null);
+    textareaRef.current?.focus();
+  };
+
+  const handleManageSkills = () => {
+    closeSkillPicker();
+    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+      detail: { page: "skills" },
+    }));
   };
 
   const handleRemoveAttachment = (attachmentId) => {
@@ -125,9 +292,21 @@ export function ChatComposerForm() {
 
   const composerPlusClassName = menuOpen ? "composer-plus active" : "composer-plus";
   const composerMenuClassName = menuOpen ? "composer-menu open" : "composer-menu";
+  const activeOptionId =
+    pickerOpen && filteredSkills[activeIndex]
+      ? `skill-option-${filteredSkills[activeIndex].id}`
+      : undefined;
 
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
+      {pickerOpen ? (
+        <SkillPicker
+          skills={filteredSkills}
+          activeIndex={activeIndex}
+          onSelect={selectSkill}
+          onManage={handleManageSkills}
+        />
+      ) : null}
       <div className={"attachment-tray"} id={"attachment-tray"}>
         {attachments.map((attachment) => {
           const preview = attachment.previewUrl ? (
@@ -199,7 +378,35 @@ export function ChatComposerForm() {
             </p>
           </section>
         </div>
-        <textarea ref={textareaRef} name={"question"} rows={"1"} placeholder={"有问题尽管问。"} value={question} disabled={sending} onInput={handleChatInput} onPaste={handleChatPaste} onKeyDown={handleChatKeyDown} />
+        <div className={"composer-input-stack"}>
+          {selectedSkill ? (
+            <span className={"selected-skill-pill"}>
+              <span aria-hidden={"true"}>{"/"}</span>
+              <strong>{selectedSkill.name || selectedSkill.slug}</strong>
+              <button
+                type={"button"}
+                aria-label={`移除Skill：${selectedSkill.name || selectedSkill.slug}`}
+                onClick={removeSelectedSkill}
+              >
+                {"×"}
+              </button>
+            </span>
+          ) : null}
+          <textarea
+            ref={textareaRef}
+            name={"question"}
+            rows={"1"}
+            placeholder={"有问题尽管问。输入 / 选择Skill"}
+            value={question}
+            disabled={sending}
+            aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}
+            aria-expanded={pickerOpen}
+            aria-activedescendant={activeOptionId}
+            onInput={handleChatInput}
+            onPaste={handleChatPaste}
+            onKeyDown={handleChatKeyDown}
+          />
+        </div>
         <button className={"composer-send-button"} id={"chat-submit-btn"} type={"submit"} aria-label={sending ? "停止生成" : "发送消息"} title={sending ? "停止生成" : "发送消息"}>
           {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
         </button>
