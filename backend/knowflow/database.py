@@ -77,6 +77,12 @@ class Database:
             "run_step_id",
             run_id_type,
         )
+        self.add_column_if_missing(
+            conn,
+            "agent_run",
+            "request_json",
+            "LONGTEXT" if self.is_mysql else "TEXT",
+        )
 
     def record_schema_version(self, conn: Any) -> None:
         if self.is_mysql:

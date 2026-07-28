@@ -70,7 +70,7 @@ def _now() -> str:
 
 
 def _json_value(raw: Any, fallback: Any) -> Any:
-    if raw in {None, ""}:
+    if raw is None or raw == "":
         return fallback
     if isinstance(raw, (dict, list)):
         return raw
@@ -185,6 +185,7 @@ class AgentRunStore:
         user_message_id: int | None,
         goal_summary: str,
         trigger_mode: str,
+        request_payload: dict[str, Any] | None = None,
         run_id: str | None = None,
     ) -> dict[str, Any]:
         identifier = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -195,12 +196,14 @@ class AgentRunStore:
                     """
                     INSERT INTO agent_run(
                       id, user_id, session_id, user_message_id,
-                      goal_summary, trigger_mode, status, trace_json,
+                      goal_summary, request_json, trigger_mode,
+                      status, trace_json,
                       version, created_at, updated_at
                     )
                     VALUES (
                       :id, :user_id, :session_id, :user_message_id,
-                      :goal_summary, :trigger_mode, 'planning', '[]',
+                      :goal_summary, :request_json, :trigger_mode,
+                      'planning', '[]',
                       1, :created_at, :updated_at
                     )
                     """
@@ -211,6 +214,11 @@ class AgentRunStore:
                     "session_id": session_id,
                     "user_message_id": user_message_id,
                     "goal_summary": str(goal_summary)[:700],
+                    "request_json": json.dumps(
+                        request_payload or {},
+                        ensure_ascii=False,
+                        default=str,
+                    ),
                     "trigger_mode": trigger_mode,
                     "created_at": now,
                     "updated_at": now,
@@ -223,6 +231,48 @@ class AgentRunStore:
                 "Agent run could not be created.",
             )
         return self._normalize_run(row, [])
+
+    def load_request(
+        self,
+        user_id: int,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        with self.database.engine.connect() as conn:
+            row = self._run_row(conn, user_id, run_id)
+        if row is None:
+            return None
+        value = _json_value(row.get("request_json"), {})
+        return value if isinstance(value, dict) else {}
+
+    def attach_assistant_message(
+        self,
+        user_id: int,
+        run_id: str,
+        message_id: int,
+    ) -> None:
+        now = _now()
+        with self.database.engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    UPDATE agent_run
+                    SET assistant_message_id=:message_id,
+                        version=version + 1, updated_at=:updated_at
+                    WHERE id=:run_id AND user_id=:user_id
+                    """
+                ),
+                {
+                    "message_id": message_id,
+                    "updated_at": now,
+                    "run_id": run_id,
+                    "user_id": user_id,
+                },
+            )
+            if result.rowcount != 1:
+                raise AgentRunStoreError(
+                    "agent_run_not_found",
+                    "Agent run was not found.",
+                )
 
     def get_snapshot(
         self,

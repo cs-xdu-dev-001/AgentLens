@@ -36,11 +36,20 @@ def main() -> None:
         user_message_id=17,
         goal_summary="整理 Notion 资料",
         trigger_mode="auto",
+        request_payload={
+            "question": "整理 Notion 资料",
+            "chatModelConfigId": 9,
+        },
         run_id="run_store_test",
     )
     assert run["status"] == "planning"
     assert run["goalSummary"] == "整理 Notion 资料"
     assert "userId" not in run
+    assert store.load_request(1, run["id"]) == {
+        "question": "整理 Notion 资料",
+        "chatModelConfigId": 9,
+    }
+    assert store.load_request(2, run["id"]) is None
 
     steps = store.replace_plan(
         1,

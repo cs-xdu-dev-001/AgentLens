@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable, Iterable
 from queue import Queue
-from threading import Event, Thread
+from threading import Event
 from typing import Any
 import uuid
 
@@ -23,6 +23,10 @@ from ..services.mcp_client import (
     McpRunSessionPool,
 )
 from ..services.web_search import TavilyWebSearch, WebSearchArguments
+from ..services.task_planner import (
+    parse_execution_mode,
+    register_task_planner,
+)
 
 router = APIRouter()
 
@@ -35,6 +39,10 @@ class McpToolConfigurationError(RuntimeError):
 
 class AgentRunCancelled(RuntimeError):
     code = "agent_run_cancelled"
+
+
+class TaskPlanCreated(RuntimeError):
+    pass
 
 
 def _raise_if_cancelled(cancel_event: Event | None) -> None:
@@ -310,19 +318,127 @@ def execute_agent_chat(
     *,
     trace_emit: Callable[[dict[str, Any]], None] | None = None,
     approval_emit: Callable[[dict[str, Any]], None] | None = None,
+    event_emit: Callable[[str, dict[str, Any]], None] | None = None,
     run_id: str | None = None,
     cancel_event: Event | None = None,
+    existing_run_id: str | None = None,
+    run_action: str | None = None,
 ) -> dict[str, Any]:
+    command_mode, normalized_question = parse_execution_mode(
+        payload.question
+    )
+    execution_mode = (
+        "plan_only"
+        if command_mode == "plan_only"
+        else payload.executionMode
+    )
+    if run_action in {"start", "resume"}:
+        execution_mode = "auto"
+    if not normalized_question:
+        raise HTTPException(
+            status_code=422,
+            detail="A task is required after /plan.",
+        )
+    payload = payload.model_copy(
+        update={
+            "question": normalized_question,
+            "executionMode": execution_mode,
+        }
+    )
     use_rag = bool(payload.knowledgeBaseId) or payload.useRag
     if use_rag and not payload.knowledgeBaseId:
         raise HTTPException(status_code=400, detail="knowledgeBaseId is required when RAG is enabled")
     if payload.knowledgeBaseId:
         get_kb(payload.knowledgeBaseId, user_id)
-    session_id = ensure_session(payload.sessionId, payload.knowledgeBaseId, payload.chatModelConfigId, user_id)
+    durable_run_id = existing_run_id or run_id or (
+        f"run_{uuid.uuid4().hex[:12]}"
+    )
+    if existing_run_id:
+        durable_snapshot = agent_runs.get_snapshot(
+            user_id,
+            durable_run_id,
+        )
+        if durable_snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Agent run not found.",
+            )
+        session_id = str(durable_snapshot["sessionId"])
+        get_session_for_user(session_id, user_id)
+        payload = payload.model_copy(
+            update={"sessionId": session_id}
+        )
+        user_message_id = durable_snapshot.get("userMessageId")
+    else:
+        session_id = ensure_session(
+            payload.sessionId,
+            payload.knowledgeBaseId,
+            payload.chatModelConfigId,
+            user_id,
+        )
+        payload = payload.model_copy(
+            update={"sessionId": session_id}
+        )
+        user_message_id = save_message(
+            session_id,
+            "user",
+            payload.question,
+        )
+        stored_request = payload.model_dump(mode="json")
+        stored_request["attachments"] = [
+            {**item, "previewUrl": None}
+            for item in stored_request.get("attachments", [])
+        ]
+        durable_snapshot = agent_runs.create_run(
+            user_id=user_id,
+            session_id=session_id,
+            user_message_id=user_message_id,
+            goal_summary=(
+                sanitize_trace_value(
+                    payload.question,
+                    max_chars=700,
+                )
+                or "Agent task"
+            ),
+            trigger_mode=execution_mode,
+            request_payload=stored_request,
+            run_id=durable_run_id,
+        )
+
+    def emit_named(
+        event_name: str,
+        value: dict[str, Any],
+    ) -> None:
+        if event_emit:
+            event_emit(event_name, value)
+
+    def publish_snapshot(event_name: str) -> dict[str, Any]:
+        snapshot = agent_runs.get_snapshot(
+            user_id,
+            durable_run_id,
+        )
+        if snapshot is None:
+            raise RuntimeError("Agent run snapshot is unavailable.")
+        emit_named(event_name, {"run": snapshot})
+        return snapshot
+
     history: list[dict[str, Any]] = []
+
+    trace: AgentTraceRecorder
+
+    def persist_trace(event: dict[str, Any]) -> None:
+        agent_runs.update_trace(
+            user_id,
+            durable_run_id,
+            trace.snapshot(),
+        )
+        if trace_emit:
+            trace_emit(event)
+        emit_named("agent_step", event)
+
     trace = AgentTraceRecorder(
-        emit=trace_emit,
-        run_id=run_id,
+        emit=persist_trace,
+        run_id=durable_run_id,
     )
     root_step = trace.start_step(
         kind="system",
@@ -333,7 +449,25 @@ def execute_agent_chat(
     retrieval_run: dict[str, Any] | None = None
     rag_quality: dict[str, Any] = {"enabled": False}
     chunks: list[dict[str, Any]] = []
+    current_plan_step_id: str | None = None
+    execution_records: list[tuple[Any, str | None]] = []
+    plan_snapshot: dict[str, Any] | None = None
+    run_failed = False
     try:
+        if run_action == "replan":
+            agent_runs.transition_run(
+                user_id,
+                durable_run_id,
+                "planning",
+            )
+            publish_snapshot("run_updated")
+        elif run_action in {"start", "resume"}:
+            agent_runs.transition_run(
+                user_id,
+                durable_run_id,
+                "running",
+            )
+            publish_snapshot("run_updated")
         if use_rag and payload.knowledgeBaseId:
             started_at = time.perf_counter()
             chunks = retrieve_chunks(
@@ -440,18 +574,87 @@ def execute_agent_chat(
                     title="Skill activated",
                     output_summary=audit,
                 )
-            save_message(session_id, "user", payload.question)
             history = get_recent_history(session_id)
+
+            def durable_approval_emit(
+                event: dict[str, Any],
+            ) -> None:
+                nonlocal current_plan_step_id
+                if current_plan_step_id:
+                    if event["type"] == "approval_required":
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "waiting_approval",
+                        )
+                        agent_runs.transition_run(
+                            user_id,
+                            durable_run_id,
+                            "waiting_approval",
+                        )
+                        publish_snapshot("step_updated")
+                    elif event["type"] == "approval_resolved":
+                        snapshot = agent_runs.get_snapshot(
+                            user_id,
+                            durable_run_id,
+                        )
+                        step = next(
+                            (
+                                item
+                                for item in (snapshot or {}).get(
+                                    "steps", []
+                                )
+                                if item["id"]
+                                == current_plan_step_id
+                            ),
+                            None,
+                        )
+                        if (
+                            step
+                            and step["status"]
+                            == "waiting_approval"
+                        ):
+                            decision = event.get("decision")
+                            if decision == "allow_once":
+                                agent_runs.transition_step(
+                                    user_id,
+                                    durable_run_id,
+                                    current_plan_step_id,
+                                    "running",
+                                )
+                                agent_runs.transition_run(
+                                    user_id,
+                                    durable_run_id,
+                                    "running",
+                                )
+                            else:
+                                agent_runs.transition_step(
+                                    user_id,
+                                    durable_run_id,
+                                    current_plan_step_id,
+                                    "failed",
+                                    error_code=(
+                                        "approval_timeout"
+                                        if decision == "timeout"
+                                        else "permission_denied"
+                                    ),
+                                )
+                            publish_snapshot("step_updated")
+                if approval_emit:
+                    approval_emit(event)
+                emit_named(str(event["type"]), event)
+
             approval_gate = (
                 AgentApprovalGate(
                     broker=approval_broker,
                     user_id=user_id,
                     run_id=trace.run_id,
-                    emit=approval_emit,
+                    emit=durable_approval_emit,
                     trace=trace,
                     parent_step_id=run_parent_step,
                 )
-                if approval_emit
+                if approval_emit or event_emit
                 else None
             )
             catalog = []
@@ -459,7 +662,7 @@ def execute_agent_chat(
                 catalog = activation.catalog()
                 if catalog:
                     activation.register_activation_tool(registry)
-            messages = build_messages(
+            base_messages = build_messages(
                 payload.question,
                 chunks,
                 history,
@@ -469,45 +672,275 @@ def execute_agent_chat(
                 attachments=payload.attachments,
             )
             if catalog:
-                messages[0]["content"] += (
+                base_messages[0]["content"] += (
                     "\nAvailable Skills (activate at most one with "
                     "activate_skill): "
                     + json.dumps(catalog, ensure_ascii=False)
                 )
             if activation.active is not None:
-                messages.insert(
+                base_messages.insert(
                     1,
                     {
                         "role": "system",
                         "content": activation.active.system_message,
                     },
                 )
-            try:
-                run_result = AgentRunner(
-                    gateway=_CancellationAwareGateway(
-                        gateway,
-                        cancel_event,
-                    ),
-                    max_tool_rounds=3,
-                ).run(
-                    messages=messages,
-                    config=chat_config,
-                    registry=registry,
-                    trace=trace,
-                    parent_step_id=run_parent_step,
-                    approval_gate=approval_gate,
-                    skill_snapshot=(
-                        activation.active.snapshot()
-                        if activation.active is not None
-                        else None
-                    ),
+
+            def capture_plan(value: dict[str, Any]) -> None:
+                nonlocal plan_snapshot
+                plan_snapshot = value
+
+            should_plan = (
+                existing_run_id is None
+                or run_action == "replan"
+            ) and (
+                payload.autoAgent
+                or execution_mode == "plan_only"
+                or (
+                    activation.active is not None
+                    and activation.active.planning == "required"
                 )
+            )
+            if should_plan:
+                register_task_planner(registry, capture_plan)
+
+            def record_execution(execution, tool_step_id) -> None:
+                if (
+                    execution.tool_name == "create_task_plan"
+                    and execution.status == "success"
+                    and plan_snapshot is not None
+                ):
+                    steps = agent_runs.replace_plan(
+                        user_id,
+                        durable_run_id,
+                        plan_snapshot["steps"],
+                    )
+                    target_status = (
+                        "waiting_start"
+                        if execution_mode == "plan_only"
+                        else "running"
+                    )
+                    agent_runs.transition_run(
+                        user_id,
+                        durable_run_id,
+                        target_status,
+                    )
+                    publish_snapshot("plan_created")
+                    raise TaskPlanCreated()
+                execution_records.append(
+                    (execution, current_plan_step_id)
+                )
+
+            runner = AgentRunner(
+                gateway=_CancellationAwareGateway(
+                    gateway,
+                    cancel_event,
+                ),
+                max_tool_rounds=3,
+            )
+            answer = ""
+            run_result = None
+            try:
+                if run_action in {"start", "resume"}:
+                    planned = agent_runs.get_snapshot(
+                        user_id,
+                        durable_run_id,
+                    )
+                    plan_created = bool(
+                        (planned or {}).get("steps")
+                    )
+                else:
+                    planning_messages = [
+                        dict(message)
+                        for message in base_messages
+                    ]
+                    if execution_mode == "plan_only":
+                        planning_messages.insert(
+                            1,
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You must call create_task_plan. "
+                                    "Do not execute the plan yet."
+                                ),
+                            },
+                        )
+                    try:
+                        run_result = runner.run(
+                            messages=planning_messages,
+                            config=chat_config,
+                            registry=registry,
+                            trace=trace,
+                            parent_step_id=run_parent_step,
+                            approval_gate=approval_gate,
+                            skill_snapshot=(
+                                activation.active.snapshot()
+                                if activation.active is not None
+                                else None
+                            ),
+                            execution_callback=record_execution,
+                        )
+                        answer = run_result.answer
+                        plan_created = False
+                    except TaskPlanCreated:
+                        plan_created = True
+
+                if plan_created and execution_mode == "plan_only":
+                    answer = "计划已生成，等待开始执行。"
+                elif plan_created:
+                    planned = agent_runs.get_snapshot(
+                        user_id,
+                        durable_run_id,
+                    )
+                    completed_context: list[str] = []
+                    for step in (planned or {}).get("steps", []):
+                        if step["status"] == "completed":
+                            if step.get("outputSummary"):
+                                completed_context.append(
+                                    str(step["outputSummary"])
+                                )
+                            continue
+                        if step["status"] not in {
+                            "pending",
+                            "failed",
+                        }:
+                            continue
+                        _raise_if_cancelled(cancel_event)
+                        current_plan_step_id = step["id"]
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "running",
+                        )
+                        publish_snapshot("step_updated")
+                        plan_trace_step = trace.start_step(
+                            kind="system",
+                            name="task_plan_step",
+                            title=step["title"],
+                            parent_id=run_parent_step,
+                            details={
+                                "planStepId": current_plan_step_id
+                            },
+                        )
+                        if approval_gate:
+                            approval_gate.set_parent_step_id(
+                                plan_trace_step
+                            )
+                        step_messages = [
+                            dict(message)
+                            for message in base_messages
+                        ]
+                        step_messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Current public plan step: "
+                                    f"{step['title']}\n"
+                                    "Complete only this step. Return a "
+                                    "concise public result. Never reveal "
+                                    "private chain-of-thought.\n"
+                                    "Completed public results: "
+                                    + json.dumps(
+                                        completed_context,
+                                        ensure_ascii=False,
+                                    )
+                                ),
+                            }
+                        )
+                        record_start = len(execution_records)
+                        step_result = runner.run(
+                            messages=step_messages,
+                            config=chat_config,
+                            registry=registry,
+                            trace=trace,
+                            parent_step_id=plan_trace_step,
+                            approval_gate=approval_gate,
+                            skill_snapshot=(
+                                activation.active.snapshot()
+                                if activation.active is not None
+                                else None
+                            ),
+                            execution_callback=record_execution,
+                        )
+                        new_records = execution_records[
+                            record_start:
+                        ]
+                        failed_execution = next(
+                            (
+                                execution
+                                for execution, _ in new_records
+                                if execution.status != "success"
+                            ),
+                            None,
+                        )
+                        if failed_execution is not None:
+                            raise RuntimeError(
+                                failed_execution.error_message
+                                or "Plan step failed."
+                            )
+                        public_result = (
+                            sanitize_trace_value(
+                                step_result.answer,
+                                max_chars=700,
+                            )
+                            or "步骤已完成"
+                        )
+                        trace.finish_step(
+                            plan_trace_step,
+                            status="success",
+                            title=f"{step['title']} completed",
+                            output_summary=public_result,
+                        )
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "completed",
+                            output_summary=public_result,
+                        )
+                        publish_snapshot("step_updated")
+                        completed_context.append(public_result)
+                        answer = step_result.answer
+                    current_plan_step_id = None
+                else:
+                    agent_runs.transition_run(
+                        user_id,
+                        durable_run_id,
+                        "running",
+                    )
+                    publish_snapshot("run_updated")
                 _raise_if_cancelled(cancel_event)
-                answer = run_result.answer
             except Exception as exc:
-                if isinstance(exc, AgentRunCancelled):
+                if isinstance(exc, (AgentRunCancelled, TaskPlanCreated)):
                     raise
-                run_result = None
+                run_failed = True
+                if current_plan_step_id:
+                    snapshot = agent_runs.get_snapshot(
+                        user_id,
+                        durable_run_id,
+                    )
+                    current = next(
+                        (
+                            item
+                            for item in (snapshot or {}).get(
+                                "steps", []
+                            )
+                            if item["id"] == current_plan_step_id
+                        ),
+                        None,
+                    )
+                    if current and current["status"] in {
+                        "running",
+                        "waiting_approval",
+                    }:
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "failed",
+                            error_code="agent_step_failed",
+                        )
                 trace.finish_step(
                     root_step,
                     status="failed",
@@ -534,58 +967,114 @@ def execute_agent_chat(
             if activation.active is not None
             else None
         )
-        if run_result:
-            for execution in run_result.executions:
-                safe_arguments = _safe_public_value(
-                    (
-                        {}
-                        if execution.tool_name
-                        in {"activate_skill", "read_skill_resource"}
-                        else execution.arguments
-                    )
+        for execution, execution_step_id in execution_records:
+            if execution.tool_name == "create_task_plan":
+                continue
+            safe_arguments = _safe_public_value(
+                (
+                    {}
+                    if execution.tool_name
+                    in {"activate_skill", "read_skill_resource"}
+                    else execution.arguments
                 )
-                if not isinstance(safe_arguments, dict):
-                    safe_arguments = {
-                        "summary": str(safe_arguments or "")
-                    }
-                safe_output = (
-                    sanitize_trace_value(
-                        execution.public_output(),
-                        max_chars=4000,
-                    )
-                    or ""
+            )
+            if not isinstance(safe_arguments, dict):
+                safe_arguments = {
+                    "summary": str(safe_arguments or "")
+                }
+            safe_output = (
+                sanitize_trace_value(
+                    execution.public_output(),
+                    max_chars=4000,
                 )
-                safe_error = sanitize_trace_value(
-                    execution.error_message,
-                    max_chars=1000,
+                or ""
+            )
+            safe_error = sanitize_trace_value(
+                execution.error_message,
+                max_chars=1000,
+            )
+            calls.append(
+                log_tool_call(
+                    session_id,
+                    None,
+                    execution.tool_name,
+                    safe_arguments,
+                    safe_output,
+                    status=execution.status,
+                    error_message=safe_error,
+                    latency_ms=execution.latency_ms,
+                    skill_snapshot=execution.skill_snapshot,
+                    run_id=durable_run_id,
+                    run_step_id=execution_step_id,
                 )
-                calls.append(
-                    log_tool_call(
-                        session_id,
-                        None,
-                        execution.tool_name,
-                        safe_arguments,
-                        safe_output,
-                        status=execution.status,
-                        error_message=safe_error,
-                        latency_ms=execution.latency_ms,
-                        skill_snapshot=execution.skill_snapshot,
-                    )
-                )
+            )
+        final_snapshot = agent_runs.get_snapshot(
+            user_id,
+            durable_run_id,
+        )
+        waiting_start = (
+            final_snapshot is not None
+            and final_snapshot["status"] == "waiting_start"
+        )
+        if trace.steps[root_step]["status"] == "running":
             trace.finish_step(
                 root_step,
-                status="success",
-                title="Agent run completed",
+                status="failed" if run_failed else "success",
+                title=(
+                    "Agent run failed"
+                    if run_failed
+                    else (
+                        "Agent plan ready"
+                        if waiting_start
+                        else "Agent run completed"
+                    )
+                ),
+                error_code=(
+                    "agent_run_failed" if run_failed else None
+                ),
             )
         _raise_if_cancelled(cancel_event)
         trace_snapshot = trace.snapshot()
-        message_id = save_message(
-            session_id,
-            "assistant",
-            answer,
-            trace=trace_snapshot,
-            skill_snapshot=skill_snapshot,
+        current_snapshot = agent_runs.get_snapshot(
+            user_id,
+            durable_run_id,
         )
+        existing_message_id = (
+            current_snapshot.get("assistantMessageId")
+            if current_snapshot
+            else None
+        )
+        if existing_message_id:
+            execute(
+                """
+                UPDATE chat_message
+                SET content=:content, trace_json=:trace_json
+                WHERE id=:message_id AND session_id=:session_id
+                """,
+                {
+                    "content": answer,
+                    "trace_json": json.dumps(
+                        trace_snapshot,
+                        ensure_ascii=False,
+                    ),
+                    "message_id": existing_message_id,
+                    "session_id": session_id,
+                },
+            )
+            message_id = int(existing_message_id)
+        else:
+            message_id = save_message(
+                session_id,
+                "assistant",
+                answer,
+                trace=trace_snapshot,
+                skill_snapshot=skill_snapshot,
+            )
+            agent_runs.attach_assistant_message(
+                user_id,
+                durable_run_id,
+                message_id,
+            )
         update_retrieval_run_message(
             retrieval_run.get("id") if retrieval_run else None,
             message_id,
@@ -604,6 +1093,29 @@ def execute_agent_chat(
                     "session_id": session_id,
                 },
             )
+        latest = agent_runs.get_snapshot(
+            user_id,
+            durable_run_id,
+        )
+        if latest and not waiting_start:
+            if run_failed:
+                if latest["status"] in {
+                    "planning",
+                    "running",
+                    "waiting_approval",
+                }:
+                    agent_runs.transition_run(
+                        user_id,
+                        durable_run_id,
+                        "failed",
+                    )
+            elif latest["status"] != "completed":
+                agent_runs.transition_run(
+                    user_id,
+                    durable_run_id,
+                    "completed",
+                )
+        final_snapshot = publish_snapshot("run_updated")
         return {
             "sessionId": session_id,
             "messageId": message_id,
@@ -613,8 +1125,50 @@ def execute_agent_chat(
             "ragQuality": rag_quality,
             "retrievalRun": retrieval_run,
             "trace": trace_snapshot,
-            "runId": trace.run_id,
+            "runId": durable_run_id,
+            "run": final_snapshot,
         }
+    except AgentRunCancelled:
+        snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
+        if current_plan_step_id and snapshot:
+            step = next(
+                (
+                    item
+                    for item in snapshot.get("steps", [])
+                    if item["id"] == current_plan_step_id
+                ),
+                None,
+            )
+            if step and step["status"] in {
+                "running",
+                "waiting_approval",
+            }:
+                agent_runs.transition_step(
+                    user_id,
+                    durable_run_id,
+                    current_plan_step_id,
+                    "cancelled",
+                )
+        snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
+        if snapshot and snapshot["status"] not in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            agent_runs.transition_run(
+                user_id,
+                durable_run_id,
+                "cancelled",
+            )
+        if trace.steps[root_step]["status"] == "running":
+            trace.finish_step(
+                root_step,
+                status="cancelled",
+                title="Agent run cancelled",
+                error_code="agent_run_cancelled",
+            )
+        publish_snapshot("cancelled")
+        raise
     except Exception:
         if trace.steps[root_step]["status"] == "running":
             trace.finish_step(
@@ -623,6 +1177,18 @@ def execute_agent_chat(
                 title="Agent run failed",
                 error_code="agent_run_failed",
             )
+        snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
+        if snapshot and snapshot["status"] in {
+            "planning",
+            "running",
+            "waiting_approval",
+        }:
+            agent_runs.transition_run(
+                user_id,
+                durable_run_id,
+                "failed",
+            )
+        publish_snapshot("error")
         raise
 
 
@@ -636,6 +1202,65 @@ def agent_chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
     )
 
 
+def _publish_agent_result(
+    result: dict[str, Any],
+    publish: Callable[[dict[str, Any]], None],
+) -> None:
+    for call in result.get("toolCalls", []):
+        publish({"type": "tool", **call})
+    for index in range(0, len(result["answer"]), 12):
+        publish(
+            {
+                "type": "answer",
+                "content": result["answer"][index : index + 12],
+            }
+        )
+    for reference in result.get("references", []):
+        publish({"type": "reference", **reference})
+    if result.get("ragQuality", {}).get("enabled"):
+        publish(
+            {
+                "type": "quality",
+                "ragQuality": result["ragQuality"],
+                "retrievalRun": result.get("retrievalRun"),
+            }
+        )
+    publish(
+        {
+            "type": "done",
+            "runId": result["runId"],
+            "sessionId": result["sessionId"],
+            "messageId": result["messageId"],
+            "trace": result["trace"],
+            "run": result.get("run"),
+        }
+    )
+
+
+def execute_persisted_agent_run(
+    user_id: int,
+    run_id: str,
+    action: str,
+    cancel_event: Event,
+    publish: Callable[[dict[str, Any]], None],
+) -> None:
+    request_payload = agent_runs.load_request(user_id, run_id)
+    if request_payload is None:
+        raise HTTPException(status_code=404, detail="Agent run not found.")
+    payload = ChatRequest.model_validate(request_payload)
+    result = execute_agent_chat(
+        payload,
+        user_id,
+        existing_run_id=run_id,
+        run_action=action,
+        cancel_event=cancel_event,
+        event_emit=lambda name, value: publish(
+            {"type": name, **value}
+        ),
+    )
+    _publish_agent_result(result, publish)
+
+
 @router.post("/api/agent/chat/stream", tags=EXTENSION_TAGS, summary="Stream an agent chat")
 def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
     user_id = current_user_id(request)
@@ -643,8 +1268,6 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
 
     def generate() -> Iterable[str]:
         queue: Queue[tuple[str, Any]] = Queue()
-        cancel_event = Event()
-
         def enqueue(
             event_name: str,
             payload_value: dict[str, Any],
@@ -658,25 +1281,38 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
             if isinstance(safe, dict):
                 queue.put((event_name, safe))
 
-        def worker() -> None:
+        def worker(
+            cancel_event: Event,
+            publish: Callable[[dict[str, Any]], None],
+        ) -> None:
+            def emit_both(
+                event_name: str,
+                value: dict[str, Any],
+            ) -> None:
+                enqueue(event_name, value)
+                publish({"type": event_name, **value})
+
             try:
                 result = execute_agent_chat(
                     payload,
                     user_id,
                     run_id=run_id,
-                    trace_emit=lambda event: enqueue(
-                        "agent_step",
-                        event,
-                    ),
-                    approval_emit=lambda event: enqueue(
-                        str(event["type"]),
-                        event,
-                    ),
+                    event_emit=emit_both,
                     cancel_event=cancel_event,
                 )
                 queue.put(("result", result))
+                _publish_agent_result(result, publish)
             except Exception as exc:
                 if isinstance(exc, AgentRunCancelled):
+                    queue.put(
+                        (
+                            "cancelled",
+                            {
+                                "code": "agent_run_cancelled",
+                                "message": "Agent run was cancelled.",
+                            },
+                        )
+                    )
                     return
                 error_code = (
                     exc.code
@@ -701,15 +1337,25 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                     )
                 )
 
-        Thread(
-            target=worker,
-            daemon=True,
-        ).start()
+        if not agent_run_coordinator.start(run_id, worker):
+            yield sse_event(
+                "error",
+                {
+                    "type": "error",
+                    "code": "agent_run_conflict",
+                    "message": "Agent run is already active.",
+                },
+            )
+            return
         try:
             while True:
                 event_name, value = queue.get()
                 if event_name in {
                     "agent_step",
+                    "run_snapshot",
+                    "plan_created",
+                    "run_updated",
+                    "step_updated",
                     "approval_required",
                     "approval_resolved",
                 }:
@@ -722,6 +1368,12 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                             "type": "error",
                             **value,
                         },
+                    )
+                    break
+                if event_name == "cancelled":
+                    yield sse_event(
+                        "cancelled",
+                        {"type": "cancelled", **value},
                     )
                     break
                 result = value
@@ -768,12 +1420,12 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                         "sessionId": result["sessionId"],
                         "messageId": result["messageId"],
                         "trace": result["trace"],
+                        "run": result.get("run"),
                     },
                 )
                 break
         finally:
-            cancel_event.set()
-            approval_broker.cancel_run(run_id)
+            pass
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

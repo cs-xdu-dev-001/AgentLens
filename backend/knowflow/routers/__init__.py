@@ -10,6 +10,10 @@ from .mcp import router as mcp_router
 from .approvals import router as approval_router
 from .skills import router as skill_router
 from .agent_runs import router as agent_run_router
+from .agent_runs import configure_agent_run_executor
+from .extensions import execute_persisted_agent_run
+
+configure_agent_run_executor(execute_persisted_agent_run)
 
 routers = [
     auth_router,

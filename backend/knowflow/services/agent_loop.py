@@ -169,8 +169,6 @@ class AgentRunner:
                     if ex.status=="success" and d and d.becomes_parent_on_success and ex.audit_output:
                         trace.steps[tool_step]["details"] = dict(ex.audit_output)
                     trace.finish_step(tool_step,status="success" if ex.status=="success" else "failed",title=f"{prepared.tool_name} completed" if ex.status=="success" else f"{prepared.tool_name} failed",output_summary=ex.public_output() if ex.status=="success" else ex.error_message,error_code=None if ex.status=="success" else ex.error_code)
-                if execution_callback is not None:
-                    execution_callback(ex, tool_step)
                 if ex.status=="success" and d:
                     if d.remove_after_success:
                         registry.unregister(d.name)
@@ -178,4 +176,6 @@ class AgentRunner:
                         current_parent_step_id=tool_step
                         if approval_gate is not None:
                             approval_gate.set_parent_step_id(tool_step)
+                if execution_callback is not None:
+                    execution_callback(ex, tool_step)
                 working.append({"role":"tool","tool_call_id":ex.call_id,"name":ex.tool_name,"content":ex.model_content()})
