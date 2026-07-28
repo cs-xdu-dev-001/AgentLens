@@ -34,6 +34,24 @@ const skillSourceLabels = {
   upload: "个人",
 };
 
+function safeText(value, fallback = "") {
+  if (
+    typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  return fallback;
+}
+
+function mappedLabel(labels, value) {
+  const key = safeText(value);
+  return Object.prototype.hasOwnProperty.call(labels, key)
+    ? safeText(labels[key])
+    : "";
+}
+
 function skillDisplayName(step) {
   const value = step?.details?.displayName;
   return typeof value === "string" && value.trim()
@@ -63,9 +81,10 @@ function skillDetailsForDisplay(step) {
   )
     ? details.version.trim()
     : "无";
-  const sourceKind = typeof details.sourceKind === "string"
-    ? skillSourceLabels[details.sourceKind]
-    : null;
+  const sourceKind = mappedLabel(
+    skillSourceLabels,
+    details.sourceKind,
+  );
   return {
     displayName: skillDisplayName(step),
     version,
@@ -75,55 +94,82 @@ function skillDetailsForDisplay(step) {
   };
 }
 
+function normalizeTraceStatus(status) {
+  const value = safeText(status);
+  if (value === "completed") return "success";
+  if (value === "error") return "failed";
+  return value;
+}
+
 function traceStatusClass(status) {
-  if (status === "completed") return "success";
-  if (status === "error") return "failed";
-  return status;
+  return normalizeTraceStatus(status);
 }
 
 function displayName(step) {
+  const name = safeText(step?.name);
+  const kind = safeText(step?.kind);
   return (
-    nameLabels[step?.name]
-    || String(step?.name || step?.kind || "步骤").replaceAll("_", " ")
+    mappedLabel(nameLabels, name)
+    || (name || kind || "步骤").replaceAll("_", " ")
   );
+}
+
+function traceKindLabel(kind) {
+  const value = safeText(kind);
+  return mappedLabel(kindLabels, value) || value || "STEP";
+}
+
+function traceStatusLabel(status) {
+  const value = safeText(status);
+  return mappedLabel(statusLabels, value) || value;
+}
+
+function traceDurationLabel(durationMs) {
+  const value = safeText(durationMs);
+  return value ? `${value}ms` : "…";
 }
 
 export function traceStepTitle(step) {
   if (!step) return "";
   if (step.title === "连接中断") return step.title;
-  if (step.kind === "skill") {
-    if (step.status === "running") {
+  const kind = safeText(step.kind);
+  const name = safeText(step.name);
+  const status = normalizeTraceStatus(step.status);
+  if (kind === "skill") {
+    if (status === "running") {
       return `正在激活 ${skillDisplayName(step)}`;
     }
-    if (step.status === "success" || step.status === "completed") {
+    if (status === "success") {
       return `已激活 ${skillDisplayName(step)}`;
     }
     return "Skill 激活失败";
   }
-  if (step.kind === "approval") {
-    if (step.status === "waiting") return "等待工具确认";
-    if (step.status === "success") return "已允许工具执行";
-    if (step.status === "cancelled") return "工具确认已取消";
-    return step.outputSummary?.decision === "timeout"
+  if (kind === "approval") {
+    if (status === "waiting" || status === "running") {
+      return "等待工具确认";
+    }
+    if (status === "success") return "已允许工具执行";
+    if (status === "cancelled") return "工具确认已取消";
+    return safeText(step.outputSummary?.decision) === "timeout"
       ? "工具确认已超时"
       : "已拒绝工具执行";
   }
-  if (step.name === "agent_run") {
-    if (step.status === "running") return "Agent正在处理";
-    if (step.status === "success") return "Agent处理完成";
+  if (name === "agent_run") {
+    if (status === "running") return "Agent正在处理";
+    if (status === "success") return "Agent处理完成";
     return "Agent处理失败";
   }
-  if (step.name === "model_completion") {
-    if (step.status === "running") return "模型正在分析";
-    if (step.status === "success") return "模型步骤完成";
+  if (name === "model_completion") {
+    if (status === "running") return "模型正在分析";
+    if (status === "success") return "模型步骤完成";
     return "模型调用失败";
   }
-  if (step.name === "web_search") {
-    if (step.status === "running") return "正在联网搜索";
-    if (step.status === "success") return "联网搜索完成";
+  if (name === "web_search") {
+    if (status === "running") return "正在联网搜索";
+    if (status === "success") return "联网搜索完成";
     return "联网搜索失败";
   }
-  return `${displayName(step)}${statusLabels[step.status] || ""}`;
+  return `${displayName(step)}${traceStatusLabel(step.status)}`;
 }
 
 function stepDepth(step, byId) {
@@ -149,11 +195,7 @@ function stepDepth(step, byId) {
 function summaryText(value, fallback) {
   if (value == null || value === "") return fallback;
   if (typeof value === "string") return value.trim() || fallback;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+  return safeText(value, fallback);
 }
 
 function traceDetailsForDisplay(step) {
@@ -170,19 +212,33 @@ function traceDetailsForDisplay(step) {
     inputSummary: summaryText(step?.inputSummary, "无"),
     outputSummary: summaryText(
       step?.outputSummary,
-      step?.status === "running" ? "执行中" : "无",
+      normalizeTraceStatus(step?.status) === "running"
+        ? "执行中"
+        : "无",
     ),
-    errorCode: step?.errorCode || null,
+    errorCode: safeText(step?.errorCode, null) || null,
   };
 }
 
 function mcpServerName(step) {
-  const serverName = step?.details?.serverName || step?.serverName;
-  if (serverName) return String(serverName);
-  const parts = String(step?.name || "").split("__");
+  const serverName = (
+    safeText(step?.details?.serverName)
+    || safeText(step?.serverName)
+  );
+  if (serverName) return serverName;
+  const parts = safeText(step?.name).split("__");
   return parts.length >= 3 && parts[0] === "mcp"
     ? parts[1]
     : "MCP";
+}
+
+function traceContextForDisplay(step) {
+  return {
+    serverName: mcpServerName(step),
+    toolName: safeText(step?.details?.toolName) || displayName(step),
+    risk: safeText(step?.details?.risk, null) || null,
+    decision: safeText(step?.outputSummary?.decision, null) || null,
+  };
 }
 
 export function AgentTraceView({ trace = [] }) {
@@ -219,6 +275,12 @@ export function AgentTraceView({ trace = [] }) {
   )?.stepId;
   const selectedDetails = selected
     ? traceDetailsForDisplay(selected)
+    : null;
+  const selectedContext = (
+    selected?.kind === "mcp"
+    || selected?.kind === "approval"
+  )
+    ? traceContextForDisplay(selected)
     : null;
 
   if (!rows.length) {
@@ -263,21 +325,24 @@ export function AgentTraceView({ trace = [] }) {
                 className={"agent-trace-node-dot"}
                 aria-hidden={"true"}
               ></span>
-              <span className={`agent-trace-kind ${step.kind}`}>
-                {kindLabels[step.kind] || step.kind}
+              <span
+                className={[
+                  "agent-trace-kind",
+                  safeText(step.kind),
+                ].filter(Boolean).join(" ")}
+              >
+                {traceKindLabel(step.kind)}
               </span>
               <span className={"agent-trace-node-copy"}>
                 <strong>{traceStepTitle(step)}</strong>
                 <small>
                   {displayName(step)}
                   {" · "}
-                  {statusLabels[step.status] || step.status}
+                  {traceStatusLabel(step.status)}
                 </small>
               </span>
               <span className={"agent-trace-node-time"}>
-                {step.durationMs != null
-                  ? `${step.durationMs}ms`
-                  : "…"}
+                {traceDurationLabel(step.durationMs)}
               </span>
             </button>
           </div>
@@ -306,24 +371,22 @@ export function AgentTraceView({ trace = [] }) {
               </code>
             </div>
           ) : null}
-          {selected.kind === "mcp" || selected.kind === "approval" ? (
+          {selectedContext ? (
             <div className={"agent-trace-context"}>
               <span>{"服务器"}</span>
-              <code>{mcpServerName(selected)}</code>
+              <code>{selectedContext.serverName}</code>
               <span>{"工具"}</span>
-              <code>
-                {selected.details?.toolName || displayName(selected)}
-              </code>
-              {selected.details?.risk ? (
+              <code>{selectedContext.toolName}</code>
+              {selectedContext.risk ? (
                 <>
                   <span>{"风险"}</span>
-                  <code>{selected.details.risk}</code>
+                  <code>{selectedContext.risk}</code>
                 </>
               ) : null}
-              {selected.outputSummary?.decision ? (
+              {selectedContext.decision ? (
                 <>
                   <span>{"决定"}</span>
-                  <code>{selected.outputSummary.decision}</code>
+                  <code>{selectedContext.decision}</code>
                 </>
               ) : null}
             </div>

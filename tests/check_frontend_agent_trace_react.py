@@ -62,14 +62,26 @@ def check_skill_renderer_fixture() -> None:
     source = read(path)
     declarations = "\n".join(
         [
+            extract_object_const(source, "kindLabels"),
+            extract_object_const(source, "nameLabels"),
+            extract_object_const(source, "statusLabels"),
             extract_object_const(source, "skillSourceLabels"),
+            extract_function(source, "safeText"),
+            extract_function(source, "mappedLabel"),
             extract_function(source, "skillDisplayName"),
             extract_function(source, "safeDependencyNames"),
             extract_function(source, "skillDetailsForDisplay"),
             extract_function(source, "summaryText"),
             extract_function(source, "traceDetailsForDisplay"),
+            extract_function(source, "normalizeTraceStatus"),
             extract_function(source, "traceStatusClass"),
+            extract_function(source, "displayName"),
+            extract_function(source, "traceKindLabel"),
+            extract_function(source, "traceStatusLabel"),
+            extract_function(source, "traceDurationLabel"),
             extract_function(source, "traceStepTitle"),
+            extract_function(source, "mcpServerName"),
+            extract_function(source, "traceContextForDisplay"),
         ]
     )
     fixture = {
@@ -157,6 +169,81 @@ const toolTraceDetails = traceDetailsForDisplay({{
   outputSummary: "tool output",
   errorCode: "TOOL_ERROR",
 }});
+const unsafeStep = {{
+  kind: {{ secret: "kind" }},
+  status: ["SECRET status"],
+  name: {{ secret: "name" }},
+  details: {{
+    serverName: {{ secret: "server" }},
+    toolName: ["SECRET tool"],
+    risk: {{ secret: "risk" }},
+  }},
+  inputSummary: {{ token: "SECRET input" }},
+  outputSummary: {{
+    decision: {{ secret: "decision" }},
+    path: "C:/private/output",
+  }},
+  errorCode: {{ key: "SECRET error" }},
+}};
+const unsafeRenderable = {{
+  kindLabel: traceKindLabel(unsafeStep.kind),
+  statusLabel: traceStatusLabel(unsafeStep.status),
+  statusClass: traceStatusClass(unsafeStep.status),
+  duration: traceDurationLabel({{ secret: "duration" }}),
+  title: traceStepTitle(unsafeStep),
+  context: traceContextForDisplay(unsafeStep),
+  details: traceDetailsForDisplay(unsafeStep),
+}};
+const safeScalars = [
+  safeText("text", "fallback"),
+  safeText(7, "fallback"),
+  safeText(false, "fallback"),
+  safeText({{ secret: true }}, "fallback"),
+];
+const prototypeKeys = {{
+  kindLabel: traceKindLabel("__proto__"),
+  statusLabel: traceStatusLabel("constructor"),
+  displayName: displayName({{ name: "toString" }}),
+  sourceKind: skillDetailsForDisplay({{
+    details: {{ sourceKind: "__proto__" }},
+  }}).sourceKind,
+}};
+const normalContext = traceContextForDisplay({{
+  kind: "mcp",
+  name: "mcp__notion__search",
+  details: {{
+    serverName: "notion",
+    toolName: "search",
+    risk: "write",
+  }},
+  outputSummary: {{ decision: "allow" }},
+}});
+const completedSteps = [
+  {{ kind: "skill", status: "completed", details: fixture.details }},
+  {{ kind: "agent", name: "agent_run", status: "completed" }},
+  {{ kind: "model", name: "model_completion", status: "completed" }},
+  {{ kind: "tool", name: "web_search", status: "completed" }},
+  {{ kind: "tool", name: "calculator", status: "completed" }},
+  {{ kind: "mcp", name: "notion_search", status: "completed" }},
+  {{ kind: "approval", status: "completed" }},
+].map((step) => ({{
+  title: traceStepTitle(step),
+  statusClass: traceStatusClass(step.status),
+}}));
+const errorSteps = [
+  {{ kind: "skill", status: "error", details: fixture.details }},
+  {{ kind: "agent", name: "agent_run", status: "error" }},
+  {{ kind: "model", name: "model_completion", status: "failed" }},
+  {{ kind: "tool", name: "web_search", status: "error" }},
+  {{ kind: "tool", name: "calculator", status: "failed" }},
+].map((step) => traceStepTitle(step));
+const runningSteps = [
+  {{ kind: "skill", status: "running", details: fixture.details }},
+  {{ kind: "agent", name: "agent_run", status: "running" }},
+  {{ kind: "model", name: "model_completion", status: "running" }},
+  {{ kind: "tool", name: "web_search", status: "running" }},
+  {{ kind: "approval", status: "running" }},
+].map((step) => traceStepTitle(step));
 console.log(JSON.stringify({{
   titles,
   fallbacks,
@@ -168,6 +255,13 @@ console.log(JSON.stringify({{
   unsafeDetails,
   skillTraceDetails,
   toolTraceDetails,
+  unsafeRenderable,
+  safeScalars,
+  prototypeKeys,
+  normalContext,
+  completedSteps,
+  errorSteps,
+  runningSteps,
 }}));
 """
     completed = subprocess.run(
@@ -236,6 +330,61 @@ console.log(JSON.stringify({{
         "outputSummary": "tool output",
         "errorCode": "TOOL_ERROR",
     }
+    assert result["unsafeRenderable"] == {
+        "kindLabel": "STEP",
+        "statusLabel": "",
+        "statusClass": "",
+        "duration": "…",
+        "title": "步骤",
+        "context": {
+            "serverName": "MCP",
+            "toolName": "步骤",
+            "risk": None,
+            "decision": None,
+        },
+        "details": {
+            "skillDetails": None,
+            "inputSummary": "无",
+            "outputSummary": "无",
+            "errorCode": None,
+        },
+    }
+    assert result["safeScalars"] == ["text", "7", "false", "fallback"]
+    assert result["prototypeKeys"] == {
+        "kindLabel": "__proto__",
+        "statusLabel": "constructor",
+        "displayName": "toString",
+        "sourceKind": "个人",
+    }
+    assert result["normalContext"] == {
+        "serverName": "notion",
+        "toolName": "search",
+        "risk": "write",
+        "decision": "allow",
+    }
+    assert result["completedSteps"] == [
+        {"title": "已激活 研究助理", "statusClass": "success"},
+        {"title": "Agent处理完成", "statusClass": "success"},
+        {"title": "模型步骤完成", "statusClass": "success"},
+        {"title": "联网搜索完成", "statusClass": "success"},
+        {"title": "calculator已完成", "statusClass": "success"},
+        {"title": "notion search已完成", "statusClass": "success"},
+        {"title": "已允许工具执行", "statusClass": "success"},
+    ]
+    assert result["errorSteps"] == [
+        "Skill 激活失败",
+        "Agent处理失败",
+        "模型调用失败",
+        "联网搜索失败",
+        "calculator失败",
+    ]
+    assert result["runningSteps"] == [
+        "正在激活 研究助理",
+        "Agent正在处理",
+        "模型正在分析",
+        "正在联网搜索",
+        "等待工具确认",
+    ]
 
 
 def main() -> None:
@@ -275,7 +424,7 @@ def main() -> None:
         "current step accessibility",
     )
     view = "frontend/react/src/components/AgentTraceView.jsx"
-    require(view, 'step.kind === "skill"', "Skill title branch")
+    require(view, 'kind === "skill"', "Skill title branch")
     require(view, 'skill: "SKILL"', "Skill kind badge")
     for token in (
         "displayName",
@@ -322,6 +471,29 @@ def main() -> None:
         view,
         "selectedDetails.outputSummary",
         "generic output reads isolated detail",
+    )
+    for token in (
+        "selected.details?.toolName",
+        "selected.details?.risk",
+        "selected.outputSummary?.decision",
+        "kindLabels[step.kind] || step.kind",
+        "statusLabels[step.status] || step.status",
+    ):
+        forbid(view, token, "unsafe direct React child")
+    require(
+        view,
+        "traceContextForDisplay(selected)",
+        "safe MCP and approval context",
+    )
+    require(
+        view,
+        "traceKindLabel(step.kind)",
+        "safe kind badge fallback",
+    )
+    require(
+        view,
+        "traceStatusLabel(step.status)",
+        "safe status fallback",
     )
     check_skill_renderer_fixture()
     require(
