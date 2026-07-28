@@ -279,10 +279,33 @@ class SkillStore:
     @staticmethod
     def _inside(root: Path, relative: str) -> Path:
         root = Path(root).resolve()
-        candidate_relative = Path(relative)
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or "\\" in relative
+            or "\x00" in relative
+            or relative.startswith("/")
+            or relative.endswith("/")
+            or "//" in relative
+        ):
+            raise SkillStoreError("skill_invalid_path")
+        parts = relative.split("/")
+        if any(part in {"", ".", ".."} for part in parts):
+            raise SkillStoreError("skill_invalid_path")
+        for part in parts:
+            stem = part.split(".", 1)[0].upper()
+            if (
+                ":" in part
+                or part.endswith((" ", "."))
+                or any(ord(character) < 32 for character in part)
+                or stem in _WINDOWS_DEVICE_NAMES
+                or re.fullmatch(r"(?:COM|LPT)[1-9]", stem)
+            ):
+                raise SkillStoreError("skill_invalid_path")
+        candidate_relative = PurePosixPath(*parts)
         if candidate_relative.is_absolute():
             raise SkillStoreError("skill_invalid_path")
-        candidate = (root / candidate_relative).resolve()
+        candidate = root.joinpath(*candidate_relative.parts).resolve()
         try:
             candidate.relative_to(root)
         except ValueError as exc:

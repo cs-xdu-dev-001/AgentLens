@@ -134,6 +134,9 @@ def main() -> None:
         ".",
         "",
         "foo\\..",
+        "valid\\child",
+        "C:\\temp\\skill",
+        "\\\\server\\share\\skill",
     )
     for storage_root in (
         runtime.skills.skill_dir,
@@ -171,6 +174,11 @@ def main() -> None:
         assert runtime.skills._inside(
             storage_root, "valid-child"
         ) == removable.resolve()
+        nested = storage_root / "valid" / "child"
+        nested.mkdir(parents=True)
+        assert runtime.skills._inside(
+            storage_root, "valid/child"
+        ) == nested.resolve()
         runtime.skills._cleanup_inside(storage_root, "valid-child")
         assert not removable.exists()
         assert storage_root.is_dir()
