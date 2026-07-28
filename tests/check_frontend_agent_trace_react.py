@@ -66,6 +66,8 @@ def check_skill_renderer_fixture() -> None:
             extract_function(source, "skillDisplayName"),
             extract_function(source, "safeDependencyNames"),
             extract_function(source, "skillDetailsForDisplay"),
+            extract_function(source, "summaryText"),
+            extract_function(source, "traceDetailsForDisplay"),
             extract_function(source, "traceStatusClass"),
             extract_function(source, "traceStepTitle"),
         ]
@@ -111,6 +113,12 @@ const sources = ["builtin", "personal", "github", "upload"].map(
     details: {{ ...fixture.details, sourceKind }},
   }}).sourceKind,
 );
+const missingSource = skillDetailsForDisplay({{
+  details: {{ ...fixture.details, sourceKind: undefined }},
+}}).sourceKind;
+const unknownSource = skillDetailsForDisplay({{
+  details: {{ ...fixture.details, sourceKind: "unknown" }},
+}}).sourceKind;
 const statusClasses = statuses.map(traceStatusClass);
 const unsafeDetails = skillDetailsForDisplay({{
   details: {{
@@ -129,13 +137,37 @@ const unsafeDetails = skillDetailsForDisplay({{
     extra: "must not escape the whitelist",
   }},
 }});
+const skillTraceDetails = traceDetailsForDisplay({{
+  ...fixture,
+  inputSummary: {{
+    systemMessage: "SECRET input system",
+    path: "C:/private/input",
+    token: "secret-input-token",
+  }},
+  outputSummary: {{
+    body: "SECRET output body",
+    manifest: {{ key: "secret-output-key" }},
+    email: "private@example.com",
+  }},
+  errorCode: "SECRET_ERROR_CODE",
+}});
+const toolTraceDetails = traceDetailsForDisplay({{
+  kind: "tool",
+  inputSummary: "tool input",
+  outputSummary: "tool output",
+  errorCode: "TOOL_ERROR",
+}});
 console.log(JSON.stringify({{
   titles,
   fallbacks,
   sources,
+  missingSource,
+  unknownSource,
   statusClasses,
   details: skillDetailsForDisplay(fixture),
   unsafeDetails,
+  skillTraceDetails,
+  toolTraceDetails,
 }}));
 """
     completed = subprocess.run(
@@ -163,6 +195,8 @@ console.log(JSON.stringify({{
         "Skill 激活失败",
     ]
     assert result["sources"] == ["内置", "个人", "个人", "个人"]
+    assert result["missingSource"] == "个人"
+    assert result["unknownSource"] == "个人"
     assert result["statusClasses"] == [
         "running",
         "success",
@@ -180,9 +214,27 @@ console.log(JSON.stringify({{
     assert result["unsafeDetails"] == {
         "displayName": "Skill",
         "version": "无",
-        "sourceKind": "未知",
+        "sourceKind": "个人",
         "requiredTools": ["valid-tool"],
         "requiredMcp": [],
+    }
+    assert result["skillTraceDetails"] == {
+        "skillDetails": {
+            "displayName": "研究助理",
+            "version": "1.2.3",
+            "sourceKind": "内置",
+            "requiredTools": ["web_search", "reader"],
+            "requiredMcp": ["notion"],
+        },
+        "inputSummary": None,
+        "outputSummary": None,
+        "errorCode": None,
+    }
+    assert result["toolTraceDetails"] == {
+        "skillDetails": None,
+        "inputSummary": "tool input",
+        "outputSummary": "tool output",
+        "errorCode": "TOOL_ERROR",
     }
 
 
@@ -248,11 +300,29 @@ def main() -> None:
         "selected.details?.token",
         "selected.details?.key",
         "selected.details?.email",
+        "summaryText(selected.inputSummary",
+        "summaryText(selected.outputSummary",
+        "selected.errorCode",
         "JSON.stringify(selected.details",
         "JSON.stringify(details",
         "summaryText(selected.details",
     ):
         forbid(view, token, "whole/private Skill detail rendering")
+    require(
+        view,
+        "traceDetailsForDisplay(selected)",
+        "Skill and generic detail isolation",
+    )
+    require(
+        view,
+        "selectedDetails.inputSummary",
+        "generic input reads isolated detail",
+    )
+    require(
+        view,
+        "selectedDetails.outputSummary",
+        "generic output reads isolated detail",
+    )
     check_skill_renderer_fixture()
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",

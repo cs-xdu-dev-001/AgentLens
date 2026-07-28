@@ -69,7 +69,7 @@ function skillDetailsForDisplay(step) {
   return {
     displayName: skillDisplayName(step),
     version,
-    sourceKind: sourceKind || "未知",
+    sourceKind: sourceKind || "个人",
     requiredTools: safeDependencyNames(details.requiredTools),
     requiredMcp: safeDependencyNames(details.requiredMcp),
   };
@@ -156,6 +156,26 @@ function summaryText(value, fallback) {
   }
 }
 
+function traceDetailsForDisplay(step) {
+  if (step?.kind === "skill") {
+    return {
+      skillDetails: skillDetailsForDisplay(step),
+      inputSummary: null,
+      outputSummary: null,
+      errorCode: null,
+    };
+  }
+  return {
+    skillDetails: null,
+    inputSummary: summaryText(step?.inputSummary, "无"),
+    outputSummary: summaryText(
+      step?.outputSummary,
+      step?.status === "running" ? "执行中" : "无",
+    ),
+    errorCode: step?.errorCode || null,
+  };
+}
+
 function mcpServerName(step) {
   const serverName = step?.details?.serverName || step?.serverName;
   if (serverName) return String(serverName);
@@ -197,8 +217,8 @@ export function AgentTraceView({ trace = [] }) {
       (step) => step.status === "running",
     )
   )?.stepId;
-  const selectedSkillDetails = selected?.kind === "skill"
-    ? skillDetailsForDisplay(selected)
+  const selectedDetails = selected
+    ? traceDetailsForDisplay(selected)
     : null;
 
   if (!rows.length) {
@@ -268,21 +288,21 @@ export function AgentTraceView({ trace = [] }) {
           className={"agent-trace-detail"}
           aria-label={"步骤详情"}
         >
-          {selectedSkillDetails ? (
+          {selectedDetails.skillDetails ? (
             <div className={"agent-trace-context"}>
               <span>{"Skill"}</span>
-              <code>{selectedSkillDetails.displayName}</code>
+              <code>{selectedDetails.skillDetails.displayName}</code>
               <span>{"版本"}</span>
-              <code>{selectedSkillDetails.version}</code>
+              <code>{selectedDetails.skillDetails.version}</code>
               <span>{"来源"}</span>
-              <code>{selectedSkillDetails.sourceKind}</code>
+              <code>{selectedDetails.skillDetails.sourceKind}</code>
               <span>{"所需工具"}</span>
               <code>
-                {selectedSkillDetails.requiredTools.join(", ") || "无"}
+                {selectedDetails.skillDetails.requiredTools.join(", ") || "无"}
               </code>
               <span>{"所需MCP"}</span>
               <code>
-                {selectedSkillDetails.requiredMcp.join(", ") || "无"}
+                {selectedDetails.skillDetails.requiredMcp.join(", ") || "无"}
               </code>
             </div>
           ) : null}
@@ -308,27 +328,22 @@ export function AgentTraceView({ trace = [] }) {
               ) : null}
             </div>
           ) : null}
-          <div>
-            <span>{"公开输入"}</span>
-            <code>
-              {summaryText(selected.inputSummary, "无")}
-            </code>
-          </div>
-          <div>
-            <span>{"结果摘要"}</span>
-            <code>
-              {summaryText(
-                selected.outputSummary,
-                selected.status === "running"
-                  ? "执行中"
-                  : "无",
-              )}
-            </code>
-          </div>
-          {selected.errorCode ? (
+          {selectedDetails.inputSummary !== null ? (
+            <div>
+              <span>{"公开输入"}</span>
+              <code>{selectedDetails.inputSummary}</code>
+            </div>
+          ) : null}
+          {selectedDetails.outputSummary !== null ? (
+            <div>
+              <span>{"结果摘要"}</span>
+              <code>{selectedDetails.outputSummary}</code>
+            </div>
+          ) : null}
+          {selectedDetails.errorCode ? (
             <div>
               <span>{"错误"}</span>
-              <code>{selected.errorCode}</code>
+              <code>{selectedDetails.errorCode}</code>
             </div>
           ) : null}
         </section>
