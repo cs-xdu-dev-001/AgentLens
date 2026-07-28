@@ -1,10 +1,11 @@
 import ast
+import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_SUFFIXES = {".py", ".js", ".jsx", ".mjs", ".html", ".css", ".md", ".txt", ".json", ".yml", ".yaml", ".toml", ".cmd", ".sql"}
-IGNORED_PARTS = {".git", "node_modules", "dist", "__pycache__"}
+MAX_TEXT_SCAN_BYTES = 2 * 1024 * 1024
 FORBIDDEN_TEXT = ["?" * 4, "\ufeff"]
 FORBIDDEN_TRACKED_PATTERNS = [
     "backend/.env",
@@ -72,36 +73,118 @@ def check_forbidden_path_contract() -> None:
     assert not any(is_forbidden_tracked_path(path) for path in allowed)
 
 
-def iter_text_files():
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
+def check_text_scan_uses_git_index(tracked: list[str]) -> None:
+    ignored_parent = ROOT / ".tmp-test"
+    created_ignored_parent = not ignored_parent.exists()
+    ignored_parent.mkdir(parents=True, exist_ok=True)
+    untracked_path = None
+    fake_secret = "KNOWFLOW_API_TOKEN=ghp_" + ("x" * 40) + "\n"
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="release-hygiene-", dir=ignored_parent
+        ) as ignored_dir:
+            ignored_path = Path(ignored_dir) / "ignored-secret.md"
+            ignored_path.write_text(fake_secret, encoding="utf-8")
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                prefix="check_release_hygiene_untracked_",
+                suffix=".py",
+                dir=ROOT / "tests",
+                delete=False,
+            ) as untracked_file:
+                untracked_file.write(
+                    "from fastapi.testclient import TestClient\n"
+                    f"fake_secret = {fake_secret.strip()!r}\n"
+                    "client = TestClient(None)\n"
+                )
+                untracked_path = Path(untracked_file.name)
+
+            text_files = list(iter_text_files(tracked))
+            scanned = {path.resolve() for path in text_files}
+            assert (ROOT / "README.md").resolve() in scanned
+            assert ignored_path.resolve() not in scanned
+            assert untracked_path.resolve() not in scanned
+            assert untracked_path.resolve() not in {
+                path.resolve()
+                for path in authenticated_testclient_files(text_files)
+            }
+    finally:
+        if untracked_path is not None:
+            untracked_path.unlink(missing_ok=True)
+        if created_ignored_parent:
+            try:
+                ignored_parent.rmdir()
+            except OSError:
+                pass
+
+
+def iter_text_files(tracked: list[str]):
+    root = ROOT.resolve(strict=True)
+    for relative in tracked:
+        try:
+            path = (ROOT / relative).resolve(strict=True)
+            path.relative_to(root)
+            file_stat = path.stat()
+        except (OSError, RuntimeError, ValueError):
             continue
-        relative = path.relative_to(ROOT).as_posix()
-        if any(part in IGNORED_PARTS for part in relative.split("/")):
+        if not path.is_file() or file_stat.st_size > MAX_TEXT_SCAN_BYTES:
             continue
-        if path.suffix in TEXT_SUFFIXES or path.name in {".gitignore", ".gitattributes"}:
-            yield path
+        if path.suffix not in TEXT_SUFFIXES and path.name not in {
+            ".gitignore",
+            ".gitattributes",
+        }:
+            continue
+        try:
+            with path.open("rb") as stream:
+                if b"\0" in stream.read(8192):
+                    continue
+        except OSError:
+            continue
+        yield path
 
 
 def tracked_files() -> list[str]:
-    git_dir = ROOT / ".git"
-    if not git_dir.exists():
-        return []
     import subprocess
 
-    result = subprocess.run(
-        ["git", "-c", f"safe.directory={ROOT.as_posix()}", "-C", str(ROOT), "ls-files"],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={ROOT.as_posix()}",
+                "-C",
+                str(ROOT),
+                "ls-files",
+                "--cached",
+                "-z",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise AssertionError(
+            "release hygiene could not read the Git index with git ls-files --cached"
+        ) from error
+    return [
+        path.replace("\\", "/")
+        for path in result.stdout.split("\0")
+        if path
+    ]
 
 
-def authenticated_testclient_files() -> list[Path]:
+def authenticated_testclient_files(text_files: list[Path]) -> list[Path]:
     result = []
-    for path in (ROOT / "tests").glob("check_*.py"):
+    tests_root = (ROOT / "tests").resolve()
+    for path in text_files:
+        if (
+            path.parent != tests_root
+            or not path.name.startswith("check_")
+            or path.suffix != ".py"
+        ):
+            continue
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text, filename=str(path))
         relative = path.relative_to(ROOT).as_posix()
@@ -179,9 +262,12 @@ def isolates_secure_cookie_before_app_import(path: Path) -> bool:
 
 
 def main() -> None:
+    tracked = tracked_files()
     check_forbidden_path_contract()
+    check_text_scan_uses_git_index(tracked)
+    text_files = list(iter_text_files(tracked))
     text_offenders = []
-    for path in iter_text_files():
+    for path in text_files:
         text = path.read_text(encoding="utf-8", errors="replace")
         for token in FORBIDDEN_TEXT:
             if token in text:
@@ -189,14 +275,13 @@ def main() -> None:
     if text_offenders:
         raise AssertionError("release hygiene text issues:\n" + "\n".join(text_offenders[:80]))
 
-    tracked = tracked_files()
     tracked_offenders = [path for path in tracked if is_forbidden_tracked_path(path)]
     if tracked_offenders:
         raise AssertionError("sensitive or generated files are tracked:\n" + "\n".join(sorted(set(tracked_offenders))))
 
     cookie_env_offenders = [
         path.relative_to(ROOT).as_posix()
-        for path in authenticated_testclient_files()
+        for path in authenticated_testclient_files(text_files)
         if not isolates_secure_cookie_before_app_import(path)
     ]
     if cookie_env_offenders:

@@ -137,7 +137,7 @@ def secret_findings(text: str) -> list[str]:
         r"(?:SECRET|TOKEN|API_KEY|PASSWORD|PRIVATE_KEY|ACCESS_KEY)"
     )
     assignment = re.compile(
-        r"^\s*(?:\$env:)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$",
+        r"^\s*(?:(?:export|set)\s+|\$env:)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$",
         flags=re.MULTILINE,
     )
     placeholders = (
@@ -170,9 +170,22 @@ def check_document_examples_for_secrets() -> None:
         ]
     )
     assert secret_findings("KNOWFLOW_GITHUB_CLIENT_SECRET=your_client_secret") == []
-    assert secret_findings(
-        "KNOWFLOW_API_TOKEN=release-value-" + "x" * 24
-    ), "secret scanner must reject non-placeholder credential values"
+    secret_value = "release-value-" + "x" * 24
+    for assignment in (
+        f"KNOWFLOW_API_TOKEN={secret_value}",
+        f"export KNOWFLOW_API_TOKEN={secret_value}",
+        f"$env:KNOWFLOW_API_TOKEN={secret_value}",
+        f"set KNOWFLOW_API_TOKEN={secret_value}",
+    ):
+        assert secret_findings(
+            assignment
+        ), "secret scanner must reject non-placeholder credential values"
+    for placeholder in (
+        "export KNOWFLOW_API_TOKEN=your_token",
+        "$env:KNOWFLOW_API_TOKEN=''",
+        "set KNOWFLOW_API_TOKEN=",
+    ):
+        assert secret_findings(placeholder) == []
     offenders = secret_findings(docs)
     assert not offenders, f"documentation contains secret-like values: {offenders}"
 
