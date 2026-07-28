@@ -199,6 +199,7 @@ SQLite和MySQL建表、迁移及索引必须同步更新。所有查询必须通
 GET  /api/agent/runs/{run_id}
 GET  /api/agent/runs/{run_id}/events
 POST /api/agent/runs/{run_id}/start
+POST /api/agent/runs/{run_id}/replan
 POST /api/agent/runs/{run_id}/resume
 POST /api/agent/runs/{run_id}/cancel
 ```
