@@ -164,3 +164,40 @@ export const documentApi = {
 export const retrievalApi = {
   debug: (payload) => apiRequest("/api/retrieval/debug", { method: "POST", body: payload }),
 };
+
+export const skillApi = {
+  list: () => apiRequest("/api/skills"),
+  get: (id) => apiRequest(`/api/skills/${id}`),
+  content: (id) => apiRequest(`/api/skills/${id}/content`),
+  inspectGitHub: (payload) =>
+    apiRequest("/api/skills/import/github/inspect", {
+      method: "POST",
+      body: payload,
+    }),
+  inspectUpload: (file) => {
+    const data = new FormData();
+    data.append("file", file);
+    return apiRequest("/api/skills/import/upload/inspect", {
+      method: "POST",
+      body: data,
+    });
+  },
+  install: (importId, enabled = false) =>
+    apiRequest(`/api/skills/import/${importId}/install`, {
+      method: "POST",
+      body: { enabled },
+    }),
+  setEnabled: (id, enabled) =>
+    apiRequest(`/api/skills/${id}`, {
+      method: "PATCH",
+      body: { enabled },
+    }),
+  checkUpdate: (id) =>
+    apiRequest(`/api/skills/${id}/check-update`, { method: "POST" }),
+  update: (id, enabled = false) =>
+    apiRequest(`/api/skills/${id}/update`, {
+      method: "POST",
+      body: { enabled },
+    }),
+  delete: (id) => apiRequest(`/api/skills/${id}`, { method: "DELETE" }),
+};

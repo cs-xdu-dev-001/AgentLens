@@ -48,6 +48,16 @@ function SessionMenuIcon({ type }) {
 }
 
 function SidebarToolIcon({ type }) {
+  if (type === "skills") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"m12 3 7 4v10l-7 4-7-4V7l7-4Z"} />
+        <path d={"m5.5 7.3 6.5 3.8 6.5-3.8M12 11.1V21"} />
+        <path d={"M18.8 2.8v3M17.3 4.3h3"} />
+      </svg>
+    );
+  }
+
   if (type === "tools") {
     return (
       <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
@@ -552,6 +562,7 @@ export function Sidebar({ activePage = "chat", collapsed = false }) {
               className={activePage === tool.page ? "sidebar-tool active" : "sidebar-tool"}
               data-page={tool.page}
               type={"button"}
+              aria-label={tool.label}
               onClick={() => handlePageChange(tool.page)}
             >
               <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>

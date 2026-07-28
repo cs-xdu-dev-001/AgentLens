@@ -6,6 +6,12 @@ export const sidebarTools = [
     page: "knowledge",
   },
   {
+    key: "skills",
+    label: "Skills",
+    icon: "skills",
+    page: "skills",
+  },
+  {
     key: "tools",
     label: "工具与MCP",
     icon: "tools",
