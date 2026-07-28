@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,15 @@ def forbid(path: str, needle: str, label: str) -> None:
     text = read(path)
     if needle in text:
         raise AssertionError(f"unexpected {label} in {path}: {needle}")
+
+
+def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
+    position = 0
+    for needle in needles:
+        found = text.find(needle, position)
+        if found < 0:
+            raise AssertionError(f"missing or out-of-order {label}: {needle}")
+        position = found + len(needle)
 
 
 def main() -> None:
@@ -54,6 +64,61 @@ def main() -> None:
     require(page, "skillApi.setEnabled", "non-optimistic enabled mutation")
     require(page, "knowflow:react-skills-updated", "mutation event")
     require(page, "sourceKind === \"builtin\"", "builtin filtering")
+    page_text = read(page)
+    require(page, "mountedRef", "mounted request guard")
+    require(page, "activeRef", "active page request guard")
+    require(page, "requestGenerationRef", "request generation guard")
+    require_in_order(
+        page_text,
+        (
+            "const requestId = ++requestGenerationRef.current;",
+            "const items = await skillApi.list();",
+            "if (!canCommitRequest(requestId)) return;",
+            "setSkills(",
+        ),
+        "latest-only Skill list success write",
+    )
+    load_match = re.search(
+        r"const loadSkills = useCallback\(async \(\) => \{(?P<body>.*?)\n  \}, "
+        r"\[canCommitRequest\]\);",
+        page_text,
+        flags=re.DOTALL,
+    )
+    if not load_match:
+        raise AssertionError("loadSkills must remain a stable async callback")
+    load_body = load_match.group("body")
+    if load_body.count("if (!canCommitRequest(requestId)) return;") < 3:
+        raise AssertionError(
+            "success, error, and finally writes must all use the latest request guard"
+        )
+    require_in_order(
+        load_body,
+        (
+            "} catch (error) {",
+            "if (!canCommitRequest(requestId)) return;",
+            "setLoadError(",
+            "} finally {",
+            "if (!canCommitRequest(requestId)) return;",
+            "setLoading(false);",
+        ),
+        "latest-only Skill list error and loading writes",
+    )
+    cleanup_match = re.search(
+        r"return \(\) => \{\s*mountedRef\.current = false;\s*"
+        r"requestGenerationRef\.current \+= 1;\s*\};",
+        page_text,
+    )
+    if not cleanup_match:
+        raise AssertionError("unmount must invalidate every in-flight Skill list request")
+    require_in_order(
+        page_text,
+        (
+            "activeRef.current = active;",
+            "requestGenerationRef.current += 1;",
+            "if (active) loadSkills();",
+        ),
+        "inactive request invalidation before active-only reload",
+    )
 
     dialog = "frontend/react/src/components/SkillInstallDialog.jsx"
     require(dialog, "sourceTab", "install source tabs")

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi } from "../api/client.js";
 import { SkillDetailDrawer } from "./SkillDetailDrawer.jsx";
 import { SkillInstallDialog } from "./SkillInstallDialog.jsx";
@@ -48,21 +48,48 @@ export function SkillsPage({ active = false }) {
   const [rowErrorById, setRowErrorById] = useState({});
   const [installOpen, setInstallOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState(null);
+  const mountedRef = useRef(false);
+  const activeRef = useRef(active);
+  const requestGenerationRef = useRef(0);
+  activeRef.current = active;
+
+  const canCommitRequest = useCallback(
+    (requestId) =>
+      mountedRef.current &&
+      activeRef.current &&
+      requestId === requestGenerationRef.current,
+    [],
+  );
 
   const loadSkills = useCallback(async () => {
+    const requestId = ++requestGenerationRef.current;
+    if (!canCommitRequest(requestId)) return;
     setLoading(true);
     setLoadError("");
     try {
       const items = await skillApi.list();
+      if (!canCommitRequest(requestId)) return;
       setSkills(Array.isArray(items) ? items : []);
     } catch (error) {
+      if (!canCommitRequest(requestId)) return;
       setLoadError(error?.message || "无法加载Skills，请稍后重试。");
     } finally {
+      if (!canCommitRequest(requestId)) return;
       setLoading(false);
     }
+  }, [canCommitRequest]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestGenerationRef.current += 1;
+    };
   }, []);
 
   useEffect(() => {
+    activeRef.current = active;
+    requestGenerationRef.current += 1;
     if (active) loadSkills();
   }, [active, loadSkills]);
 
