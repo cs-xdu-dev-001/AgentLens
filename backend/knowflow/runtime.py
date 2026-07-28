@@ -645,14 +645,18 @@ def save_message(
     role: str,
     content: str,
     trace: list[dict[str, Any]] | None = None,
+    skill_snapshot: dict[str, Any] | None = None,
 ) -> int:
+    snapshot = skill_snapshot or {}
     message_id = execute(
         """
         INSERT INTO chat_message(
-            session_id, role, content, trace_json, created_at
+            session_id, role, content, trace_json, skill_id,
+            skill_slug, skill_version, skill_content_hash, created_at
         )
         VALUES (
-            :session_id, :role, :content, :trace_json, :created_at
+            :session_id, :role, :content, :trace_json, :skill_id,
+            :skill_slug, :skill_version, :skill_content_hash, :created_at
         )
         """,
         {
@@ -664,6 +668,10 @@ def save_message(
                 if trace
                 else None
             ),
+            "skill_id": snapshot.get("skillId"),
+            "skill_slug": snapshot.get("skillSlug"),
+            "skill_version": snapshot.get("skillVersion"),
+            "skill_content_hash": snapshot.get("skillContentHash"),
             "created_at": now_str(),
         },
     )
@@ -679,7 +687,7 @@ def normalize_chat_message(
         trace = json.loads(trace_json) if trace_json else []
     except (TypeError, json.JSONDecodeError):
         trace = []
-    return {
+    result = {
         "id": row["id"],
         "sessionId": row["session_id"],
         "role": row["role"],
@@ -687,6 +695,20 @@ def normalize_chat_message(
         "trace": trace if isinstance(trace, list) else [],
         "createdAt": str(row["created_at"]),
     }
+    snapshot_values = (
+        row.get("skill_id"),
+        row.get("skill_slug"),
+        row.get("skill_version"),
+        row.get("skill_content_hash"),
+    )
+    if all(value is not None for value in snapshot_values):
+        result["skill"] = {
+            "id": int(snapshot_values[0]),
+            "slug": str(snapshot_values[1]),
+            "version": str(snapshot_values[2]),
+            "contentHash": str(snapshot_values[3]),
+        }
+    return result
 
 
 def get_recent_history(session_id: str, limit: int = 8) -> list[dict[str, Any]]:
@@ -1070,7 +1092,9 @@ def log_tool_call(
     error_message: str | None = None,
     started_at: float | None = None,
     latency_ms: int | None = None,
+    skill_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    snapshot = skill_snapshot or {}
     latency_value = (
         latency_ms
         if latency_ms is not None
@@ -1080,11 +1104,13 @@ def log_tool_call(
         """
         INSERT INTO agent_tool_call(
           session_id, message_id, tool_name, input_json, output_text,
-          status, error_message, latency_ms, created_at
+          status, error_message, latency_ms, skill_id, skill_slug,
+          skill_version, skill_content_hash, created_at
         )
         VALUES (
           :session_id, :message_id, :tool_name, :input_json, :output_text,
-          :status, :error_message, :latency_ms, :created_at
+          :status, :error_message, :latency_ms, :skill_id, :skill_slug,
+          :skill_version, :skill_content_hash, :created_at
         )
         """,
         {
@@ -1096,6 +1122,10 @@ def log_tool_call(
             "status": status,
             "error_message": error_message,
             "latency_ms": latency_value,
+            "skill_id": snapshot.get("skillId"),
+            "skill_slug": snapshot.get("skillSlug"),
+            "skill_version": snapshot.get("skillVersion"),
+            "skill_content_hash": snapshot.get("skillContentHash"),
             "created_at": now_str(),
         },
     )

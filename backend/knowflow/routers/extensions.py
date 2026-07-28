@@ -14,6 +14,10 @@ from ..services.agent_trace import (
     sanitize_trace_value,
 )
 from ..services.approval import AgentApprovalGate
+from ..services.skill_runtime import (
+    SkillActivationSession,
+    SkillRuntimeError,
+)
 from ..services.mcp_client import (
     McpClientError,
     McpRunSessionPool,
@@ -315,8 +319,7 @@ def execute_agent_chat(
     if payload.knowledgeBaseId:
         get_kb(payload.knowledgeBaseId, user_id)
     session_id = ensure_session(payload.sessionId, payload.knowledgeBaseId, payload.chatModelConfigId, user_id)
-    save_message(session_id, "user", payload.question)
-    history = get_recent_history(session_id)
+    history: list[dict[str, Any]] = []
     trace = AgentTraceRecorder(
         emit=trace_emit,
         run_id=run_id,
@@ -380,6 +383,65 @@ def execute_agent_chat(
             max_response_bytes=MCP_MAX_RESPONSE_BYTES,
             allow_private=MCP_ALLOW_PRIVATE_NETWORKS,
         ) as mcp_pool:
+            registry = build_tool_registry(
+                user_id,
+                payload.enableTools,
+                mcp_pool=mcp_pool,
+                cancel_event=cancel_event,
+            )
+            available_skill_dependencies = set(registry.names())
+            if payload.enableTools:
+                available_skill_dependencies.update(
+                    str(server.get("slug") or "")
+                    for server in mcp_configs.list_for_user(user_id)
+                    if server.get("enabled")
+                    and server.get("status") == "connected"
+                    and server.get("slug")
+                )
+            activation = SkillActivationSession(
+                store=skills,
+                user_id=user_id,
+                available_tools=available_skill_dependencies,
+            )
+            run_parent_step = root_step
+            explicit_activation = None
+            if payload.skillId is not None:
+                try:
+                    explicit_activation = activation.activate(
+                        payload.skillId
+                    )
+                except SkillRuntimeError as exc:
+                    status_code = (
+                        404
+                        if exc.code == "skill_not_found"
+                        else 409
+                    )
+                    raise HTTPException(
+                        status_code=status_code,
+                        detail={
+                            "code": exc.code,
+                            "message": str(exc),
+                            "data": None,
+                        },
+                    ) from exc
+                activation.register_read_resource(registry)
+                audit = explicit_activation.audit_output or {}
+                run_parent_step = trace.start_step(
+                    kind="skill",
+                    name="activate_skill",
+                    title="Activating Skill",
+                    parent_id=root_step,
+                    input_summary={"skillId": payload.skillId},
+                    details=audit,
+                )
+                trace.finish_step(
+                    run_parent_step,
+                    status="success",
+                    title="Skill activated",
+                    output_summary=audit,
+                )
+            save_message(session_id, "user", payload.question)
+            history = get_recent_history(session_id)
             approval_gate = (
                 AgentApprovalGate(
                     broker=approval_broker,
@@ -387,18 +449,16 @@ def execute_agent_chat(
                     run_id=trace.run_id,
                     emit=approval_emit,
                     trace=trace,
-                    parent_step_id=root_step,
+                    parent_step_id=run_parent_step,
                 )
                 if approval_emit
                 else None
             )
-            registry = build_tool_registry(
-                user_id,
-                payload.enableTools,
-                mcp_pool=mcp_pool,
-                approval_gate=approval_gate,
-                cancel_event=cancel_event,
-            )
+            catalog = []
+            if payload.skillId is None:
+                catalog = activation.catalog()
+                if catalog:
+                    activation.register_activation_tool(registry)
             messages = build_messages(
                 payload.question,
                 chunks,
@@ -408,6 +468,20 @@ def execute_agent_chat(
                 chat_config=chat_config,
                 attachments=payload.attachments,
             )
+            if catalog:
+                messages[0]["content"] += (
+                    "\nAvailable Skills (activate at most one with "
+                    "activate_skill): "
+                    + json.dumps(catalog, ensure_ascii=False)
+                )
+            if activation.active is not None:
+                messages.insert(
+                    1,
+                    {
+                        "role": "system",
+                        "content": activation.active.system_message,
+                    },
+                )
             try:
                 run_result = AgentRunner(
                     gateway=_CancellationAwareGateway(
@@ -420,7 +494,7 @@ def execute_agent_chat(
                     config=chat_config,
                     registry=registry,
                     trace=trace,
-                    parent_step_id=root_step,
+                    parent_step_id=run_parent_step,
                     approval_gate=approval_gate,
                 )
                 _raise_if_cancelled(cancel_event)
@@ -450,10 +524,20 @@ def execute_agent_chat(
                         attachments=payload.attachments,
                     )
         _raise_if_cancelled(cancel_event)
+        skill_snapshot = (
+            activation.active.snapshot()
+            if activation.active is not None
+            else None
+        )
         if run_result:
             for execution in run_result.executions:
                 safe_arguments = _safe_public_value(
-                    execution.arguments
+                    (
+                        {}
+                        if execution.tool_name
+                        in {"activate_skill", "read_skill_resource"}
+                        else execution.arguments
+                    )
                 )
                 if not isinstance(safe_arguments, dict):
                     safe_arguments = {
@@ -461,7 +545,7 @@ def execute_agent_chat(
                     }
                 safe_output = (
                     sanitize_trace_value(
-                        execution.output,
+                        execution.public_output(),
                         max_chars=4000,
                     )
                     or ""
@@ -480,6 +564,7 @@ def execute_agent_chat(
                         status=execution.status,
                         error_message=safe_error,
                         latency_ms=execution.latency_ms,
+                        skill_snapshot=skill_snapshot,
                     )
                 )
             trace.finish_step(
@@ -494,6 +579,7 @@ def execute_agent_chat(
             "assistant",
             answer,
             trace=trace_snapshot,
+            skill_snapshot=skill_snapshot,
         )
         update_retrieval_run_message(
             retrieval_run.get("id") if retrieval_run else None,

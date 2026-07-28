@@ -181,6 +181,9 @@ class AgentApprovalGate:
         self.parent_step_id = parent_step_id
         self._approval_steps: dict[str, str] = {}
 
+    def set_parent_step_id(self, parent_step_id: str | None) -> None:
+        self.parent_step_id = parent_step_id
+
     def _emit(self, event: dict[str, Any]) -> None:
         public_event = dict(event)
         approval_id = str(public_event["approvalId"])

@@ -20,7 +20,8 @@ def should_route_to_agent(payload: ChatRequest) -> bool:
         and payload.enableTools
     )
     return (
-        manual_tools
+        payload.skillId is not None
+        or manual_tools
         or auto_tools
         or (
             payload.autoAgent
