@@ -10608,3 +10608,59 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     padding-inline: 6px;
   }
 }
+
+/* Seamless conversation-to-composer handoff. */
+#page-chat:not(.chat-empty) .messages {
+  padding:
+    24px
+    max(30px, calc((100% - 900px) / 2))
+    72px !important;
+}
+
+#page-chat:not(.chat-empty) #chat-form.composer {
+  z-index: 22;
+  margin-top: -38px;
+  padding:
+    48px
+    max(30px, calc((100% - 900px) / 2))
+    18px !important;
+  border-top: 0 !important;
+  background:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--panel-bg) 84%, transparent) 38%,
+      var(--panel-bg) 72%
+    ) !important;
+}
+
+#page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+  width: 100%;
+}
+
+:root[data-theme="mono-dark"]
+  #page-chat:not(.chat-empty)
+  #chat-form.composer {
+  background:
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--night-panel) 82%, transparent) 38%,
+      var(--night-panel) 72%
+    ) !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat:not(.chat-empty) .messages {
+    padding: 18px 16px 66px !important;
+  }
+
+  #page-chat:not(.chat-empty) #chat-form.composer {
+    margin-top: -30px;
+    padding: 40px 14px 12px !important;
+  }
+
+  #page-chat:not(.chat-empty) #chat-form.composer textarea {
+    font-size: 14px !important;
+  }
+}
