@@ -230,6 +230,7 @@ def main() -> None:
             "    display_name: Local Check\n"
             "    version: 2.0.0\n"
             "    required_tools: [web_search]\n"
+            "    required_mcp: [notion]\n"
             "---\n"
             "Follow this bounded workflow.\n"
         )
@@ -260,8 +261,18 @@ def main() -> None:
         real_store.max_body_chars = 20000
         real_store._ensure_builtins_for_user = lambda user_id: None
         real_store.fetch_one = lambda statement, parameters: dict(row)
+        real_store.fetch_all = lambda statement, parameters: [dict(row)]
+        assert real_store.activation_candidates(
+            7, {"web_search"}
+        ) == []
+        assert [
+            item["slug"]
+            for item in real_store.activation_candidates(
+                7, {"web_search", "notion"}
+            )
+        ] == ["local-check"]
         resolved = real_store.resolve_for_activation(
-            7, 41, {"web_search"}
+            7, 41, {"web_search", "notion"}
         )
         assert resolved["systemMessage"].endswith("</activated-skill>")
         assert "Follow this bounded workflow." in resolved["systemMessage"]

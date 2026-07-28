@@ -4,6 +4,7 @@ import json
 import importlib
 from pathlib import Path
 import sys
+import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,10 +13,15 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.services.agent_loop import AgentRunner, ToolRegistry
 from knowflow.services.agent_trace import AgentTraceRecorder
 from knowflow.services.skill_runtime import SkillActivationSession
+from knowflow.schemas import ChatRequest
 
 
 class Store:
+    def __init__(self):
+        self.available_calls = []
+
     def activation_candidates(self, user_id, available_tools):
+        self.available_calls.append(set(available_tools))
         return [{"id": 1, "slug": "safe", "name": "Safe", "description": "Safe"}]
 
     def resolve_for_activation(self, user_id, skill, available_tools):
@@ -142,7 +148,311 @@ def main() -> None:
     assert details["sourceKind"] == "builtin"
     assert "systemMessage" not in details
 
+    failure_registry = ToolRegistry()
+    failure_registry.register(
+        name="invalid_tool",
+        description="invalid",
+        input_schema={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "string"}},
+        },
+        handler=lambda args: {"ok": True},
+    )
+    failure_registry.register(
+        name="denied_tool",
+        description="denied",
+        input_schema={"type": "object"},
+        handler=lambda args: {"ok": True},
+        read_only=False,
+        risk="write",
+    )
+
+    def fail_after_activation(args):
+        raise RuntimeError("expected")
+
+    failure_registry.register(
+        name="failing_tool",
+        description="failing",
+        input_schema={"type": "object"},
+        handler=fail_after_activation,
+    )
+    failure_session = SkillActivationSession(
+        store=Store(),
+        user_id=1,
+        available_tools=failure_registry.names(),
+    )
+    failure_session.register_activation_tool(failure_registry)
+
+    class FailureGateway:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(
+            self, messages, config, *, tools=None, tool_choice=None
+        ):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "activate-failures",
+                            "function": {
+                                "name": "activate_skill",
+                                "arguments": '{"skill":"safe"}',
+                            },
+                        },
+                        {
+                            "id": "invalid",
+                            "function": {
+                                "name": "invalid_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                        {
+                            "id": "denied",
+                            "function": {
+                                "name": "denied_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                        {
+                            "id": "handler-failure",
+                            "function": {
+                                "name": "failing_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                    ],
+                }
+            return {"content": "done"}
+
+    class DenyGate:
+        def __init__(self):
+            self.parent_step_id = None
+
+        def set_parent_step_id(self, parent_step_id):
+            self.parent_step_id = parent_step_id
+
+        def request(self, definition, arguments, call_id):
+            return "deny"
+
+    failure_result = AgentRunner(gateway=FailureGateway()).run(
+        messages=[{"role": "user", "content": "failure snapshots"}],
+        config={},
+        registry=failure_registry,
+        trace=AgentTraceRecorder(run_id="skill-failures"),
+        parent_step_id="root",
+        approval_gate=DenyGate(),
+    )
+    assert [item.status for item in failure_result.executions] == [
+        "success",
+        "failed",
+        "failed",
+        "failed",
+    ]
+    assert [
+        item.error_code for item in failure_result.executions[1:]
+    ] == [
+        "invalid_arguments",
+        "permission_denied",
+        "tool_execution_failed",
+    ]
+    expected_snapshot = {
+        "skillId": 1,
+        "skillSlug": "safe",
+        "skillVersion": "1.0.0",
+        "skillContentHash": "b" * 64,
+    }
+    assert all(
+        item.skill_snapshot == expected_snapshot
+        for item in failure_result.executions
+    )
+
     runtime = importlib.import_module("knowflow.runtime")
+    extensions = importlib.import_module(
+        "knowflow.routers.extensions"
+    )
+    integration_session = f"skill-snapshot-{uuid.uuid4().hex}"
+    runtime.execute(
+        """
+        INSERT INTO chat_session(
+            id, user_id, title, created_at, updated_at
+        )
+        VALUES (
+            :id, 1, 'Skill snapshot check', :now, :now
+        )
+        """,
+        {"id": integration_session, "now": runtime.now_str()},
+    )
+
+    class BatchGateway:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(
+            self, messages, config, *, tools=None, tool_choice=None
+        ):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "before",
+                            "function": {
+                                "name": "before_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                        {
+                            "id": "activate",
+                            "function": {
+                                "name": "activate_skill",
+                                "arguments": '{"skill":"safe"}',
+                            },
+                        },
+                        {
+                            "id": "after",
+                            "function": {
+                                "name": "after_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                        {
+                            "id": "failed",
+                            "function": {
+                                "name": "failing_tool",
+                                "arguments": "{}",
+                            },
+                        },
+                    ],
+                }
+            return {"content": "snapshot answer"}
+
+    class Pool:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    snapshot_store = Store()
+
+    def integration_registry(*args, **kwargs):
+        value = ToolRegistry()
+        value.register(
+            name="before_tool",
+            description="before",
+            input_schema={"type": "object"},
+            handler=lambda args: {"stage": "before"},
+        )
+        value.register(
+            name="after_tool",
+            description="after",
+            input_schema={"type": "object"},
+            handler=lambda args: {"stage": "after"},
+        )
+
+        def fail(args):
+            raise RuntimeError("expected tool failure")
+
+        value.register(
+            name="failing_tool",
+            description="fail",
+            input_schema={"type": "object"},
+            handler=fail,
+        )
+        return value
+
+    originals = {
+        "ensure_session": extensions.ensure_session,
+        "get_model_config": extensions.get_model_config,
+        "build_tool_registry": extensions.build_tool_registry,
+        "McpRunSessionPool": extensions.McpRunSessionPool,
+        "skills": extensions.skills,
+        "gateway": extensions.gateway,
+    }
+    extensions.ensure_session = lambda *args, **kwargs: integration_session
+    extensions.get_model_config = lambda *args, **kwargs: {}
+    extensions.build_tool_registry = integration_registry
+    extensions.McpRunSessionPool = Pool
+    extensions.skills = snapshot_store
+    extensions.gateway = BatchGateway()
+    try:
+        integration_result = extensions.execute_agent_chat(
+            ChatRequest(
+                question="snapshot sequence",
+                sessionId=integration_session,
+                autoAgent=True,
+                enableTools=False,
+            ),
+            1,
+        )
+    finally:
+        for name, value in originals.items():
+            setattr(extensions, name, value)
+
+    snapshot_rows = runtime.fetch_all(
+        """
+        SELECT tool_name, skill_id, skill_slug, skill_version,
+               skill_content_hash
+        FROM agent_tool_call
+        WHERE session_id=:session_id
+        ORDER BY id
+        """,
+        {"session_id": integration_session},
+    )
+    assert [row["tool_name"] for row in snapshot_rows] == [
+        "before_tool",
+        "activate_skill",
+        "after_tool",
+        "failing_tool",
+    ]
+    assert snapshot_rows[0]["skill_id"] is None
+    expected_columns = (1, "safe", "1.0.0", "b" * 64)
+    assert [
+        (
+            row["skill_id"],
+            row["skill_slug"],
+            row["skill_version"],
+            row["skill_content_hash"],
+        )
+        for row in snapshot_rows[1:]
+    ] == [expected_columns] * 3
+    assistant_row = runtime.fetch_one(
+        """
+        SELECT skill_id, skill_slug, skill_version, skill_content_hash
+        FROM chat_message WHERE id=:message_id
+        """,
+        {"message_id": integration_result["messageId"]},
+    )
+    assert tuple(assistant_row.values()) == expected_columns
+    assert snapshot_store.available_calls[-1] == {
+        "before_tool",
+        "after_tool",
+        "failing_tool",
+    }
+    assert "notion" not in snapshot_store.available_calls[-1]
+    public_integration = json.dumps(
+        {
+            "trace": integration_result["trace"],
+            "toolCalls": integration_result["toolCalls"],
+        },
+        ensure_ascii=False,
+    ).lower()
+    for secret in (
+        "private body",
+        "c:\\private",
+        "user@example.com",
+        "skip approval",
+    ):
+        assert secret not in public_integration
+
     captured = []
     original_execute = runtime.execute
     runtime.execute = lambda statement, parameters=None: (
@@ -204,6 +514,18 @@ def main() -> None:
         "version": "0.9.0",
         "contentHash": "c" * 64,
     }
+    runtime.execute(
+        "DELETE FROM agent_tool_call WHERE session_id=:session_id",
+        {"session_id": integration_session},
+    )
+    runtime.execute(
+        "DELETE FROM chat_message WHERE session_id=:session_id",
+        {"session_id": integration_session},
+    )
+    runtime.execute(
+        "DELETE FROM chat_session WHERE id=:session_id",
+        {"session_id": integration_session},
+    )
     print("Skill traces preserve the activation parent chain and redact instructions")
 
 

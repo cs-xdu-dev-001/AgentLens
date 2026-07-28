@@ -107,8 +107,10 @@ class ToolRegistry:
 
 class AgentRunner:
     def __init__(self, *, gateway, max_tool_rounds=3): self.gateway=gateway; self.max_tool_rounds=max(0,max_tool_rounds)
-    def run(self, *, messages, config, registry, trace=None, parent_step_id=None, approval_gate=None):
+    def run(self, *, messages, config, registry, trace=None, parent_step_id=None, approval_gate=None,
+            skill_snapshot: dict[str, Any] | None = None):
         working=[dict(m) for m in messages]; executions=[]; current_parent_step_id=parent_step_id
+        current_skill_snapshot=dict(skill_snapshot) if skill_snapshot else None
         for tool_round in range(self.max_tool_rounds+1):
             schemas=registry.schemas()
             ms=trace.start_step(kind="model",name="model_completion",title="Model is analyzing",parent_id=current_parent_step_id,input_summary={"messageCount":len(working),"toolCount":len(schemas)}) if trace else None
@@ -127,6 +129,12 @@ class AgentRunner:
             working.append({"role":"assistant","content":message.get("content"),"tool_calls":calls})
             for call in calls:
                 prepared=registry.prepare(call); d=prepared.definition; should_invoke=True
+                if prepared.error is not None:
+                    prepared.error.skill_snapshot = (
+                        dict(current_skill_snapshot)
+                        if current_skill_snapshot
+                        else None
+                    )
                 if prepared.error is None and d and not d.read_only:
                     if approval_gate is None:
                         ex=registry._failure(prepared.call_id,prepared.tool_name,prepared.arguments,"approval_required_stream_only","This tool requires approval in a streaming agent run.",time.perf_counter()); should_invoke=False
@@ -141,6 +149,20 @@ class AgentRunner:
                     tool_parent = ms if d and d.becomes_parent_on_success else current_parent_step_id
                     tool_step=trace.start_step(kind=d.trace_kind if d else "tool",name=prepared.tool_name,title=f"Running {prepared.tool_name}",parent_id=tool_parent,input_summary=None if d and d.internal else prepared.arguments)
                 if should_invoke: ex=registry.invoke(prepared)
+                activation_succeeded = bool(
+                    ex.status=="success"
+                    and d
+                    and d.becomes_parent_on_success
+                    and ex.skill_snapshot
+                )
+                if activation_succeeded:
+                    current_skill_snapshot = dict(ex.skill_snapshot)
+                else:
+                    ex.skill_snapshot = (
+                        dict(current_skill_snapshot)
+                        if current_skill_snapshot
+                        else None
+                    )
                 executions.append(ex)
                 if trace and tool_step:
                     if ex.status=="success" and d and d.becomes_parent_on_success and ex.audit_output:

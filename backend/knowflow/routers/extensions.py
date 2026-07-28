@@ -496,6 +496,11 @@ def execute_agent_chat(
                     trace=trace,
                     parent_step_id=run_parent_step,
                     approval_gate=approval_gate,
+                    skill_snapshot=(
+                        activation.active.snapshot()
+                        if activation.active is not None
+                        else None
+                    ),
                 )
                 _raise_if_cancelled(cancel_event)
                 answer = run_result.answer
@@ -564,7 +569,7 @@ def execute_agent_chat(
                         status=execution.status,
                         error_message=safe_error,
                         latency_ms=execution.latency_ms,
-                        skill_snapshot=skill_snapshot,
+                        skill_snapshot=execution.skill_snapshot,
                     )
                 )
             trace.finish_step(
