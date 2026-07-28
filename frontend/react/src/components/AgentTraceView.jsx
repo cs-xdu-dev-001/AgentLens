@@ -21,9 +21,65 @@ const statusLabels = {
   waiting: "等待中",
   running: "运行中",
   success: "已完成",
+  completed: "已完成",
   failed: "失败",
+  error: "失败",
   cancelled: "已取消",
 };
+
+const skillSourceLabels = {
+  builtin: "内置",
+  personal: "个人",
+  github: "个人",
+  upload: "个人",
+};
+
+function skillDisplayName(step) {
+  const value = step?.details?.displayName;
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : "Skill";
+}
+
+function safeDependencyNames(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function skillDetailsForDisplay(step) {
+  const details = (
+    step?.details
+    && typeof step.details === "object"
+    && !Array.isArray(step.details)
+  )
+    ? step.details
+    : {};
+  const version = (
+    typeof details.version === "string"
+    && details.version.trim()
+  )
+    ? details.version.trim()
+    : "无";
+  const sourceKind = typeof details.sourceKind === "string"
+    ? skillSourceLabels[details.sourceKind]
+    : null;
+  return {
+    displayName: skillDisplayName(step),
+    version,
+    sourceKind: sourceKind || "未知",
+    requiredTools: safeDependencyNames(details.requiredTools),
+    requiredMcp: safeDependencyNames(details.requiredMcp),
+  };
+}
+
+function traceStatusClass(status) {
+  if (status === "completed") return "success";
+  if (status === "error") return "failed";
+  return status;
+}
 
 function displayName(step) {
   return (
@@ -35,6 +91,15 @@ function displayName(step) {
 export function traceStepTitle(step) {
   if (!step) return "";
   if (step.title === "连接中断") return step.title;
+  if (step.kind === "skill") {
+    if (step.status === "running") {
+      return `正在激活 ${skillDisplayName(step)}`;
+    }
+    if (step.status === "success" || step.status === "completed") {
+      return `已激活 ${skillDisplayName(step)}`;
+    }
+    return "Skill 激活失败";
+  }
   if (step.kind === "approval") {
     if (step.status === "waiting") return "等待工具确认";
     if (step.status === "success") return "已允许工具执行";
@@ -132,6 +197,9 @@ export function AgentTraceView({ trace = [] }) {
       (step) => step.status === "running",
     )
   )?.stepId;
+  const selectedSkillDetails = selected?.kind === "skill"
+    ? skillDetailsForDisplay(selected)
+    : null;
 
   if (!rows.length) {
     return (
@@ -158,7 +226,7 @@ export function AgentTraceView({ trace = [] }) {
             <button
               className={[
                 "agent-trace-node",
-                step.status,
+                traceStatusClass(step.status),
                 selected?.stepId === step.stepId
                   ? "selected"
                   : "",
@@ -200,6 +268,24 @@ export function AgentTraceView({ trace = [] }) {
           className={"agent-trace-detail"}
           aria-label={"步骤详情"}
         >
+          {selectedSkillDetails ? (
+            <div className={"agent-trace-context"}>
+              <span>{"Skill"}</span>
+              <code>{selectedSkillDetails.displayName}</code>
+              <span>{"版本"}</span>
+              <code>{selectedSkillDetails.version}</code>
+              <span>{"来源"}</span>
+              <code>{selectedSkillDetails.sourceKind}</code>
+              <span>{"所需工具"}</span>
+              <code>
+                {selectedSkillDetails.requiredTools.join(", ") || "无"}
+              </code>
+              <span>{"所需MCP"}</span>
+              <code>
+                {selectedSkillDetails.requiredMcp.join(", ") || "无"}
+              </code>
+            </div>
+          ) : null}
           {selected.kind === "mcp" || selected.kind === "approval" ? (
             <div className={"agent-trace-context"}>
               <span>{"服务器"}</span>
