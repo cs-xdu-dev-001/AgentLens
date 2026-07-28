@@ -39,4 +39,3 @@
 - 增加前端静态/组件检查，覆盖Skill加载、失败重试、输入框ARIA和无trace步骤反馈。
 - 增加Agent运行检查，模拟worker异常关闭，断言run最终为`failed`且SSE包含`error`；覆盖正常完成和取消事件。
 - 运行全部`tests/check_*.py`、`npm run build`、`npm audit`和`git diff --check`。
-
