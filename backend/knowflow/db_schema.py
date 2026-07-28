@@ -104,6 +104,41 @@ CREATE TABLE IF NOT EXISTS retrieval_run (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS agent_run (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  user_message_id INTEGER,
+  assistant_message_id INTEGER,
+  goal_summary TEXT NOT NULL,
+  trigger_mode TEXT NOT NULL DEFAULT 'auto',
+  status TEXT NOT NULL DEFAULT 'planning',
+  current_step_id TEXT,
+  trace_json TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS agent_run_step (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  kind TEXT NOT NULL,
+  tool_name TEXT,
+  input_summary TEXT,
+  output_summary TEXT,
+  error_code TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (run_id, position)
+);
 CREATE TABLE IF NOT EXISTS agent_tool_call (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL,
@@ -118,6 +153,8 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   skill_slug TEXT,
   skill_version TEXT,
   skill_content_hash TEXT,
+  run_id TEXT,
+  run_step_id TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS tool_config (
@@ -239,6 +276,9 @@ CREATE INDEX IF NOT EXISTS idx_document_kb ON document(knowledge_base_id);
 CREATE INDEX IF NOT EXISTS idx_chunk_kb_doc ON document_chunk(knowledge_base_id, document_id);
 CREATE INDEX IF NOT EXISTS idx_message_session_time ON chat_message(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_retrieval_run_user_time ON retrieval_run(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_run_user_time ON agent_run(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_run_session_time ON agent_run(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_run_step_run_position ON agent_run_step(run_id, position);
 CREATE INDEX IF NOT EXISTS idx_tool_session_time ON agent_tool_call(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_document_task_doc ON document_task(document_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_auth_session_user ON auth_session(user_id);
@@ -355,6 +395,44 @@ CREATE TABLE IF NOT EXISTS retrieval_run (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_retrieval_run_user_time (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS agent_run (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  session_id VARCHAR(64) NOT NULL,
+  user_message_id BIGINT,
+  assistant_message_id BIGINT,
+  goal_summary TEXT NOT NULL,
+  trigger_mode VARCHAR(30) NOT NULL DEFAULT 'auto',
+  status VARCHAR(30) NOT NULL DEFAULT 'planning',
+  current_step_id VARCHAR(64),
+  trace_json LONGTEXT,
+  version INT NOT NULL DEFAULT 1,
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_agent_run_user_time (user_id, created_at),
+  KEY idx_agent_run_session_time (session_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS agent_run_step (
+  id VARCHAR(64) PRIMARY KEY,
+  run_id VARCHAR(64) NOT NULL,
+  position INT NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  kind VARCHAR(30) NOT NULL,
+  tool_name VARCHAR(160),
+  input_summary TEXT,
+  output_summary TEXT,
+  error_code VARCHAR(100),
+  attempt_count INT NOT NULL DEFAULT 0,
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_agent_run_step_position (run_id, position),
+  KEY idx_agent_run_step_run_position (run_id, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS agent_tool_call (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   session_id VARCHAR(64) NOT NULL,
@@ -369,8 +447,11 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   skill_slug VARCHAR(255),
   skill_version VARCHAR(100),
   skill_content_hash VARCHAR(128),
+  run_id VARCHAR(64),
+  run_step_id VARCHAR(64),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_tool_session_time (session_id, created_at)
+  KEY idx_tool_session_time (session_id, created_at),
+  KEY idx_tool_run_step (run_id, run_step_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS tool_config (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,

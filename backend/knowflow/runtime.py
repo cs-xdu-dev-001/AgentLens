@@ -1093,6 +1093,8 @@ def log_tool_call(
     started_at: float | None = None,
     latency_ms: int | None = None,
     skill_snapshot: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    run_step_id: str | None = None,
 ) -> dict[str, Any]:
     snapshot = skill_snapshot or {}
     latency_value = (
@@ -1105,12 +1107,14 @@ def log_tool_call(
         INSERT INTO agent_tool_call(
           session_id, message_id, tool_name, input_json, output_text,
           status, error_message, latency_ms, skill_id, skill_slug,
-          skill_version, skill_content_hash, created_at
+          skill_version, skill_content_hash, run_id, run_step_id,
+          created_at
         )
         VALUES (
           :session_id, :message_id, :tool_name, :input_json, :output_text,
           :status, :error_message, :latency_ms, :skill_id, :skill_slug,
-          :skill_version, :skill_content_hash, :created_at
+          :skill_version, :skill_content_hash, :run_id, :run_step_id,
+          :created_at
         )
         """,
         {
@@ -1126,6 +1130,8 @@ def log_tool_call(
             "skill_slug": snapshot.get("skillSlug"),
             "skill_version": snapshot.get("skillVersion"),
             "skill_content_hash": snapshot.get("skillContentHash"),
+            "run_id": run_id,
+            "run_step_id": run_step_id,
             "created_at": now_str(),
         },
     )

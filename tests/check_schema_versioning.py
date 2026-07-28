@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 5, CURRENT_SCHEMA_VERSION
-    assert "skill" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 6, CURRENT_SCHEMA_VERSION
+    assert "agent" in row["description"].lower(), row
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
     assert columns == {
         "id",
@@ -43,6 +43,34 @@ def main() -> None:
         for item in fetch_all("PRAGMA table_info(chat_message)")
     }
     assert "trace_json" in message_columns, message_columns
+    run_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(agent_run)")
+    }
+    assert {
+        "id",
+        "user_id",
+        "session_id",
+        "status",
+        "trace_json",
+        "version",
+    }.issubset(run_columns), run_columns
+    step_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(agent_run_step)")
+    }
+    assert {
+        "id",
+        "run_id",
+        "position",
+        "title",
+        "status",
+    }.issubset(step_columns), step_columns
+    tool_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(agent_tool_call)")
+    }
+    assert {"run_id", "run_step_id"}.issubset(tool_columns), tool_columns
 
     print("schema version is recorded during database initialization")
 

@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 class Database:
@@ -64,6 +64,19 @@ class Database:
         for table in ["chat_message", "agent_tool_call"]:
             for column, definition in snapshot_columns.items():
                 self.add_column_if_missing(conn, table, column, definition)
+        run_id_type = "VARCHAR(64)" if self.is_mysql else "TEXT"
+        self.add_column_if_missing(
+            conn,
+            "agent_tool_call",
+            "run_id",
+            run_id_type,
+        )
+        self.add_column_if_missing(
+            conn,
+            "agent_tool_call",
+            "run_step_id",
+            run_id_type,
+        )
 
     def record_schema_version(self, conn: Any) -> None:
         if self.is_mysql:
@@ -83,7 +96,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Add per-user Skill packages, installations, staged imports, and run snapshots."
+                    "Add durable Agent runs, plan steps, and tool-call task links."
                 ),
             },
         )
