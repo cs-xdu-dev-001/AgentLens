@@ -22,6 +22,7 @@ class SkillManifest:
     version: str
     required_tools: tuple[str, ...]
     required_mcp: tuple[str, ...]
+    planning: str
     body: str
     raw_metadata: dict[str, Any]
     content_hash: str
@@ -144,6 +145,13 @@ def _dependencies(values: dict[str, Any], key: str) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _planning(values: dict[str, Any]) -> str:
+    value = values.get("planning", "auto")
+    if value not in {"auto", "required"}:
+        raise SkillManifestError("invalid planning")
+    return str(value)
+
+
 def parse_skill_markdown(
     content: str,
     *,
@@ -196,6 +204,7 @@ def parse_skill_markdown(
         ),
         required_tools=_dependencies(knowflow, "required_tools"),
         required_mcp=_dependencies(knowflow, "required_mcp"),
+        planning=_planning(knowflow),
         body=body,
         raw_metadata=_deep_freeze(loaded),
         content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),

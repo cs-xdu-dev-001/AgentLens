@@ -48,6 +48,7 @@ class ActivatedSkill:
     source_kind: str
     required_tools: tuple[str, ...]
     required_mcp: tuple[str, ...]
+    planning: str
     system_message: str
 
     def snapshot(self) -> dict[str, Any]:
@@ -66,6 +67,7 @@ class ActivatedSkill:
             "sourceKind": self.source_kind,
             "requiredTools": list(self.required_tools),
             "requiredMcp": list(self.required_mcp),
+            "planning": self.planning,
         }
 
 
@@ -130,6 +132,7 @@ class SkillActivationSession:
             source_kind=str(item["sourceKind"]),
             required_tools=tuple(item.get("requiredTools") or ()),
             required_mcp=tuple(item.get("requiredMcp") or ()),
+            planning=str(item.get("planning") or "auto"),
             system_message=str(item["systemMessage"]),
         )
         self.active = active

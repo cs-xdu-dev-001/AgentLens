@@ -394,6 +394,7 @@ class SkillStore:
             "manifest": _thaw(manifest.raw_metadata),
             "requiredTools": list(manifest.required_tools),
             "requiredMcp": list(manifest.required_mcp),
+            "planning": manifest.planning,
             "available": available,
             "missingTools": missing_tools,
             "missingMcp": missing_mcp,
@@ -1000,6 +1001,7 @@ class SkillStore:
             "manifest": json.loads(row["manifest_json"]),
             "requiredTools": list(manifest.required_tools),
             "requiredMcp": list(manifest.required_mcp),
+            "planning": manifest.planning,
             "available": available,
             "missingTools": missing_tools,
             "missingMcp": missing_mcp,
@@ -1178,6 +1180,7 @@ class SkillStore:
             "sourceKind": str(row["source_kind"]),
             "requiredTools": list(manifest.required_tools),
             "requiredMcp": list(manifest.required_mcp),
+            "planning": manifest.planning,
             "systemMessage": wrapped,
         }
 

@@ -108,7 +108,8 @@ class ToolRegistry:
 class AgentRunner:
     def __init__(self, *, gateway, max_tool_rounds=3): self.gateway=gateway; self.max_tool_rounds=max(0,max_tool_rounds)
     def run(self, *, messages, config, registry, trace=None, parent_step_id=None, approval_gate=None,
-            skill_snapshot: dict[str, Any] | None = None):
+            skill_snapshot: dict[str, Any] | None = None,
+            execution_callback: Callable[[ToolExecution, str | None], None] | None = None):
         working=[dict(m) for m in messages]; executions=[]; current_parent_step_id=parent_step_id
         current_skill_snapshot=dict(skill_snapshot) if skill_snapshot else None
         for tool_round in range(self.max_tool_rounds+1):
@@ -168,6 +169,8 @@ class AgentRunner:
                     if ex.status=="success" and d and d.becomes_parent_on_success and ex.audit_output:
                         trace.steps[tool_step]["details"] = dict(ex.audit_output)
                     trace.finish_step(tool_step,status="success" if ex.status=="success" else "failed",title=f"{prepared.tool_name} completed" if ex.status=="success" else f"{prepared.tool_name} failed",output_summary=ex.public_output() if ex.status=="success" else ex.error_message,error_code=None if ex.status=="success" else ex.error_code)
+                if execution_callback is not None:
+                    execution_callback(ex, tool_step)
                 if ex.status=="success" and d:
                     if d.remove_after_success:
                         registry.unregister(d.name)

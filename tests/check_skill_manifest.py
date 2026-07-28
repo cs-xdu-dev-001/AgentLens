@@ -42,6 +42,7 @@ metadata:
     version: 1.2.0
     required_tools: [web_search, web_search, browser.open]
     required_mcp: [notion, notion, notion-server:v2]
+    planning: required
     future_option: retained
 """
     )
@@ -52,6 +53,7 @@ metadata:
     assert parsed.version == "1.2.0"
     assert parsed.required_tools == ("web_search", "browser.open")
     assert parsed.required_mcp == ("notion", "notion-server:v2")
+    assert parsed.planning == "required"
     assert parsed.body == "Use the declared workflow."
     assert parsed.raw_metadata["homepage"] == "https://example.test/skill"
     assert parsed.raw_metadata["metadata"]["vendor"]["channel"] == "stable"
@@ -64,6 +66,7 @@ metadata:
     assert defaults.description == "A useful Skill."
     assert defaults.required_tools == ()
     assert defaults.required_mcp == ()
+    assert defaults.planning == "auto"
     assert defaults == parse_skill_markdown(minimal, max_body_chars=50_000)
 
     exact = minimal + "\r\n"
@@ -167,6 +170,14 @@ metadata:
         manifest(
             "name: valid\ndescription: fine\nmetadata:\n"
             "  knowflow:\n    version: [1, 2]"
+        ),
+        manifest(
+            "name: valid\ndescription: fine\nmetadata:\n"
+            "  knowflow:\n    planning: always"
+        ),
+        manifest(
+            "name: valid\ndescription: fine\nmetadata:\n"
+            "  knowflow:\n    planning: true"
         ),
         manifest(
             "name: valid\ndescription: fine\nmetadata:\n"

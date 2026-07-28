@@ -65,6 +65,7 @@ class ChatRequest(BaseModel):
     toolMode: str = "auto"
     enabledTools: list[str] = Field(default_factory=list)
     skillId: int | None = None
+    executionMode: Literal["auto", "plan_only"] = "auto"
     attachments: list[ChatAttachment] = []
 
 
