@@ -13,6 +13,32 @@ async function readStreamError(response) {
   }
 }
 
+function clonePlainSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => clonePlainSnapshotValue(item));
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return value;
+  }
+
+  const clone = prototype === null ? Object.create(null) : {};
+  Object.entries(value).forEach(([key, item]) => {
+    clone[key] = clonePlainSnapshotValue(item);
+  });
+  return clone;
+}
+
+export function cloneChatPayload(payload) {
+  return {
+    ...payload,
+    enabledTools: clonePlainSnapshotValue(payload.enabledTools),
+    attachments: clonePlainSnapshotValue(payload.attachments),
+  };
+}
+
 function mergeTraceStep(trace, step) {
   const next = Array.isArray(trace) ? [...trace] : [];
   const index = next.findIndex(
@@ -203,7 +229,7 @@ export function createChatFlow({
       payload.enabledTools = [];
     }
 
-    const requestSnapshot = { question, payload: { ...payload } };
+    const requestSnapshot = { question, payload: cloneChatPayload(payload) };
     state.lastChatRequest = requestSnapshot;
     if (!suppressUserMessage) {
       appendMessage("user", attachmentNames ? `${question}\n\n附件：${attachmentNames}` : question);

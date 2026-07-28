@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import textwrap
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,6 +30,70 @@ def forbid(path: str, needle: str, label: str) -> None:
         raise AssertionError(f"unexpected {label} in {path}: {needle}")
 
 
+def check_retry_snapshot_clone() -> None:
+    script = textwrap.dedent(
+        """
+        import assert from "node:assert/strict";
+        import { cloneChatPayload } from "./frontend/react/src/controller/chatFlow.js";
+
+        const blob = new Blob(["immutable"]);
+        const attachment = {
+          filename: "before.txt",
+          optional: undefined,
+          blob,
+          metadata: {
+            trace: { status: "ready" },
+            tags: ["original"],
+          },
+        };
+        const attachments = [attachment];
+        const payload = {
+          question: "snapshot",
+          skillId: 17,
+          enabledTools: ["search"],
+          attachments,
+        };
+
+        const snapshot = cloneChatPayload(payload);
+        attachments.push({ filename: "later.txt" });
+        attachment.filename = "after.txt";
+        attachment.metadata.trace.status = "changed";
+        attachment.metadata.tags.push("changed");
+        payload.enabledTools.push("later-tool");
+
+        assert.notStrictEqual(snapshot.attachments, attachments);
+        assert.notStrictEqual(snapshot.attachments[0], attachment);
+        assert.notStrictEqual(snapshot.attachments[0].metadata, attachment.metadata);
+        assert.notStrictEqual(
+          snapshot.attachments[0].metadata.trace,
+          attachment.metadata.trace,
+        );
+        assert.deepEqual(snapshot.enabledTools, ["search"]);
+        assert.equal(snapshot.attachments.length, 1);
+        assert.equal(snapshot.attachments[0].filename, "before.txt");
+        assert.equal(snapshot.attachments[0].metadata.trace.status, "ready");
+        assert.deepEqual(snapshot.attachments[0].metadata.tags, ["original"]);
+        assert.equal("optional" in snapshot.attachments[0], true);
+        assert.equal(snapshot.attachments[0].optional, undefined);
+        assert.strictEqual(snapshot.attachments[0].blob, blob);
+        assert.equal(snapshot.skillId, 17);
+        """
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode:
+        raise AssertionError(
+            "chat retry payload clone behavior failed:\n"
+            f"{result.stdout}{result.stderr}"
+        )
+
+
 def main() -> None:
     controller = "frontend/react/src/controller/knowflowController.js"
     chat_flow = "frontend/react/src/controller/chatFlow.js"
@@ -52,6 +118,7 @@ def main() -> None:
         "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
         "retry-safe Skill id resolution",
     )
+    require(chat_flow, "export function cloneChatPayload", "retry payload clone")
     require(chat_flow, "if (skillId) payload.skillId = skillId;", "truthy Skill id payload")
     require_in_order(
         chat_flow_text,
@@ -59,11 +126,13 @@ def main() -> None:
             "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
             "const payload = {",
             "if (skillId) payload.skillId = skillId;",
-            "const requestSnapshot = { question, payload: { ...payload } };",
+            "const requestSnapshot = { question, payload: cloneChatPayload(payload) };",
             "messageRetryRequests.set(answer.messageId, requestSnapshot);",
         ),
         "Skill id request snapshot and retry storage",
     )
+    forbid(chat_flow, "payload: { ...payload }", "shallow retry payload snapshot")
+    check_retry_snapshot_clone()
     require(
         bridge,
         "submitChat({ question: event.detail?.question, skillId: event.detail?.skillId })",
