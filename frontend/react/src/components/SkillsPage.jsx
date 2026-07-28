@@ -51,6 +51,7 @@ export function SkillsPage({ active = false }) {
   const mountedRef = useRef(false);
   const activeRef = useRef(active);
   const requestGenerationRef = useRef(0);
+  const busySkillIdRef = useRef(null);
   activeRef.current = active;
 
   const canCommitRequest = useCallback(
@@ -128,9 +129,10 @@ export function SkillsPage({ active = false }) {
     );
   }, []);
 
-  const handleEnabledChange = async (event, skill) => {
-    event.stopPropagation();
+  const handleEnabledChange = async (skill) => {
+    if (busySkillIdRef.current !== null) return;
     const enabled = !skill.enabled;
+    busySkillIdRef.current = skill.id;
     setBusySkillId(skill.id);
     setRowErrorById((current) => ({ ...current, [skill.id]: "" }));
     try {
@@ -143,6 +145,7 @@ export function SkillsPage({ active = false }) {
         [skill.id]: error?.message || "更新状态失败。",
       }));
     } finally {
+      busySkillIdRef.current = null;
       setBusySkillId(null);
     }
   };
@@ -251,33 +254,31 @@ export function SkillsPage({ active = false }) {
                         selectedSkill?.id === skill.id ? "selected" : "",
                       ].filter(Boolean).join(" ")}
                       key={skill.id}
-                      role={"button"}
-                      tabIndex={0}
-                      onClick={() => setSelectedSkill(skill)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelectedSkill(skill);
-                        }
-                      }}
                     >
-                      <div className={"skill-row-main"}>
-                        <div className={"skill-row-title"}>
-                          <strong>{skill.name || skill.slug || "未命名Skill"}</strong>
-                          <span>{skill.version || "未标版本"}</span>
+                      <button
+                        className={"skill-row-detail"}
+                        type={"button"}
+                        aria-label={`查看${skill.name || skill.slug || "Skill"}详情`}
+                        onClick={() => setSelectedSkill(skill)}
+                      >
+                        <div className={"skill-row-main"}>
+                          <div className={"skill-row-title"}>
+                            <strong>{skill.name || skill.slug || "未命名Skill"}</strong>
+                            <span>{skill.version || "未标版本"}</span>
+                          </div>
+                          <p>{skill.description || "此Skill没有说明。"}</p>
                         </div>
-                        <p>{skill.description || "此Skill没有说明。"}</p>
-                      </div>
-                      <div className={"skill-row-source"}>
-                        <span>{"来源"}</span>
-                        <strong>{sourceLabel(skill)}</strong>
-                      </div>
-                      <div className={`skill-row-deps ${skill.available ? "" : "missing"}`}>
-                        <span>{"依赖"}</span>
-                        <strong title={dependencyText(skill)}>
-                          {dependencyText(skill)}
-                        </strong>
-                      </div>
+                        <div className={"skill-row-source"}>
+                          <span>{"来源"}</span>
+                          <strong>{sourceLabel(skill)}</strong>
+                        </div>
+                        <div className={`skill-row-deps ${skill.available ? "" : "missing"}`}>
+                          <span>{"依赖"}</span>
+                          <strong title={dependencyText(skill)}>
+                            {dependencyText(skill)}
+                          </strong>
+                        </div>
+                      </button>
                       <div className={"skill-row-status"}>
                         <span className={`skill-status ${status}`}>
                           {statusLabel[status]}
@@ -289,10 +290,10 @@ export function SkillsPage({ active = false }) {
                           aria-checked={Boolean(skill.enabled)}
                           aria-label={`${skill.enabled ? "停用" : "启用"}${skill.name || skill.slug}`}
                           disabled={
-                            Boolean(busySkillId) ||
+                            busySkillId === skill.id ||
                             (!skill.available && !skill.enabled)
                           }
-                          onClick={(event) => handleEnabledChange(event, skill)}
+                          onClick={() => handleEnabledChange(skill)}
                         >
                           <span aria-hidden={"true"} />
                         </button>

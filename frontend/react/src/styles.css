@@ -9663,7 +9663,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .skills-list-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) minmax(82px, 0.45fr) minmax(180px, 0.8fr) minmax(134px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(134px, auto);
   align-items: center;
   gap: 18px;
   position: relative;
@@ -9672,6 +9672,20 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   background: transparent;
   cursor: pointer;
   outline: none;
+}
+
+.skill-row-detail {
+  min-width: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(82px, 0.45fr) minmax(180px, 0.8fr);
+  align-items: center;
+  gap: 18px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
 }
 
 .skills-list-row.selected {
@@ -10172,7 +10186,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .skills-primary-button,
 .skill-detail-primary,
 .skills-tabs button,
-.skills-list-row,
+.skill-row-detail,
 .skill-switch,
 .skill-install-dialog button,
 .skill-detail-drawer button {
@@ -10185,14 +10199,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .skills-primary-button:active,
 .skill-detail-primary:active,
 .skills-tabs button:active,
-.skills-list-row:active,
+.skill-row-detail:active,
 .skill-switch:active,
 .skill-install-dialog button:active,
 .skill-detail-drawer button:active {
   transform: scale(0.96);
 }
 
-.skills-list-row:focus-visible,
+.skill-row-detail:focus-visible,
 .skills-primary-button:focus-visible,
 .skills-tabs button:focus-visible,
 .skill-switch:focus-visible,
@@ -10228,7 +10242,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .skill-detail-primary,
   .skills-tabs button,
   .skills-tabs button::after,
-  .skills-list-row,
+  .skill-row-detail,
   .skill-switch,
   .skill-switch span,
   .skill-install-dialog button,
@@ -10273,6 +10287,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 11px 12px;
     padding: 15px 8px;
+  }
+
+  .skill-row-detail {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 11px 12px;
   }
 
   .skill-row-main {

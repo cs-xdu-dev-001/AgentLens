@@ -3,6 +3,29 @@ import { skillApi } from "../api/client.js";
 import { notifyToast } from "./errorFeedback.js";
 
 const githubPattern = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/?$/i;
+const focusableSelector =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+const focusableElements = (container) =>
+  Array.from(container?.querySelectorAll(focusableSelector) || []).filter(
+    (element) => !element.hidden && element.getAttribute("aria-hidden") !== "true",
+  );
+
+const trapFocus = (event, container) => {
+  if (event.key !== "Tab") return;
+  const elements = focusableElements(container);
+  if (!elements.length) return;
+  const first = elements[0];
+  const last = elements[elements.length - 1];
+  const activeElement = document.activeElement;
+  if (event.shiftKey && (activeElement === first || !container.contains(activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (activeElement === last || !container.contains(activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+};
 
 const bytesLabel = (value) => {
   const bytes = Number(value);
@@ -40,10 +63,29 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
   const [inlineError, setInlineError] = useState("");
   const [enableAfterInstall, setEnableAfterInstall] = useState(false);
   const fileInputRef = useRef(null);
+  const dialogRef = useRef(null);
+  const phaseRef = useRef(phase);
+  const openRef = useRef(open);
+  const mountedRef = useRef(false);
+  const dialogRequestGenerationRef = useRef(0);
+  const restoreFocusRef = useRef(null);
+  const closeDialogRef = useRef(null);
+  phaseRef.current = phase;
+  openRef.current = open;
+
+  const setDialogPhase = (nextPhase) => {
+    phaseRef.current = nextPhase;
+    setPhase(nextPhase);
+  };
+
+  const canCommitDialogRequest = (requestId) =>
+    mountedRef.current &&
+    openRef.current &&
+    requestId === dialogRequestGenerationRef.current;
 
   const reset = () => {
     setSourceTab("github");
-    setPhase("input");
+    setDialogPhase("input");
     setUrl("");
     setRef("main");
     setSubpath("");
@@ -56,19 +98,49 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
   };
 
   const close = () => {
-    if (phase === "inspecting" || phase === "installing") return;
+    if (phaseRef.current === "inspecting" || phaseRef.current === "installing") return;
+    openRef.current = false;
+    dialogRequestGenerationRef.current += 1;
     reset();
     onClose?.();
   };
+  closeDialogRef.current = close;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      openRef.current = false;
+      dialogRequestGenerationRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
+    restoreFocusRef.current = document.activeElement;
     reset();
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusableElements(dialogRef.current)[0]?.focus();
+    });
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") {
+        if (phaseRef.current === "inspecting" || phaseRef.current === "installing") return;
+        event.preventDefault();
+        closeDialogRef.current?.();
+        return;
+      }
+      trapFocus(event, dialogRef.current);
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      dialogRequestGenerationRef.current += 1;
+      if (restoreFocusRef.current?.isConnected) {
+        restoreFocusRef.current.focus();
+      }
+      restoreFocusRef.current = null;
+    };
   }, [open]);
 
   if (!open) return null;
@@ -92,7 +164,8 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
       return;
     }
 
-    setPhase("inspecting");
+    const requestId = ++dialogRequestGenerationRef.current;
+    setDialogPhase("inspecting");
     try {
       const inspected =
         sourceTab === "github"
@@ -102,37 +175,44 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
               subpath: subpath.trim(),
             })
           : await skillApi.inspectUpload(file);
+      if (!canCommitDialogRequest(requestId)) return;
       setPreview(inspected);
       setImportId(inspected?.importId || "");
       setEnableAfterInstall(false);
-      setPhase("preview");
+      setDialogPhase("preview");
     } catch (error) {
+      if (!canCommitDialogRequest(requestId)) return;
       setInlineError(error?.message || "无法检查此Skill。");
-      setPhase("input");
+      setDialogPhase("input");
     }
   };
 
   const install = async () => {
     if (!importId) {
       setInlineError("预览已失效，请重新检查。");
-      setPhase("input");
+      setDialogPhase("input");
       return;
     }
     setInlineError("");
-    setPhase("installing");
+    const requestId = ++dialogRequestGenerationRef.current;
+    setDialogPhase("installing");
     try {
       const installed = await skillApi.install(
         importId,
         Boolean(preview?.available && enableAfterInstall),
       );
+      if (!canCommitDialogRequest(requestId)) return;
       dispatchSkillsUpdated(installed);
       notifyToast("Skill已安装");
       await onInstalled?.(installed);
+      if (!canCommitDialogRequest(requestId)) return;
       reset();
+      openRef.current = false;
       onClose?.();
     } catch (error) {
+      if (!canCommitDialogRequest(requestId)) return;
       setInlineError(error?.message || "安装Skill失败。");
-      setPhase("preview");
+      setDialogPhase("preview");
     }
   };
 
@@ -150,6 +230,7 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
       }}
     >
       <section
+        ref={dialogRef}
         className={"modal-panel skill-install-dialog"}
         role={"dialog"}
         aria-modal={"true"}
@@ -177,7 +258,7 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
             disabled={busy}
             onClick={() => {
               setSourceTab("github");
-              setPhase("input");
+              setDialogPhase("input");
               setPreview(null);
               setImportId("");
               setInlineError("");
@@ -193,7 +274,7 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
             disabled={busy}
             onClick={() => {
               setSourceTab("upload");
-              setPhase("input");
+              setDialogPhase("input");
               setPreview(null);
               setImportId("");
               setInlineError("");
@@ -316,7 +397,7 @@ export function SkillInstallDialog({ open = false, onClose, onInstalled }) {
                 type={"button"}
                 disabled={phase === "installing"}
                 onClick={() => {
-                  setPhase("input");
+                  setDialogPhase("input");
                   setPreview(null);
                   setImportId("");
                   setInlineError("");

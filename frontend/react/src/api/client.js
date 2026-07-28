@@ -61,14 +61,23 @@ export async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = normalizeErrorMessage(payload?.message || response.statusText, "请求失败");
+    const detail =
+      payload?.detail && typeof payload?.detail === "object"
+        ? payload.detail
+        : null;
+    const messageSource =
+      detail?.message ??
+      (typeof payload?.detail === "string"
+        ? payload.detail
+        : payload?.message ?? response.statusText);
+    const message = normalizeErrorMessage(messageSource, "请求失败");
     if (response.status === 401) {
       notifyAuthRequired({ path, status: response.status, message });
     }
     throw new ApiError(message, {
       status: response.status,
-      code: payload?.code ?? null,
-      data: payload?.data ?? payload,
+      code: detail?.code ?? payload?.code ?? null,
+      data: detail?.data ?? payload?.data ?? payload,
     });
   }
   if (payload && payload.code !== 0) {

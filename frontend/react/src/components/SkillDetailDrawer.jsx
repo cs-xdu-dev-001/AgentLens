@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { skillApi } from "../api/client.js";
 import { notifyToast } from "./errorFeedback.js";
 
@@ -15,6 +15,30 @@ const missingDependencies = (skill) => [
   ...(skill?.missingMcp || []),
 ];
 
+const focusableSelector =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+const focusableElements = (container) =>
+  Array.from(container?.querySelectorAll(focusableSelector) || []).filter(
+    (element) => !element.hidden && element.getAttribute("aria-hidden") !== "true",
+  );
+
+const trapFocus = (event, container) => {
+  if (event.key !== "Tab") return;
+  const elements = focusableElements(container);
+  if (!elements.length) return;
+  const first = elements[0];
+  const last = elements[elements.length - 1];
+  const activeElement = document.activeElement;
+  if (event.shiftKey && (activeElement === first || !container.contains(activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (activeElement === last || !container.contains(activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+};
+
 export function SkillDetailDrawer({ skill, onClose, onMutated }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -25,45 +49,114 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
   const [contentLoading, setContentLoading] = useState(false);
   const [contentError, setContentError] = useState("");
   const [updateInfo, setUpdateInfo] = useState(null);
+  const drawerRef = useRef(null);
+  const mountedRef = useRef(false);
+  const openRef = useRef(Boolean(skill));
+  const activeSkillIdRef = useRef(skill?.id ?? null);
+  const detailRequestGenerationRef = useRef(0);
+  const contentRequestGenerationRef = useRef(0);
+  const restoreFocusRef = useRef(null);
+  const busyActionRef = useRef(busyAction);
+  const onCloseRef = useRef(onClose);
+  const drawerOpen = Boolean(skill);
+  openRef.current = drawerOpen;
+  activeSkillIdRef.current = skill?.id ?? null;
+  busyActionRef.current = busyAction;
+  onCloseRef.current = onClose;
+
+  const canCommitDetailRequest = (requestId, skillId) =>
+    mountedRef.current &&
+    openRef.current &&
+    activeSkillIdRef.current === skillId &&
+    requestId === detailRequestGenerationRef.current;
+
+  const canCommitContentRequest = (requestId, skillId) =>
+    mountedRef.current &&
+    openRef.current &&
+    activeSkillIdRef.current === skillId &&
+    requestId === contentRequestGenerationRef.current;
+
+  const requestClose = () => {
+    if (busyActionRef.current) return;
+    onCloseRef.current?.();
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      openRef.current = false;
+      detailRequestGenerationRef.current += 1;
+      contentRequestGenerationRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     if (!skill?.id) {
+      detailRequestGenerationRef.current += 1;
+      contentRequestGenerationRef.current += 1;
       setDetail(null);
       return undefined;
     }
-    let cancelled = false;
+    const skillId = skill.id;
+    const requestId = ++detailRequestGenerationRef.current;
+    contentRequestGenerationRef.current += 1;
     setLoading(true);
     setDetail(null);
     setDetailError("");
     setActionError("");
     setContent("");
+    setContentLoading(false);
     setContentError("");
     setUpdateInfo(null);
-    skillApi.get(skill.id)
+    skillApi.get(skillId)
       .then((item) => {
-        if (!cancelled) setDetail(item);
+        if (!canCommitDetailRequest(requestId, skillId)) return;
+        setDetail(item);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setDetailError(error?.message || "无法加载Skill详情。");
-        }
+        if (!canCommitDetailRequest(requestId, skillId)) return;
+        setDetailError(error?.message || "无法加载Skill详情。");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canCommitDetailRequest(requestId, skillId)) return;
+        setLoading(false);
       });
     return () => {
-      cancelled = true;
+      if (detailRequestGenerationRef.current === requestId) {
+        detailRequestGenerationRef.current += 1;
+      }
+      contentRequestGenerationRef.current += 1;
     };
   }, [skill?.id]);
 
   useEffect(() => {
-    if (!skill) return undefined;
+    if (!drawerOpen) return undefined;
+    restoreFocusRef.current = document.activeElement;
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusableElements(drawerRef.current)[0]?.focus();
+    });
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !busyAction) onClose?.();
+      if (event.key === "Escape") {
+        if (busyActionRef.current) return;
+        event.preventDefault();
+        onCloseRef.current?.();
+        return;
+      }
+      trapFocus(event, drawerRef.current);
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [busyAction, onClose, skill]);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      detailRequestGenerationRef.current += 1;
+      contentRequestGenerationRef.current += 1;
+      if (restoreFocusRef.current?.isConnected) {
+        restoreFocusRef.current.focus();
+      }
+      restoreFocusRef.current = null;
+    };
+  }, [drawerOpen]);
 
   if (!skill) return null;
 
@@ -99,14 +192,19 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
     );
 
   const loadContent = async () => {
+    const skillId = current.id;
+    const requestId = ++contentRequestGenerationRef.current;
     setContentLoading(true);
     setContentError("");
     try {
-      const result = await skillApi.content(current.id);
+      const result = await skillApi.content(skillId);
+      if (!canCommitContentRequest(requestId, skillId)) return;
       setContent(result?.content || "");
     } catch (error) {
+      if (!canCommitContentRequest(requestId, skillId)) return;
       setContentError(error?.message || "无法读取SKILL.md。");
     } finally {
+      if (!canCommitContentRequest(requestId, skillId)) return;
       setContentLoading(false);
     }
   };
@@ -156,10 +254,11 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
     <div
       className={"mcp-tool-drawer-backdrop skill-detail-backdrop"}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busyAction) onClose?.();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <aside
+        ref={drawerRef}
         className={"mcp-tool-drawer skill-detail-drawer"}
         role={"dialog"}
         aria-modal={"true"}
@@ -179,7 +278,7 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
             type={"button"}
             aria-label={"关闭Skill详情"}
             disabled={Boolean(busyAction)}
-            onClick={onClose}
+            onClick={requestClose}
           >
             {"×"}
           </button>
