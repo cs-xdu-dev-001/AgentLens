@@ -188,7 +188,7 @@ def main() -> None:
     planned = client.post(
         "/api/chat/stream",
         json={
-            "question": "/plan 调研Agent任务状态",
+            "question": "/plan 买菜",
             "chatModelConfigId": model_id,
             "enableTools": True,
             "autoAgent": True,
@@ -196,6 +196,7 @@ def main() -> None:
     )
     assert planned.status_code == 200, planned.text
     planned_events = sse_payloads(planned)
+    assert planned_events[0]["type"] == "run_snapshot"
     assert any(item["type"] == "plan_created" for item in planned_events)
     planned_done = next(
         item for item in planned_events if item["type"] == "done"
@@ -237,6 +238,25 @@ def main() -> None:
     )
     assert len(calls) == 1
     assert calls[0]["run_step_id"] == snapshot["steps"][0]["id"]
+    history = client.get(
+        f"/api/sessions/{snapshot['sessionId']}/messages"
+    )
+    assert history.status_code == 200, history.text
+    assistant = next(
+        item
+        for item in history.json()["data"]
+        if item["id"] == snapshot["assistantMessageId"]
+    )
+    assert assistant["run"]["id"] == run_id
+    deleted = client.delete(
+        f"/api/sessions/{snapshot['sessionId']}"
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_run WHERE id=:run_id",
+        {"run_id": run_id},
+    ) is None
+    assert assistant["run"]["status"] == "completed"
     print("durable Agent task planning and execution work")
 
 

@@ -138,6 +138,26 @@ export const approvalApi = {
     }),
 };
 
+export const agentRunApi = {
+  get: (runId) => apiRequest(`/api/agent/runs/${runId}`),
+  start: (runId) =>
+    apiRequest(`/api/agent/runs/${runId}/start`, {
+      method: "POST",
+    }),
+  replan: (runId) =>
+    apiRequest(`/api/agent/runs/${runId}/replan`, {
+      method: "POST",
+    }),
+  resume: (runId) =>
+    apiRequest(`/api/agent/runs/${runId}/resume`, {
+      method: "POST",
+    }),
+  cancel: (runId) =>
+    apiRequest(`/api/agent/runs/${runId}/cancel`, {
+      method: "POST",
+    }),
+};
+
 export const runtimeApi = {
   get: () => apiRequest("/api/runtime"),
 };

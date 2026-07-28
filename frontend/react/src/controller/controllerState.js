@@ -13,6 +13,9 @@ export const state = {
   oauthProviders: {},
   sending: false,
   activeChatController: null,
+  activeRunReconnectController: null,
+  activeRunId: null,
+  activeRunMessageId: null,
   lastChatRequest: null,
 };
 

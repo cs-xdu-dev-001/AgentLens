@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
+import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 
 const actionEvents = {
   copy: "knowflow:react-message-copy",
@@ -33,7 +34,16 @@ function MessageBubble({ message }) {
           messageId={message.id}
           trace={message.trace}
           approvals={message.approvals}
+          run={message.run}
         />
+        {message.run?.status === "waiting_start" ? (
+          <AgentTaskPlan
+            compact
+            messageId={message.id}
+            run={message.run}
+            trace={message.trace}
+          />
+        ) : null}
         {message.approvals?.length ? (
           <div className={"agent-approval-list"}>
             {message.approvals.map((approval) => (
@@ -134,6 +144,7 @@ export function ChatMessages() {
       approvals: Array.isArray(payload.approvals)
         ? payload.approvals
         : [],
+      run: payload.run || null,
     };
   };
   const updateMessage = (messageId, updater) => {
@@ -273,6 +284,18 @@ export function ChatMessages() {
       );
       detail.handled = result.handled;
     };
+    const handleRun = (event) => {
+      const detail = event.detail || {};
+      if (!detail.messageId) return;
+      const result = updateMessage(
+        detail.messageId,
+        (message) => ({
+          ...message,
+          run: detail.run || null,
+        }),
+      );
+      detail.handled = result.handled;
+    };
 
     window.addEventListener("knowflow:react-message-append", handleAppend);
     window.addEventListener("knowflow:react-messages-reset", handleReset);
@@ -280,6 +303,7 @@ export function ChatMessages() {
     window.addEventListener("knowflow:react-message-thinking", handleThinking);
     window.addEventListener("knowflow:react-message-trace", handleTrace);
     window.addEventListener("knowflow:react-message-approvals", handleApprovals);
+    window.addEventListener("knowflow:react-message-run", handleRun);
     return () => {
       window.removeEventListener("knowflow:react-message-append", handleAppend);
       window.removeEventListener("knowflow:react-messages-reset", handleReset);
@@ -287,6 +311,7 @@ export function ChatMessages() {
       window.removeEventListener("knowflow:react-message-thinking", handleThinking);
       window.removeEventListener("knowflow:react-message-trace", handleTrace);
       window.removeEventListener("knowflow:react-message-approvals", handleApprovals);
+      window.removeEventListener("knowflow:react-message-run", handleRun);
     };
   }, []);
 

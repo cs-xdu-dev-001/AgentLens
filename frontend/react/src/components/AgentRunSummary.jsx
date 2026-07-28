@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { runProgress } from "../controller/agentRunState.js";
 
 const terminalStatuses = new Set(["success", "failed", "cancelled"]);
 
@@ -17,20 +18,27 @@ function shortRunId(runId) {
   return `run_${suffix.toUpperCase()}`;
 }
 
-export function AgentRunSummary({ trace = [] }) {
+export function AgentRunSummary({ trace = [], run = null }) {
   const safeTrace = Array.isArray(trace) ? trace : [];
   const rootStep = (
     safeTrace.find((step) => step.name === "agent_run")
     || safeTrace[0]
   );
-  const running = rootStep?.status === "running";
-  const failed = rootStep?.status === "failed";
-  const cancelled = rootStep?.status === "cancelled";
+  const durableStatus = run?.status || "";
+  const running = durableStatus
+    ? ["planning", "running"].includes(durableStatus)
+    : rootStep?.status === "running";
+  const failed = durableStatus
+    ? durableStatus === "failed"
+    : rootStep?.status === "failed";
+  const cancelled = durableStatus
+    ? durableStatus === "cancelled"
+    : rootStep?.status === "cancelled";
   const approvalWaiting = safeTrace.some(
     (step) =>
       step.status === "waiting" &&
       step.kind === "approval",
-  );
+  ) || durableStatus === "waiting_approval";
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -41,25 +49,35 @@ export function AgentRunSummary({ trace = [] }) {
   }, [running]);
 
   const metrics = useMemo(() => {
-    const startedAt = Date.parse(rootStep?.startedAt || "");
+    const startedAt = Date.parse(
+      run?.startedAt || rootStep?.startedAt || "",
+    );
+    const finishedAt = Date.parse(run?.finishedAt || "");
     const elapsedMs = rootStep?.durationMs != null
       ? rootStep.durationMs
+      : Number.isFinite(finishedAt) && Number.isFinite(startedAt)
+        ? finishedAt - startedAt
       : Number.isFinite(startedAt)
         ? now - startedAt
         : 0;
+    const progress = runProgress(run);
     return {
-      completed: safeTrace.filter((step) => terminalStatuses.has(step.status)).length,
+      completed: progress.total
+        ? progress.completed
+        : safeTrace.filter((step) =>
+          terminalStatuses.has(step.status),
+        ).length,
       elapsed: formatDuration(elapsedMs),
-      runId: shortRunId(rootStep?.runId),
+      runId: shortRunId(run?.id || rootStep?.runId),
       toolCalls: safeTrace.filter(
         (step) =>
           step.kind === "tool" || step.kind === "mcp",
       ).length,
-      total: safeTrace.length,
+      total: progress.total || safeTrace.length,
     };
-  }, [now, rootStep, safeTrace]);
+  }, [now, rootStep, run, safeTrace]);
 
-  const status = !safeTrace.length
+  const status = durableStatus || (!safeTrace.length
     ? "waiting"
     : approvalWaiting
       ? "waiting"
@@ -69,19 +87,24 @@ export function AgentRunSummary({ trace = [] }) {
         ? "failed"
         : cancelled
           ? "cancelled"
-          : "success";
+          : "success");
   const statusLabel = {
     cancelled: "已取消",
+    completed: "已完成",
     failed: "失败",
+    interrupted: "已中断",
+    planning: "规划中",
     running: "执行中",
     success: "已完成",
     waiting: approvalWaiting ? "等待确认" : "等待运行",
+    waiting_approval: "等待确认",
+    waiting_start: "等待开始",
   }[status];
   const freshness = running
     ? approvalWaiting
       ? "等待确认"
       : "实时"
-    : status === "waiting"
+    : ["waiting", "waiting_start", "waiting_approval"].includes(status)
       ? "等待"
       : "已保存";
 

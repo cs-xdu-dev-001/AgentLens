@@ -3,8 +3,9 @@ from __future__ import annotations
 import importlib
 import os
 from pathlib import Path
+from queue import Queue
 import sys
-from threading import Event
+from threading import Event, Thread
 import time
 
 from fastapi.testclient import TestClient
@@ -88,6 +89,44 @@ def main() -> None:
     assert '"type": "run_snapshot"' in body
     assert '"id": "run_api_test"' in body
 
+    race_run = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id="session-run-race",
+        user_message_id=3,
+        goal_summary="订阅竞态",
+        trigger_mode="plan_only",
+        run_id="run_api_race",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        race_run["id"],
+        "waiting_start",
+    )
+    original_subscribe = runtime.agent_run_coordinator.subscribe
+
+    def finish_before_subscribe(run_id):
+        runtime.agent_runs.transition_run(
+            alice_id,
+            run_id,
+            "running",
+        )
+        runtime.agent_runs.transition_run(
+            alice_id,
+            run_id,
+            "completed",
+        )
+        return None
+
+    runtime.agent_run_coordinator.subscribe = finish_before_subscribe
+    try:
+        race_events = alice.get(
+            f"/api/agent/runs/{race_run['id']}/events"
+        )
+    finally:
+        runtime.agent_run_coordinator.subscribe = original_subscribe
+    assert race_events.status_code == 200, race_events.text
+    assert '"status": "completed"' in race_events.text
+
     entered = Event()
     release = Event()
     cancelled = Event()
@@ -99,6 +138,11 @@ def main() -> None:
         entered.set()
         while not release.wait(0.01):
             if cancel_event.is_set():
+                runtime.agent_runs.transition_run(
+                    user_id,
+                    run_id,
+                    "cancelled",
+                )
                 cancelled.set()
                 return
 
@@ -109,8 +153,27 @@ def main() -> None:
     duplicate = alice.post(f"/api/agent/runs/{run['id']}/start")
     assert duplicate.status_code == 409, duplicate.text
     assert bob.post(f"/api/agent/runs/{run['id']}/cancel").status_code == 404
+    approval_events: Queue = Queue()
+    approval_result: Queue = Queue()
+    approval_waiter = Thread(
+        target=lambda: approval_result.put(
+            runtime.approval_broker.request(
+                user_id=alice_id,
+                run_id=run["id"],
+                server_name="Notion",
+                tool_name="create_page",
+                risk="write",
+                input_summary="{}",
+                emit=approval_events.put,
+            )
+        )
+    )
+    approval_waiter.start()
+    approval_events.get(timeout=1)
     cancel = alice.post(f"/api/agent/runs/{run['id']}/cancel")
     assert cancel.status_code == 200, cancel.text
+    assert approval_result.get(timeout=1) == "deny"
+    approval_waiter.join(timeout=1)
     assert cancelled.wait(1)
     release.set()
     for _ in range(100):
@@ -121,7 +184,7 @@ def main() -> None:
 
     completed = runtime.agent_runs.create_run(
         user_id=alice_id,
-        session_id="session-run-api",
+        session_id="session-run-completed",
         user_message_id=2,
         goal_summary="已完成任务",
         trigger_mode="auto",

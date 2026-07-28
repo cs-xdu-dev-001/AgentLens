@@ -11,6 +11,7 @@ import {
   updateReactMessageContent,
   updateReactMessageThinking,
   updateReactMessageTrace,
+  updateReactMessageRun,
 } from "./messageEvents.js";
 import {
   notifyReactAuthStateUpdated,
@@ -74,6 +75,17 @@ function renderAgentApprovals(message, approvals) {
     {
       messageId: message?.messageId || "",
       approvals: Array.isArray(approvals) ? approvals : [],
+    },
+  );
+}
+
+function renderAgentRun(message, run) {
+  updateReactMessageRun(message, run);
+  dispatchReactEvent(
+    "knowflow:react-agent-run-updated",
+    {
+      messageId: message?.messageId || "",
+      run: run || null,
     },
   );
 }
@@ -146,6 +158,7 @@ const chatFlow = createChatFlow({
   setSending,
   renderActiveSession,
   renderAgentApprovals,
+  renderAgentRun,
   renderAgentTrace,
   renderAttachmentTray,
   renderReferences,

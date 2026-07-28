@@ -11,6 +11,11 @@ SESSION_TAGS = ["Sessions"]
 
 def should_route_to_agent(payload: ChatRequest) -> bool:
     tool_mode = (payload.toolMode or "auto").lower()
+    first_token = (payload.question or "").strip().split(maxsplit=1)
+    plan_command = bool(
+        first_token
+        and first_token[0].lower() == "/plan"
+    )
     manual_tools = (
         tool_mode == "manual"
         and bool(payload.enabledTools)
@@ -20,7 +25,8 @@ def should_route_to_agent(payload: ChatRequest) -> bool:
         and payload.enableTools
     )
     return (
-        payload.skillId is not None
+        plan_command
+        or payload.skillId is not None
         or manual_tools
         or auto_tools
         or (
@@ -182,7 +188,8 @@ def list_sessions(request: Request) -> dict[str, Any]:
 
 @router.get("/api/sessions/{session_id}/messages", tags=SESSION_TAGS, summary="Read session messages")
 def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
-    get_session_for_user(session_id, current_user_id(request))
+    user_id = current_user_id(request)
+    get_session_for_user(session_id, user_id)
     rows = fetch_all(
         """
         SELECT *
@@ -192,9 +199,34 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
         """,
         {"session_id": session_id},
     )
-    return api_success(
-        [normalize_chat_message(row) for row in rows]
-    )
+    messages = []
+    for row in rows:
+        message = normalize_chat_message(row)
+        run_row = (
+            fetch_one(
+                """
+                SELECT id
+                FROM agent_run
+                WHERE assistant_message_id=:message_id
+                  AND user_id=:user_id
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                {
+                    "message_id": row["id"],
+                    "user_id": user_id,
+                },
+            )
+            if row["role"] == "assistant"
+            else None
+        )
+        message["run"] = (
+            agent_runs.get_snapshot(user_id, run_row["id"])
+            if run_row
+            else None
+        )
+        messages.append(message)
+    return api_success(messages)
 
 
 @router.put("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Rename a session")
@@ -207,7 +239,36 @@ def rename_session(session_id: str, payload: SessionUpdate, request: Request) ->
 
 @router.delete("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Delete a session")
 def delete_session(session_id: str, request: Request) -> dict[str, Any]:
-    get_session_for_user(session_id, current_user_id(request))
+    user_id = current_user_id(request)
+    get_session_for_user(session_id, user_id)
+    run_rows = fetch_all(
+        """
+        SELECT id
+        FROM agent_run
+        WHERE session_id=:session_id AND user_id=:user_id
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
+    for run_row in run_rows:
+        approval_broker.cancel_run(run_row["id"])
+        agent_run_coordinator.cancel(run_row["id"])
+    execute(
+        """
+        DELETE FROM agent_run_step
+        WHERE run_id IN (
+          SELECT id FROM agent_run
+          WHERE session_id=:session_id AND user_id=:user_id
+        )
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
+    execute(
+        """
+        DELETE FROM agent_run
+        WHERE session_id=:session_id AND user_id=:user_id
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
     execute("DELETE FROM agent_tool_call WHERE session_id=:session_id", {"session_id": session_id})
     execute("DELETE FROM message_reference WHERE message_id IN (SELECT id FROM chat_message WHERE session_id=:session_id)", {"session_id": session_id})
     execute("DELETE FROM chat_message WHERE session_id=:session_id", {"session_id": session_id})

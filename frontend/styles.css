@@ -9250,7 +9250,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-run-status.running,
-.agent-run-status.success {
+.agent-run-status.success,
+.agent-run-status.completed {
   background: color-mix(in srgb, var(--success) 11%, var(--surface));
   color: color-mix(in srgb, var(--success) 78%, var(--text));
 }
@@ -10662,5 +10663,175 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   #page-chat:not(.chat-empty) #chat-form.composer textarea {
     font-size: 14px !important;
+  }
+}
+
+/* Durable Agent plan: the plan is primary; execution trace stays nested. */
+.agent-task-plan {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.agent-task-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-task-step {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-task-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 28px;
+  bottom: -8px;
+  left: 10px;
+  width: 1px;
+  background: var(--control-border);
+}
+
+.agent-task-step > button {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px 6px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+
+.agent-task-step.selected > button {
+  background: var(--control-bg);
+}
+
+.agent-task-step-marker {
+  width: 9px;
+  height: 9px;
+  margin-left: 6px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.agent-task-step.completed .agent-task-step-marker {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.agent-task-step.running .agent-task-step-marker,
+.agent-task-step.planning .agent-task-step-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: agent-trace-pulse 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+}
+
+.agent-task-step.waiting_approval .agent-task-step-marker,
+.agent-task-step.waiting_start .agent-task-step-marker {
+  border-color: var(--warning);
+  background: var(--warning);
+}
+
+.agent-task-step.failed .agent-task-step-marker,
+.agent-task-step.interrupted .agent-task-step-marker {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.agent-task-step-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-task-step-status {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.agent-task-step-trace {
+  margin: 2px 0 8px 20px;
+  padding: 6px 0 6px 8px;
+  border-left: 1px solid var(--control-border);
+}
+
+.agent-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.agent-task-actions:empty {
+  display: none;
+}
+
+.agent-task-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 670;
+}
+
+.agent-task-actions button.primary {
+  border-color: var(--inverse-bg);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+}
+
+.agent-task-plan.compact {
+  width: min(620px, 88%);
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent));
+}
+
+@media (hover: hover) {
+  .agent-task-step > button:hover {
+    background: var(--control-bg-hover);
+  }
+
+  .agent-task-actions button:hover {
+    border-color: color-mix(in srgb, var(--text) 22%, var(--control-border));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-task-step.running .agent-task-step-marker,
+  .agent-task-step.planning .agent-task-step-marker {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .agent-task-plan.compact {
+    width: 100%;
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentRunSummary } from "./AgentRunSummary.jsx";
 import { AgentTraceView } from "./AgentTraceView.jsx";
+import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 
 const toolLabels = {
   knowledge_search: "知识库检索",
@@ -39,6 +40,8 @@ export function ChatEvidenceDrawer() {
   const [retrievalRun, setRetrievalRun] = useState(null);
   const [trace, setTrace] = useState([]);
   const [approvals, setApprovals] = useState([]);
+  const [run, setRun] = useState(null);
+  const [messageId, setMessageId] = useState("");
 
   useEffect(() => {
     const handleReferencesUpdated = (event) => setReferences(Array.isArray(event.detail?.references) ? event.detail.references : []);
@@ -76,6 +79,15 @@ export function ChatEvidenceDrawer() {
           ? event.detail.approvals
           : [],
       );
+      setRun(event.detail?.run || null);
+      setMessageId(event.detail?.messageId || "");
+      setActiveTab("trace");
+    };
+    const handleAgentRunUpdated = (event) => {
+      setRun(event.detail?.run || null);
+      if (event.detail?.messageId) {
+        setMessageId(event.detail.messageId);
+      }
       setActiveTab("trace");
     };
     const handleAgentApprovalsUpdated = (event) => {
@@ -98,6 +110,7 @@ export function ChatEvidenceDrawer() {
     window.addEventListener("knowflow:react-agent-trace-updated", handleAgentTraceUpdated);
     window.addEventListener("knowflow:react-agent-trace-open", handleAgentTraceOpen);
     window.addEventListener("knowflow:react-agent-approvals-updated", handleAgentApprovalsUpdated);
+    window.addEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
     return () => {
       window.removeEventListener("knowflow:react-references-updated", handleReferencesUpdated);
       window.removeEventListener("knowflow:react-tool-timeline-updated", handleToolTimelineUpdated);
@@ -105,6 +118,7 @@ export function ChatEvidenceDrawer() {
       window.removeEventListener("knowflow:react-agent-trace-updated", handleAgentTraceUpdated);
       window.removeEventListener("knowflow:react-agent-trace-open", handleAgentTraceOpen);
       window.removeEventListener("knowflow:react-agent-approvals-updated", handleAgentApprovalsUpdated);
+      window.removeEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
     };
   }, []);
 
@@ -115,7 +129,7 @@ export function ChatEvidenceDrawer() {
   return (
     <aside className={"evidence-drawer"} id={"evidence-drawer"}>
       <div className={"drawer-header"}>
-        <AgentRunSummary trace={trace} />
+        <AgentRunSummary trace={trace} run={run} />
         <button className={"icon-button"} id={"inspector-close"} type={"button"} title={"收起运行面板"} aria-label={"收起运行面板"} onClick={handleDrawerClose}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
             <path d={"M6 6l12 12M18 6 6 18"} fill={"none"} stroke={"currentColor"} strokeWidth={"2"} strokeLinecap={"round"} />
@@ -163,7 +177,14 @@ export function ChatEvidenceDrawer() {
               ))}
             </div>
           ) : null}
-          <AgentTraceView trace={trace} />
+          <AgentTaskPlan
+            messageId={messageId}
+            run={run}
+            trace={trace}
+          />
+          {!run?.steps?.length ? (
+            <AgentTraceView trace={trace} />
+          ) : null}
         </div>
       ) : (
         <div

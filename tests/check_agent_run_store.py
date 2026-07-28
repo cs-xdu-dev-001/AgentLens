@@ -50,6 +50,17 @@ def main() -> None:
         "chatModelConfigId": 9,
     }
     assert store.load_request(2, run["id"]) is None
+    expect_code(
+        "active_agent_run_exists",
+        lambda: store.create_run(
+            user_id=1,
+            session_id="session-alice",
+            user_message_id=18,
+            goal_summary="重复任务",
+            trigger_mode="auto",
+            run_id="run_store_duplicate",
+        ),
+    )
 
     steps = store.replace_plan(
         1,

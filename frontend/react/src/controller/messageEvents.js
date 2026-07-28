@@ -14,6 +14,7 @@ export function appendReactMessage(role, content, options = {}) {
     retryable: message.retryable,
     trace: Array.isArray(options.trace) ? options.trace : [],
     approvals: Array.isArray(options.approvals) ? options.approvals : [],
+    run: options.run || null,
   };
   window.dispatchEvent(new CustomEvent("knowflow:react-message-append", { detail }));
   message.messageId = detail.messageId || "";
@@ -77,6 +78,16 @@ export function updateReactMessageApprovals(message, approvals) {
       "knowflow:react-message-approvals",
       { detail },
     ),
+  );
+  return Boolean(detail.handled);
+}
+
+export function updateReactMessageRun(message, run) {
+  const messageId = message?.messageId || "";
+  if (!messageId) return false;
+  const detail = { messageId, run: run || null };
+  window.dispatchEvent(
+    new CustomEvent("knowflow:react-message-run", { detail }),
   );
   return Boolean(detail.handled);
 }

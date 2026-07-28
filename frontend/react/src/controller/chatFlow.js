@@ -1,5 +1,7 @@
 import { notifyAuthRequired } from "../api/client.js";
+import { agentRunApi } from "../api/client.js";
 import { normalizeErrorMessage } from "../api/errors.js";
+import { isActiveRun } from "./agentRunState.js";
 
 async function readStreamError(response) {
   const fallback = response.status === 401 ? "请先登录。" : "请求失败，请稍后重试。";
@@ -115,6 +117,7 @@ export function createChatFlow({
   setSending,
   renderActiveSession,
   renderAgentApprovals,
+  renderAgentRun,
   renderAgentTrace,
   renderAttachmentTray,
   renderReferences,
@@ -127,25 +130,66 @@ export function createChatFlow({
 }) {
   async function continueSession(sessionId) {
     const messages = await request(`/api/sessions/${sessionId}/messages`);
+    state.activeRunReconnectController?.abort();
+    state.activeRunReconnectController = null;
+    state.activeRunId = null;
+    state.activeRunMessageId = null;
     clearChatMessages(false);
-    messages.forEach((message) =>
-      appendMessage(
+    let reconnectTarget = null;
+    messages.forEach((message) => {
+      const appended = appendMessage(
         message.role,
         message.content,
         {
           trace: Array.isArray(message.trace)
             ? message.trace
             : [],
+          run: message.run || null,
         },
-      ),
-    );
+      );
+      if (
+        message.role === "assistant"
+        && appended?.messageId
+        && isActiveRun(message.run)
+      ) {
+        reconnectTarget = {
+          messageId: appended.messageId,
+          runId: message.run.id,
+        };
+      }
+    });
     state.currentSessionId = sessionId;
     renderActiveSession();
     requestReactSessionsRefresh();
     switchPage("chat");
+    if (reconnectTarget) {
+      const controller = new AbortController();
+      state.activeRunReconnectController = controller;
+      state.activeRunId = reconnectTarget.runId;
+      state.activeRunMessageId = reconnectTarget.messageId;
+      setSending(true);
+      reconnectAgentRun(
+        reconnectTarget.runId,
+        reconnectTarget.messageId,
+        controller.signal,
+      )
+        .catch((error) => {
+          if (error?.name !== "AbortError") {
+            toast(error.message || "恢复任务连接失败", 4200, "error");
+          }
+        })
+        .finally(() => {
+          if (state.activeRunReconnectController === controller) {
+            state.activeRunReconnectController = null;
+            setSending(false);
+          }
+        });
+    }
   }
 
   function startNewChat() {
+    state.activeRunReconnectController?.abort();
+    state.activeRunReconnectController = null;
     state.currentSessionId = null;
     renderActiveSession();
     clearChatMessages(true);
@@ -153,6 +197,7 @@ export function createChatFlow({
     renderToolTimeline([]);
     renderAgentTrace(null, []);
     renderAgentApprovals(null, []);
+    renderAgentRun(null, null);
     requestComposerReset({ focus: true });
     state.chatAttachments = [];
     renderAttachmentTray();
@@ -161,8 +206,15 @@ export function createChatFlow({
   }
 
   function stopChatGeneration() {
-    if (!state.activeChatController || state.activeChatController.signal.aborted) return;
-    state.activeChatController.abort();
+    if (state.activeRunId) {
+      agentRunApi.cancel(state.activeRunId).catch(() => {});
+    }
+    if (
+      state.activeChatController
+      && !state.activeChatController.signal.aborted
+    ) {
+      state.activeChatController.abort();
+    }
   }
 
   async function retryAnswer(messageId = null) {
@@ -249,6 +301,7 @@ export function createChatFlow({
     let answerBuffer = "";
     let trace = [];
     let approvals = [];
+    let run = null;
     let receivedDone = false;
     const controller = new AbortController();
     state.activeChatController = controller;
@@ -256,6 +309,7 @@ export function createChatFlow({
     renderReferences([]);
     renderToolTimeline([]);
     renderAgentApprovals(answer, approvals);
+    renderAgentRun(answer, run);
 
     const cancelPendingApprovals = () => {
       const next = markApprovalsCancelled(approvals);
@@ -350,8 +404,25 @@ export function createChatFlow({
           if (!dataLine) continue;
           const eventPayload = JSON.parse(dataLine.slice(6));
           if (eventPayload.type === "agent_step") {
+            if (!state.activeRunId && eventPayload.runId) {
+              state.activeRunId = eventPayload.runId;
+              state.activeRunMessageId = answer.messageId;
+            }
             trace = mergeTraceStep(trace, eventPayload);
             renderAgentTrace(answer, trace);
+          }
+          if (
+            eventPayload.type === "run_snapshot"
+            || eventPayload.type === "plan_created"
+            || eventPayload.type === "run_updated"
+            || eventPayload.type === "step_updated"
+          ) {
+            run = eventPayload.run || run;
+            state.activeRunId = isActiveRun(run) ? run.id : null;
+            state.activeRunMessageId = isActiveRun(run)
+              ? answer.messageId
+              : null;
+            renderAgentRun(answer, run);
           }
           if (eventPayload.type === "approval_required") {
             approvals = mergeApproval(approvals, eventPayload);
@@ -385,6 +456,12 @@ export function createChatFlow({
               eventPayload.message || "Agent运行失败。",
             );
           }
+          if (eventPayload.type === "cancelled") {
+            run = eventPayload.run || run;
+            state.activeRunId = null;
+            state.activeRunMessageId = null;
+            renderAgentRun(answer, run);
+          }
           if (eventPayload.type === "done") {
             receivedDone = true;
             cancelPendingApprovals();
@@ -392,6 +469,14 @@ export function createChatFlow({
               trace = eventPayload.trace;
               renderAgentTrace(answer, trace);
             }
+            if (eventPayload.run) {
+              run = eventPayload.run;
+              renderAgentRun(answer, run);
+            }
+            state.activeRunId = isActiveRun(run) ? run.id : null;
+            state.activeRunMessageId = isActiveRun(run)
+              ? answer.messageId
+              : null;
             state.currentSessionId = eventPayload.sessionId;
             renderActiveSession();
           }
@@ -437,6 +522,138 @@ export function createChatFlow({
       setSending(false);
     }
   }
+
+  async function reconnectAgentRun(runId, messageId, signal = undefined) {
+    const message = {
+      messageId,
+      streaming: true,
+      thinking: false,
+    };
+    let answerBuffer = "";
+    let trace = [];
+    let approvals = [];
+    try {
+      const response = await fetch(
+        `/api/agent/runs/${runId}/events`,
+        { credentials: "include", signal },
+      );
+      if (!response.ok) {
+        throw new Error(await readStreamError(response));
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop();
+        for (const event of events) {
+          const dataLine = event
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+          if (!dataLine) continue;
+          const eventPayload = JSON.parse(dataLine.slice(6));
+          if (
+            eventPayload.type === "run_snapshot"
+            || eventPayload.type === "plan_created"
+            || eventPayload.type === "run_updated"
+            || eventPayload.type === "step_updated"
+          ) {
+            const nextRun = eventPayload.run || null;
+            renderAgentRun(message, nextRun);
+            state.activeRunId = isActiveRun(nextRun)
+              ? nextRun.id
+              : null;
+            state.activeRunMessageId = isActiveRun(nextRun)
+              ? messageId
+              : null;
+          }
+          if (eventPayload.type === "agent_step") {
+            trace = mergeTraceStep(trace, eventPayload);
+            renderAgentTrace(message, trace);
+          }
+          if (eventPayload.type === "approval_required") {
+            approvals = mergeApproval(approvals, eventPayload);
+            renderAgentApprovals(message, approvals);
+          }
+          if (eventPayload.type === "approval_resolved") {
+            approvals = mergeApproval(approvals, eventPayload);
+            renderAgentApprovals(message, approvals);
+          }
+          if (eventPayload.type === "answer") {
+            answerBuffer += eventPayload.content || "";
+            setMessageContent(message, "assistant", answerBuffer);
+          }
+          if (eventPayload.type === "done") {
+            if (eventPayload.run) {
+              renderAgentRun(message, eventPayload.run);
+            }
+            state.currentSessionId = eventPayload.sessionId;
+            state.activeRunId = null;
+            state.activeRunMessageId = null;
+            renderActiveSession();
+          }
+        }
+      }
+      if (!answerBuffer) {
+        const snapshot = await agentRunApi.get(runId);
+        if (snapshot?.assistantMessageId && snapshot?.sessionId) {
+          const messages = await request(
+            `/api/sessions/${snapshot.sessionId}/messages`,
+          );
+          const saved = messages.find(
+            (item) => item.id === snapshot.assistantMessageId,
+          );
+          if (saved) {
+            setMessageContent(message, "assistant", saved.content);
+            renderAgentTrace(message, saved.trace || []);
+            renderAgentRun(message, saved.run || snapshot);
+          }
+        }
+      }
+    } finally {
+      message.streaming = false;
+      message.thinking = false;
+      setMessageThinking(message, false);
+    }
+  }
+
+  async function handleAgentRunAction(event) {
+    const detail = event.detail || {};
+    const action = detail.action;
+    const runId = detail.runId;
+    const messageId = detail.messageId;
+    if (
+      !runId
+      || !messageId
+      || !["start", "replan", "resume", "cancel"].includes(action)
+    ) return;
+    try {
+      setSending(true);
+      const result = await agentRunApi[action](runId);
+      const nextRun = result?.run || result;
+      renderAgentRun({ messageId }, nextRun);
+      if (action !== "cancel") {
+        state.activeRunId = runId;
+        state.activeRunMessageId = messageId;
+        await reconnectAgentRun(runId, messageId);
+      } else {
+        state.activeRunId = null;
+        state.activeRunMessageId = null;
+      }
+    } catch (error) {
+      toast(error.message || "任务操作失败", 4200, "error");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  window.addEventListener(
+    "knowflow:react-agent-run-action",
+    handleAgentRunAction,
+  );
 
   return {
     continueSession,

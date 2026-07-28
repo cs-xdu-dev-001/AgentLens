@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from ..runtime import (
     agent_run_coordinator,
     agent_runs,
+    approval_broker,
     api_success,
     current_user_id,
     sse_event,
@@ -83,11 +84,15 @@ def stream_agent_run_events(
     snapshot = _snapshot_or_404(user_id, run_id)
 
     def generate() -> Iterable[str]:
+        subscriber = agent_run_coordinator.subscribe(run_id)
+        current_snapshot = (
+            agent_runs.get_snapshot(user_id, run_id)
+            or snapshot
+        )
         yield sse_event(
             "run_snapshot",
-            {"type": "run_snapshot", "run": snapshot},
+            {"type": "run_snapshot", "run": current_snapshot},
         )
-        subscriber = agent_run_coordinator.subscribe(run_id)
         if subscriber is None:
             return
         try:
@@ -134,6 +139,7 @@ def resume_agent_run(run_id: str, request: Request) -> dict[str, Any]:
 def cancel_agent_run(run_id: str, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
     snapshot = _snapshot_or_404(user_id, run_id)
+    approval_broker.cancel_run(run_id)
     requested = agent_run_coordinator.cancel(run_id)
     if not requested and snapshot["status"] not in {
         "completed",

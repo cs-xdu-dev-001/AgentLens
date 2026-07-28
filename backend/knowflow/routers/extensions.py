@@ -376,6 +376,15 @@ def execute_agent_chat(
             payload.chatModelConfigId,
             user_id,
         )
+        open_run = agent_runs.get_open_run_for_session(
+            user_id,
+            session_id,
+        )
+        if open_run is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This session already has an active Agent run.",
+            )
         payload = payload.model_copy(
             update={"sessionId": session_id}
         )
@@ -421,6 +430,8 @@ def execute_agent_chat(
             raise RuntimeError("Agent run snapshot is unavailable.")
         emit_named(event_name, {"run": snapshot})
         return snapshot
+
+    emit_named("run_snapshot", {"run": durable_snapshot})
 
     history: list[dict[str, Any]] = []
 

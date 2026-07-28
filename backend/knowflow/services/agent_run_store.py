@@ -54,6 +54,7 @@ ACTIVE_RUN_STATUSES = {
     "running",
     "waiting_approval",
 }
+OPEN_RUN_STATUSES = ACTIVE_RUN_STATUSES | {"waiting_start"}
 
 
 class AgentRunStoreError(ValueError):
@@ -191,6 +192,32 @@ class AgentRunStore:
         identifier = run_id or f"run_{uuid.uuid4().hex[:12]}"
         now = _now()
         with self.database.engine.begin() as conn:
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM agent_run
+                    WHERE user_id=:user_id
+                      AND session_id=:session_id
+                      AND status IN (
+                        'planning',
+                        'waiting_start',
+                        'running',
+                        'waiting_approval'
+                      )
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                },
+            ).first()
+            if existing:
+                raise AgentRunStoreError(
+                    "active_agent_run_exists",
+                    "This session already has an active Agent run.",
+                )
             conn.execute(
                 text(
                     """
@@ -231,6 +258,40 @@ class AgentRunStore:
                 "Agent run could not be created.",
             )
         return self._normalize_run(row, [])
+
+    def get_open_run_for_session(
+        self,
+        user_id: int,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        with self.database.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM agent_run
+                    WHERE user_id=:user_id
+                      AND session_id=:session_id
+                      AND status IN (
+                        'planning',
+                        'waiting_start',
+                        'running',
+                        'waiting_approval'
+                      )
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                },
+            ).mappings().first()
+            if row is None:
+                return None
+            safe_row = dict(row)
+            steps = self._step_rows(conn, safe_row["id"])
+        return self._normalize_run(safe_row, steps)
 
     def load_request(
         self,

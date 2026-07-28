@@ -1,4 +1,8 @@
 import { traceStepTitle } from "./AgentTraceView.jsx";
+import {
+  currentRunStep,
+  runProgress,
+} from "../controller/agentRunState.js";
 
 
 function currentStep(trace) {
@@ -22,11 +26,16 @@ export function AgentTraceStrip({
   messageId,
   trace = [],
   approvals = [],
+  run = null,
 }) {
-  const step = currentStep(trace);
+  const durableStep = currentRunStep(run);
+  const step = durableStep || currentStep(trace);
   if (!step) return null;
-  const running = step.status === "running";
-  const waiting = step.status === "waiting";
+  const running = ["planning", "running"].includes(step.status);
+  const waiting = ["waiting", "waiting_approval"].includes(
+    step.status,
+  );
+  const progress = runProgress(run);
   const completed = trace.filter(
     (item) => item.status === "success",
   ).length;
@@ -42,7 +51,7 @@ export function AgentTraceStrip({
       new CustomEvent(
         "knowflow:react-agent-trace-open",
         {
-          detail: { messageId, trace, approvals },
+          detail: { messageId, trace, approvals, run },
         },
       ),
     );
@@ -66,12 +75,16 @@ export function AgentTraceStrip({
         className={"agent-trace-strip-copy"}
         aria-live={"polite"}
       >
-        <strong>{traceStepTitle(step)}</strong>
+        <strong>
+          {durableStep ? durableStep.title : traceStepTitle(step)}
+        </strong>
         <small>
           {waiting
             ? "Agent已暂停，确认后继续"
             : running
-            ? `${completed}/${trace.length || 1}个步骤完成`
+            ? run?.id
+              ? `${progress.completed}/${progress.total}个步骤完成`
+              : `${completed}/${trace.length || 1}个步骤完成`
             : `${terminal}个步骤已结束`}
         </small>
       </span>
