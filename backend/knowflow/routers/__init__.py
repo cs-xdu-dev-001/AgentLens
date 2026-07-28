@@ -9,6 +9,7 @@ from .extensions import router as extension_router
 from .mcp import router as mcp_router
 from .approvals import router as approval_router
 from .skills import router as skill_router
+from .agent_runs import router as agent_run_router
 
 routers = [
     auth_router,
@@ -19,5 +20,6 @@ routers = [
     extension_router,
     mcp_router,
     approval_router,
+    agent_run_router,
     skill_router,
 ]

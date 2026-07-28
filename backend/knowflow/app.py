@@ -129,3 +129,8 @@ from .routers import routers
 
 for api_router in routers:
     app.include_router(api_router)
+
+
+@app.on_event("startup")
+def interrupt_stale_agent_runs() -> None:
+    agent_runs.interrupt_stale_runs()

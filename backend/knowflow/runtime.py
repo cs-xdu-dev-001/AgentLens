@@ -41,6 +41,8 @@ from .services.tool_config import ToolConfigService
 from .services.mcp_config import McpConfigService
 from .services.mcp_oauth import McpOAuthCoordinator
 from .services.approval import ApprovalBroker
+from .services.agent_run_coordinator import AgentRunCoordinator
+from .services.agent_run_store import AgentRunStore
 from .services.skill_archive import SkillArchiveLimits
 from .services.skill_store import SkillStore
 
@@ -66,6 +68,8 @@ def mappings(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 
 db = Database(DB_URL)
+agent_runs = AgentRunStore(database=db)
+agent_run_coordinator = AgentRunCoordinator()
 
 
 class Cipher:
