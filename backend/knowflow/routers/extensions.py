@@ -797,7 +797,7 @@ def execute_agent_chat(
                         plan_created = True
 
                 if plan_created and execution_mode == "plan_only":
-                    answer = "计划已生成，等待开始执行。"
+                    answer = "The plan is ready and waiting to start."
                 elif plan_created:
                     planned = agent_runs.get_snapshot(
                         user_id,
@@ -895,7 +895,7 @@ def execute_agent_chat(
                                 step_result.answer,
                                 max_chars=700,
                             )
-                            or "步骤已完成"
+                            or "Step completed."
                         )
                         trace.finish_step(
                             plan_trace_step,
@@ -1199,7 +1199,7 @@ def execute_agent_chat(
                 durable_run_id,
                 "failed",
             )
-        publish_snapshot("error")
+        publish_snapshot("run_updated")
         raise
 
 

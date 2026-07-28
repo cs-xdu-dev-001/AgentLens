@@ -210,6 +210,10 @@ Agent progress is emitted as sanitized SSE events. The chat message shows the cu
 
 The completed Trace snapshot is stored with the assistant message. Reopening a session restores the same execution view, including completed and failed states.
 
+Longer Agent tasks also persist a public plan and step state in the database. The model may answer simple requests directly; when it creates a plan, the current step lights in the run drawer and tool or MCP traces stay nested under that step. Prefix a request with `/plan` to create the plan without executing it, then choose 开始执行 or 重新规划.
+
+Execution and live SSE subscriptions are process-local, while run, plan, trace, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart safely marks unfinished work as 已中断; it never silently replays side effects, and the user must choose 继续执行. Keep this deployment on one backend worker until the coordinator and approval broker move to shared infrastructure.
+
 ### Skills
 
 A Skill is a reusable instruction package centered on `SKILL.md`. Its minimum YAML front matter contains `name` and `description`; optional `metadata.knowflow` fields describe the UI label, version, and dependencies without storing credentials:

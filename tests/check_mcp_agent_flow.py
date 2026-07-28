@@ -132,7 +132,7 @@ class FakePool:
                 "isError": False,
             }
         return {
-            "content": "Created page ntn_remote-result-secret",
+            "content": "Created page ntn_test_secret",
             "structuredContent": {"pageId": "page_1"},
             "isError": False,
         }
@@ -241,6 +241,7 @@ async def run_stream(
 
 async def cancel_stream_at_approval(
     extensions,
+    client: TestClient,
     payload,
 ) -> None:
     original_user = extensions.current_user_id
@@ -250,6 +251,10 @@ async def cancel_stream_at_approval(
         async for chunk in response.body_iterator:
             parsed = parse_sse_chunk(chunk)
             if parsed and parsed[0] == "approval_required":
+                cancelled = client.post(
+                    f"/api/agent/runs/{parsed[1]['runId']}/cancel"
+                )
+                assert cancelled.status_code == 200, cancelled.text
                 break
     finally:
         await response.body_iterator.aclose()
@@ -505,7 +510,9 @@ def main() -> None:
         "SELECT COUNT(*) FROM chat_message WHERE role='assistant'"
     )
     pool_count_before = len(FakePool.instances)
-    asyncio.run(cancel_stream_at_approval(extensions, payload))
+    asyncio.run(
+        cancel_stream_at_approval(extensions, client, payload)
+    )
     deadline = time.monotonic() + 1
     while (
         len(FakePool.instances) == pool_count_before
