@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import atexit
 import importlib
 import io
 import json
 import os
+import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -14,6 +16,22 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 TEST_ROOT = ROOT / "data" / "test-dbs" / "skill-import-api"
+
+
+def cleanup_test_root() -> None:
+    test_db_root = (ROOT / "data" / "test-dbs").resolve()
+    if TEST_ROOT.is_symlink():
+        raise RuntimeError("refusing to clean a symlinked Skill import API TEST_ROOT")
+    resolved = TEST_ROOT.resolve()
+    if resolved.relative_to(test_db_root) != Path("skill-import-api"):
+        raise RuntimeError(
+            "Skill import API TEST_ROOT must remain fixed under data/test-dbs"
+        )
+    runtime = sys.modules.get("knowflow.runtime")
+    if runtime is not None:
+        runtime.db.engine.dispose()
+    if resolved.exists():
+        shutil.rmtree(resolved)
 
 
 def skill_zip(
@@ -91,10 +109,8 @@ def main() -> None:
     db_path = TEST_ROOT / "db.sqlite"
     skill_dir = TEST_ROOT / "skills"
     import_dir = TEST_ROOT / "imports"
-    if TEST_ROOT.exists():
-        import shutil
-
-        shutil.rmtree(TEST_ROOT)
+    cleanup_test_root()
+    atexit.register(cleanup_test_root)
     TEST_ROOT.mkdir(parents=True)
     os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ.update(

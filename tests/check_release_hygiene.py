@@ -1,4 +1,6 @@
 import ast
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -152,8 +154,6 @@ def iter_text_files(tracked: list[str]):
 
 
 def tracked_files() -> list[str]:
-    import subprocess
-
     try:
         result = subprocess.run(
             [
@@ -180,6 +180,45 @@ def tracked_files() -> list[str]:
         for path in result.stdout.split("\0")
         if path
     ]
+
+
+def check_skill_api_scripts_cleanup(
+    text_files: list[tuple[Path, str]],
+) -> None:
+    test_db_root = (ROOT / "data" / "test-dbs").resolve()
+    indexed_text = {
+        path.relative_to(ROOT).as_posix(): text for path, text in text_files
+    }
+    scripts = (
+        ("tests/check_skill_api.py", test_db_root / "skill-api"),
+        ("tests/check_skill_import_api.py", test_db_root / "skill-import-api"),
+    )
+    for script, test_root in scripts:
+        test_root.resolve().relative_to(test_db_root)
+        subprocess.run(
+            [sys.executable, str(ROOT / script)],
+            cwd=ROOT,
+            check=True,
+        )
+        assert not test_root.exists(), f"{script} left its fixed TEST_ROOT behind"
+        source = indexed_text.get(script)
+        assert source is not None, f"{script} must be tracked text"
+        tree = ast.parse(source, filename=script)
+        registers_atexit = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "atexit"
+            and node.func.attr == "register"
+            for node in ast.walk(tree)
+        )
+        has_finally = any(
+            isinstance(node, ast.Try) and bool(node.finalbody)
+            for node in ast.walk(tree)
+        )
+        assert registers_atexit or has_finally, (
+            f"{script} must register cleanup for exceptional exits"
+        )
 
 
 def authenticated_testclient_files(
@@ -297,6 +336,7 @@ def main() -> None:
             + "\n".join(cookie_env_offenders)
         )
 
+    check_skill_api_scripts_cleanup(text_files)
     print("release hygiene checks passed")
 
 
