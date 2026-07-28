@@ -10,6 +10,10 @@ FORBIDDEN_TRACKED_PATTERNS = [
     "backend/.env",
     "frontend/.env",
     "data/knowflow.db",
+    "data/skills/",
+    "data/skill-imports/",
+    "backend/data/skills/",
+    "backend/data/skill-imports/",
     "data/test-dbs/",
     "data/test-uploads/",
     "frontend/react/public/vendor/",
@@ -17,6 +21,55 @@ FORBIDDEN_TRACKED_PATTERNS = [
     "frontend/dist/",
 ]
 TESTCLIENT_COOKIE_EXEMPT = {"tests/check_backend_static_frontend.py"}
+
+
+def normalize_repo_path(path: str) -> str:
+    normalized = path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    return normalized.casefold()
+
+
+def is_forbidden_tracked_path(path: str) -> bool:
+    normalized = normalize_repo_path(path)
+    for pattern in FORBIDDEN_TRACKED_PATTERNS:
+        if not pattern.endswith("/"):
+            continue
+        expected = normalize_repo_path(pattern)
+        expected = expected.rstrip("/")
+        if normalized == expected or normalized.startswith(expected + "/"):
+            return True
+    if normalized.endswith(".env.example"):
+        return False
+    return any(
+        normalized.startswith(normalize_repo_path(pattern))
+        for pattern in FORBIDDEN_TRACKED_PATTERNS
+        if not pattern.endswith("/")
+    )
+
+
+def check_forbidden_path_contract() -> None:
+    forbidden = [
+        "backend/.env.local",
+        "data/knowflow.db-wal",
+        "data/skills/user-1/example/SKILL.md",
+        "data/skills/user-1/example/.env.example",
+        r"data\skill-imports\preview-1\archive.zip",
+        "backend/data/skills/user-2/example/SKILL.md",
+        r"backend\data\skill-imports\preview-2\SKILL.md",
+    ]
+    allowed = [
+        "backend/.env.example",
+        "frontend/.env.example",
+        "data/skills-notes/readme.md",
+        "data/skill-imports.md",
+        "backend/knowflow/builtin_skills/deep-research/SKILL.md",
+        "docs/data/skills/example.md",
+    ]
+    assert all(is_forbidden_tracked_path(path) for path in forbidden)
+    assert not any(is_forbidden_tracked_path(path) for path in allowed)
 
 
 def iter_text_files():
@@ -126,6 +179,7 @@ def isolates_secure_cookie_before_app_import(path: Path) -> bool:
 
 
 def main() -> None:
+    check_forbidden_path_contract()
     text_offenders = []
     for path in iter_text_files():
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -136,13 +190,7 @@ def main() -> None:
         raise AssertionError("release hygiene text issues:\n" + "\n".join(text_offenders[:80]))
 
     tracked = tracked_files()
-    tracked_offenders = [
-        path
-        for path in tracked
-        for pattern in FORBIDDEN_TRACKED_PATTERNS
-        if not path.endswith(".env.example")
-        if path == pattern.rstrip("/") or path.startswith(pattern)
-    ]
+    tracked_offenders = [path for path in tracked if is_forbidden_tracked_path(path)]
     if tracked_offenders:
         raise AssertionError("sensitive or generated files are tracked:\n" + "\n".join(sorted(set(tracked_offenders))))
 

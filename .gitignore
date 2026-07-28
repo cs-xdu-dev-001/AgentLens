@@ -28,6 +28,10 @@ __pycache__/
 data/*.db
 data/*.db-*
 data/uploads/
+data/skills/
+data/skill-imports/
+backend/data/skills/
+backend/data/skill-imports/
 data/test-uploads/
 logs/
 *.log

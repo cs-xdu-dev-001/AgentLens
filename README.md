@@ -210,6 +210,33 @@ Agent progress is emitted as sanitized SSE events. The chat message shows the cu
 
 The completed Trace snapshot is stored with the assistant message. Reopening a session restores the same execution view, including completed and failed states.
 
+### Skills
+
+A Skill is a reusable instruction package centered on `SKILL.md`. Its minimum YAML front matter contains `name` and `description`; optional `metadata.knowflow` fields describe the UI label, version, and dependencies without storing credentials:
+
+```yaml
+---
+name: research-brief
+description: Prepare a cited research brief from available sources.
+metadata:
+  knowflow:
+    display_name: Research Brief
+    version: "1.0.0"
+    required_tools:
+      - web_search
+    required_mcp:
+      - notion
+---
+```
+
+GitHub and ZIP imports use two stages: preview the package and validation result, then explicitly install it. GitHub sources must use HTTPS on `github.com`. Import limits cover archive and extracted bytes, file count, per-file size, path depth, `SKILL.md` body length, preview TTL, and GitHub timeout. `KNOWFLOW_SKILL_DIR` selects the persistent package root; the `KNOWFLOW_SKILL_MAX_*`, `KNOWFLOW_SKILL_IMPORT_TTL`, and `KNOWFLOW_SKILL_GITHUB_TIMEOUT` limits and safe defaults are documented in `backend/.env.example`.
+
+Skill packages are isolated per-user. Each signed-in user gets builtin Skills disabled by default and cannot see another user's personal installations. One Agent run uses at most one Skill. Enter `/` in the chat input to select one explicitly; without an explicit selection, the model may auto-activate one available, enabled Skill.
+
+A Skill cannot register or enable a tool or MCP connection. Existing tool configuration, MCP connections, and write approval remain authoritative; instructions inside a Skill to skip approval have no effect. Package `scripts/` files are stored for inspection only; the current version不会执行这些脚本. Files under `references/` become available only after activation as bounded, read-only UTF-8 text.
+
+For deployment, each backup must include the database and `data/skills` together. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill directory; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages to Git.
+
 ### Remote MCP servers
 
 The 工具与MCP page manages remote MCP connections for the current signed-in user. The built-in Notion preset uses the official `https://mcp.notion.com/mcp` endpoint with user OAuth; it does not ask for a Notion integration token. Select 连接Notion, finish authorization in Notion, return to the settings page, and use 刷新工具 when the remote tool catalog changes. 停用 immediately removes that server's tools from later Agent runs and clears its local authorization.

@@ -64,12 +64,12 @@ def main() -> None:
     if TEST_ROOT.exists():
         shutil.rmtree(TEST_ROOT)
     TEST_ROOT.mkdir(parents=True)
+    os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ.update(
         KNOWFLOW_DB_URL=f"sqlite:///{(TEST_ROOT / 'db.sqlite').as_posix()}",
         KNOWFLOW_SKILL_DIR=str(TEST_ROOT / "skills"),
         KNOWFLOW_SKILL_IMPORT_DIR=str(TEST_ROOT / "imports"),
         KNOWFLOW_SECRET_KEY="skill-api-test",
-        KNOWFLOW_COOKIE_SECURE="0",
         KNOWFLOW_VECTOR_BACKEND="local",
     )
     sys.path.insert(0, str(BACKEND))

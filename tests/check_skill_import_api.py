@@ -96,13 +96,13 @@ def main() -> None:
 
         shutil.rmtree(TEST_ROOT)
     TEST_ROOT.mkdir(parents=True)
+    os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ.update(
         KNOWFLOW_DB_URL=f"sqlite:///{db_path.as_posix()}",
         KNOWFLOW_SKILL_DIR=str(skill_dir),
         KNOWFLOW_SKILL_IMPORT_DIR=str(import_dir),
         KNOWFLOW_SKILL_MAX_ARCHIVE_BYTES="1024",
         KNOWFLOW_SECRET_KEY="skill-import-test",
-        KNOWFLOW_COOKIE_SECURE="0",
         KNOWFLOW_VECTOR_BACKEND="local",
     )
     sys.path.insert(0, str(BACKEND))
