@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 
 class Database:
@@ -102,7 +102,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Add per-user Mem0 long-term memory settings."
+                    "Add durable memory operation tracking and retries."
                 ),
             },
         )

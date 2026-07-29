@@ -175,6 +175,25 @@ CREATE TABLE IF NOT EXISTS memory_config (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS memory_operation (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  agent_run_id TEXT,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT,
+  result_json TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, message_id, kind)
+);
 CREATE TABLE IF NOT EXISTS sync_task (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER,
@@ -287,6 +306,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_user_time ON agent_run(user_id, created
 CREATE INDEX IF NOT EXISTS idx_agent_run_session_time ON agent_run(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_run_step_run_position ON agent_run_step(run_id, position);
 CREATE INDEX IF NOT EXISTS idx_tool_session_time ON agent_tool_call(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_memory_operation_due ON memory_operation(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_memory_operation_user_message ON memory_operation(user_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_memory_operation_user_time ON memory_operation(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_document_task_doc ON document_task(document_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_auth_session_user ON auth_session(user_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_account_user ON oauth_account(user_id)
@@ -477,6 +499,28 @@ CREATE TABLE IF NOT EXISTS memory_config (
   enabled TINYINT DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS memory_operation (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  session_id VARCHAR(64) NOT NULL,
+  message_id BIGINT NOT NULL,
+  agent_run_id VARCHAR(64),
+  kind VARCHAR(20) NOT NULL,
+  status VARCHAR(30) NOT NULL,
+  attempt_count INT NOT NULL DEFAULT 0,
+  next_attempt_at DATETIME,
+  result_json LONGTEXT,
+  error_code VARCHAR(100),
+  error_message VARCHAR(255),
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_memory_operation_message_kind (user_id, message_id, kind),
+  KEY idx_memory_operation_due (status, next_attempt_at),
+  KEY idx_memory_operation_user_message (user_id, message_id),
+  KEY idx_memory_operation_user_time (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS sync_task (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
