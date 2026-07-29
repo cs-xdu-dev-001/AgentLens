@@ -240,7 +240,10 @@ def build_mem0_config() -> dict[str, object]:
         "custom_instructions": (
             "Only retain durable user facts, preferences, goals, decisions, "
             "and explicit corrections. Ignore transient requests, tool output, "
-            "credentials, passwords, tokens, API keys, and unsupported guesses."
+            "credentials, passwords, tokens, API keys, and unsupported guesses. "
+            "Preserve each extracted memory in the same primary language as the "
+            "user's original statement. For Chinese input, store the memory in "
+            "concise Simplified Chinese. Never translate Chinese memories into English."
         ),
     }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}

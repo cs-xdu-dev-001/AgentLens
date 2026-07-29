@@ -67,6 +67,11 @@ def main() -> None:
     assert config["vector_store"]["config"]["on_disk"] is True
     assert config["history_db_path"] == str(history_path)
     assert "credentials" in config["custom_instructions"].lower()
+    assert "same primary language" in config["custom_instructions"].lower()
+    assert "simplified chinese" in config["custom_instructions"].lower()
+    assert "never translate chinese memories into english" in config[
+        "custom_instructions"
+    ].lower()
 
     database = Database(f"sqlite:///{db_path.as_posix()}")
     with database.engine.connect() as conn:
