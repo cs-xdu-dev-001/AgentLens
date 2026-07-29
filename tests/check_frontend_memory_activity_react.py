@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +14,72 @@ def require(path: str, needle: str, label: str) -> None:
     if needle not in read(path):
         raise AssertionError(
             f"missing {label} in {path}: {needle}"
+        )
+
+
+def check_memory_trace_reconciliation() -> None:
+    script = textwrap.dedent(
+        """
+        import assert from "node:assert/strict";
+        import {
+          mergeMemoryActivityTrace,
+        } from "./frontend/react/src/controller/memoryActivity.js";
+
+        const waitingTrace = [
+          {
+            stepId: "trace-write",
+            kind: "memory",
+            name: "memory_write",
+            status: "waiting",
+            title: "Waiting for long-term memory write",
+            details: { operationId: "operation-write" },
+          },
+        ];
+        const completedActivity = {
+          messageId: 42,
+          summary: { recalled: 1, added: 1, updated: 0, deleted: 0 },
+          operations: [
+            {
+              id: "operation-write",
+              kind: "write",
+              status: "succeeded",
+              attemptCount: 1,
+              items: [
+                { action: "add", content: "用户默认使用Java。" },
+              ],
+            },
+          ],
+        };
+
+        const merged = mergeMemoryActivityTrace(
+          waitingTrace,
+          completedActivity,
+        );
+        assert.equal(merged.length, 1);
+        assert.equal(merged[0].stepId, "trace-write");
+        assert.equal(merged[0].status, "success");
+        assert.equal(merged[0].title, "长期记忆整理完成");
+        assert.equal(merged[0].details.items.length, 1);
+
+        const ordinaryTrace = mergeMemoryActivityTrace(
+          [],
+          completedActivity,
+        );
+        assert.deepEqual(ordinaryTrace, []);
+        """
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode:
+        raise AssertionError(
+            "completed memory activity must reconcile a waiting trace:\n"
+            f"{result.stdout}{result.stderr}"
         )
 
 
@@ -69,6 +137,16 @@ def main() -> None:
         "memory detail drawer reuse",
     )
     require(
+        messages,
+        "knowflow:react-memory-activity-updated",
+        "settled activity broadcast",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "knowflow:react-memory-activity-updated",
+        "open drawer reconciliation",
+    )
+    require(
         events,
         "updateReactMessageMemoryActivity",
         "memory activity event bridge",
@@ -87,6 +165,7 @@ def main() -> None:
     require(trace, "memoryDetailsForDisplay", "safe memory item details")
     require(styles, ".memory-activity-status", "compact status styling")
     require(styles, ".memory-activity-retry", "retry styling")
+    check_memory_trace_reconciliation()
 
     print("memory activity is visible, inspectable, and retryable")
 

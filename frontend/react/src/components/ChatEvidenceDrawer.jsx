@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentRunSummary } from "./AgentRunSummary.jsx";
 import { AgentTraceView } from "./AgentTraceView.jsx";
@@ -121,6 +122,29 @@ export function ChatEvidenceDrawer() {
       window.removeEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
     };
   }, []);
+
+  useEffect(() => {
+    const handleMemoryActivityUpdated = (event) => {
+      if (
+        !messageId
+        || event.detail?.messageId !== messageId
+      ) {
+        return;
+      }
+      setTrace((current) => mergeMemoryActivityTrace(
+        current,
+        event.detail?.memoryActivity,
+      ));
+    };
+    window.addEventListener(
+      "knowflow:react-memory-activity-updated",
+      handleMemoryActivityUpdated,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-memory-activity-updated",
+      handleMemoryActivityUpdated,
+    );
+  }, [messageId]);
 
   const handleDrawerClose = () => window.dispatchEvent(new CustomEvent("knowflow:react-drawer-close"));
   const qualityLevel = ragQuality?.qualityLevel || "no_match";

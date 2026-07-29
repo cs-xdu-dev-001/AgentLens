@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
+import {
+  memoryActivityTrace,
+  mergeMemoryActivityTrace,
+} from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
@@ -47,48 +51,6 @@ function memoryStatusText(activity) {
   return prefix;
 }
 
-function memoryActivityTrace(activity) {
-  const statusMap = {
-    queued: "waiting",
-    running: "running",
-    succeeded: "success",
-    failed: "failed",
-  };
-  return memoryOperations(activity).map((operation) => {
-    const items = (Array.isArray(operation.items)
-      ? operation.items
-      : [])
-      .filter((item) => item && typeof item === "object")
-      .map((item) => ({
-        action: String(item.action || ""),
-        content: String(item.content || ""),
-      }));
-    const isRecall = operation.kind === "recall";
-    const status = statusMap[operation.status] || "waiting";
-    return {
-      stepId: operation.id,
-      parentId: null,
-      kind: "memory",
-      name: isRecall ? "memory_recall" : "memory_write",
-      status,
-      title: isRecall
-        ? "长期记忆召回"
-        : status === "failed"
-          ? "长期记忆写入失败"
-          : status === "success"
-            ? "长期记忆整理完成"
-            : "正在整理长期记忆",
-      errorCode: operation.errorCode || null,
-      details: {
-        operationId: operation.id,
-        items,
-        attemptCount: Number(operation.attemptCount || 0),
-      },
-      outputSummary: `${items.length}条`,
-    };
-  });
-}
-
 function MemoryActivityStatus({ initialActivity, messageId }) {
   const [activity, setActivity] = useState(initialActivity || null);
   const [retrying, setRetrying] = useState(false);
@@ -97,6 +59,26 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
   const write = memoryWriteOperation(activity);
   const statusText = memoryStatusText(activity);
   const pending = write?.status === "queued" || write?.status === "running";
+
+  const publishActivity = (nextActivity) => {
+    setActivity(nextActivity);
+    const detail = {
+      messageId,
+      memoryActivity: nextActivity,
+    };
+    window.dispatchEvent(
+      new CustomEvent(
+        "knowflow:react-message-memory-activity",
+        { detail },
+      ),
+    );
+    window.dispatchEvent(
+      new CustomEvent(
+        "knowflow:react-memory-activity-updated",
+        { detail },
+      ),
+    );
+  };
 
   useEffect(() => {
     setActivity(initialActivity || null);
@@ -110,7 +92,9 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
     const timeout = window.setTimeout(async () => {
       pollCountRef.current += 1;
       try {
-        setActivity(await memoryApi.activity(activity.messageId));
+        publishActivity(
+          await memoryApi.activity(activity.messageId),
+        );
       } catch {
         // Keep polling after a transient request failure.
       } finally {
@@ -149,7 +133,7 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
     try {
       const next = await memoryApi.retryOperation(write.id);
       pollCountRef.current = 0;
-      setActivity(next);
+      publishActivity(next);
     } finally {
       setRetrying(false);
     }
@@ -483,6 +467,10 @@ export function ChatMessages() {
         (message) => ({
           ...message,
           memoryActivity: detail.memoryActivity || null,
+          trace: mergeMemoryActivityTrace(
+            message.trace,
+            detail.memoryActivity,
+          ),
         }),
       );
       detail.handled = result.handled;
