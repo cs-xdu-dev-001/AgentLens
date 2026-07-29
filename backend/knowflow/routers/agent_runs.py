@@ -7,6 +7,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from ..services.agent_run_store import (
+    ACTIVE_RUN_STATUSES,
+    AgentRunStoreError,
+)
 from ..runtime import (
     agent_run_coordinator,
     agent_runs,
@@ -31,6 +35,49 @@ def _snapshot_or_404(user_id: int, run_id: str) -> dict[str, Any]:
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Agent run not found.")
     return snapshot
+
+
+def _closed_run_event(
+    user_id: int,
+    run_id: str,
+) -> tuple[str, dict[str, Any]] | None:
+    snapshot = _snapshot_or_404(user_id, run_id)
+    if snapshot["status"] in ACTIVE_RUN_STATUSES:
+        try:
+            snapshot = agent_runs.transition_run(
+                user_id,
+                run_id,
+                "failed",
+            )
+        except AgentRunStoreError:
+            snapshot = _snapshot_or_404(user_id, run_id)
+    if snapshot["status"] == "completed":
+        return (
+            "done",
+            {
+                "type": "done",
+                "runId": run_id,
+                "sessionId": snapshot.get("sessionId"),
+                "messageId": snapshot.get("assistantMessageId"),
+                "run": snapshot,
+            },
+        )
+    if snapshot["status"] == "cancelled":
+        return (
+            "cancelled",
+            {"type": "cancelled", "run": snapshot},
+        )
+    if snapshot["status"] == "failed":
+        return (
+            "error",
+            {
+                "type": "error",
+                "code": "agent_run_failed",
+                "message": "Agent run failed.",
+                "run": snapshot,
+            },
+        )
+    return None
 
 
 def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
@@ -94,6 +141,10 @@ def stream_agent_run_events(
             {"type": "run_snapshot", "run": current_snapshot},
         )
         if subscriber is None:
+            terminal_event = _closed_run_event(user_id, run_id)
+            if terminal_event is not None:
+                event_type, event = terminal_event
+                yield sse_event(event_type, event)
             return
         try:
             while True:
@@ -104,6 +155,10 @@ def stream_agent_run_events(
                     continue
                 event_type = str(event.get("type") or "run_updated")
                 if event_type == "stream_closed":
+                    terminal_event = _closed_run_event(user_id, run_id)
+                    if terminal_event is not None:
+                        final_type, final_event = terminal_event
+                        yield sse_event(final_type, final_event)
                     break
                 yield sse_event(event_type, event)
                 if event_type in {"done", "error", "cancelled"}:

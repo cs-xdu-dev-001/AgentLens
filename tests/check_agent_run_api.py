@@ -126,6 +126,44 @@ def main() -> None:
         runtime.agent_run_coordinator.subscribe = original_subscribe
     assert race_events.status_code == 200, race_events.text
     assert '"status": "completed"' in race_events.text
+    assert '"type": "done"' in race_events.text
+
+    failed_run = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id="session-run-failed",
+        user_message_id=4,
+        goal_summary="异常收尾",
+        trigger_mode="auto",
+        run_id="run_api_failed",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        failed_run["id"],
+        "running",
+    )
+
+    closed_events: Queue = Queue()
+    closed_events.put(
+        {"type": "stream_closed", "runId": failed_run["id"]}
+    )
+    runtime.agent_run_coordinator.subscribe = (
+        lambda run_id: closed_events
+    )
+    try:
+        failed_events = alice.get(
+            f"/api/agent/runs/{failed_run['id']}/events"
+        )
+    finally:
+        runtime.agent_run_coordinator.subscribe = original_subscribe
+    assert failed_events.status_code == 200, failed_events.text
+    assert '"type": "error"' in failed_events.text
+    assert '"code": "agent_run_failed"' in failed_events.text
+    failed_snapshot = runtime.agent_runs.get_snapshot(
+        alice_id,
+        failed_run["id"],
+    )
+    assert failed_snapshot
+    assert failed_snapshot["status"] == "failed"
 
     entered = Event()
     release = Event()

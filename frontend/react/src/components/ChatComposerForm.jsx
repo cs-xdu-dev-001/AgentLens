@@ -14,6 +14,7 @@ function pickKnowledgeValue(knowledgeBases, currentValue) {
 export function ChatComposerForm() {
   const [attachments, setAttachments] = useState([]);
   const [availableSkills, setAvailableSkills] = useState([]);
+  const [skillsStatus, setSkillsStatus] = useState("idle");
   const [selectedSkill, setSelectedSkill] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -45,6 +46,7 @@ export function ChatComposerForm() {
 
   const loadAvailableSkills = useCallback(async () => {
     const requestId = ++requestGenerationRef.current;
+    setSkillsStatus("loading");
     try {
       const skills = await skillApi.list();
       if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
@@ -58,10 +60,11 @@ export function ChatComposerForm() {
           : current,
       );
       skillsLoadedRef.current = true;
+      setSkillsStatus("ready");
     } catch {
       if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
-      setAvailableSkills([]);
-      skillsLoadedRef.current = true;
+      skillsLoadedRef.current = false;
+      setSkillsStatus("error");
     }
   }, []);
 
@@ -319,8 +322,10 @@ export function ChatComposerForm() {
       {pickerOpen ? (
         <SkillPicker
           skills={filteredSkills}
+          status={skillsStatus}
           activeIndex={activeIndex}
           onSelect={selectSkill}
+          onRetry={loadAvailableSkills}
           onManage={handleManageSkills}
         />
       ) : null}
@@ -418,6 +423,8 @@ export function ChatComposerForm() {
             disabled={sending}
             aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}
             aria-expanded={pickerOpen}
+            aria-haspopup={"listbox"}
+            aria-label={"消息"}
             aria-activedescendant={activeOptionId}
             onInput={handleChatInput}
             onPaste={handleChatPaste}

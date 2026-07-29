@@ -94,9 +94,15 @@ export function AgentTaskPlan({
                   {statusLabels[step.status] || step.status}
                 </span>
               </button>
-              {selected && selectedTrace.length ? (
+              {selected ? (
                 <div className={"agent-task-step-trace"}>
-                  <AgentTraceView trace={selectedTrace} />
+                  {selectedTrace.length ? (
+                    <AgentTraceView trace={selectedTrace} />
+                  ) : (
+                    <p className={"agent-task-step-empty"} role={"status"}>
+                      {"暂无执行记录"}
+                    </p>
+                  )}
                 </div>
               ) : null}
             </li>

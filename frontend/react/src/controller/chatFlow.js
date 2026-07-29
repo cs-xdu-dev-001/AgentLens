@@ -532,6 +532,14 @@ export function createChatFlow({
     let answerBuffer = "";
     let trace = [];
     let approvals = [];
+    const cancelPendingApprovals = () => {
+      const next = markApprovalsCancelled(approvals);
+      const changed = next.some(
+        (approval, index) => approval !== approvals[index],
+      );
+      approvals = next;
+      if (changed) renderAgentApprovals(message, approvals);
+    };
     try {
       const response = await fetch(
         `/api/agent/runs/${runId}/events`,
@@ -587,12 +595,39 @@ export function createChatFlow({
             setMessageContent(message, "assistant", answerBuffer);
           }
           if (eventPayload.type === "done") {
+            cancelPendingApprovals();
             if (eventPayload.run) {
               renderAgentRun(message, eventPayload.run);
             }
-            state.currentSessionId = eventPayload.sessionId;
+            if (eventPayload.sessionId) {
+              state.currentSessionId = eventPayload.sessionId;
+            }
             state.activeRunId = null;
             state.activeRunMessageId = null;
+            renderActiveSession();
+          }
+          if (eventPayload.type === "error") {
+            cancelPendingApprovals();
+            renderAgentRun(message, eventPayload.run || null);
+            state.activeRunId = null;
+            state.activeRunMessageId = null;
+            setMessageContent(
+              message,
+              "assistant",
+              `请求失败：${eventPayload.message || "Agent运行失败。"}`,
+            );
+            renderActiveSession();
+          }
+          if (eventPayload.type === "cancelled") {
+            cancelPendingApprovals();
+            renderAgentRun(message, eventPayload.run || null);
+            state.activeRunId = null;
+            state.activeRunMessageId = null;
+            setMessageContent(
+              message,
+              "assistant",
+              answerBuffer || "生成已停止。",
+            );
             renderActiveSession();
           }
         }

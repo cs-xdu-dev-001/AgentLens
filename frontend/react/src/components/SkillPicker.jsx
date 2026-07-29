@@ -6,8 +6,10 @@ function skillLabel(skill) {
 
 export function SkillPicker({
   skills,
+  status,
   activeIndex,
   onSelect,
+  onRetry,
   onManage,
 }) {
   const activeOptionRef = useRef(null);
@@ -28,8 +30,9 @@ export function SkillPicker({
         id={"skill-picker-listbox"}
         role={"listbox"}
         aria-label={"Skills"}
+        aria-busy={status === "loading"}
       >
-        {skills.map((skill, index) => {
+        {status === "ready" ? skills.map((skill, index) => {
           const active = index === activeIndex;
           return (
             <button
@@ -55,15 +58,34 @@ export function SkillPicker({
               </span>
             </button>
           );
-        })}
-        {!skills.length ? (
+        }) : null}
+        {status === "loading" ? (
+          <div className={"skill-picker-empty"} role={"status"}>
+            {"正在加载Skills…"}
+          </div>
+        ) : null}
+        {status === "error" ? (
+          <div className={"skill-picker-empty"} role={"alert"}>
+            {"Skills加载失败"}
+          </div>
+        ) : null}
+        {status === "ready" && !skills.length ? (
           <div className={"skill-picker-empty"} role={"status"}>
             {"没有匹配的Skill"}
           </div>
         ) : null}
       </div>
       <div className={"skill-picker-footer"}>
-        {!skills.length ? (
+        {status === "error" ? (
+          <button
+            type={"button"}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onRetry}
+          >
+            {"重试"}
+          </button>
+        ) : null}
+        {status === "ready" && !skills.length ? (
           <button
             type={"button"}
             onMouseDown={(event) => event.preventDefault()}

@@ -10776,6 +10776,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-left: 1px solid var(--control-border);
 }
 
+.agent-task-step-empty {
+  margin: 0;
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .agent-task-actions {
   display: flex;
   flex-wrap: wrap;

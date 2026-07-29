@@ -38,9 +38,15 @@ def main() -> None:
 
     for needle, label in [
         ("export function SkillPicker", "SkillPicker component"),
+        ("status", "Skill loading status"),
+        ("onRetry", "Skill loading retry callback"),
         ('id={"skill-picker-listbox"}', "stable listbox id"),
         ('role={"listbox"}', "listbox role"),
         ('aria-label={"Skills"}', "listbox accessible name"),
+        ('aria-busy={status === "loading"}', "listbox loading state"),
+        ('{"正在加载Skills…"}', "Skill loading copy"),
+        ('{"Skills加载失败"}', "Skill loading error copy"),
+        ('{"重试"}', "Skill loading retry copy"),
         ('role={"option"}', "option role"),
         ("`skill-option-${skill.id}`", "stable option id"),
         ("aria-selected={active}", "selected option state"),
@@ -75,6 +81,10 @@ def main() -> None:
         ('knowflow:react-skills-updated', "Skill update refresh"),
         ("requestGenerationRef", "latest-request guard"),
         ("mountedRef", "unmount guard"),
+        ('const [skillsStatus, setSkillsStatus] = useState("idle");', "Skill request state"),
+        ('setSkillsStatus("loading");', "Skill loading transition"),
+        ('setSkillsStatus("ready");', "Skill ready transition"),
+        ('setSkillsStatus("error");', "Skill error transition"),
         ("skill.name", "name query matching"),
         ("skill.slug", "slug query matching"),
         ("skill.description", "description query matching"),
@@ -93,6 +103,8 @@ def main() -> None:
         (".detail.skillId = selectedSkill?.id ?? null", "Skill id event payload"),
         ('aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}', "textarea picker controls"),
         ("aria-expanded={pickerOpen}", "textarea picker expanded state"),
+        ('aria-label={"消息"}', "textarea accessible name"),
+        ('aria-haspopup={"listbox"}', "textarea popup semantics"),
         ("pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]", "active option aria guard"),
         ("aria-activedescendant={activeOptionId}", "textarea active descendant"),
         ('detail: { page: "skills" }', "event-driven Skills navigation"),
@@ -104,6 +116,9 @@ def main() -> None:
         raise AssertionError(
             "close, slash open, and empty filtering must all clear the active option"
         )
+    catch_branch = composer_text.split("} catch {", 1)[1].split("}", 1)[0]
+    if "skillsLoadedRef.current = true" in catch_branch:
+        raise AssertionError("failed Skill requests must remain retryable")
     require_in_order(
         composer_text,
         (

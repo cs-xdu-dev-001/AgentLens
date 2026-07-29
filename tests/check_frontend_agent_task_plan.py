@@ -17,6 +17,7 @@ def require(path: str, token: str, label: str) -> None:
 
 
 def main() -> None:
+    chat_flow = read("frontend/react/src/controller/chatFlow.js")
     state_module = (
         ROOT
         / "frontend"
@@ -83,6 +84,8 @@ console.log(JSON.stringify({
         ("停止任务", "running cancel action"),
         ("aria-current", "current step accessibility"),
         ("AgentTraceView", "selected step trace"),
+        ("暂无执行记录", "empty selected step feedback"),
+        ('role={"status"}', "empty step live status"),
     ):
         require(component, token, label)
 
@@ -125,6 +128,25 @@ console.log(JSON.stringify({
         "frontend/react/src/controller/chatFlow.js",
         "message.streaming = false",
         "reconnect completion state",
+    )
+    require(
+        "frontend/react/src/controller/chatFlow.js",
+        'eventPayload.type === "error"',
+        "reconnect error event",
+    )
+    require(
+        "frontend/react/src/controller/chatFlow.js",
+        'eventPayload.type === "cancelled"',
+        "reconnect cancellation event",
+    )
+    if chat_flow.count("cancelPendingApprovals();") < 7:
+        raise AssertionError(
+            "initial and reconnected terminal events must clear pending approvals"
+        )
+    require(
+        "frontend/styles.css",
+        ".agent-task-step-empty",
+        "empty step styling",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
