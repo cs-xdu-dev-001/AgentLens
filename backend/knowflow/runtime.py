@@ -46,6 +46,10 @@ from .services.agent_run_store import AgentRunStore
 from .services.skill_archive import SkillArchiveLimits
 from .services.skill_store import SkillStore
 from .services.memory import Mem0MemoryProvider, MemoryManager
+from .services.memory_operations import (
+    MemoryOperationRunner,
+    MemoryOperationStore,
+)
 
 
 
@@ -71,6 +75,7 @@ def mappings(rows: Iterable[Any]) -> list[dict[str, Any]]:
 db = Database(DB_URL)
 agent_runs = AgentRunStore(database=db)
 agent_run_coordinator = AgentRunCoordinator()
+memory_operation_store = MemoryOperationStore(database=db)
 
 
 class Cipher:
@@ -234,6 +239,58 @@ memory_manager = MemoryManager(
     set_user_enabled=set_user_memory_enabled,
     search_limit=MEMORY_TOP_K,
     list_limit=MEMORY_LIST_LIMIT,
+)
+
+
+def load_memory_operation_messages(
+    operation: dict[str, Any],
+) -> tuple[str, str]:
+    user_id = int(operation["userId"])
+    session_id = str(operation["sessionId"])
+    message_id = int(operation["messageId"])
+    assistant = fetch_one(
+        """
+        SELECT cm.content
+        FROM chat_message cm
+        JOIN chat_session cs ON cs.id=cm.session_id
+        WHERE cm.id=:message_id
+          AND cm.session_id=:session_id
+          AND cm.role='assistant'
+          AND cs.user_id=:user_id
+        """,
+        {
+            "message_id": message_id,
+            "session_id": session_id,
+            "user_id": user_id,
+        },
+    )
+    user_message = fetch_one(
+        """
+        SELECT cm.content
+        FROM chat_message cm
+        JOIN chat_session cs ON cs.id=cm.session_id
+        WHERE cm.session_id=:session_id
+          AND cm.id<:message_id
+          AND cm.role='user'
+          AND cs.user_id=:user_id
+        ORDER BY cm.id DESC
+        LIMIT 1
+        """,
+        {
+            "session_id": session_id,
+            "message_id": message_id,
+            "user_id": user_id,
+        },
+    )
+    if assistant is None or user_message is None:
+        raise ValueError("Memory operation source messages are unavailable.")
+    return str(user_message["content"]), str(assistant["content"])
+
+
+memory_operation_runner = MemoryOperationRunner(
+    store=memory_operation_store,
+    memory_manager=memory_manager,
+    load_messages=load_memory_operation_messages,
 )
 
 

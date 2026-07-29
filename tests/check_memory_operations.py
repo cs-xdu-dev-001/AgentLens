@@ -11,7 +11,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.database import CURRENT_SCHEMA_VERSION, Database  # noqa: E402
 from knowflow.services.memory_operations import (  # noqa: E402
     MemoryOperationError,
+    MemoryOperationRunner,
     MemoryOperationStore,
+    classify_memory_error,
 )
 
 
@@ -26,6 +28,36 @@ def expect_code(code: str, action) -> None:
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+class MutableClock:
+    def __init__(self, value: datetime):
+        self.value = value
+
+    def __call__(self) -> datetime:
+        return self.value
+
+    def advance(self, seconds: int) -> None:
+        self.value += timedelta(seconds=seconds)
+
+
+class FakeHttpError(RuntimeError):
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"http {status_code}")
+
+
+class FakeMemoryManager:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls: list[dict] = []
+
+    def remember_now(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 def main() -> None:
@@ -176,6 +208,107 @@ def main() -> None:
         for operation in cleared["operations"]
         for item in operation["items"]
     )
+
+    assert classify_memory_error(TimeoutError())[0:2] == (
+        "memory_upstream_unavailable",
+        True,
+    )
+    assert classify_memory_error(FakeHttpError(429))[0:2] == (
+        "memory_rate_limited",
+        True,
+    )
+    assert classify_memory_error(FakeHttpError(503))[0:2] == (
+        "memory_upstream_unavailable",
+        True,
+    )
+    assert classify_memory_error(FakeHttpError(401))[0:2] == (
+        "memory_auth_failed",
+        False,
+    )
+
+    runner_path = ROOT / "data" / "test-dbs" / "memory-runner.db"
+    runner_path.unlink(missing_ok=True)
+    runner_database = Database(f"sqlite:///{runner_path.as_posix()}")
+    runner_store = MemoryOperationStore(database=runner_database)
+    _, runner_write_id = runner_store.create_for_message(
+        user_id=9,
+        session_id="session-runner",
+        message_id=21,
+        agent_run_id=None,
+        recalled=[],
+    )
+    clock = MutableClock(utcnow())
+    manager = FakeMemoryManager(
+        [
+            TimeoutError(),
+            FakeHttpError(503),
+            [
+                {
+                    "event": "ADD",
+                    "id": "runner-memory",
+                    "memory": "优先返回结论。",
+                }
+            ],
+        ]
+    )
+    projected: list[str] = []
+    runner = MemoryOperationRunner(
+        store=runner_store,
+        memory_manager=manager,
+        load_messages=lambda operation: (
+            "请记住先给结论",
+            "我会尝试记录。",
+        ),
+        project=lambda operation_id: projected.append(operation_id),
+        clock=clock,
+    )
+    assert runner.run_once() is True
+    first_retry = runner_store.activity_for_message(
+        user_id=9,
+        message_id=21,
+    )
+    assert first_retry is not None
+    assert first_retry["operations"][1]["status"] == "queued"
+    assert first_retry["operations"][1]["attemptCount"] == 1
+    assert runner.run_once() is False
+    clock.advance(5)
+    assert runner.run_once() is True
+    clock.advance(30)
+    assert runner.run_once() is True
+    runner_done = runner_store.activity_for_message(
+        user_id=9,
+        message_id=21,
+    )
+    assert runner_done is not None
+    assert runner_done["operations"][1]["status"] == "succeeded"
+    assert runner_done["summary"]["added"] == 1
+    assert len(manager.calls) == 3
+    assert manager.calls[-1]["operation_id"] == runner_write_id
+    assert projected[-1] == runner_write_id
+
+    _, permanent_write_id = runner_store.create_for_message(
+        user_id=9,
+        session_id="session-runner",
+        message_id=22,
+        agent_run_id=None,
+        recalled=[],
+    )
+    manager.outcomes.append(FakeHttpError(401))
+    assert runner.run_once() is True
+    permanent = runner_store.activity_for_message(
+        user_id=9,
+        message_id=22,
+    )
+    assert permanent is not None
+    assert permanent["operations"][1]["status"] == "failed"
+    assert permanent["operations"][1]["attemptCount"] == 1
+    assert permanent["operations"][1]["errorCode"] == "memory_auth_failed"
+    assert permanent_write_id in projected
+
+    runner.start()
+    runner.wake()
+    runner.stop()
+    assert runner.running is False
 
     print("durable memory operation store checks passed")
 

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import logging
+import threading
 from typing import Any
 import uuid
 
 from sqlalchemy import text
+
+
+logger = logging.getLogger(__name__)
+RETRY_DELAYS = (5, 30)
 
 
 class MemoryOperationError(ValueError):
@@ -334,7 +340,17 @@ class MemoryOperationStore:
                 text("SELECT * FROM memory_operation WHERE id=:id"),
                 {"id": row["id"]},
             ).mappings().first()
-        return self._operation(dict(claimed)) if claimed else None
+        if claimed is None:
+            return None
+        work = dict(claimed)
+        normalized = self._operation(work)
+        normalized.update(
+            {
+                "userId": int(work["user_id"]),
+                "sessionId": str(work["session_id"]),
+            }
+        )
+        return normalized
 
     def reschedule(
         self,
@@ -575,3 +591,155 @@ class MemoryOperationStore:
                 {"before": _time(before)},
             )
             return max(0, int(result.rowcount or 0))
+
+
+def classify_memory_error(
+    exc: Exception,
+) -> tuple[str, bool, str]:
+    status = getattr(exc, "status_code", None)
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return (
+            "memory_upstream_unavailable",
+            True,
+            "记忆服务暂时不可用。",
+        )
+    if status == 429:
+        return (
+            "memory_rate_limited",
+            True,
+            "记忆服务请求过多。",
+        )
+    if isinstance(status, int) and status >= 500:
+        return (
+            "memory_upstream_unavailable",
+            True,
+            "记忆服务暂时不可用。",
+        )
+    if status in {401, 403}:
+        return (
+            "memory_auth_failed",
+            False,
+            "记忆服务认证失败。",
+        )
+    return (
+        "memory_request_rejected",
+        False,
+        "记忆写入未完成。",
+    )
+
+
+class MemoryOperationRunner:
+    def __init__(
+        self,
+        *,
+        store: MemoryOperationStore,
+        memory_manager,
+        load_messages,
+        project=None,
+        clock=None,
+        poll_interval: float = 1.0,
+    ):
+        self.store = store
+        self.memory_manager = memory_manager
+        self.load_messages = load_messages
+        self.project = project
+        self.clock = clock or (
+            lambda: datetime.now(timezone.utc).replace(microsecond=0)
+        )
+        self.poll_interval = max(0.05, float(poll_interval))
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def _project(self, operation_id: str) -> None:
+        if not callable(self.project):
+            return
+        try:
+            self.project(operation_id)
+        except Exception as exc:
+            logger.warning(
+                "Memory activity projection failed for %s: %s",
+                operation_id,
+                type(exc).__name__,
+            )
+
+    def run_once(self) -> bool:
+        operation = self.store.claim_due(now=self.clock())
+        if operation is None:
+            return False
+        operation_id = str(operation["id"])
+        try:
+            question, answer = self.load_messages(operation)
+            result = self.memory_manager.remember_now(
+                user_id=int(operation["userId"]),
+                session_id=str(operation["sessionId"]),
+                message_id=int(operation["messageId"]),
+                question=str(question),
+                answer=str(answer),
+                operation_id=operation_id,
+            )
+        except Exception as exc:
+            error_code, retryable, safe_message = (
+                classify_memory_error(exc)
+            )
+            attempts = int(operation.get("attemptCount") or 0)
+            if retryable and attempts < 3:
+                delay = RETRY_DELAYS[attempts - 1]
+                self.store.reschedule(
+                    operation_id,
+                    error_code=error_code,
+                    error_message=safe_message,
+                    next_attempt_at=self.clock()
+                    + timedelta(seconds=delay),
+                )
+            else:
+                self.store.mark_failed(
+                    operation_id,
+                    error_code=error_code,
+                    error_message=safe_message,
+                )
+            logger.warning(
+                "Memory operation %s attempt %s failed: %s",
+                operation_id,
+                attempts,
+                error_code,
+            )
+        else:
+            self.store.mark_succeeded(operation_id, result or [])
+        self._project(operation_id)
+        return True
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            processed = self.run_once()
+            if processed:
+                continue
+            self._wake_event.wait(self.poll_interval)
+            self._wake_event.clear()
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self._stop_event.clear()
+        self._wake_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="knowflow-memory-operations",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def wake(self) -> None:
+        self._wake_event.set()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._wake_event.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=10)
+        self._thread = None

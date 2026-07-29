@@ -182,6 +182,7 @@ class Mem0MemoryProvider:
         mem0_metadata = {
             "source_session_id": source.get("session_id"),
             "source_message_id": source.get("message_id"),
+            "source_operation_id": source.get("operation_id"),
             "source": "knowflow_chat",
         }
         result = self._get_client().add(
@@ -336,16 +337,12 @@ class MemoryManager:
         answer: str,
     ) -> None:
         try:
-            self.provider.remember(
-                user_id=int(user_id),
-                messages=[
-                    {"role": "user", "content": question},
-                    {"role": "assistant", "content": answer},
-                ],
-                metadata={
-                    "session_id": session_id,
-                    "message_id": message_id,
-                },
+            self.remember_now(
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message_id,
+                question=question,
+                answer=answer,
             )
         except Exception as exc:
             logger.warning(
@@ -353,6 +350,35 @@ class MemoryManager:
                 user_id,
                 type(exc).__name__,
             )
+
+    def remember_now(
+        self,
+        *,
+        user_id: int,
+        session_id: str,
+        message_id: int,
+        question: str,
+        answer: str,
+        operation_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not self._configured() or not self._enabled(user_id):
+            return []
+        return self.provider.remember(
+            user_id=int(user_id),
+            messages=[
+                {"role": "user", "content": str(question)},
+                {"role": "assistant", "content": str(answer)},
+            ],
+            metadata={
+                "session_id": str(session_id),
+                "message_id": int(message_id),
+                "operation_id": (
+                    str(operation_id)
+                    if operation_id is not None
+                    else None
+                ),
+            },
+        )
 
     def remember_async(
         self,

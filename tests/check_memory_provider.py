@@ -155,7 +155,11 @@ def main() -> None:
                 "content": "已记录，Authorization: Bearer bearer-secret。",
             },
         ],
-        metadata={"session_id": "session-alice", "message_id": 12},
+        metadata={
+            "session_id": "session-alice",
+            "message_id": 12,
+            "operation_id": "memop-test",
+        },
     )
     add_call = client.calls[-1][1]
     assert add_call["user_id"] == "7"
@@ -163,6 +167,7 @@ def main() -> None:
     assert add_call["metadata"] == {
         "source_session_id": "session-alice",
         "source_message_id": 12,
+        "source_operation_id": "memop-test",
         "source": "knowflow_chat",
     }
     serialized = str(add_call)
@@ -228,6 +233,19 @@ def main() -> None:
     manager.set_enabled(7, True)
     assert manager.settings(7)["enabled"] is True
     assert manager.recall(7, "报告格式")[0]["id"] == "alice-memory"
+    manager.remember_now(
+        user_id=7,
+        session_id="session-alice",
+        message_id=98,
+        question="优先给结论",
+        answer="我会尝试记录。",
+        operation_id="memop-now",
+    )
+    assert client.calls[-1][0] == "add"
+    assert (
+        client.calls[-1][1]["metadata"]["source_operation_id"]
+        == "memop-now"
+    )
     manager.remember_async(
         user_id=7,
         session_id="session-alice",

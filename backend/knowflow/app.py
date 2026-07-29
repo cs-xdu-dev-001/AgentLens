@@ -135,8 +135,13 @@ for api_router in routers:
 @app.on_event("startup")
 def interrupt_stale_agent_runs() -> None:
     agent_runs.interrupt_stale_runs()
+    memory_operation_store.recover_interrupted(
+        stale_before=datetime.now(),
+    )
+    memory_operation_runner.start()
 
 
 @app.on_event("shutdown")
 def close_memory_runtime() -> None:
+    memory_operation_runner.stop()
     memory_manager.close()
