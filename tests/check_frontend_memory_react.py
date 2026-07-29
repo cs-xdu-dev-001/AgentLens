@@ -1,0 +1,61 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "frontend" / "react" / "src"
+
+
+def main() -> None:
+    page = (SRC / "components" / "MemoryPage.jsx").read_text(
+        encoding="utf-8"
+    )
+    app = (SRC / "App.jsx").read_text(encoding="utf-8")
+    navigation = (SRC / "data" / "navigation.js").read_text(
+        encoding="utf-8"
+    )
+    client = (SRC / "api" / "client.js").read_text(
+        encoding="utf-8"
+    )
+    sidebar = (SRC / "components" / "Sidebar.jsx").read_text(
+        encoding="utf-8"
+    )
+    styles = (SRC / "styles.css").read_text(encoding="utf-8")
+
+    assert 'import { memoryApi } from "../api/client.js"' in page
+    assert 'id={"page-memory"}' in page
+    assert 'role={"switch"}' in page
+    assert "memoryApi.settings()" in page
+    assert "memoryApi.setEnabled(" in page
+    assert "memoryApi.list()" in page
+    assert "memoryApi.update(" in page
+    assert "memoryApi.delete(" in page
+    assert "memoryApi.clear()" in page
+    assert "清空全部" in page
+    assert "长期记忆" in page
+    assert "Mem0" in page
+
+    assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app
+    assert '"memory"' in app
+    assert '<MemoryPage active={activePage === "memory"} />' in app
+    assert 'label: "记忆"' in navigation
+    assert 'icon: "memory"' in navigation
+    assert 'page: "memory"' in navigation
+    assert 'type === "memory"' in sidebar
+
+    assert "export const memoryApi" in client
+    for path in [
+        '"/api/memory/settings"',
+        '"/api/memories"',
+    ]:
+        assert path in client
+
+    assert ".memory-workspace" in styles
+    assert ".memory-item-content" in styles
+    assert "font-size: 14px" in styles
+    assert "@media (max-width: 760px)" in styles
+
+    print("React memory management is visible and operable")
+
+
+if __name__ == "__main__":
+    main()

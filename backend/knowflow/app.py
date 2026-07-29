@@ -9,6 +9,7 @@ OPENAPI_TAGS = [
     {"name": "RAG Debug", "description": "Inspect retrieval results, matched terms, scores, and vector backend details."},
     {"name": "Chat", "description": "Chat, RAG answers, streaming output, and answer references."},
     {"name": "Sessions", "description": "Session history, messages, rename, and delete operations."},
+    {"name": "Memory", "description": "Manage per-user Mem0 long-term memories and recall settings."},
     {"name": "Extensions", "description": "Reserved integration endpoints outside the first core workflow."},
     {"name": "Skills", "description": "Inspect, install, and manage per-user Skills."},
 ]
@@ -134,3 +135,8 @@ for api_router in routers:
 @app.on_event("startup")
 def interrupt_stale_agent_runs() -> None:
     agent_runs.interrupt_stale_runs()
+
+
+@app.on_event("shutdown")
+def close_memory_runtime() -> None:
+    memory_manager.close()

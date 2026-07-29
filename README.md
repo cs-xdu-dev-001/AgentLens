@@ -241,6 +241,16 @@ A Skill cannot register or enable a tool or MCP connection. Existing tool config
 
 For deployment, each backup must include the database and `data/skills` together. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill directory; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages to Git.
 
+### 长期记忆（Mem0）
+
+KnowFlow通过`MemoryProvider`接入开源`mem0ai==2.0.14`。Mem0只负责长期记忆，不会接管Agent循环、任务计划、Skills、工具或MCP。每轮回答前最多召回`KNOWFLOW_MEMORY_TOP_K`条相关记忆；assistant消息成功写入数据库后，再异步运行ADD-only记忆提取。
+
+记忆使用服务端专用LLM和Embedding配置。复制`backend/.env.example`中的`KNOWFLOW_MEMORY_*`变量，填写两个模型Key后，将`KNOWFLOW_MEMORY_ENABLED`设为`1`。如果LLM和Embedding使用同一个兼容OpenAI的服务，`KNOWFLOW_MEMORY_EMBEDDER_API_KEY`可以留空复用LLM Key。未完成服务端配置时，聊天仍然正常运行，记忆页会显示“未配置”。
+
+登录用户在“记忆”页单独启用或停用，查看、纠正、删除自己的记忆。所有Mem0读写都强制使用认证用户ID作为`filters.user_id`，客户端不能指定其他用户。进入Mem0前会移除常见Token、Key、密码和Authorization Bearer值；工具原始输出不会直接写入长期记忆。
+
+默认数据位于`data/mem0/qdrant`和`data/mem0/history.db`。这些目录不进入Git，生产备份必须将主数据库与整个`data/mem0`一起保存。使用本地Qdrant路径时后端保持单worker；多worker部署应改用独立Qdrant服务。升级Mem0前先固定新版本并运行`tests/check_memory_*.py`及全量检查，避免上游API变化破坏隔离规则。
+
 ### Remote MCP servers
 
 The 工具与MCP page manages remote MCP connections for the current signed-in user. The built-in Notion preset uses the official `https://mcp.notion.com/mcp` endpoint with user OAuth; it does not ask for a Notion integration token. Select 连接Notion, finish authorization in Notion, return to the settings page, and use 刷新工具 when the remote tool catalog changes. 停用 immediately removes that server's tools from later Agent runs and clears its local authorization.

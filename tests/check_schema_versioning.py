@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 6, CURRENT_SCHEMA_VERSION
-    assert "agent" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 7, CURRENT_SCHEMA_VERSION
+    assert "mem0" in row["description"].lower(), row
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
     assert columns == {
         "id",
@@ -71,6 +71,16 @@ def main() -> None:
         for item in fetch_all("PRAGMA table_info(agent_tool_call)")
     }
     assert {"run_id", "run_step_id"}.issubset(tool_columns), tool_columns
+    memory_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(memory_config)")
+    }
+    assert memory_columns == {
+        "user_id",
+        "enabled",
+        "created_at",
+        "updated_at",
+    }, memory_columns
 
     print("schema version is recorded during database initialization")
 

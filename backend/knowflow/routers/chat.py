@@ -102,9 +102,25 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
             duration_ms=duration_ms,
         )
         rag_quality = {**rag_quality, "retrievalRunId": retrieval_run.get("id")}
+    memories = memory_manager.recall(user_id, payload.question)
     chat_config = get_model_config(payload.chatModelConfigId, "chat", user_id)
-    answer = generate_answer(payload.question, chunks, history, chat_config, use_rag=use_rag, attachments=payload.attachments)
+    answer = generate_answer(
+        payload.question,
+        chunks,
+        history,
+        chat_config,
+        use_rag=use_rag,
+        attachments=payload.attachments,
+        memories=memories,
+    )
     message_id = save_message(session_id, "assistant", answer)
+    memory_manager.remember_async(
+        user_id=user_id,
+        session_id=session_id,
+        message_id=message_id,
+        question=payload.question,
+        answer=answer,
+    )
     update_retrieval_run_message(retrieval_run.get("id") if retrieval_run else None, message_id)
     refs = save_references(message_id, chunks)
     return api_success(

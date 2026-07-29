@@ -30,6 +30,7 @@ data/*.db-*
 data/uploads/
 data/skills/
 data/skill-imports/
+data/mem0/
 backend/data/skills/
 backend/data/skill-imports/
 data/test-uploads/

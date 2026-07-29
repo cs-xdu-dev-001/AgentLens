@@ -35,6 +35,16 @@ class ToolConfigUpdate(BaseModel):
     apiKey: str | None = None
 
 
+class MemorySettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+class MemoryContentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=12000)
+
+
 class KnowledgeBaseIn(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""

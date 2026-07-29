@@ -39,15 +39,13 @@ def main() -> None:
     from knowflow.db_schema import MYSQL_SCHEMA
     from knowflow.runtime import fetch_all, fetch_one
 
-    assert CURRENT_SCHEMA_VERSION == 6, CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 7, CURRENT_SCHEMA_VERSION
     version_row = fetch_one(
         "SELECT description FROM schema_version WHERE version=:version",
         {"version": CURRENT_SCHEMA_VERSION},
     )
     assert version_row == {
-        "description": (
-            "Add durable Agent runs, plan steps, and tool-call task links."
-        )
+        "description": "Add per-user Mem0 long-term memory settings."
     }, version_row
 
     tables = {
@@ -215,7 +213,7 @@ def main() -> None:
     legacy_connection.close()
     legacy_db = Database(f"sqlite:///{legacy_path.as_posix()}")
 
-    def assert_stable_v6_migration() -> None:
+    def assert_stable_current_migration() -> None:
         with legacy_db.engine.begin() as conn:
             version_rows = conn.exec_driver_sql(
                 """
@@ -239,21 +237,21 @@ def main() -> None:
             ]
         assert [(row["version"], row["count"]) for row in version_rows] == [
             (4, 1),
-            (6, 1),
+            (7, 1),
         ], version_rows
         assert len(chat_columns) == len(set(chat_columns))
         assert len(tool_columns) == len(set(tool_columns))
         assert skill_snapshot_columns <= set(chat_columns)
         assert skill_snapshot_columns <= set(tool_columns)
 
-    assert_stable_v6_migration()
+    assert_stable_current_migration()
     legacy_db.init_schema()
-    assert_stable_v6_migration()
+    assert_stable_current_migration()
 
     with legacy_db.engine.begin() as conn:
         legacy_db.record_schema_version(conn)
         legacy_db.record_schema_version(conn)
-    assert_stable_v6_migration()
+    assert_stable_current_migration()
     legacy_db.engine.dispose()
 
     print("skill schema and configuration checks passed")

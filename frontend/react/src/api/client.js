@@ -162,6 +162,24 @@ export const runtimeApi = {
   get: () => apiRequest("/api/runtime"),
 };
 
+export const memoryApi = {
+  settings: () => apiRequest("/api/memory/settings"),
+  setEnabled: (enabled) =>
+    apiRequest("/api/memory/settings", {
+      method: "PUT",
+      body: { enabled },
+    }),
+  list: () => apiRequest("/api/memories"),
+  update: (id, content) =>
+    apiRequest(`/api/memories/${id}`, {
+      method: "PUT",
+      body: { content },
+    }),
+  delete: (id) =>
+    apiRequest(`/api/memories/${id}`, { method: "DELETE" }),
+  clear: () => apiRequest("/api/memories", { method: "DELETE" }),
+};
+
 export const sessionApi = {
   list: () => apiRequest("/api/sessions"),
   messages: (id) => apiRequest(`/api/sessions/${id}/messages`),

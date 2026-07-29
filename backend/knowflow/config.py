@@ -139,6 +139,110 @@ MCP_APPROVAL_TIMEOUT = max(10, env_int("KNOWFLOW_MCP_APPROVAL_TIMEOUT", 300))
 MCP_MAX_RESPONSE_BYTES = max(4096, env_int("KNOWFLOW_MCP_MAX_RESPONSE_BYTES", 1024 * 1024))
 MCP_MAX_EXPOSED_TOOLS = max(1, env_int("KNOWFLOW_MCP_MAX_EXPOSED_TOOLS", 32))
 MCP_ALLOW_PRIVATE_NETWORKS = os.getenv("KNOWFLOW_MCP_ALLOW_PRIVATE_NETWORKS", "0") == "1"
+MEMORY_ENABLED = os.getenv("KNOWFLOW_MEMORY_ENABLED", "0") == "1"
+MEMORY_DEFAULT_ENABLED = (
+    os.getenv("KNOWFLOW_MEMORY_DEFAULT_ENABLED", "0") == "1"
+)
+MEMORY_TOP_K = bounded_env_int("KNOWFLOW_MEMORY_TOP_K", 5, 1, 20)
+MEMORY_LIST_LIMIT = bounded_env_int(
+    "KNOWFLOW_MEMORY_LIST_LIMIT",
+    100,
+    1,
+    500,
+)
+MEMORY_SEARCH_THRESHOLD = max(
+    0.0,
+    min(1.0, env_float("KNOWFLOW_MEMORY_SEARCH_THRESHOLD", 0.2)),
+)
+MEMORY_LLM_API_KEY = os.getenv("KNOWFLOW_MEMORY_LLM_API_KEY", "")
+MEMORY_LLM_MODEL = os.getenv(
+    "KNOWFLOW_MEMORY_LLM_MODEL",
+    "gpt-5-mini",
+)
+MEMORY_LLM_BASE_URL = os.getenv(
+    "KNOWFLOW_MEMORY_LLM_BASE_URL",
+    "https://api.openai.com/v1",
+).rstrip("/")
+MEMORY_EMBEDDER_API_KEY = os.getenv(
+    "KNOWFLOW_MEMORY_EMBEDDER_API_KEY",
+    MEMORY_LLM_API_KEY,
+)
+MEMORY_EMBEDDER_MODEL = os.getenv(
+    "KNOWFLOW_MEMORY_EMBEDDER_MODEL",
+    "text-embedding-3-small",
+)
+MEMORY_EMBEDDER_BASE_URL = os.getenv(
+    "KNOWFLOW_MEMORY_EMBEDDER_BASE_URL",
+    MEMORY_LLM_BASE_URL,
+).rstrip("/")
+MEMORY_EMBEDDING_DIMS = bounded_env_int(
+    "KNOWFLOW_MEMORY_EMBEDDING_DIMS",
+    1536,
+    1,
+    65536,
+)
+MEMORY_QDRANT_PATH = Path(
+    os.getenv(
+        "KNOWFLOW_MEMORY_QDRANT_PATH",
+        str(DATA_DIR / "mem0" / "qdrant"),
+    )
+).expanduser()
+if not MEMORY_QDRANT_PATH.is_absolute():
+    MEMORY_QDRANT_PATH = (PROJECT_DIR / MEMORY_QDRANT_PATH).resolve()
+MEMORY_HISTORY_DB = Path(
+    os.getenv(
+        "KNOWFLOW_MEMORY_HISTORY_DB",
+        str(DATA_DIR / "mem0" / "history.db"),
+    )
+).expanduser()
+if not MEMORY_HISTORY_DB.is_absolute():
+    MEMORY_HISTORY_DB = (PROJECT_DIR / MEMORY_HISTORY_DB).resolve()
+
+
+def memory_backend_configured() -> bool:
+    return bool(
+        MEMORY_ENABLED
+        and MEMORY_LLM_API_KEY.strip()
+        and MEMORY_EMBEDDER_API_KEY.strip()
+    )
+
+
+def build_mem0_config() -> dict[str, object]:
+    return {
+        "llm": {
+            "provider": "openai",
+            "config": {
+                "api_key": MEMORY_LLM_API_KEY,
+                "model": MEMORY_LLM_MODEL,
+                "openai_base_url": MEMORY_LLM_BASE_URL,
+                "temperature": 0.1,
+            },
+        },
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "api_key": MEMORY_EMBEDDER_API_KEY,
+                "model": MEMORY_EMBEDDER_MODEL,
+                "openai_base_url": MEMORY_EMBEDDER_BASE_URL,
+                "embedding_dims": MEMORY_EMBEDDING_DIMS,
+            },
+        },
+        "vector_store": {
+            "provider": "qdrant",
+            "config": {
+                "collection_name": "knowflow_memories",
+                "embedding_model_dims": MEMORY_EMBEDDING_DIMS,
+                "path": str(MEMORY_QDRANT_PATH),
+                "on_disk": True,
+            },
+        },
+        "history_db_path": str(MEMORY_HISTORY_DB),
+        "custom_instructions": (
+            "Only retain durable user facts, preferences, goals, decisions, "
+            "and explicit corrections. Ignore transient requests, tool output, "
+            "credentials, passwords, tokens, API keys, and unsupported guesses."
+        ),
+    }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 IMAGE_MIME_TYPES = {
     ".png": "image/png",

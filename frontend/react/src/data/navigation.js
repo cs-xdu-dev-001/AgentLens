@@ -12,6 +12,12 @@ export const sidebarTools = [
     page: "skills",
   },
   {
+    key: "memory",
+    label: "记忆",
+    icon: "memory",
+    page: "memory",
+  },
+  {
     key: "tools",
     label: "工具与MCP",
     icon: "tools",

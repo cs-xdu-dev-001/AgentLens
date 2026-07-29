@@ -673,6 +673,10 @@ def execute_agent_chat(
                 catalog = activation.catalog()
                 if catalog:
                     activation.register_activation_tool(registry)
+            memories = memory_manager.recall(
+                user_id,
+                payload.question,
+            )
             base_messages = build_messages(
                 payload.question,
                 chunks,
@@ -681,6 +685,7 @@ def execute_agent_chat(
                 use_rag=use_rag,
                 chat_config=chat_config,
                 attachments=payload.attachments,
+                memories=memories,
             )
             if catalog:
                 base_messages[0]["content"] += (
@@ -1086,6 +1091,13 @@ def execute_agent_chat(
                 durable_run_id,
                 message_id,
             )
+        memory_manager.remember_async(
+            user_id=user_id,
+            session_id=session_id,
+            message_id=message_id,
+            question=payload.question,
+            answer=answer,
+        )
         update_retrieval_run_message(
             retrieval_run.get("id") if retrieval_run else None,
             message_id,

@@ -48,6 +48,16 @@ function SessionMenuIcon({ type }) {
 }
 
 function SidebarToolIcon({ type }) {
+  if (type === "memory") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"M9 5.5A3.5 3.5 0 0 0 5.5 9v1.2A3.8 3.8 0 0 0 4 13.3 3.7 3.7 0 0 0 7.7 17H9"} />
+        <path d={"M15 5.5A3.5 3.5 0 0 1 18.5 9v1.2a3.8 3.8 0 0 1 1.5 3.1 3.7 3.7 0 0 1-3.7 3.7H15"} />
+        <path d={"M9 4v16M15 4v16M9 8h2M13 12h2M9 16h2"} />
+      </svg>
+    );
+  }
+
   if (type === "skills") {
     return (
       <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>

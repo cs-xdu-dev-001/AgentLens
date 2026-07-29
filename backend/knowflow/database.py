@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 class Database:
@@ -102,7 +102,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Add durable Agent runs, plan steps, and tool-call task links."
+                    "Add per-user Mem0 long-term memory settings."
                 ),
             },
         )
