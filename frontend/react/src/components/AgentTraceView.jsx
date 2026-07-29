@@ -9,12 +9,15 @@ const kindLabels = {
   agent: "AGENT",
   system: "SYS",
   approval: "APPROVAL",
+  memory: "MEMORY",
 };
 
 const nameLabels = {
   agent_run: "Agent",
   model_completion: "模型",
   web_search: "联网搜索",
+  memory_recall: "记忆召回",
+  memory_write: "记忆整理",
 };
 
 const statusLabels = {
@@ -169,7 +172,32 @@ export function traceStepTitle(step) {
     if (status === "success") return "联网搜索完成";
     return "联网搜索失败";
   }
+  if (name === "memory_recall") {
+    if (status === "running") return "正在召回长期记忆";
+    if (status === "success") return "长期记忆召回完成";
+    return "长期记忆召回失败";
+  }
+  if (name === "memory_write") {
+    if (status === "waiting" || status === "running") {
+      return "正在整理长期记忆";
+    }
+    if (status === "success") return "长期记忆整理完成";
+    return "长期记忆写入失败";
+  }
   return `${displayName(step)}${traceStatusLabel(step.status)}`;
+}
+
+function memoryDetailsForDisplay(step) {
+  const items = Array.isArray(step?.details?.items)
+    ? step.details.items
+    : [];
+  return items
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      action: safeText(item.action),
+      content: safeText(item.content),
+    }))
+    .filter((item) => item.content);
 }
 
 function stepDepth(step, byId) {
@@ -282,6 +310,9 @@ export function AgentTraceView({ trace = [] }) {
   )
     ? traceContextForDisplay(selected)
     : null;
+  const selectedMemoryItems = selected?.kind === "memory"
+    ? memoryDetailsForDisplay(selected)
+    : [];
 
   if (!rows.length) {
     return (
@@ -389,6 +420,39 @@ export function AgentTraceView({ trace = [] }) {
                   <code>{selectedContext.decision}</code>
                 </>
               ) : null}
+            </div>
+          ) : null}
+          {selected?.kind === "memory" ? (
+            <div className={"agent-trace-memory-items"}>
+              <span>{"记忆内容"}</span>
+              {selectedMemoryItems.length ? (
+                <ul>
+                  {selectedMemoryItems.map((item, index) => (
+                    <li key={`${item.action}-${index}`}>
+                      <span>{{
+                        recall: "参考",
+                        add: "新增",
+                        update: "更新",
+                        delete: "删除",
+                      }[item.action] || "记录"}</span>
+                      <p>{item.content}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>{"没有产生长期记忆变更。"}</p>
+              )}
+              <button
+                type={"button"}
+                onClick={() => window.dispatchEvent(
+                  new CustomEvent(
+                    "knowflow:react-page-activated",
+                    { detail: { page: "memory" } },
+                  ),
+                )}
+              >
+                {"管理长期记忆"}
+              </button>
             </div>
           ) : null}
           {selectedDetails.inputSummary !== null ? (

@@ -178,6 +178,12 @@ export const memoryApi = {
   delete: (id) =>
     apiRequest(`/api/memories/${id}`, { method: "DELETE" }),
   clear: () => apiRequest("/api/memories", { method: "DELETE" }),
+  activity: (messageId) =>
+    apiRequest(`/api/messages/${messageId}/memory-activity`),
+  retryOperation: (operationId) =>
+    apiRequest(`/api/memory/operations/${operationId}/retry`, {
+      method: "POST",
+    }),
 };
 
 export const sessionApi = {

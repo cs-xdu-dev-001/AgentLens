@@ -310,6 +310,12 @@ def main() -> None:
     runner.stop()
     assert runner.running is False
 
+    app_source = (
+        ROOT / "backend" / "knowflow" / "app.py"
+    ).read_text(encoding="utf-8")
+    assert "memory_operation_store.purge_expired(" in app_source
+    assert "timedelta(days=30)" in app_source
+
     print("durable memory operation store checks passed")
 
 

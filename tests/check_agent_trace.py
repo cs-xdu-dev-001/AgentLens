@@ -53,6 +53,17 @@ def main() -> None:
         },
     )
     trace.finish_step(root, status="success", title="处理完成")
+    memory = trace.start_step(
+        kind="memory",
+        name="memory_write",
+        title="正在整理长期记忆",
+    )
+    trace.finish_step(
+        memory,
+        status="success",
+        title="记忆写入完成",
+        output_summary={"added": 1},
+    )
 
     assert emitted[0]["status"] == "running"
     assert emitted[1]["parentId"] == root
@@ -64,8 +75,17 @@ def main() -> None:
     assert "credential-value" not in serialized
     assert "[REDACTED]" in serialized
     snapshot = trace.snapshot()
-    assert [step["stepId"] for step in snapshot] == [root, tool]
+    assert [step["stepId"] for step in snapshot] == [
+        root,
+        tool,
+        memory,
+    ]
     assert all(step["status"] == "success" for step in snapshot)
+    extension_source = (
+        ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
+    ).read_text(encoding="utf-8")
+    assert 'kind="memory"' in extension_source
+    assert "memory_operation_store.create_for_message(" in extension_source
     print("agent trace events are ordered, merged, and sanitized")
 
 

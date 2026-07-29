@@ -15,7 +15,9 @@ BACKEND = ROOT / "backend"
 class FakeMemoryManager:
     def __init__(self) -> None:
         self.recall_calls = []
-        self.write_calls = []
+
+    def active(self, user_id: int) -> bool:
+        return True
 
     def recall(self, user_id: int, query: str):
         self.recall_calls.append((user_id, query))
@@ -27,8 +29,56 @@ class FakeMemoryManager:
             }
         ]
 
-    def remember_async(self, **kwargs):
-        self.write_calls.append(kwargs)
+
+class FakeMemoryOperationStore:
+    def __init__(self) -> None:
+        self.create_calls = []
+
+    def create_for_message(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return "memop-recall", "memop-write"
+
+    def activity_for_message(self, *, user_id, message_id):
+        return {
+            "messageId": message_id,
+            "summary": {
+                "recalled": 1,
+                "added": 0,
+                "updated": 0,
+                "deleted": 0,
+            },
+            "operations": [
+                {
+                    "id": "memop-recall",
+                    "kind": "recall",
+                    "status": "succeeded",
+                    "items": [],
+                },
+                {
+                    "id": "memop-write",
+                    "kind": "write",
+                    "status": "queued",
+                    "items": [],
+                },
+            ],
+        }
+
+    def activity_map_for_messages(self, *, user_id, message_ids):
+        return {
+            message_id: self.activity_for_message(
+                user_id=user_id,
+                message_id=message_id,
+            )
+            for message_id in message_ids
+        }
+
+
+class FakeMemoryOperationRunner:
+    def __init__(self) -> None:
+        self.wake_count = 0
+
+    def wake(self):
+        self.wake_count += 1
 
 
 def main() -> None:
@@ -67,7 +117,11 @@ def main() -> None:
     assert "用户偏好结构化Markdown报告" in system
 
     fake_memory = FakeMemoryManager()
+    fake_operations = FakeMemoryOperationStore()
+    fake_runner = FakeMemoryOperationRunner()
     chat_router.memory_manager = fake_memory
+    chat_router.memory_operation_store = fake_operations
+    chat_router.memory_operation_runner = fake_runner
     captured = {}
 
     def fake_generate_answer(
@@ -112,19 +166,36 @@ def main() -> None:
     assert fake_memory.recall_calls == [
         (user_id, "帮我写一份报告")
     ]
-    assert len(fake_memory.write_calls) == 1
-    write = fake_memory.write_calls[0]
+    assert len(fake_operations.create_calls) == 1
+    write = fake_operations.create_calls[0]
     assert write["user_id"] == user_id
     assert write["session_id"] == data["sessionId"]
     assert write["message_id"] == data["messageId"]
-    assert write["question"] == "帮我写一份报告"
-    assert write["answer"] == data["answer"]
+    assert write["agent_run_id"] is None
+    assert write["recalled"][0]["id"] == "memory-1"
+    assert fake_runner.wake_count == 1
+    assert data["memoryActivity"]["operations"][1]["status"] == "queued"
+
+    loaded = client.get(
+        f"/api/sessions/{data['sessionId']}/messages"
+    )
+    assert loaded.status_code == 200, loaded.text
+    assistant = loaded.json()["data"][-1]
+    assert assistant["memoryActivity"]["summary"]["recalled"] == 1
+
+    activity = client.get(
+        f"/api/messages/{data['messageId']}/memory-activity"
+    )
+    assert activity.status_code == 200, activity.text
+    assert activity.json()["data"]["messageId"] == data["messageId"]
 
     extension_source = Path(extensions_router.__file__).read_text(
         encoding="utf-8"
     )
     assert "memory_manager.recall(" in extension_source
-    assert "memory_manager.remember_async(" in extension_source
+    assert "memory_operation_store.create_for_message(" in extension_source
+    assert 'kind="memory"' in extension_source
+    assert '"memoryActivity": result.get("memoryActivity")' in extension_source
 
     print("chat recalls memory before generation and writes after persistence")
 

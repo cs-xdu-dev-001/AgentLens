@@ -12,6 +12,7 @@ import {
   updateReactMessageThinking,
   updateReactMessageTrace,
   updateReactMessageRun,
+  updateReactMessageMemoryActivity,
 } from "./messageEvents.js";
 import {
   notifyReactAuthStateUpdated,
@@ -90,6 +91,10 @@ function renderAgentRun(message, run) {
   );
 }
 
+function renderMemoryActivity(message, memoryActivity) {
+  updateReactMessageMemoryActivity(message, memoryActivity);
+}
+
 function renderAttachmentTray() {
   dispatchReactEvent("knowflow:react-attachments-updated", { attachments: state.chatAttachments });
 }
@@ -160,6 +165,7 @@ const chatFlow = createChatFlow({
   renderAgentApprovals,
   renderAgentRun,
   renderAgentTrace,
+  renderMemoryActivity,
   renderAttachmentTray,
   renderReferences,
   renderRagQuality,

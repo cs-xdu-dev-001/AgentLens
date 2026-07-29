@@ -102,7 +102,12 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
             duration_ms=duration_ms,
         )
         rag_quality = {**rag_quality, "retrievalRunId": retrieval_run.get("id")}
-    memories = memory_manager.recall(user_id, payload.question)
+    memory_active = memory_manager.active(user_id)
+    memories = (
+        memory_manager.recall(user_id, payload.question)
+        if memory_active
+        else []
+    )
     chat_config = get_model_config(payload.chatModelConfigId, "chat", user_id)
     answer = generate_answer(
         payload.question,
@@ -111,16 +116,23 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
         chat_config,
         use_rag=use_rag,
         attachments=payload.attachments,
-        memories=memories,
+        memories=memories if memory_active else None,
     )
     message_id = save_message(session_id, "assistant", answer)
-    memory_manager.remember_async(
-        user_id=user_id,
-        session_id=session_id,
-        message_id=message_id,
-        question=payload.question,
-        answer=answer,
-    )
+    memory_activity = None
+    if memory_active:
+        memory_operation_store.create_for_message(
+            user_id=user_id,
+            session_id=session_id,
+            message_id=message_id,
+            agent_run_id=None,
+            recalled=memories,
+        )
+        memory_operation_runner.wake()
+        memory_activity = memory_operation_store.activity_for_message(
+            user_id=user_id,
+            message_id=message_id,
+        )
     update_retrieval_run_message(retrieval_run.get("id") if retrieval_run else None, message_id)
     refs = save_references(message_id, chunks)
     return api_success(
@@ -131,6 +143,7 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
             "references": refs,
             "ragQuality": rag_quality,
             "retrievalRun": retrieval_run,
+            "memoryActivity": memory_activity,
         }
     )
 
@@ -155,7 +168,15 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
             yield sse_event("reference", {"type": "reference", **ref})
         if result.get("ragQuality", {}).get("enabled"):
             yield sse_event("quality", {"type": "quality", "ragQuality": result["ragQuality"], "retrievalRun": result.get("retrievalRun")})
-        yield sse_event("done", {"type": "done", "sessionId": result["sessionId"], "messageId": result["messageId"]})
+        yield sse_event(
+            "done",
+            {
+                "type": "done",
+                "sessionId": result["sessionId"],
+                "messageId": result["messageId"],
+                "memoryActivity": result.get("memoryActivity"),
+            },
+        )
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -187,6 +208,27 @@ def read_message_references(message_id: int, request: Request) -> dict[str, Any]
     return api_success(rows)
 
 
+@router.get(
+    "/api/messages/{message_id}/memory-activity",
+    tags=CHAT_TAGS,
+    summary="Read memory activity for an answer",
+)
+def read_message_memory_activity(
+    message_id: int,
+    request: Request,
+) -> dict[str, Any]:
+    activity = memory_operation_store.activity_for_message(
+        user_id=current_user_id(request),
+        message_id=message_id,
+    )
+    if activity is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Memory activity not found.",
+        )
+    return api_success(activity)
+
+
 @router.get("/api/sessions", tags=SESSION_TAGS, summary="List chat sessions")
 def list_sessions(request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
@@ -215,6 +257,15 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
         """,
         {"session_id": session_id},
     )
+    assistant_ids = [
+        int(row["id"])
+        for row in rows
+        if row["role"] == "assistant"
+    ]
+    memory_activities = memory_operation_store.activity_map_for_messages(
+        user_id=user_id,
+        message_ids=assistant_ids,
+    )
     messages = []
     for row in rows:
         message = normalize_chat_message(row)
@@ -240,6 +291,9 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
             agent_runs.get_snapshot(user_id, run_row["id"])
             if run_row
             else None
+        )
+        message["memoryActivity"] = memory_activities.get(
+            int(row["id"])
         )
         messages.append(message)
     return api_success(messages)
@@ -286,6 +340,13 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
         {"session_id": session_id, "user_id": user_id},
     )
     execute("DELETE FROM agent_tool_call WHERE session_id=:session_id", {"session_id": session_id})
+    execute(
+        """
+        DELETE FROM memory_operation
+        WHERE session_id=:session_id AND user_id=:user_id
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
     execute("DELETE FROM message_reference WHERE message_id IN (SELECT id FROM chat_message WHERE session_id=:session_id)", {"session_id": session_id})
     execute("DELETE FROM chat_message WHERE session_id=:session_id", {"session_id": session_id})
     execute("DELETE FROM chat_session WHERE id=:session_id", {"session_id": session_id})

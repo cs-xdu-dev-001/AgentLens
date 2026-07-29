@@ -18,6 +18,7 @@ TRACE_KINDS = {
     "agent",
     "system",
     "approval",
+    "memory",
 }
 TRACE_STATUSES = {
     "waiting",

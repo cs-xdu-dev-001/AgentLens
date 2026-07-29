@@ -281,17 +281,70 @@ class MemoryOperationStore:
         user_id: int,
         message_ids: list[int],
     ) -> dict[int, dict[str, Any]]:
-        return {
-            int(message_id): activity
-            for message_id in message_ids
-            if (
-                activity := self.activity_for_message(
-                    user_id=user_id,
-                    message_id=int(message_id),
-                )
+        identifiers = sorted({int(value) for value in message_ids})
+        if not identifiers:
+            return {}
+        parameters: dict[str, Any] = {"user_id": int(user_id)}
+        placeholders: list[str] = []
+        for index, message_id in enumerate(identifiers):
+            key = f"message_id_{index}"
+            parameters[key] = message_id
+            placeholders.append(f":{key}")
+        with self.database.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT *
+                    FROM memory_operation
+                    WHERE user_id=:user_id
+                      AND message_id IN ({", ".join(placeholders)})
+                    ORDER BY message_id,
+                      CASE kind WHEN 'recall' THEN 0 ELSE 1 END
+                    """
+                ),
+                parameters,
+            ).mappings().all()
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for row in rows:
+            raw = dict(row)
+            grouped.setdefault(int(raw["message_id"]), []).append(
+                self._operation(raw)
             )
-            is not None
+        return {
+            message_id: {
+                "messageId": message_id,
+                "summary": self._summary(operations),
+                "operations": operations,
+            }
+            for message_id, operations in grouped.items()
         }
+
+    def get_for_projection(
+        self,
+        operation_id: str,
+    ) -> dict[str, Any] | None:
+        with self.database.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM memory_operation
+                    WHERE id=:id
+                    """
+                ),
+                {"id": str(operation_id)},
+            ).mappings().first()
+        if row is None:
+            return None
+        raw = dict(row)
+        operation = self._operation(raw)
+        operation.update(
+            {
+                "userId": int(raw["user_id"]),
+                "sessionId": str(raw["session_id"]),
+            }
+        )
+        return operation
 
     def claim_due(self, *, now: datetime) -> dict[str, Any] | None:
         current = _time(now)
@@ -741,5 +794,5 @@ class MemoryOperationRunner:
         self._wake_event.set()
         thread = self._thread
         if thread is not None:
-            thread.join(timeout=10)
+            thread.join()
         self._thread = None

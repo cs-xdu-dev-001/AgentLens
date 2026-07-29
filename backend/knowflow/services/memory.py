@@ -298,6 +298,9 @@ class MemoryManager:
             "available": configured,
         }
 
+    def active(self, user_id: int) -> bool:
+        return self._configured() and self._enabled(user_id)
+
     def set_enabled(self, user_id: int, enabled: bool) -> dict[str, Any]:
         if enabled and not self._configured():
             raise MemoryUnavailableError(

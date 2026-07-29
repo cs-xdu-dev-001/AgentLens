@@ -11087,3 +11087,123 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     padding-block: 15px;
   }
 }
+.memory-activity-status {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.memory-activity-status > button:first-child {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 7px;
+  min-width: 0;
+  padding: 3px 0;
+}
+
+.memory-activity-status > button:first-child:hover {
+  color: var(--text);
+}
+
+.memory-activity-signal {
+  background: #15877b;
+  border-radius: 50%;
+  flex: 0 0 7px;
+  height: 7px;
+  width: 7px;
+}
+
+.memory-activity-status.queued .memory-activity-signal,
+.memory-activity-status.running .memory-activity-signal {
+  animation: memory-activity-pulse 1.5s ease-in-out infinite;
+}
+
+.memory-activity-status.failed {
+  color: #b42318;
+}
+
+.memory-activity-status.failed .memory-activity-signal {
+  background: #b42318;
+}
+
+.memory-activity-retry {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  padding: 3px 2px;
+}
+
+.memory-activity-retry:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.agent-trace-memory-items {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-trace-memory-items ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-trace-memory-items li {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.agent-trace-memory-items li > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-trace-memory-items p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-trace-memory-items button {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  justify-self: start;
+  padding: 2px 0;
+}
+
+@keyframes memory-activity-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-activity-status .memory-activity-signal {
+    animation: none;
+  }
+}

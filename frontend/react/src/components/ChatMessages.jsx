@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
@@ -9,6 +10,177 @@ const actionEvents = {
   copy: "knowflow:react-message-copy",
   retry: "knowflow:react-message-retry",
 };
+
+function memoryOperations(activity) {
+  return Array.isArray(activity?.operations)
+    ? activity.operations
+    : [];
+}
+
+function memoryWriteOperation(activity) {
+  return memoryOperations(activity).find(
+    (operation) => operation.kind === "write",
+  ) || null;
+}
+
+function memoryStatusText(activity) {
+  const summary = activity?.summary || {};
+  const recalled = Number(summary.recalled || 0);
+  const added = Number(summary.added || 0);
+  const updated = Number(summary.updated || 0);
+  const deleted = Number(summary.deleted || 0);
+  const changed = added + updated + deleted;
+  const write = memoryWriteOperation(activity);
+  const prefix = recalled ? `参考了${recalled}条记忆` : "";
+  if (write?.status === "queued" || write?.status === "running") {
+    return [prefix, "正在整理记忆…"].filter(Boolean).join(" · ");
+  }
+  if (write?.status === "failed") return "记忆写入失败";
+  if (changed) {
+    const changes = [
+      added ? `新增${added}条` : "",
+      updated ? `更新${updated}条` : "",
+      deleted ? `删除${deleted}条` : "",
+    ].filter(Boolean).join("，");
+    return [prefix, changes].filter(Boolean).join(" · ");
+  }
+  return prefix;
+}
+
+function memoryActivityTrace(activity) {
+  const statusMap = {
+    queued: "waiting",
+    running: "running",
+    succeeded: "success",
+    failed: "failed",
+  };
+  return memoryOperations(activity).map((operation) => {
+    const items = (Array.isArray(operation.items)
+      ? operation.items
+      : [])
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        action: String(item.action || ""),
+        content: String(item.content || ""),
+      }));
+    const isRecall = operation.kind === "recall";
+    const status = statusMap[operation.status] || "waiting";
+    return {
+      stepId: operation.id,
+      parentId: null,
+      kind: "memory",
+      name: isRecall ? "memory_recall" : "memory_write",
+      status,
+      title: isRecall
+        ? "长期记忆召回"
+        : status === "failed"
+          ? "长期记忆写入失败"
+          : status === "success"
+            ? "长期记忆整理完成"
+            : "正在整理长期记忆",
+      errorCode: operation.errorCode || null,
+      details: {
+        operationId: operation.id,
+        items,
+        attemptCount: Number(operation.attemptCount || 0),
+      },
+      outputSummary: `${items.length}条`,
+    };
+  });
+}
+
+function MemoryActivityStatus({ initialActivity, messageId }) {
+  const [activity, setActivity] = useState(initialActivity || null);
+  const [retrying, setRetrying] = useState(false);
+  const [pollTick, setPollTick] = useState(0);
+  const pollCountRef = useRef(0);
+  const write = memoryWriteOperation(activity);
+  const statusText = memoryStatusText(activity);
+  const pending = write?.status === "queued" || write?.status === "running";
+
+  useEffect(() => {
+    setActivity(initialActivity || null);
+    pollCountRef.current = 0;
+  }, [initialActivity]);
+
+  useEffect(() => {
+    if (!pending || !activity?.messageId || pollCountRef.current >= 30) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(async () => {
+      pollCountRef.current += 1;
+      try {
+        setActivity(await memoryApi.activity(activity.messageId));
+      } catch {
+        // Keep polling after a transient request failure.
+      } finally {
+        setPollTick((value) => value + 1);
+      }
+    }, 1200);
+    return () => window.clearTimeout(timeout);
+  }, [
+    activity?.messageId,
+    pending,
+    pollTick,
+    write?.attemptCount,
+    write?.status,
+  ]);
+
+  if (!statusText) return null;
+
+  const openDetails = () => {
+    window.dispatchEvent(
+      new CustomEvent("knowflow:react-agent-trace-open", {
+        detail: {
+          messageId,
+          trace: memoryActivityTrace(activity),
+          approvals: [],
+          run: null,
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("knowflow:react-drawer-open"),
+    );
+  };
+  const retry = async () => {
+    if (!write?.id || retrying) return;
+    setRetrying(true);
+    try {
+      const next = await memoryApi.retryOperation(write.id);
+      pollCountRef.current = 0;
+      setActivity(next);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <div
+      className={[
+        "memory-activity-status",
+        write?.status || "succeeded",
+      ].join(" ")}
+      aria-live={"polite"}
+    >
+      <button type={"button"} onClick={openDetails}>
+        <span className={"memory-activity-signal"} aria-hidden={"true"}></span>
+        <span>{statusText}</span>
+        <span aria-hidden={"true"}>{"↗"}</span>
+      </button>
+      {write?.status === "failed" ? (
+        <button
+          className={"memory-activity-retry"}
+          type={"button"}
+          disabled={retrying}
+          onClick={retry}
+        >
+          {retrying ? "重试中…" : "重试"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function MessageBubble({ message }) {
   const bubbleClassName = [
@@ -64,12 +236,18 @@ function MessageBubble({ message }) {
             <span></span>
           </div>
         ) : (
-          <div
-            className={"message-markdown"}
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdown(redactEmailAddresses(message.rawContent)),
-            }}
-          />
+          <>
+            <div
+              className={"message-markdown"}
+              dangerouslySetInnerHTML={{
+                __html: renderMarkdown(redactEmailAddresses(message.rawContent)),
+              }}
+            />
+            <MemoryActivityStatus
+              initialActivity={message.memoryActivity}
+              messageId={message.id}
+            />
+          </>
         )}
       </div>
     );
@@ -145,6 +323,7 @@ export function ChatMessages() {
         ? payload.approvals
         : [],
       run: payload.run || null,
+      memoryActivity: payload.memoryActivity || null,
     };
   };
   const updateMessage = (messageId, updater) => {
@@ -296,6 +475,18 @@ export function ChatMessages() {
       );
       detail.handled = result.handled;
     };
+    const handleMemoryActivity = (event) => {
+      const detail = event.detail || {};
+      if (!detail.messageId) return;
+      const result = updateMessage(
+        detail.messageId,
+        (message) => ({
+          ...message,
+          memoryActivity: detail.memoryActivity || null,
+        }),
+      );
+      detail.handled = result.handled;
+    };
 
     window.addEventListener("knowflow:react-message-append", handleAppend);
     window.addEventListener("knowflow:react-messages-reset", handleReset);
@@ -304,6 +495,10 @@ export function ChatMessages() {
     window.addEventListener("knowflow:react-message-trace", handleTrace);
     window.addEventListener("knowflow:react-message-approvals", handleApprovals);
     window.addEventListener("knowflow:react-message-run", handleRun);
+    window.addEventListener(
+      "knowflow:react-message-memory-activity",
+      handleMemoryActivity,
+    );
     return () => {
       window.removeEventListener("knowflow:react-message-append", handleAppend);
       window.removeEventListener("knowflow:react-messages-reset", handleReset);
@@ -312,6 +507,10 @@ export function ChatMessages() {
       window.removeEventListener("knowflow:react-message-trace", handleTrace);
       window.removeEventListener("knowflow:react-message-approvals", handleApprovals);
       window.removeEventListener("knowflow:react-message-run", handleRun);
+      window.removeEventListener(
+        "knowflow:react-message-memory-activity",
+        handleMemoryActivity,
+      );
     };
   }, []);
 

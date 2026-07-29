@@ -15,6 +15,7 @@ export function appendReactMessage(role, content, options = {}) {
     trace: Array.isArray(options.trace) ? options.trace : [],
     approvals: Array.isArray(options.approvals) ? options.approvals : [],
     run: options.run || null,
+    memoryActivity: options.memoryActivity || null,
   };
   window.dispatchEvent(new CustomEvent("knowflow:react-message-append", { detail }));
   message.messageId = detail.messageId || "";
@@ -88,6 +89,25 @@ export function updateReactMessageRun(message, run) {
   const detail = { messageId, run: run || null };
   window.dispatchEvent(
     new CustomEvent("knowflow:react-message-run", { detail }),
+  );
+  return Boolean(detail.handled);
+}
+
+export function updateReactMessageMemoryActivity(
+  message,
+  memoryActivity,
+) {
+  const messageId = message?.messageId || "";
+  if (!messageId) return false;
+  const detail = {
+    messageId,
+    memoryActivity: memoryActivity || null,
+  };
+  window.dispatchEvent(
+    new CustomEvent(
+      "knowflow:react-message-memory-activity",
+      { detail },
+    ),
   );
   return Boolean(detail.handled);
 }

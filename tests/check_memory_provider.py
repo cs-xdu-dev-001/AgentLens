@@ -229,9 +229,11 @@ def main() -> None:
         executor=executor,
     )
     assert manager.settings(7)["enabled"] is False
+    assert manager.active(7) is False
     assert manager.recall(7, "报告格式") == []
     manager.set_enabled(7, True)
     assert manager.settings(7)["enabled"] is True
+    assert manager.active(7) is True
     assert manager.recall(7, "报告格式")[0]["id"] == "alice-memory"
     manager.remember_now(
         user_id=7,

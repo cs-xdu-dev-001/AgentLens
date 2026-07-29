@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from .runtime import *
 
 OPENAPI_TAGS = [
@@ -137,6 +139,9 @@ def interrupt_stale_agent_runs() -> None:
     agent_runs.interrupt_stale_runs()
     memory_operation_store.recover_interrupted(
         stale_before=datetime.now(),
+    )
+    memory_operation_store.purge_expired(
+        before=datetime.now() - timedelta(days=30),
     )
     memory_operation_runner.start()
 

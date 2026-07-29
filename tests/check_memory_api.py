@@ -94,6 +94,7 @@ def main() -> None:
     sys.path.insert(0, str(BACKEND))
 
     app_module = importlib.import_module("main")
+    runtime = importlib.import_module("knowflow.runtime")
     memory_router = importlib.import_module("knowflow.routers.memories")
     fake = FakeMemoryManager()
     memory_router.memory_manager = fake
@@ -103,6 +104,63 @@ def main() -> None:
     alice_id = register(alice, "memory-alice")
     bob_id = register(bob, "memory-bob")
     fake.items["memory-alice"]["user_id"] = alice_id
+
+    session_id = runtime.ensure_session(
+        None,
+        None,
+        None,
+        alice_id,
+    )
+    runtime.save_message(session_id, "user", "记住Markdown偏好")
+    assistant_id = runtime.save_message(
+        session_id,
+        "assistant",
+        "我会尝试记录。",
+    )
+    _, write_id = runtime.memory_operation_store.create_for_message(
+        user_id=alice_id,
+        session_id=session_id,
+        message_id=assistant_id,
+        agent_run_id=None,
+        recalled=[],
+    )
+    runtime.memory_operation_store.mark_failed(
+        write_id,
+        error_code="memory_upstream_unavailable",
+        error_message="记忆服务暂时不可用。",
+    )
+
+    owned_activity = alice.get(
+        f"/api/messages/{assistant_id}/memory-activity"
+    )
+    assert owned_activity.status_code == 200, owned_activity.text
+    denied_activity = bob.get(
+        f"/api/messages/{assistant_id}/memory-activity"
+    )
+    assert denied_activity.status_code == 404, denied_activity.text
+    denied_retry = bob.post(
+        f"/api/memory/operations/{write_id}/retry"
+    )
+    assert denied_retry.status_code == 404, denied_retry.text
+    retried = alice.post(
+        f"/api/memory/operations/{write_id}/retry"
+    )
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["data"]["status"] == "queued"
+    conflict = alice.post(
+        f"/api/memory/operations/{write_id}/retry"
+    )
+    assert conflict.status_code == 409, conflict.text
+    runtime.memory_operation_store.mark_succeeded(
+        write_id,
+        [
+            {
+                "event": "ADD",
+                "id": "memory-alice",
+                "memory": "Alice偏好Markdown。",
+            }
+        ],
+    )
 
     status = alice.get("/api/memory/settings")
     assert status.status_code == 200, status.text
@@ -149,6 +207,10 @@ def main() -> None:
 
     deleted = alice.delete("/api/memories/memory-alice")
     assert deleted.status_code == 200, deleted.text
+    redacted = alice.get(
+        f"/api/messages/{assistant_id}/memory-activity"
+    ).json()["data"]
+    assert redacted["operations"][1]["items"][0]["content"] == ""
     assert alice.get("/api/memories").json()["data"] == []
 
     fake.items["memory-new"] = {

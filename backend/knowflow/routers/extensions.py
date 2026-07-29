@@ -673,10 +673,25 @@ def execute_agent_chat(
                 catalog = activation.catalog()
                 if catalog:
                     activation.register_activation_tool(registry)
-            memories = memory_manager.recall(
-                user_id,
-                payload.question,
-            )
+            memory_active = memory_manager.active(user_id)
+            memories = []
+            if memory_active:
+                memory_recall_step = trace.start_step(
+                    kind="memory",
+                    name="memory_recall",
+                    title="Recalling long-term memory",
+                    parent_id=run_parent_step,
+                )
+                memories = memory_manager.recall(
+                    user_id,
+                    payload.question,
+                )
+                trace.finish_step(
+                    memory_recall_step,
+                    status="success",
+                    title="Long-term memory recall completed",
+                    output_summary={"recalled": len(memories)},
+                )
             base_messages = build_messages(
                 payload.question,
                 chunks,
@@ -685,7 +700,7 @@ def execute_agent_chat(
                 use_rag=use_rag,
                 chat_config=chat_config,
                 attachments=payload.attachments,
-                memories=memories,
+                memories=memories if memory_active else None,
             )
             if catalog:
                 base_messages[0]["content"] += (
@@ -1091,13 +1106,46 @@ def execute_agent_chat(
                 durable_run_id,
                 message_id,
             )
-        memory_manager.remember_async(
-            user_id=user_id,
-            session_id=session_id,
-            message_id=message_id,
-            question=payload.question,
-            answer=answer,
-        )
+        memory_activity = None
+        if memory_active:
+            _, memory_write_id = memory_operation_store.create_for_message(
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message_id,
+                agent_run_id=durable_run_id,
+                recalled=memories,
+            )
+            trace.start_step(
+                kind="memory",
+                name="memory_write",
+                title="Waiting for long-term memory write",
+                parent_id=root_step,
+                status="waiting",
+                details={"operationId": memory_write_id},
+            )
+            trace_snapshot = trace.snapshot()
+            execute(
+                """
+                UPDATE chat_message
+                SET trace_json=:trace_json
+                WHERE id=:message_id AND session_id=:session_id
+                """,
+                {
+                    "trace_json": json.dumps(
+                        trace_snapshot,
+                        ensure_ascii=False,
+                    ),
+                    "message_id": message_id,
+                    "session_id": session_id,
+                },
+            )
+            memory_operation_runner.wake()
+            memory_activity = (
+                memory_operation_store.activity_for_message(
+                    user_id=user_id,
+                    message_id=message_id,
+                )
+            )
         update_retrieval_run_message(
             retrieval_run.get("id") if retrieval_run else None,
             message_id,
@@ -1150,6 +1198,7 @@ def execute_agent_chat(
             "trace": trace_snapshot,
             "runId": durable_run_id,
             "run": final_snapshot,
+            "memoryActivity": memory_activity,
         }
     except AgentRunCancelled:
         snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
@@ -1256,6 +1305,7 @@ def _publish_agent_result(
             "messageId": result["messageId"],
             "trace": result["trace"],
             "run": result.get("run"),
+            "memoryActivity": result.get("memoryActivity"),
         }
     )
 

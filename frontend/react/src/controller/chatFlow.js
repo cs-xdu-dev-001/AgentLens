@@ -119,6 +119,7 @@ export function createChatFlow({
   renderAgentApprovals,
   renderAgentRun,
   renderAgentTrace,
+  renderMemoryActivity,
   renderAttachmentTray,
   renderReferences,
   renderRagQuality,
@@ -145,6 +146,7 @@ export function createChatFlow({
             ? message.trace
             : [],
           run: message.run || null,
+          memoryActivity: message.memoryActivity || null,
         },
       );
       if (
@@ -473,6 +475,12 @@ export function createChatFlow({
               run = eventPayload.run;
               renderAgentRun(answer, run);
             }
+            if (eventPayload.memoryActivity) {
+              renderMemoryActivity(
+                answer,
+                eventPayload.memoryActivity,
+              );
+            }
             state.activeRunId = isActiveRun(run) ? run.id : null;
             state.activeRunMessageId = isActiveRun(run)
               ? answer.messageId
@@ -602,6 +610,12 @@ export function createChatFlow({
             if (eventPayload.sessionId) {
               state.currentSessionId = eventPayload.sessionId;
             }
+            if (eventPayload.memoryActivity) {
+              renderMemoryActivity(
+                message,
+                eventPayload.memoryActivity,
+              );
+            }
             state.activeRunId = null;
             state.activeRunMessageId = null;
             renderActiveSession();
@@ -645,6 +659,10 @@ export function createChatFlow({
             setMessageContent(message, "assistant", saved.content);
             renderAgentTrace(message, saved.trace || []);
             renderAgentRun(message, saved.run || snapshot);
+            renderMemoryActivity(
+              message,
+              saved.memoryActivity || null,
+            );
           }
         }
       }
