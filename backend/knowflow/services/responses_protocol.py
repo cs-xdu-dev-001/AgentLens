@@ -1,18 +1,37 @@
 from __future__ import annotations
 
 from typing import Any
+import copy, json
 
 
 class ResponsesProtocolError(ValueError):
     """Raised when a Responses API payload/response violates the expected shape."""
 
 
+def to_responses_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    fn = tool.get("function") if isinstance(tool, dict) else None
+    if not isinstance(fn, dict) or not isinstance(fn.get("name"), str) or not isinstance(fn.get("parameters"), dict):
+        raise ResponsesProtocolError("Invalid tool definition.")
+    return {"type": "function", "name": fn["name"], "description": fn.get("description", ""), "parameters": fn["parameters"], "strict": False}
+
 def messages_to_response_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {"role": item["role"], "content": item.get("content", "")}
-        for item in messages
-        if item.get("role") in {"user", "assistant"}
-    ]
+    out=[]
+    for item in messages:
+        role=item.get("role")
+        if role=="system": continue
+        if role=="assistant":
+            if item.get("_response_items"):
+                out.extend(copy.deepcopy(item["_response_items"])); continue
+            if item.get("tool_calls"):
+                if item.get("content"): out.append({"role":"assistant","content":item.get("content")})
+                for c in item["tool_calls"]:
+                    fn=c.get("function",{})
+                    out.append({"type":"function_call","call_id":c.get("id",""),"name":fn.get("name",""),"arguments":fn.get("arguments","{}")})
+                continue
+        if role=="tool":
+            out.append({"type":"function_call_output","call_id":item.get("tool_call_id", ""),"output":item.get("content", "")}); continue
+        if role in {"user","assistant"}: out.append({"role":role,"content":item.get("content","")})
+    return out
 
 
 def build_responses_payload(
@@ -27,6 +46,9 @@ def build_responses_payload(
         "store": False,
         "input": messages_to_response_input(messages),
     }
+    if tools:
+        payload["tools"] = [to_responses_tool(t) for t in tools]
+        payload["tool_choice"] = tool_choice or "auto"
     if system:
         payload["instructions"] = "\n\n".join(system)
     payload["temperature"] = float(config.get("temperature", 0.3) if config.get("temperature") is not None else 0.3)
@@ -39,12 +61,18 @@ def build_responses_payload(
 
 def parse_responses_message(data: dict[str, Any]) -> dict[str, Any]:
     texts: list[str] = []
-    for item in data.get("output", []) or []:
-        if item.get("type") != "message":
-            continue
+    calls=[]; output=data.get("output",[]) or []
+    for item in output:
+        if item.get("type") == "function_call":
+            args=item.get("arguments", "{}")
+            if isinstance(args, (dict,list)): args=json.dumps(args,ensure_ascii=False)
+            calls.append({"id":item.get("call_id", ""),"type":"function","function":{"name":item.get("name", ""),"arguments":args}})
+        if item.get("type") != "message": continue
         for content in item.get("content", []) or []:
             if content.get("type") == "output_text" and isinstance(content.get("text"), str):
                 texts.append(content["text"])
-    if not texts:
+    if not texts and not calls:
         raise ResponsesProtocolError("Responses API returned no output text.")
-    return {"role": "assistant", "content": "".join(texts), "tool_calls": []}
+    result={"role":"assistant","content":"".join(texts),"tool_calls":calls}
+    if calls or any(i.get("type")!="message" for i in output): result["_response_items"]=copy.deepcopy(output)
+    return result
