@@ -16,7 +16,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["KNOWFLOW_DB_URL"] = f"sqlite:///{Path(tmp, 'api-mode.db').as_posix()}"
         os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
-        app_module = importlib.import_module("knowflow.main")
+        app_module = importlib.import_module("knowflow.app")
         client = TestClient(app_module.app)
         assert client.post("/api/auth/register", json={"username": "api-mode", "email": "api-mode@example.com", "password": "123456"}).status_code == 200
 
@@ -31,6 +31,9 @@ def main() -> None:
         assert client.put(f"/api/model-configs/{cid}", json={"apiMode": "responses"}).json()["data"]["apiMode"] == "responses"
         assert client.post("/api/model-configs", json={**base, "apiMode": "auto"}).status_code == 400
         assert client.post("/api/model-configs", json={**base, "modelType": "embedding", "apiMode": "responses"}).status_code == 400
+        assert client.post("/api/model-configs", json={**base, "modelType": "rerank", "apiMode": "responses"}).status_code == 400
+        import knowflow.runtime as runtime
+        runtime.db.engine.dispose()
 
 
 if __name__ == "__main__":
