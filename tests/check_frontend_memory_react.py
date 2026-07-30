@@ -100,6 +100,8 @@ def main() -> None:
     assert "disabled={!memories.length || interactionLocked}" in page
     assert "disabled={!draft.trim() || interactionLocked}" in page
     assert page.count("disabled={interactionLocked}") >= 4
+    editor_field = page[page.index("<textarea"):page.index("/>", page.index("<textarea"))]
+    assert "disabled={interactionLocked}" in editor_field
     for pending_copy in [
         "正在更新长期记忆状态",
         "清空中...",
