@@ -241,7 +241,9 @@ export function MemoryPage({ active = false }) {
                   <div className={"memory-editor"}>
                     <textarea
                       aria-label={"编辑记忆内容"}
+                      autoFocus
                       disabled={interactionLocked}
+                      maxLength={12000}
                       rows={4}
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
