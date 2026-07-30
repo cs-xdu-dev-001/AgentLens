@@ -146,6 +146,7 @@ def normalize_model_config(row: dict[str, Any]) -> dict[str, Any]:
         "baseUrl": row["base_url"],
         "apiKeyMasked": cipher.mask(row.get("api_key_cipher")),
         "modelName": row["model_name"],
+        "apiMode": row.get("api_mode") or "chat_completions",
         "temperature": row["temperature"],
         "topP": row["top_p"],
         "maxTokens": row["max_tokens"],

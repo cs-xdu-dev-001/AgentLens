@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import importlib
+import os
+import tempfile
+from pathlib import Path
+import sys
+
+from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+
+
+def main() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["KNOWFLOW_DB_URL"] = f"sqlite:///{Path(tmp, 'api-mode.db').as_posix()}"
+        os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
+        app_module = importlib.import_module("knowflow.main")
+        client = TestClient(app_module.app)
+        assert client.post("/api/auth/register", json={"username": "api-mode", "email": "api-mode@example.com", "password": "123456"}).status_code == 200
+
+        base = {"name": "m", "provider": "openai", "modelType": "chat", "baseUrl": "https://example/v1", "apiKey": "k", "modelName": "x"}
+        data = client.post("/api/model-configs", json=base).json()["data"]
+        assert data["apiMode"] == "chat_completions"
+        created = client.post("/api/model-configs", json={**base, "apiMode": "responses"}).json()["data"]
+        cid = created["id"]
+        assert client.get(f"/api/model-configs/{cid}").json()["data"]["apiMode"] == "responses"
+        updated = client.put(f"/api/model-configs/{cid}", json={"apiMode": "chat_completions"}).json()["data"]
+        assert updated["apiMode"] == "chat_completions"
+        assert client.put(f"/api/model-configs/{cid}", json={"apiMode": "responses"}).json()["data"]["apiMode"] == "responses"
+        assert client.post("/api/model-configs", json={**base, "apiMode": "auto"}).status_code == 400
+        assert client.post("/api/model-configs", json={**base, "modelType": "embedding", "apiMode": "responses"}).status_code == 400
+
+
+if __name__ == "__main__":
+    main()

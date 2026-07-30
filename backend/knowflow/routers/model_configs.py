@@ -5,20 +5,29 @@ from ..runtime import *
 router = APIRouter()
 
 MODEL_TAGS = ["Model Configuration"]
+ALLOWED_API_MODES = {"chat_completions", "responses"}
+
+
+def validate_api_mode(model_type: str, api_mode: str) -> None:
+    if api_mode not in ALLOWED_API_MODES:
+        raise HTTPException(status_code=400, detail="apiMode must be chat_completions or responses.")
+    if api_mode == "responses" and model_type != "chat":
+        raise HTTPException(status_code=400, detail="responses API mode is only supported for chat models.")
 
 
 @router.post("/api/model-configs", tags=MODEL_TAGS, summary="Create a model configuration")
 def create_model_config(payload: ModelConfigIn, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
+    validate_api_mode(payload.modelType, payload.apiMode)
     model_id = execute(
         """
         INSERT INTO model_config(
           user_id, name, provider, model_type, base_url, api_key_cipher, model_name,
-          temperature, top_p, max_tokens, created_at, updated_at
+          temperature, top_p, max_tokens, api_mode, created_at, updated_at
         )
         VALUES (
           :user_id, :name, :provider, :model_type, :base_url, :api_key_cipher, :model_name,
-          :temperature, :top_p, :max_tokens, :created_at, :updated_at
+          :temperature, :top_p, :max_tokens, :api_mode, :created_at, :updated_at
         )
         """,
         {
@@ -32,6 +41,7 @@ def create_model_config(payload: ModelConfigIn, request: Request) -> dict[str, A
             "temperature": payload.temperature,
             "top_p": payload.topP,
             "max_tokens": payload.maxTokens,
+            "api_mode": payload.apiMode,
             "created_at": now_str(),
             "updated_at": now_str(),
         },
@@ -62,7 +72,8 @@ def read_model_config(config_id: int, request: Request) -> dict[str, Any]:
 @router.put("/api/model-configs/{config_id}", tags=MODEL_TAGS, summary="Update a model configuration")
 def update_model_config(config_id: int, payload: ModelConfigUpdate, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
-    if not fetch_one("SELECT id FROM model_config WHERE id=:id AND user_id=:user_id", {"id": config_id, "user_id": user_id}):
+    current = fetch_one("SELECT * FROM model_config WHERE id=:id AND user_id=:user_id", {"id": config_id, "user_id": user_id})
+    if not current:
         raise HTTPException(status_code=404, detail="Model configuration not found.")
     data = payload.model_dump(exclude_unset=True)
     mapping = {
@@ -75,7 +86,11 @@ def update_model_config(config_id: int, payload: ModelConfigUpdate, request: Req
         "temperature": "temperature",
         "topP": "top_p",
         "maxTokens": "max_tokens",
+        "apiMode": "api_mode",
     }
+    effective_type = data.get("modelType", current["model_type"])
+    effective_mode = data.get("apiMode", current.get("api_mode") or "chat_completions")
+    validate_api_mode(effective_type, effective_mode)
     assignments: list[str] = []
     params: dict[str, Any] = {"id": config_id, "user_id": user_id, "updated_at": now_str()}
     for key, value in data.items():
