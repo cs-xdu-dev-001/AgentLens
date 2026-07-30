@@ -46,12 +46,22 @@ class ModelGateway:
                 if vector:
                     return "available", f"Connection succeeded. The model returned a {len(vector)}-dimension vector."
             else:
-                answer = self.chat([{"role": "user", "content": "ping"}], config)
+                answer = self.complete([{"role": "user", "content": "ping"}], config)
                 if answer:
-                    return "available", "Connection succeeded. The model returned a normal response."
+                    protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
+                    return "available", f"{protocol} connection succeeded. The model returned a normal response."
         except Exception as exc:
-            return "unavailable", str(exc)
+            protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
+            return "unavailable", f"{protocol} connection failed: {self._safe_error(exc)}"
         return "unavailable", "The model did not return a valid result."
+
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        text = " ".join(str(exc).split())
+        text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
+        text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
+        text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
+        return text[:500]
 
     def endpoint(self, base_url: str, path: str) -> str:
         base = base_url.rstrip("/")

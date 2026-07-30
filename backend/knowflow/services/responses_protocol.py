@@ -67,19 +67,37 @@ def build_responses_payload(
 
 
 def parse_responses_message(data: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ResponsesProtocolError("Invalid Responses structure: response data must be an object.")
+    if "choices" in data and "output" not in data:
+        raise ResponsesProtocolError("Responses API upstream returned Chat Completions shape (choices); expected output.")
+    output = data.get("output")
+    if not isinstance(output, list):
+        raise ResponsesProtocolError("Invalid Responses structure: output must be a list.")
     texts: list[str] = []
-    calls=[]; output=data.get("output",[]) or []
+    calls=[]
     for item in output:
+        if not isinstance(item, dict):
+            raise ResponsesProtocolError("Invalid Responses structure: output item must be an object.")
         if item.get("type") == "function_call":
+            if not isinstance(item.get("call_id"), str) or not item.get("call_id"):
+                raise ResponsesProtocolError("Responses API function call missing call_id.")
+            if not isinstance(item.get("name"), str) or not item.get("name"):
+                raise ResponsesProtocolError("Responses API function call missing name.")
             args=item.get("arguments", "{}")
             if isinstance(args, (dict,list)): args=json.dumps(args,ensure_ascii=False)
             calls.append({"id":item.get("call_id", ""),"type":"function","function":{"name":item.get("name", ""),"arguments":args}})
         if item.get("type") != "message": continue
-        for content in item.get("content", []) or []:
+        content_items = item.get("content", [])
+        if not isinstance(content_items, list):
+            raise ResponsesProtocolError("Invalid Responses structure: message content must be a list.")
+        for content in content_items:
+            if not isinstance(content, dict):
+                raise ResponsesProtocolError("Invalid Responses structure: content item must be an object.")
             if content.get("type") == "output_text" and isinstance(content.get("text"), str):
                 texts.append(content["text"])
     if not texts and not calls:
-        raise ResponsesProtocolError("Responses API returned no output text.")
+        raise ResponsesProtocolError("Responses API returned no text or tool calls.")
     result={"role":"assistant","content":"".join(texts),"tool_calls":calls}
     if calls or any(i.get("type")!="message" for i in output): result["_response_items"]=_normalize_items(output)
     return result
