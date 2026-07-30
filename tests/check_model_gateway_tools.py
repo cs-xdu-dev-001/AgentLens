@@ -77,7 +77,10 @@ def main() -> None:
         tool_choice="auto",
     )
     assert message == tool_message
-    _url, _headers, payload = calls[0]
+    url, _headers, payload = calls[0]
+    assert url == "https://example.com/v1/chat/completions"
+    assert payload["messages"] == [{"role": "user", "content": "latest release"}]
+    assert "input" not in payload
     assert payload["tools"] == tools
     assert payload["tool_choice"] == "auto"
     assert payload["max_completion_tokens"] == 1000
