@@ -79,6 +79,25 @@ def main():
     gwtest.post_model_json=lambda *a: (_ for _ in ()).throw(RuntimeError("embedding boom"))
     status,msg=gwtest.test({"model_type":"embedding","model_name":"e","base_url":"https://x","api_key_cipher":"k"})
     assert status=="unavailable" and msg=="embedding boom"
+    class BadStr(Exception):
+        def __str__(self): raise RuntimeError("bad str")
+    assert "BadStr" in ModelGateway._safe_error(BadStr())
+    class BadStatus(Exception):
+        @property
+        def response(self): raise RuntimeError("bad status")
+    assert "BadStatus" in ModelGateway._safe_error(BadStatus("oops"))
+    safe=ModelGateway._safe_error(RuntimeError("https://host/path?a=one&token=two api-key: three x-api-key=four x-secret: five Authorization: six"))
+    assert all(x not in safe for x in ["one","two","three","four","five","six"])
+    assert len(ModelGateway._safe_error(RuntimeError("x"*1000))) <= 500
+    for val in (None, 1, True):
+        parsed=parse_responses_message({"output":[{"type":"function_call","call_id":"c","name":"f","arguments":val}]})
+        assert isinstance(parsed["tool_calls"][0]["function"]["arguments"], str)
+        assert isinstance(parsed["_response_items"][0]["arguments"], str)
+    try:
+        messages_to_response_input([{"role":"assistant","_response_items":["bad"]}])
+    except ResponsesProtocolError:
+        pass
+    else: raise AssertionError("expected ResponsesProtocolError")
     flat = to_responses_tool({"type":"function","function":{"name":"web_search","description":"Search","parameters":{"type":"object"}}})
     assert flat == {"type":"function","name":"web_search","description":"Search","parameters":{"type":"object"},"strict":False}
     parsed = parse_responses_message({"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"c1","name":"web_search","arguments":{"query":"中文"}}]})
