@@ -286,6 +286,29 @@ def main() -> None:
     assert manager.calls[-1]["operation_id"] == runner_write_id
     assert projected[-1] == runner_write_id
 
+    _, empty_write_id = runner_store.create_for_message(
+        user_id=9,
+        session_id="session-runner",
+        message_id=23,
+        agent_run_id=None,
+        recalled=[],
+    )
+    manager.outcomes.append([])
+    assert runner.run_once() is True
+    empty_done = runner_store.activity_for_message(
+        user_id=9,
+        message_id=23,
+    )
+    assert empty_done is not None
+    assert empty_done["operations"][1]["status"] == "succeeded"
+    assert empty_done["summary"] == {
+        "recalled": 0,
+        "added": 0,
+        "updated": 0,
+        "deleted": 0,
+    }
+    assert empty_write_id in projected
+
     _, permanent_write_id = runner_store.create_for_message(
         user_id=9,
         session_id="session-runner",

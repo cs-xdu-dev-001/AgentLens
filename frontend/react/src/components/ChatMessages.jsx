@@ -14,6 +14,7 @@ const actionEvents = {
   copy: "knowflow:react-message-copy",
   retry: "knowflow:react-message-retry",
 };
+const MEMORY_ACTIVITY_MAX_POLLS = 240;
 
 function memoryOperations(activity) {
   return Array.isArray(activity?.operations)
@@ -52,6 +53,7 @@ function memoryStatusText(activity) {
 }
 
 function MemoryActivityStatus({ initialActivity, messageId }) {
+  const initialWriteId = memoryWriteOperation(initialActivity)?.id || "";
   const [activity, setActivity] = useState(initialActivity || null);
   const [retrying, setRetrying] = useState(false);
   const [pollTick, setPollTick] = useState(0);
@@ -82,11 +84,18 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
 
   useEffect(() => {
     setActivity(initialActivity || null);
-    pollCountRef.current = 0;
   }, [initialActivity]);
 
   useEffect(() => {
-    if (!pending || !activity?.messageId || pollCountRef.current >= 30) {
+    pollCountRef.current = 0;
+  }, [initialWriteId, messageId]);
+
+  useEffect(() => {
+    if (
+      !pending
+      || !activity?.messageId
+      || pollCountRef.current >= MEMORY_ACTIVITY_MAX_POLLS
+    ) {
       return undefined;
     }
     const timeout = window.setTimeout(async () => {

@@ -14,6 +14,22 @@ export function isActiveRun(run) {
   return Boolean(run?.id && activeStatuses.has(run.status));
 }
 
+export function traceStepWaitState(step) {
+  const waiting = ["waiting", "waiting_approval"].includes(
+    step?.status,
+  );
+  return {
+    approval: Boolean(
+      waiting
+      && (
+        step?.kind === "approval"
+        || step?.status === "waiting_approval"
+      )
+    ),
+    background: Boolean(waiting && step?.kind === "memory"),
+  };
+}
+
 export function currentRunStep(run) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
   return (

@@ -2,6 +2,7 @@ import { traceStepTitle } from "./AgentTraceView.jsx";
 import {
   currentRunStep,
   runProgress,
+  traceStepWaitState,
 } from "../controller/agentRunState.js";
 
 
@@ -32,9 +33,7 @@ export function AgentTraceStrip({
   const step = durableStep || currentStep(trace);
   if (!step) return null;
   const running = ["planning", "running"].includes(step.status);
-  const waiting = ["waiting", "waiting_approval"].includes(
-    step.status,
-  );
+  const waitState = traceStepWaitState(step);
   const progress = runProgress(run);
   const completed = trace.filter(
     (item) => item.status === "success",
@@ -79,8 +78,10 @@ export function AgentTraceStrip({
           {durableStep ? durableStep.title : traceStepTitle(step)}
         </strong>
         <small>
-          {waiting
+          {waitState.approval
             ? "Agent已暂停，确认后继续"
+            : waitState.background
+              ? "后台整理中，不影响继续对话"
             : running
             ? run?.id
               ? `${progress.completed}/${progress.total}个步骤完成`
@@ -91,8 +92,10 @@ export function AgentTraceStrip({
       <span className={"agent-trace-strip-time"}>
         {step.durationMs != null
           ? `${step.durationMs}ms`
-          : waiting
+          : waitState.approval
             ? "等待确认"
+            : waitState.background
+              ? "后台处理中"
             : "运行中"}
       </span>
       <svg

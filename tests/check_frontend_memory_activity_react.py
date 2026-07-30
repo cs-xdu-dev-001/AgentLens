@@ -24,6 +24,9 @@ def check_memory_trace_reconciliation() -> None:
         import {
           mergeMemoryActivityTrace,
         } from "./frontend/react/src/controller/memoryActivity.js";
+        import {
+          traceStepWaitState,
+        } from "./frontend/react/src/controller/agentRunState.js";
 
         const waitingTrace = [
           {
@@ -66,6 +69,15 @@ def check_memory_trace_reconciliation() -> None:
           completedActivity,
         );
         assert.deepEqual(ordinaryTrace, []);
+
+        assert.deepEqual(
+          traceStepWaitState({ kind: "approval", status: "waiting" }),
+          { approval: true, background: false },
+        );
+        assert.deepEqual(
+          traceStepWaitState({ kind: "memory", status: "waiting" }),
+          { approval: false, background: true },
+        );
         """
     )
     result = subprocess.run(
@@ -115,6 +127,21 @@ def main() -> None:
         messages,
         "正在整理记忆",
         "running memory copy",
+    )
+    require(
+        messages,
+        "MEMORY_ACTIVITY_MAX_POLLS = 240",
+        "long-running memory polling window",
+    )
+    require(
+        messages,
+        "[initialWriteId, messageId]",
+        "poll budget reset only for a new memory operation",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "后台整理中，不影响继续对话",
+        "non-blocking memory wait copy",
     )
     require(
         messages,
