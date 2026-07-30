@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import textwrap
 
@@ -14,6 +15,82 @@ def require(path: str, needle: str, label: str) -> None:
     if needle not in read(path):
         raise AssertionError(
             f"missing {label} in {path}: {needle}"
+        )
+
+
+def extract_function(source: str, name: str) -> str:
+    match = re.search(
+        rf"function\s+{re.escape(name)}\s*\(",
+        source,
+    )
+    assert match, f"missing JavaScript function: {name}"
+    parameter_start = source.find("(", match.start())
+    parameter_depth = 0
+    parameter_end = -1
+    for index in range(parameter_start, len(source)):
+        if source[index] == "(":
+            parameter_depth += 1
+        elif source[index] == ")":
+            parameter_depth -= 1
+            if parameter_depth == 0:
+                parameter_end = index
+                break
+    assert parameter_end >= 0, f"unclosed parameters: {name}"
+    opening = source.find("{", parameter_end)
+    assert opening >= 0, f"missing function body: {name}"
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[match.start():index + 1]
+    raise AssertionError(f"unclosed JavaScript function: {name}")
+
+
+def check_memory_sync_copy() -> None:
+    source = read(
+        "frontend/react/src/components/ChatMessages.jsx"
+    )
+    declarations = "\n".join(
+        extract_function(source, name)
+        for name in (
+            "memoryOperations",
+            "memoryWriteOperation",
+            "memoryStatusText",
+        )
+    )
+    script = textwrap.dedent(
+        f"""
+        import assert from "node:assert/strict";
+        {declarations}
+        const pending = {{
+          summary: {{}},
+          operations: [{{ kind: "write", status: "running" }}],
+        }};
+        assert.equal(
+          memoryStatusText(pending, {{ syncFailures: 3 }}),
+          "后台仍在整理，状态同步较慢…",
+        );
+        assert.equal(
+          memoryStatusText(pending, {{ pollingExpired: true }}),
+          "后台仍在整理，可刷新查看状态",
+        );
+        """
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode:
+        raise AssertionError(
+            "memory polling delays must be visible:\n"
+            f"{result.stdout}{result.stderr}"
         )
 
 
@@ -193,6 +270,7 @@ def main() -> None:
     require(styles, ".memory-activity-status", "compact status styling")
     require(styles, ".memory-activity-retry", "retry styling")
     check_memory_trace_reconciliation()
+    check_memory_sync_copy()
 
     print("memory activity is visible, inspectable, and retryable")
 

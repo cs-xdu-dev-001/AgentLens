@@ -28,7 +28,10 @@ function memoryWriteOperation(activity) {
   ) || null;
 }
 
-function memoryStatusText(activity) {
+function memoryStatusText(
+  activity,
+  { syncFailures = 0, pollingExpired = false } = {},
+) {
   const summary = activity?.summary || {};
   const recalled = Number(summary.recalled || 0);
   const added = Number(summary.added || 0);
@@ -38,6 +41,16 @@ function memoryStatusText(activity) {
   const write = memoryWriteOperation(activity);
   const prefix = recalled ? `参考了${recalled}条记忆` : "";
   if (write?.status === "queued" || write?.status === "running") {
+    if (pollingExpired) {
+      return [prefix, "后台仍在整理，可刷新查看状态"]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    if (syncFailures >= 3) {
+      return [prefix, "后台仍在整理，状态同步较慢…"]
+        .filter(Boolean)
+        .join(" · ");
+    }
     return [prefix, "正在整理记忆…"].filter(Boolean).join(" · ");
   }
   if (write?.status === "failed") return "记忆写入失败";
@@ -56,11 +69,19 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
   const initialWriteId = memoryWriteOperation(initialActivity)?.id || "";
   const [activity, setActivity] = useState(initialActivity || null);
   const [retrying, setRetrying] = useState(false);
+  const [syncFailures, setSyncFailures] = useState(0);
   const [pollTick, setPollTick] = useState(0);
   const pollCountRef = useRef(0);
   const write = memoryWriteOperation(activity);
-  const statusText = memoryStatusText(activity);
   const pending = write?.status === "queued" || write?.status === "running";
+  const pollingExpired = (
+    pending
+    && pollCountRef.current >= MEMORY_ACTIVITY_MAX_POLLS
+  );
+  const statusText = memoryStatusText(activity, {
+    syncFailures,
+    pollingExpired,
+  });
 
   const publishActivity = (nextActivity) => {
     setActivity(nextActivity);
@@ -88,6 +109,7 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
 
   useEffect(() => {
     pollCountRef.current = 0;
+    setSyncFailures(0);
   }, [initialWriteId, messageId]);
 
   useEffect(() => {
@@ -101,11 +123,13 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
     const timeout = window.setTimeout(async () => {
       pollCountRef.current += 1;
       try {
-        publishActivity(
-          await memoryApi.activity(activity.messageId),
+        const nextActivity = await memoryApi.activity(
+          activity.messageId,
         );
+        setSyncFailures(0);
+        publishActivity(nextActivity);
       } catch {
-        // Keep polling after a transient request failure.
+        setSyncFailures((value) => value + 1);
       } finally {
         setPollTick((value) => value + 1);
       }
@@ -142,6 +166,7 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
     try {
       const next = await memoryApi.retryOperation(write.id);
       pollCountRef.current = 0;
+      setSyncFailures(0);
       publishActivity(next);
     } finally {
       setRetrying(false);
