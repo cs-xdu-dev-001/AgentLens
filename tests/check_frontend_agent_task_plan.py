@@ -29,6 +29,7 @@ def main() -> None:
     script = """
 import {
   currentRunStep,
+  hasPendingBackgroundStep,
   isActiveRun,
   runProgress,
   traceForPlanStep,
@@ -61,6 +62,13 @@ console.log(JSON.stringify({
       { status: "running" },
     ],
   ),
+  pendingBackground: hasPendingBackgroundStep([
+    { kind: "memory", status: "success" },
+    { kind: "memory", status: "running" },
+  ]),
+  completedBackground: hasPendingBackgroundStep([
+    { kind: "memory", status: "success" },
+  ]),
   selectedTrace: traceForPlanStep(trace, "plan_2"),
 }));
 """
@@ -84,6 +92,8 @@ console.log(JSON.stringify({
         "completed": 2,
         "total": 3,
     }
+    assert result["pendingBackground"] is True
+    assert result["completedBackground"] is False
     assert [
         item["stepId"] for item in result["selectedTrace"]
     ] == ["trace_3", "trace_4"]
@@ -120,6 +130,16 @@ console.log(JSON.stringify({
         "frontend/react/src/components/AgentTraceStrip.jsx",
         "runProgress(run, trace)",
         "trace progress fallback in the compact run strip",
+    )
+    require(
+        "frontend/react/src/components/AgentRunSummary.jsx",
+        '"回答已完成"',
+        "completed answer status while background work continues",
+    )
+    require(
+        "frontend/react/src/components/AgentRunSummary.jsx",
+        '"后台处理中"',
+        "background freshness status",
     )
     require(
         "frontend/react/src/controller/chatFlow.js",

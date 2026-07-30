@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { runProgress } from "../controller/agentRunState.js";
+import {
+  hasPendingBackgroundStep,
+  runProgress,
+} from "../controller/agentRunState.js";
 
 const terminalStatuses = new Set(["success", "failed", "cancelled"]);
 
@@ -39,6 +42,7 @@ export function AgentRunSummary({ trace = [], run = null }) {
       step.status === "waiting" &&
       step.kind === "approval",
   ) || durableStatus === "waiting_approval";
+  const backgroundPending = hasPendingBackgroundStep(safeTrace);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -88,25 +92,29 @@ export function AgentRunSummary({ trace = [], run = null }) {
         : cancelled
           ? "cancelled"
           : "success");
-  const statusLabel = {
-    cancelled: "已取消",
-    completed: "已完成",
-    failed: "失败",
-    interrupted: "已中断",
-    planning: "规划中",
-    running: "执行中",
-    success: "已完成",
-    waiting: approvalWaiting ? "等待确认" : "等待运行",
-    waiting_approval: "等待确认",
-    waiting_start: "等待开始",
-  }[status];
-  const freshness = running
-    ? approvalWaiting
-      ? "等待确认"
-      : "实时"
-    : ["waiting", "waiting_start", "waiting_approval"].includes(status)
-      ? "等待"
-      : "已保存";
+  const statusLabel = durableStatus === "completed" && backgroundPending
+    ? "回答已完成"
+    : ({
+        cancelled: "已取消",
+        completed: "已完成",
+        failed: "失败",
+        interrupted: "已中断",
+        planning: "规划中",
+        running: "执行中",
+        success: "已完成",
+        waiting: approvalWaiting ? "等待确认" : "等待运行",
+        waiting_approval: "等待确认",
+        waiting_start: "等待开始",
+      }[status]);
+  const freshness = backgroundPending
+    ? "后台处理中"
+    : running
+      ? approvalWaiting
+        ? "等待确认"
+        : "实时"
+      : ["waiting", "waiting_start", "waiting_approval"].includes(status)
+        ? "等待"
+        : "已保存";
 
   return (
     <section className={"agent-run-summary"} aria-label={"本次运行概览"}>

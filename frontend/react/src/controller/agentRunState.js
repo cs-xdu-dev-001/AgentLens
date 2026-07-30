@@ -35,6 +35,15 @@ export function traceStepWaitState(step) {
   };
 }
 
+export function hasPendingBackgroundStep(trace) {
+  const safeTrace = Array.isArray(trace) ? trace : [];
+  return safeTrace.some(
+    (step) =>
+      step?.kind === "memory"
+      && ["waiting", "running"].includes(step?.status),
+  );
+}
+
 export function currentRunStep(run) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
   return (
