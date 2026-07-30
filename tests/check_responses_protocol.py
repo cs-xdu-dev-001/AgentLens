@@ -27,6 +27,38 @@ class FakeResponse:
 
 
 def main():
+    def assert_protocol_error(payload):
+        try:
+            parse_responses_message(payload)
+        except ResponsesProtocolError as exc:
+            assert "{" not in str(exc) and "[" not in str(exc)
+            return str(exc)
+        raise AssertionError("expected ResponsesProtocolError")
+
+    for bad in (None, {"output":"bad"}, {"output":["bad"]},
+                {"output":[{"type":"message","content":"bad"}]},
+                {"output":[{"type":"message","content":["bad"]}]},
+                {"choices": [{"message": {}}]}, {"output": []},
+                {"output":[{"type":"reasoning"}]},
+                {"output":[{"type":"message","content":[{"type":"x"}]}]}):
+        assert_protocol_error(bad)
+    assert "call_id" in assert_protocol_error({"output":[{"type":"function_call","name":"x"}]})
+    assert "name" in assert_protocol_error({"output":[{"type":"function_call","call_id":"c"}]})
+
+    safe = ModelGateway._safe_error(RuntimeError('HTTP 502 {"secret":"x"} sk-testsecret Bearer testtoken Authorization=abc token=xyz'))
+    assert "RuntimeError" in safe and all(x not in safe for x in ["secret","sk-testsecret","testtoken","Authorization=abc","token=xyz"])
+
+    calls=[]
+    def post_test(url, headers, payload):
+        calls.append(url)
+        if url.endswith('/responses'):
+            return FakeResponse({"output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]})
+        return FakeResponse({"choices":[{"message":{"role":"assistant","content":"ok"}}]})
+    gwtest=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post_test,local_embedding=lambda _:[0.])
+    status,msg=gwtest.test({"model_type":"chat","api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"})
+    assert status=="available" and "Responses API" in msg and calls==["https://x/responses"]
+    calls.clear(); status,msg=gwtest.test({"model_type":"chat","model_name":"m","base_url":"https://x","api_key_cipher":"k"})
+    assert status=="available" and "Chat Completions" in msg and calls==["https://x/chat/completions"]
     flat = to_responses_tool({"type":"function","function":{"name":"web_search","description":"Search","parameters":{"type":"object"}}})
     assert flat == {"type":"function","name":"web_search","description":"Search","parameters":{"type":"object"},"strict":False}
     parsed = parse_responses_message({"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"c1","name":"web_search","arguments":{"query":"中文"}}]})
