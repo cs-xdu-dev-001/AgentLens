@@ -6,6 +6,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.model_gateway import ModelGateway
 from knowflow.services.responses_protocol import ResponsesProtocolError, to_responses_tool, messages_to_response_input, parse_responses_message
+from knowflow.services.agent_loop import AgentRunner, ToolRegistry
+from knowflow.services.agent_trace import AgentTraceRecorder
 
 
 class FakeCipher:
@@ -34,6 +36,26 @@ def main():
     assert inp[0]["type"] == "reasoning" and inp[1]["type"] == "function_call" and inp[2] == {"type":"function_call_output","call_id":"c1","output":"ok"}
     legacy = messages_to_response_input([{"role":"assistant","content":"","tool_calls":[{"id":"c2","function":{"name":"x","arguments":"{}"}}]}])
     assert legacy[-1]["type"] == "function_call" and legacy[-1]["call_id"] == "c2"
+
+    # End-to-end Responses rounds through real ModelGateway and AgentRunner.
+    http_payloads=[]
+    responses=[{"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"cid1","name":"web_search","arguments":{"query":"x"}}]},
+               {"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}]
+    def post(url, headers, payload):
+        http_payloads.append(payload); return FakeResponse(responses.pop(0))
+    gw=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post,local_embedding=lambda _:[0.])
+    reg=ToolRegistry(); reg.register(name="web_search",description="search",input_schema={"type":"object"},handler=lambda args:{"ok":True})
+    tr=AgentTraceRecorder(run_id="responses-e2e")
+    out=AgentRunner(gateway=gw,max_tool_rounds=2).run(messages=[{"role":"user","content":"find"}],config={"api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"},registry=reg,trace=tr)
+    assert out.answer=="done" and len(out.executions)==1 and out.executions[0].status=="success"
+    kinds=[s["kind"] for s in out.trace]; assert kinds==["model","tool","model"]
+    second=http_payloads[1]["input"]; assert any(i.get("type")=="reasoning" for i in second) and any(i.get("type")=="function_call" and i.get("call_id")=="cid1" for i in second) and any(i.get("type")=="function_call_output" and i.get("call_id")=="cid1" for i in second)
+
+    failed_payloads=[]; failed_responses=[{"output":[{"type":"function_call","call_id":"bad1","name":"boom","arguments":"{}"}]},{"output":[{"type":"message","content":[{"type":"output_text","text":"recovered"}]}]}]
+    def post_failed(url,headers,payload): failed_payloads.append(payload); return FakeResponse(failed_responses.pop(0))
+    gw.post_model_json=post_failed; bad=ToolRegistry(); bad.register(name="boom",description="boom",input_schema={"type":"object"},handler=lambda args: (_ for _ in ()).throw(RuntimeError("boom")))
+    out2=AgentRunner(gateway=gw,max_tool_rounds=2).run(messages=[{"role":"user","content":"go"}],config={"api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"},registry=bad)
+    assert out2.answer=="recovered" and out2.executions[0].status=="failed" and any(i.get("type")=="function_call_output" and i.get("call_id")=="bad1" for i in failed_payloads[1]["input"])
     calls = []
 
     def post_model_json(url, headers, payload):
