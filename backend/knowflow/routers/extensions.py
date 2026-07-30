@@ -1274,6 +1274,18 @@ def agent_chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
     )
 
 
+def _agent_done_payload(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "done",
+        "runId": result["runId"],
+        "sessionId": result["sessionId"],
+        "messageId": result["messageId"],
+        "trace": result["trace"],
+        "run": result.get("run"),
+        "memoryActivity": result.get("memoryActivity"),
+    }
+
+
 def _publish_agent_result(
     result: dict[str, Any],
     publish: Callable[[dict[str, Any]], None],
@@ -1297,17 +1309,7 @@ def _publish_agent_result(
                 "retrievalRun": result.get("retrievalRun"),
             }
         )
-    publish(
-        {
-            "type": "done",
-            "runId": result["runId"],
-            "sessionId": result["sessionId"],
-            "messageId": result["messageId"],
-            "trace": result["trace"],
-            "run": result.get("run"),
-            "memoryActivity": result.get("memoryActivity"),
-        }
-    )
+    publish(_agent_done_payload(result))
 
 
 def execute_persisted_agent_run(
@@ -1487,14 +1489,7 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                     )
                 yield sse_event(
                     "done",
-                    {
-                        "type": "done",
-                        "runId": result["runId"],
-                        "sessionId": result["sessionId"],
-                        "messageId": result["messageId"],
-                        "trace": result["trace"],
-                        "run": result.get("run"),
-                    },
+                    _agent_done_payload(result),
                 )
                 break
         finally:

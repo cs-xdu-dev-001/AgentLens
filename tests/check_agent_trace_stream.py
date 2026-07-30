@@ -94,6 +94,44 @@ class FakeComplete:
         }
 
 
+class FakeMemoryManager:
+    def active(self, user_id: int) -> bool:
+        return True
+
+    def recall(self, user_id: int, query: str):
+        return []
+
+
+class FakeMemoryOperationStore:
+    def create_for_message(self, **kwargs):
+        return "recall-operation", "write-operation"
+
+    def activity_for_message(self, *, user_id, message_id):
+        return {
+            "messageId": message_id,
+            "summary": {
+                "recalled": 0,
+                "added": 0,
+                "updated": 0,
+                "deleted": 0,
+            },
+            "operations": [
+                {
+                    "id": "write-operation",
+                    "kind": "write",
+                    "status": "queued",
+                    "attemptCount": 0,
+                    "items": [],
+                }
+            ],
+        }
+
+
+class FakeMemoryOperationRunner:
+    def wake(self):
+        return None
+
+
 def parse_sse(text_value: str) -> list[dict]:
     events = []
     for block in text_value.split("\n\n"):
@@ -145,6 +183,9 @@ def main() -> None:
         lambda api_key: FakeProvider()
     )
     extensions.gateway.complete = FakeComplete()
+    extensions.memory_manager = FakeMemoryManager()
+    extensions.memory_operation_store = FakeMemoryOperationStore()
+    extensions.memory_operation_runner = FakeMemoryOperationRunner()
     request_payload = {
         "question": "What is new?",
         "chatModelConfigId": model_id,
@@ -197,12 +238,16 @@ def main() -> None:
         if event.get("type") == "done"
     )
     assert done["runId"] == steps[0]["runId"]
+    assert done["memoryActivity"]["operations"][0]["status"] == "queued"
     assert done["trace"]
     assert all(
-        step["status"] in {
-            "success",
-            "failed",
-            "cancelled",
+        (
+            step["kind"] == "memory"
+            and step["name"] == "memory_write"
+            and step["status"] == "waiting"
+        )
+        or step["status"] in {
+            "success", "failed", "cancelled"
         }
         for step in done["trace"]
     )
