@@ -122,6 +122,7 @@ export function MemoryPage({ active = false }) {
 
   const handleDelete = async (memoryId) => {
     if (busy) return;
+    if (!window.confirm("删除这条长期记忆？此操作无法撤销。")) return;
     setBusy(String(memoryId));
     try {
       await memoryApi.delete(memoryId);

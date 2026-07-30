@@ -86,6 +86,15 @@ def main() -> None:
     assert "清空全部" in page
     assert "长期记忆" in page
     assert "Mem0" in page
+    delete_guard = (
+        'if (!window.confirm("删除这条长期记忆？此操作无法撤销。")) '
+        "return;"
+    )
+    assert delete_guard in page
+    delete_handler = page[page.index("const handleDelete"):]
+    assert delete_handler.index(delete_guard) < delete_handler.index(
+        "await memoryApi.delete(memoryId)"
+    )
     check_memory_time(page)
 
     assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app
