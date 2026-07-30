@@ -52,20 +52,23 @@ class ModelGateway:
                     return "available", f"{protocol} connection succeeded. The model returned a normal response."
         except Exception as exc:
             if model_type == "embedding":
-                return "unavailable", self._safe_error(exc)
+                return "unavailable", str(exc)
             protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
             return "unavailable", f"{protocol} connection failed: {self._safe_error(exc)}"
         return "unavailable", "The model did not return a valid result."
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
-        text = f"{type(exc).__name__}: " + " ".join(str(exc).split())
-        text = re.sub(r"\{[^{}]*\}|\[[^\[\]]*\]", "[response omitted]", text)
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        text = " ".join(str(exc).split())
+        if "{" in text or "[" in text:
+            text = "Upstream request failed."
         text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
         text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
         text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
         text = re.sub(r"(?:api[_-]?key|token)=[^\s&]+", "[redacted]", text, flags=re.I)
-        return text[:500]
+        suffix = f" (HTTP {status})" if status is not None else ""
+        return f"{type(exc).__name__}{suffix}: {text[:500]}"
 
     def endpoint(self, base_url: str, path: str) -> str:
         base = base_url.rstrip("/")

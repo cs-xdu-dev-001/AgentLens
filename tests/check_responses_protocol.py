@@ -47,6 +47,10 @@ def main():
 
     safe = ModelGateway._safe_error(RuntimeError('HTTP 502 {"secret":"x"} sk-testsecret Bearer testtoken Authorization=abc token=xyz'))
     assert "RuntimeError" in safe and all(x not in safe for x in ["secret","sk-testsecret","testtoken","Authorization=abc","token=xyz"])
+    class E(RuntimeError): pass
+    nested=E('HTTP {"outer":{"secret":"nested-value"}}'); nested.response=type('R',(),{'status_code':400})()
+    safe=ModelGateway._safe_error(nested)
+    assert 'E (HTTP 400)' in safe and all(x not in safe for x in ['outer','secret','nested-value','{','}'])
 
     calls=[]
     def post_test(url, headers, payload):
@@ -59,6 +63,22 @@ def main():
     assert status=="available" and "Responses API" in msg and calls==["https://x/responses"]
     calls.clear(); status,msg=gwtest.test({"model_type":"chat","model_name":"m","base_url":"https://x","api_key_cipher":"k"})
     assert status=="available" and "Chat Completions" in msg and calls==["https://x/chat/completions"]
+    for mode, suffix in (("responses", "/responses"), ("chat_completions", "/chat/completions")):
+        calls.clear()
+        def failing(url, headers, payload):
+            calls.append(url); raise RuntimeError('bad sk-secret Bearer token')
+        gwtest.post_model_json=failing
+        cfg={"model_type":"chat","api_mode":mode,"model_name":"m","base_url":"https://x","api_key_cipher":"k"}
+        status,msg=gwtest.test(cfg)
+        assert status=="unavailable" and ("Responses API" if mode=="responses" else "Chat Completions") in msg and calls==["https://x"+suffix]
+    emb_calls=[]
+    def emb_ok(url,headers,payload): emb_calls.append(url); return FakeResponse({"data":[{"embedding":[1.,2.]}]})
+    gwtest.post_model_json=emb_ok
+    status,msg=gwtest.test({"model_type":"embedding","model_name":"e","base_url":"https://x","api_key_cipher":"k"})
+    assert status=="available" and "2-dimension" in msg and len(emb_calls)==1
+    gwtest.post_model_json=lambda *a: (_ for _ in ()).throw(RuntimeError("embedding boom"))
+    status,msg=gwtest.test({"model_type":"embedding","model_name":"e","base_url":"https://x","api_key_cipher":"k"})
+    assert status=="unavailable" and msg=="embedding boom"
     flat = to_responses_tool({"type":"function","function":{"name":"web_search","description":"Search","parameters":{"type":"object"}}})
     assert flat == {"type":"function","name":"web_search","description":"Search","parameters":{"type":"object"},"strict":False}
     parsed = parse_responses_message({"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"c1","name":"web_search","arguments":{"query":"中文"}}]})
