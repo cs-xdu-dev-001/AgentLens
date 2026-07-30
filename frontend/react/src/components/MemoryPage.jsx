@@ -155,7 +155,10 @@ export function MemoryPage({ active = false }) {
 
   return (
     <section className={active ? "page active" : "page"} id={"page-memory"}>
-      <div className={"workspace-page memory-workspace"}>
+      <div
+        className={"workspace-page memory-workspace"}
+        aria-busy={Boolean(busy)}
+      >
         <header className={"memory-header"}>
           <div className={"memory-title"}>
             <h1>{"记忆"}</h1>
@@ -163,7 +166,9 @@ export function MemoryPage({ active = false }) {
           </div>
           <div className={"memory-enable"}>
             <strong>
-              {!settings?.configured
+              {busy === "settings"
+                ? "更新中..."
+                : !settings?.configured
                 ? "未配置"
                 : settings.enabled
                   ? "已启用"
@@ -174,7 +179,13 @@ export function MemoryPage({ active = false }) {
               type={"button"}
               role={"switch"}
               aria-checked={Boolean(settings?.enabled)}
-              aria-label={settings?.enabled ? "停用长期记忆" : "启用长期记忆"}
+              aria-label={
+                busy === "settings"
+                  ? "正在更新长期记忆状态"
+                  : settings?.enabled
+                    ? "停用长期记忆"
+                    : "启用长期记忆"
+              }
               disabled={!settings?.configured || Boolean(busy)}
               onClick={handleToggle}
             >
@@ -207,7 +218,7 @@ export function MemoryPage({ active = false }) {
               disabled={!memories.length || Boolean(busy)}
               onClick={handleClear}
             >
-              {"清空全部"}
+              {busy === "clear" ? "清空中..." : "清空全部"}
             </button>
           </div>
         </div>
@@ -239,7 +250,7 @@ export function MemoryPage({ active = false }) {
                         disabled={!draft.trim() || Boolean(busy)}
                         onClick={() => handleSave(memoryId)}
                       >
-                        {"保存"}
+                        {busy === memoryId ? "保存中..." : "保存"}
                       </button>
                       <button
                         type={"button"}
@@ -274,7 +285,7 @@ export function MemoryPage({ active = false }) {
                           disabled={Boolean(busy)}
                           onClick={() => handleDelete(memoryId)}
                         >
-                          {"删除"}
+                          {busy === memoryId ? "删除中..." : "删除"}
                         </button>
                       </div>
                     </div>

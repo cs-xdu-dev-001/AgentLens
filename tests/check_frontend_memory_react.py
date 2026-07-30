@@ -99,6 +99,14 @@ def main() -> None:
     assert "disabled={loading || Boolean(busy)}" in page
     assert "disabled={!draft.trim() || Boolean(busy)}" in page
     assert page.count("disabled={Boolean(busy)}") >= 3
+    for pending_copy in [
+        "正在更新长期记忆状态",
+        "清空中...",
+        "保存中...",
+        "删除中...",
+    ]:
+        assert pending_copy in page
+    assert 'aria-busy={Boolean(busy)}' in page
     check_memory_time(page)
 
     assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app
