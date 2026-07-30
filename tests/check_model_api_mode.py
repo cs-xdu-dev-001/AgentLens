@@ -16,6 +16,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["KNOWFLOW_DB_URL"] = f"sqlite:///{Path(tmp, 'api-mode.db').as_posix()}"
         os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
+        os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
         app_module = importlib.import_module("knowflow.app")
         client = TestClient(app_module.app)
         assert client.post("/api/auth/register", json={"username": "api-mode", "email": "api-mode@example.com", "password": "123456"}).status_code == 200
