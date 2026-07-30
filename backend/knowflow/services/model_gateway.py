@@ -59,7 +59,7 @@ class ModelGateway:
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
-        text = " ".join(str(exc).split())
+        text = f"{type(exc).__name__}: " + " ".join(str(exc).split())
         text = re.sub(r"\{[^{}]*\}|\[[^\[\]]*\]", "[response omitted]", text)
         text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
         text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
