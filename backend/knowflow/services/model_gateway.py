@@ -52,7 +52,7 @@ class ModelGateway:
                     return "available", f"{protocol} connection succeeded. The model returned a normal response."
         except Exception as exc:
             if model_type == "embedding":
-                return "unavailable", str(exc)
+                return "unavailable", f"Embedding connection failed: {self._safe_error(exc)}"
             protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
             return "unavailable", f"{protocol} connection failed: {self._safe_error(exc)}"
         return "unavailable", "The model did not return a valid result."

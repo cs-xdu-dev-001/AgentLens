@@ -76,9 +76,10 @@ def main():
     gwtest.post_model_json=emb_ok
     status,msg=gwtest.test({"model_type":"embedding","model_name":"e","base_url":"https://x","api_key_cipher":"k"})
     assert status=="available" and "2-dimension" in msg and len(emb_calls)==1
-    gwtest.post_model_json=lambda *a: (_ for _ in ()).throw(RuntimeError("embedding boom"))
+    gwtest.post_model_json=lambda *a: (_ for _ in ()).throw(RuntimeError('embedding boom {"secret":"nested"} sk-key token=hide'))
     status,msg=gwtest.test({"model_type":"embedding","model_name":"e","base_url":"https://x","api_key_cipher":"k"})
-    assert status=="unavailable" and msg=="embedding boom"
+    assert status=="unavailable" and "Embedding connection failed" in msg and "RuntimeError" in msg
+    assert all(x not in msg for x in ["nested", "sk-key", "hide", "{"])
     class BadStr(Exception):
         def __str__(self): raise RuntimeError("bad str")
     assert "BadStr" in ModelGateway._safe_error(BadStr())
