@@ -33,11 +33,11 @@ def main():
 
     gateway = ModelGateway(fetch_one=lambda *_a, **_k: None, cipher=FakeCipher(), post_model_json=post_model_json, local_embedding=lambda _: [0.0])
     config = {"api_mode": "responses", "model_name": "gpt-test", "base_url": "https://example.com/v1", "api_key_cipher": "key", "temperature": "0.2", "top_p": "0.8", "max_tokens": 123}
-    message = gateway.complete([{ "role": "system", "content": "Be concise."}, {"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}], config)
+    message = gateway.complete([{ "role": "system", "content": "Be concise."}, {"role": "system", "content": "Use plain text."}, {"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}], config)
     assert calls[0][0] == "https://example.com/v1/responses"
     payload = calls[0][1]
-    assert payload["instructions"] == "Be concise."
-    assert payload["input"] == [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]
+    assert payload["instructions"] == "Be concise.\n\nUse plain text."
+    assert payload["input"] == [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}]
     assert payload["model"] == "gpt-test" and payload["store"] is False
     assert payload["max_output_tokens"] == 123 and payload["temperature"] == 0.2 and payload["top_p"] == 0.8
     assert "previous_response_id" not in payload and "conversation" not in payload
@@ -52,6 +52,13 @@ def main():
         pass
     else:
         raise AssertionError("expected ResponsesProtocolError")
+    invalid = dict(config, api_mode="invalid", api_key_cipher=None)
+    try:
+        gateway.complete([{ "role": "user", "content": "Hi"}], invalid)
+    except ValueError as exc:
+        assert "Unsupported api_mode" in str(exc)
+    else:
+        raise AssertionError("expected invalid api_mode ValueError")
     print("responses protocol adapts payload and parses text")
 
 
