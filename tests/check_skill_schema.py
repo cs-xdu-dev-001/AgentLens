@@ -237,7 +237,7 @@ def main() -> None:
             ]
         assert [(row["version"], row["count"]) for row in version_rows] == [
             (4, 1),
-            (8, 1),
+            (9, 1),
         ], version_rows
         assert len(chat_columns) == len(set(chat_columns))
         assert len(tool_columns) == len(set(tool_columns))
