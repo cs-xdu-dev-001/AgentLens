@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .responses_protocol import build_responses_payload, parse_responses_message
+
 
 class ModelGateway:
     def __init__(self, *, fetch_one, cipher, post_model_json, local_embedding):
@@ -87,6 +89,15 @@ class ModelGateway:
     ) -> dict[str, Any]:
         if not config or not self.cipher.decrypt(config.get("api_key_cipher")):
             return {"role": "assistant", "content": self.local_answer(messages)}
+        api_mode = config.get("api_mode") or "chat_completions"
+        if api_mode == "responses":
+            url = self.endpoint(config["base_url"], "/responses")
+            payload = build_responses_payload(messages, config, tools=tools, tool_choice=tool_choice)
+            response = self.post_model_json(url, self.headers(config), payload)
+            response.raise_for_status()
+            return parse_responses_message(response.json())
+        if api_mode != "chat_completions":
+            raise ValueError(f"Unsupported api_mode: {api_mode}")
         url = self.endpoint(config["base_url"], "/chat/completions")
         payload: dict[str, Any] = {
             "model": config["model_name"],
