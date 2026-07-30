@@ -3,8 +3,41 @@ import { memoryApi } from "../api/client.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 
 
-function memoryTime(memory) {
-  return memory.updated_at || memory.updatedAt || memory.created_at || memory.createdAt || "";
+function memoryTime(memory, timeZone = "") {
+  const values = [
+    memory?.updated_at,
+    memory?.updatedAt,
+    memory?.created_at,
+    memory?.createdAt,
+  ];
+  for (const value of values) {
+    if (!value) continue;
+    const parsed = new Date(String(value));
+    if (!Number.isFinite(parsed.getTime())) continue;
+    try {
+      const options = {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        ...(timeZone ? { timeZone } : {}),
+      };
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat("zh-CN", options)
+          .formatToParts(parsed)
+          .map((part) => [part.type, part.value]),
+      );
+      return (
+        `${parts.year}年${parts.month}月${parts.day}日 `
+        + `${parts.hour}:${parts.minute}`
+      );
+    } catch {
+      continue;
+    }
+  }
+  return "";
 }
 
 

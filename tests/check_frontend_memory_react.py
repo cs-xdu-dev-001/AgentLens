@@ -1,8 +1,61 @@
 from pathlib import Path
+import re
+import subprocess
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "frontend" / "react" / "src"
+
+
+def extract_function(source: str, name: str) -> str:
+    match = re.search(rf"function\s+{re.escape(name)}\s*\(", source)
+    assert match, f"missing JavaScript function: {name}"
+    opening = source.find("{", match.end())
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[match.start():index + 1]
+    raise AssertionError(f"unclosed JavaScript function: {name}")
+
+
+def check_memory_time(page: str) -> None:
+    function = extract_function(page, "memoryTime")
+    script = textwrap.dedent(
+        f"""
+        import assert from "node:assert/strict";
+        {function}
+        assert.equal(
+          memoryTime(
+            {{ updated_at: "2026-07-29T13:52:49.490239+00:00" }},
+            "Asia/Shanghai",
+          ),
+          "2026年07月29日 21:52",
+        );
+        assert.match(
+          memoryTime(
+            {{ created_at: "2026-07-29 13:52:49" }},
+            "Asia/Shanghai",
+          ),
+          /^2026年07月29日 \\d{{2}}:52$/,
+        );
+        assert.equal(memoryTime({{ updated_at: "not-a-date" }}), "");
+        assert.equal(memoryTime({{}}), "");
+        """
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def main() -> None:
@@ -33,6 +86,7 @@ def main() -> None:
     assert "清空全部" in page
     assert "长期记忆" in page
     assert "Mem0" in page
+    check_memory_time(page)
 
     assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app
     assert '"memory"' in app
