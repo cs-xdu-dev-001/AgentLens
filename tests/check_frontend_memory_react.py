@@ -95,10 +95,11 @@ def main() -> None:
     assert delete_handler.index(delete_guard) < delete_handler.index(
         "await memoryApi.delete(memoryId)"
     )
-    assert "disabled={!settings?.configured || Boolean(busy)}" in page
-    assert "disabled={loading || Boolean(busy)}" in page
-    assert "disabled={!draft.trim() || Boolean(busy)}" in page
-    assert page.count("disabled={Boolean(busy)}") >= 3
+    assert "const interactionLocked = loading || Boolean(busy);" in page
+    assert "disabled={!settings?.configured || interactionLocked}" in page
+    assert "disabled={!memories.length || interactionLocked}" in page
+    assert "disabled={!draft.trim() || interactionLocked}" in page
+    assert page.count("disabled={interactionLocked}") >= 4
     for pending_copy in [
         "正在更新长期记忆状态",
         "清空中...",
@@ -106,7 +107,7 @@ def main() -> None:
         "删除中...",
     ]:
         assert pending_copy in page
-    assert 'aria-busy={Boolean(busy)}' in page
+    assert 'aria-busy={interactionLocked}' in page
     check_memory_time(page)
 
     assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app

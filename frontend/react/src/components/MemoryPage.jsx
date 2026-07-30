@@ -49,6 +49,7 @@ export function MemoryPage({ active = false }) {
   const [editingId, setEditingId] = useState("");
   const [draft, setDraft] = useState("");
   const mountedRef = useRef(false);
+  const interactionLocked = loading || Boolean(busy);
 
   const load = useCallback(async () => {
     if (!active) return;
@@ -157,7 +158,7 @@ export function MemoryPage({ active = false }) {
     <section className={active ? "page active" : "page"} id={"page-memory"}>
       <div
         className={"workspace-page memory-workspace"}
-        aria-busy={Boolean(busy)}
+        aria-busy={interactionLocked}
       >
         <header className={"memory-header"}>
           <div className={"memory-title"}>
@@ -186,7 +187,7 @@ export function MemoryPage({ active = false }) {
                     ? "停用长期记忆"
                     : "启用长期记忆"
               }
-              disabled={!settings?.configured || Boolean(busy)}
+              disabled={!settings?.configured || interactionLocked}
               onClick={handleToggle}
             >
               <span aria-hidden={"true"} />
@@ -207,7 +208,7 @@ export function MemoryPage({ active = false }) {
           <div>
             <button
               type={"button"}
-              disabled={loading || Boolean(busy)}
+              disabled={interactionLocked}
               onClick={load}
             >
               {"刷新"}
@@ -215,7 +216,7 @@ export function MemoryPage({ active = false }) {
             <button
               className={"danger"}
               type={"button"}
-              disabled={!memories.length || Boolean(busy)}
+              disabled={!memories.length || interactionLocked}
               onClick={handleClear}
             >
               {busy === "clear" ? "清空中..." : "清空全部"}
@@ -247,14 +248,14 @@ export function MemoryPage({ active = false }) {
                     <div>
                       <button
                         type={"button"}
-                        disabled={!draft.trim() || Boolean(busy)}
+                        disabled={!draft.trim() || interactionLocked}
                         onClick={() => handleSave(memoryId)}
                       >
                         {busy === memoryId ? "保存中..." : "保存"}
                       </button>
                       <button
                         type={"button"}
-                        disabled={Boolean(busy)}
+                        disabled={interactionLocked}
                         onClick={() => {
                           setEditingId("");
                           setDraft("");
@@ -274,7 +275,7 @@ export function MemoryPage({ active = false }) {
                       <div>
                         <button
                           type={"button"}
-                          disabled={Boolean(busy)}
+                          disabled={interactionLocked}
                           onClick={() => beginEdit(memory)}
                         >
                           {"编辑"}
@@ -282,7 +283,7 @@ export function MemoryPage({ active = false }) {
                         <button
                           className={"danger"}
                           type={"button"}
-                          disabled={Boolean(busy)}
+                          disabled={interactionLocked}
                           onClick={() => handleDelete(memoryId)}
                         >
                           {busy === memoryId ? "删除中..." : "删除"}
