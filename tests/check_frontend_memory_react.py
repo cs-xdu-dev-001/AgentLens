@@ -95,6 +95,10 @@ def main() -> None:
     assert delete_handler.index(delete_guard) < delete_handler.index(
         "await memoryApi.delete(memoryId)"
     )
+    assert "disabled={!settings?.configured || Boolean(busy)}" in page
+    assert "disabled={loading || Boolean(busy)}" in page
+    assert "disabled={!draft.trim() || Boolean(busy)}" in page
+    assert page.count("disabled={Boolean(busy)}") >= 3
     check_memory_time(page)
 
     assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app

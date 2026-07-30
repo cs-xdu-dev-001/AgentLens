@@ -175,7 +175,7 @@ export function MemoryPage({ active = false }) {
               role={"switch"}
               aria-checked={Boolean(settings?.enabled)}
               aria-label={settings?.enabled ? "停用长期记忆" : "启用长期记忆"}
-              disabled={!settings?.configured || busy === "settings"}
+              disabled={!settings?.configured || Boolean(busy)}
               onClick={handleToggle}
             >
               <span aria-hidden={"true"} />
@@ -194,7 +194,11 @@ export function MemoryPage({ active = false }) {
             {loading ? "正在读取..." : `${memories.length}条长期记忆`}
           </strong>
           <div>
-            <button type={"button"} disabled={loading} onClick={load}>
+            <button
+              type={"button"}
+              disabled={loading || Boolean(busy)}
+              onClick={load}
+            >
               {"刷新"}
             </button>
             <button
@@ -232,13 +236,14 @@ export function MemoryPage({ active = false }) {
                     <div>
                       <button
                         type={"button"}
-                        disabled={!draft.trim() || busy === memoryId}
+                        disabled={!draft.trim() || Boolean(busy)}
                         onClick={() => handleSave(memoryId)}
                       >
                         {"保存"}
                       </button>
                       <button
                         type={"button"}
+                        disabled={Boolean(busy)}
                         onClick={() => {
                           setEditingId("");
                           setDraft("");
@@ -256,13 +261,17 @@ export function MemoryPage({ active = false }) {
                     <div className={"memory-item-meta"}>
                       <span>{memoryTime(memory) || "时间未知"}</span>
                       <div>
-                        <button type={"button"} onClick={() => beginEdit(memory)}>
+                        <button
+                          type={"button"}
+                          disabled={Boolean(busy)}
+                          onClick={() => beginEdit(memory)}
+                        >
                           {"编辑"}
                         </button>
                         <button
                           className={"danger"}
                           type={"button"}
-                          disabled={busy === memoryId}
+                          disabled={Boolean(busy)}
                           onClick={() => handleDelete(memoryId)}
                         >
                           {"删除"}
