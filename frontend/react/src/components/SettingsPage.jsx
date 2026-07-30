@@ -24,6 +24,9 @@ const defaultModelFormValues = {
 function normalizeProvider(provider) {
   return providerPresets[provider] ? provider : "custom";
 }
+function normalizeApiMode(value) {
+  return value === "responses" ? "responses" : "chat_completions";
+}
 
 function valueForInput(value) {
   return value === null || value === undefined ? "" : String(value);
@@ -48,7 +51,7 @@ function formValuesFromPreset(provider, presetIndex = 0) {
     name: preset.name,
     provider: key,
     modelType: preset.modelType,
-    apiMode: preset.apiMode || "chat_completions",
+    apiMode: normalizeApiMode(preset.apiMode),
     baseUrl: providerPresets[key].baseUrl,
     apiKey: "",
     modelName: preset.modelName,
@@ -63,7 +66,7 @@ function formValuesFromModel(model) {
     name: valueForInput(model.name),
     provider: valueForInput(model.provider),
     modelType: valueForInput(model.modelType || "chat"),
-    apiMode: valueForInput(model.apiMode || "chat_completions"),
+    apiMode: normalizeApiMode(model.apiMode),
     baseUrl: valueForInput(model.baseUrl),
     apiKey: "",
     modelName: valueForInput(model.modelName),
@@ -84,7 +87,7 @@ function payloadFromFormValues(formValues) {
     name: formValues.name.trim(),
     provider: formValues.provider.trim(),
     modelType: formValues.modelType,
-    apiMode: formValues.modelType === "chat" && formValues.apiMode === "responses" ? "responses" : "chat_completions",
+    apiMode: formValues.modelType === "chat" ? normalizeApiMode(formValues.apiMode) : "chat_completions",
     baseUrl: formValues.baseUrl.trim(),
     modelName: formValues.modelName.trim(),
     temperature: numberOrNull(formValues.temperature),
@@ -132,7 +135,7 @@ export function SettingsPage({ active = false }) {
 
   const handleFieldChange = (event) => {
     const { name, value } = event.target;
-    setFormValues((currentValues) => ({ ...currentValues, [name]: value, ...(name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" } : {}) }));
+    setFormValues((currentValues) => ({ ...currentValues, [name]: name === "apiMode" ? normalizeApiMode(value) : value, ...(name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" } : {}) }));
     if (name === "provider") {
       setSelectedProvider(normalizeProvider(value.trim()));
       setSelectedPresetValue("");

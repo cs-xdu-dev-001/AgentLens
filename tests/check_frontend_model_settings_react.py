@@ -68,9 +68,10 @@ def main() -> None:
     settings_page = read("frontend/react/src/components/SettingsPage.jsx")
     form = read("frontend/react/src/components/ModelConfigForm.jsx")
     require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: "chat_completions"', "default API protocol")
-    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: preset.apiMode || "chat_completions"', "preset API fallback")
-    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: valueForInput(model.apiMode || "chat_completions")', "model API fallback")
-    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: formValues.modelType === "chat" && formValues.apiMode === "responses" ? "responses" : "chat_completions"', "payload API protocol")
+    require("frontend/react/src/components/SettingsPage.jsx", 'function normalizeApiMode(value)', "API protocol normalization")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: normalizeApiMode(preset.apiMode)', "preset API fallback")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: normalizeApiMode(model.apiMode)', "model API fallback")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: formValues.modelType === "chat" ? normalizeApiMode(formValues.apiMode) : "chat_completions"', "payload API protocol")
     require("frontend/react/src/components/SettingsPage.jsx", 'name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" }', "non-chat protocol reset")
     if not re.search(r'formValues\.modelType === "chat" \? \(\s*<label>[\s\S]*?name=\{"apiMode"\}', form):
         raise AssertionError("API protocol select must be conditional on chat model type")
