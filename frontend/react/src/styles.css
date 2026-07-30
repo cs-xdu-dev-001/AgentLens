@@ -10990,9 +10990,9 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 650;
 }
 
-.memory-toolbar button:hover,
-.memory-item-meta button:hover,
-.memory-editor button:hover {
+.memory-toolbar button:not(:disabled):hover,
+.memory-item-meta button:not(:disabled):hover,
+.memory-editor button:not(:disabled):hover {
   background: var(--control-bg-hover);
   color: var(--text);
 }

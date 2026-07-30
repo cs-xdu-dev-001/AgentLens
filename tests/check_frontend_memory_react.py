@@ -73,6 +73,9 @@ def main() -> None:
         encoding="utf-8"
     )
     styles = (SRC / "styles.css").read_text(encoding="utf-8")
+    source_styles = (ROOT / "frontend" / "styles.css").read_text(
+        encoding="utf-8"
+    )
 
     assert 'import { memoryApi } from "../api/client.js"' in page
     assert 'id={"page-memory"}' in page
@@ -131,6 +134,10 @@ def main() -> None:
     assert ".memory-item-content" in styles
     assert "font-size: 14px" in styles
     assert "@media (max-width: 760px)" in styles
+    assert ".memory-toolbar button:not(:disabled):hover," in source_styles
+    assert ".memory-item-meta button:not(:disabled):hover," in source_styles
+    assert ".memory-editor button:not(:disabled):hover" in source_styles
+    assert "\n.memory-toolbar button:hover," not in source_styles
 
     print("React memory management is visible and operable")
 
