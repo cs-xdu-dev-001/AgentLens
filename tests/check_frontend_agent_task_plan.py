@@ -53,6 +53,14 @@ console.log(JSON.stringify({
   active: isActiveRun(run),
   current: currentRunStep(run),
   progress: runProgress(run),
+  traceProgress: runProgress(
+    { id: "run_TRACE", status: "running", steps: [] },
+    [
+      { status: "success" },
+      { status: "success" },
+      { status: "running" },
+    ],
+  ),
   selectedTrace: traceForPlanStep(trace, "plan_2"),
 }));
 """
@@ -70,6 +78,10 @@ console.log(JSON.stringify({
     assert result["current"]["id"] == "plan_2"
     assert result["progress"] == {
         "completed": 1,
+        "total": 3,
+    }
+    assert result["traceProgress"] == {
+        "completed": 2,
         "total": 3,
     }
     assert [
@@ -103,6 +115,11 @@ console.log(JSON.stringify({
         "frontend/react/src/components/ChatMessages.jsx",
         "knowflow:react-message-run",
         "message run listener",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "runProgress(run, trace)",
+        "trace progress fallback in the compact run strip",
     )
     require(
         "frontend/react/src/controller/chatFlow.js",

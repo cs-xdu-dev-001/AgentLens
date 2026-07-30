@@ -9,6 +9,11 @@ const completedStepStatuses = new Set([
   "skipped",
   "cancelled",
 ]);
+const terminalTraceStatuses = new Set([
+  "success",
+  "failed",
+  "cancelled",
+]);
 
 export function isActiveRun(run) {
   return Boolean(run?.id && activeStatuses.has(run.status));
@@ -43,8 +48,17 @@ export function currentRunStep(run) {
   );
 }
 
-export function runProgress(run) {
+export function runProgress(run, trace = []) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
+  if (!steps.length) {
+    const safeTrace = Array.isArray(trace) ? trace : [];
+    return {
+      completed: safeTrace.filter((step) =>
+        terminalTraceStatuses.has(step.status),
+      ).length,
+      total: safeTrace.length,
+    };
+  }
   return {
     completed: steps.filter((step) =>
       completedStepStatuses.has(step.status),

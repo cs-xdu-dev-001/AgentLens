@@ -34,7 +34,7 @@ export function AgentTraceStrip({
   if (!step) return null;
   const running = ["planning", "running"].includes(step.status);
   const waitState = traceStepWaitState(step);
-  const progress = runProgress(run);
+  const progress = runProgress(run, trace);
   const completed = trace.filter(
     (item) => item.status === "success",
   ).length;
