@@ -28,9 +28,9 @@ export const providerPresets = {
     label: "OpenAI",
     baseUrl: "https://api.openai.com/v1",
     models: [
-      { label: "gpt-5.6-sol", name: "GPT-5.6 Sol", modelType: "chat", modelName: "gpt-5.6-sol", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
-      { label: "gpt-5.6-terra", name: "GPT-5.6 Terra", modelType: "chat", modelName: "gpt-5.6-terra", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
-      { label: "gpt-5.6-luna", name: "GPT-5.6 Luna", modelType: "chat", modelName: "gpt-5.6-luna", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
+      { label: "gpt-5.6-sol", name: "GPT-5.6 Sol", modelType: "chat", apiMode: "responses", modelName: "gpt-5.6-sol", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
+      { label: "gpt-5.6-terra", name: "GPT-5.6 Terra", modelType: "chat", apiMode: "responses", modelName: "gpt-5.6-terra", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
+      { label: "gpt-5.6-luna", name: "GPT-5.6 Luna", modelType: "chat", apiMode: "responses", modelName: "gpt-5.6-luna", temperature: "0.7", topP: "0.9", maxTokens: "4096" },
       { label: "text-embedding-3-small", name: "Text 向量化 3 Small", modelType: "embedding", modelName: "text-embedding-3-small", temperature: "", topP: "", maxTokens: "" },
       { label: "text-embedding-3-large", name: "Text 向量化 3 Large", modelType: "embedding", modelName: "text-embedding-3-large", temperature: "", topP: "", maxTokens: "" },
     ],

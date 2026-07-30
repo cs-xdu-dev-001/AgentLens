@@ -52,6 +52,15 @@ export function ModelConfigForm({
             <option value={"rerank"}>{"重排模型"}</option>
           </select>
         </label>
+        {formValues.modelType === "chat" ? (
+          <label>
+            {"接口协议"}
+            <select name={"apiMode"} value={formValues.apiMode || "chat_completions"} onChange={onFieldChange}>
+              <option value={"chat_completions"}>{"Chat Completions"}</option>
+              <option value={"responses"}>{"Responses API"}</option>
+            </select>
+          </label>
+        ) : null}
         <label>
           {"模型名称"}
           <input name={"modelName"} value={formValues.modelName} required onChange={onFieldChange} />

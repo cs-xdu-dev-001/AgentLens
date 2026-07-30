@@ -11,6 +11,7 @@ const defaultModelFormValues = {
   name: "DeepSeek V4 Flash",
   provider: "deepseek",
   modelType: "chat",
+  apiMode: "chat_completions",
   baseUrl: "https://api.deepseek.com",
   apiKey: "",
   modelName: "deepseek-v4-flash",
@@ -47,6 +48,7 @@ function formValuesFromPreset(provider, presetIndex = 0) {
     name: preset.name,
     provider: key,
     modelType: preset.modelType,
+    apiMode: preset.apiMode || "chat_completions",
     baseUrl: providerPresets[key].baseUrl,
     apiKey: "",
     modelName: preset.modelName,
@@ -61,6 +63,7 @@ function formValuesFromModel(model) {
     name: valueForInput(model.name),
     provider: valueForInput(model.provider),
     modelType: valueForInput(model.modelType || "chat"),
+    apiMode: valueForInput(model.apiMode || "chat_completions"),
     baseUrl: valueForInput(model.baseUrl),
     apiKey: "",
     modelName: valueForInput(model.modelName),
@@ -81,6 +84,7 @@ function payloadFromFormValues(formValues) {
     name: formValues.name.trim(),
     provider: formValues.provider.trim(),
     modelType: formValues.modelType,
+    apiMode: formValues.modelType === "chat" && formValues.apiMode === "responses" ? "responses" : "chat_completions",
     baseUrl: formValues.baseUrl.trim(),
     modelName: formValues.modelName.trim(),
     temperature: numberOrNull(formValues.temperature),
@@ -128,7 +132,7 @@ export function SettingsPage({ active = false }) {
 
   const handleFieldChange = (event) => {
     const { name, value } = event.target;
-    setFormValues((currentValues) => ({ ...currentValues, [name]: value }));
+    setFormValues((currentValues) => ({ ...currentValues, [name]: value, ...(name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" } : {}) }));
     if (name === "provider") {
       setSelectedProvider(normalizeProvider(value.trim()));
       setSelectedPresetValue("");
