@@ -32,6 +32,10 @@ def main():
     parsed = parse_responses_message({"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"c1","name":"web_search","arguments":{"query":"中文"}}]})
     assert parsed["tool_calls"][0]["function"]["arguments"] == '{"query": "中文"}'
     assert parsed["_response_items"][0]["type"] == "reasoning"
+    assert parsed["_response_items"][1]["arguments"] == '{"query": "中文"}'
+    fixture={"type":"function_call","call_id":"a","name":"x","arguments":{"n":1}}
+    two=parse_responses_message({"output":[fixture,{"type":"function_call","call_id":"b","name":"y","arguments":{}}]})
+    assert fixture["arguments"]=={"n":1} and [c["id"] for c in two["tool_calls"]]==["a","b"]
     inp = messages_to_response_input([parsed, {"role":"tool","tool_call_id":"c1","content":"ok"}])
     assert inp[0]["type"] == "reasoning" and inp[1]["type"] == "function_call" and inp[2] == {"type":"function_call_output","call_id":"c1","output":"ok"}
     legacy = messages_to_response_input([{"role":"assistant","content":"","tool_calls":[{"id":"c2","function":{"name":"x","arguments":"{}"}}]}])

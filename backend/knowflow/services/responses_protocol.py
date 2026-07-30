@@ -3,6 +3,13 @@ from __future__ import annotations
 from typing import Any
 import copy, json
 
+def _normalize_items(items):
+    out=copy.deepcopy(items)
+    for item in out:
+        if item.get("type")=="function_call" and isinstance(item.get("arguments"),(dict,list)):
+            item["arguments"]=json.dumps(item["arguments"],ensure_ascii=False)
+    return out
+
 
 class ResponsesProtocolError(ValueError):
     """Raised when a Responses API payload/response violates the expected shape."""
@@ -21,7 +28,7 @@ def messages_to_response_input(messages: list[dict[str, Any]]) -> list[dict[str,
         if role=="system": continue
         if role=="assistant":
             if item.get("_response_items"):
-                out.extend(copy.deepcopy(item["_response_items"])); continue
+                out.extend(_normalize_items(item["_response_items"])); continue
             if item.get("tool_calls"):
                 if item.get("content"): out.append({"role":"assistant","content":item.get("content")})
                 for c in item["tool_calls"]:
@@ -74,5 +81,5 @@ def parse_responses_message(data: dict[str, Any]) -> dict[str, Any]:
     if not texts and not calls:
         raise ResponsesProtocolError("Responses API returned no output text.")
     result={"role":"assistant","content":"".join(texts),"tool_calls":calls}
-    if calls or any(i.get("type")!="message" for i in output): result["_response_items"]=copy.deepcopy(output)
+    if calls or any(i.get("type")!="message" for i in output): result["_response_items"]=_normalize_items(output)
     return result
