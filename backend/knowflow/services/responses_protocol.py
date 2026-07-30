@@ -6,8 +6,12 @@ import copy, json
 def _normalize_items(items):
     out=copy.deepcopy(items)
     for item in out:
+        if not isinstance(item, dict):
+            raise ResponsesProtocolError("Invalid Responses structure: output item must be an object.")
         if item.get("type")=="function_call" and isinstance(item.get("arguments"),(dict,list)):
             item["arguments"]=json.dumps(item["arguments"],ensure_ascii=False)
+        if item.get("type")=="function_call":
+            item["arguments"] = json.dumps(item.get("arguments", "{}"), ensure_ascii=False) if not isinstance(item.get("arguments", "{}"), str) else item.get("arguments", "{}")
     return out
 
 
@@ -85,7 +89,7 @@ def parse_responses_message(data: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item.get("name"), str) or not item.get("name"):
                 raise ResponsesProtocolError("Responses API function call missing name.")
             args=item.get("arguments", "{}")
-            if isinstance(args, (dict,list)): args=json.dumps(args,ensure_ascii=False)
+            if not isinstance(args, str): args=json.dumps(args,ensure_ascii=False)
             calls.append({"id":item.get("call_id", ""),"type":"function","function":{"name":item.get("name", ""),"arguments":args}})
         if item.get("type") != "message": continue
         content_items = item.get("content", [])

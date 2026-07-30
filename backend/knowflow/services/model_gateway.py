@@ -59,16 +59,22 @@ class ModelGateway:
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        text = " ".join(str(exc).split())
+        try: raw = str(exc)
+        except Exception: raw = ""
+        try: status = getattr(getattr(exc, "response", None), "status_code", None)
+        except Exception: status = None
+        if not isinstance(status, int) and not (isinstance(status, str) and status.isdigit() and len(status) < 5): status = None
+        text = " ".join(raw.split())
         if "{" in text or "[" in text:
             text = "Upstream request failed."
         text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
         text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
         text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
         text = re.sub(r"(?:api[_-]?key|token)=[^\s&]+", "[redacted]", text, flags=re.I)
+        text = re.sub(r"([?&][^=\s]+)=([^&\s]+)", r"\1=[REDACTED]", text)
+        text = re.sub(r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)\s*[:=]\s*[^\s,;]+", "[REDACTED]", text)
         suffix = f" (HTTP {status})" if status is not None else ""
-        return f"{type(exc).__name__}{suffix}: {text[:500]}"
+        return f"{type(exc).__name__}{suffix}: {text}"[:500]
 
     def endpoint(self, base_url: str, path: str) -> str:
         base = base_url.rstrip("/")
