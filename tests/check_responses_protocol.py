@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.model_gateway import ModelGateway
-from knowflow.services.responses_protocol import ResponsesProtocolError
+from knowflow.services.responses_protocol import ResponsesProtocolError, to_responses_tool, messages_to_response_input, parse_responses_message
 
 
 class FakeCipher:
@@ -25,6 +25,15 @@ class FakeResponse:
 
 
 def main():
+    flat = to_responses_tool({"type":"function","function":{"name":"web_search","description":"Search","parameters":{"type":"object"}}})
+    assert flat == {"type":"function","name":"web_search","description":"Search","parameters":{"type":"object"},"strict":False}
+    parsed = parse_responses_message({"output":[{"type":"reasoning","id":"r1"},{"type":"function_call","call_id":"c1","name":"web_search","arguments":{"query":"中文"}}]})
+    assert parsed["tool_calls"][0]["function"]["arguments"] == '{"query": "中文"}'
+    assert parsed["_response_items"][0]["type"] == "reasoning"
+    inp = messages_to_response_input([parsed, {"role":"tool","tool_call_id":"c1","content":"ok"}])
+    assert inp[0]["type"] == "reasoning" and inp[1]["type"] == "function_call" and inp[2] == {"type":"function_call_output","call_id":"c1","output":"ok"}
+    legacy = messages_to_response_input([{"role":"assistant","content":"","tool_calls":[{"id":"c2","function":{"name":"x","arguments":"{}"}}]}])
+    assert legacy[-1]["type"] == "function_call" and legacy[-1]["call_id"] == "c2"
     calls = []
 
     def post_model_json(url, headers, payload):
