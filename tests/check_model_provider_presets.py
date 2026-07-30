@@ -73,15 +73,17 @@ def main() -> None:
     if not openai:
         raise AssertionError("unable to isolate OpenAI preset block")
     openai_block = openai.group(1)
+    openai_objects = re.findall(r'\{([^{}]+)\}', openai_block)
     for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]:
-        if not re.search(rf'label: "{re.escape(model)}"[^\n]*[\s\S]*?apiMode: "responses"', openai_block):
+        matches = [obj for obj in openai_objects if f'label: "{model}"' in obj or f'modelName: "{model}"' in obj]
+        if len(matches) != 1 or 'apiMode: "responses"' not in matches[0]:
             raise AssertionError(f"OpenAI preset missing responses protocol: {model}")
-    embedding_block = openai_block[openai_block.find('label: "text-embedding-3-small"'):]
-    if 'apiMode: "responses"' in embedding_block:
+    embedding_objects = [obj for obj in openai_objects if 'modelType: "embedding"' in obj]
+    if any('apiMode: "responses"' in obj for obj in embedding_objects):
         raise AssertionError("OpenAI embedding presets must not use responses protocol")
     for provider in ["deepseek", "mimo", "siliconflow", "zhipu", "bailian"]:
         block = re.search(rf'{provider}:\s*\{{([\s\S]*?)(?=\n  [a-z]+: \{{|\n  custom:)', settings)
-        if block and 'apiMode: "responses"' in block.group(1):
+        if block and any('apiMode: "responses"' in obj for obj in re.findall(r'\{([^{}]+)\}', block.group(1))):
             raise AssertionError(f"non-OpenAI provider incorrectly uses responses: {provider}")
 
     for model in [
