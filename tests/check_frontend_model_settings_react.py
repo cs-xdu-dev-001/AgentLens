@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +65,17 @@ def main() -> None:
     require("frontend/react/src/components/SettingsPage.jsx", "检查模型失败", "productized model connection failure copy")
     require("frontend/react/src/components/ModelListPanel.jsx", "onSetDefaultModel", "default model callback prop")
     require("frontend/react/src/components/ModelListPanel.jsx", "onDeleteModel", "delete model callback prop")
+    settings_page = read("frontend/react/src/components/SettingsPage.jsx")
+    form = read("frontend/react/src/components/ModelConfigForm.jsx")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: "chat_completions"', "default API protocol")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: preset.apiMode || "chat_completions"', "preset API fallback")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: valueForInput(model.apiMode || "chat_completions")', "model API fallback")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: formValues.modelType === "chat" && formValues.apiMode === "responses" ? "responses" : "chat_completions"', "payload API protocol")
+    require("frontend/react/src/components/SettingsPage.jsx", 'name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" }', "non-chat protocol reset")
+    if not re.search(r'formValues\.modelType === "chat" \? \(\s*<label>[\s\S]*?name=\{"apiMode"\}', form):
+        raise AssertionError("API protocol select must be conditional on chat model type")
+    for needle in ['value={"chat_completions"}>{"Chat Completions"}', 'value={"responses"}>{"Responses API"}']:
+        require("frontend/react/src/components/ModelConfigForm.jsx", needle, "API protocol option")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-models-refresh-request", "bridge module refreshes model data on React request")
 
     forbid("frontend/react/src/components/ModelConfigForm.jsx", "knowflow:react-model-submit", "legacy model form submit event")

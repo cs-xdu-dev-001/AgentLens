@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,20 @@ def main() -> None:
     settings_page = read("frontend/react/src/components/SettingsPage.jsx")
     model_list = read("frontend/react/src/components/ModelListPanel.jsx")
     provider_doc = read("rag-test-documents/11_model_provider_config.yaml")
+    openai = re.search(r'openai:\s*\{([\s\S]*?)\n  \},\n  siliconflow:', settings)
+    if not openai:
+        raise AssertionError("unable to isolate OpenAI preset block")
+    openai_block = openai.group(1)
+    for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]:
+        if not re.search(rf'label: "{re.escape(model)}"[^\n]*[\s\S]*?apiMode: "responses"', openai_block):
+            raise AssertionError(f"OpenAI preset missing responses protocol: {model}")
+    embedding_block = openai_block[openai_block.find('label: "text-embedding-3-small"'):]
+    if 'apiMode: "responses"' in embedding_block:
+        raise AssertionError("OpenAI embedding presets must not use responses protocol")
+    for provider in ["deepseek", "mimo", "siliconflow", "zhipu", "bailian"]:
+        block = re.search(rf'{provider}:\s*\{{([\s\S]*?)(?=\n  [a-z]+: \{{|\n  custom:)', settings)
+        if block and 'apiMode: "responses"' in block.group(1):
+            raise AssertionError(f"non-OpenAI provider incorrectly uses responses: {provider}")
 
     for model in [
         "deepseek-v4-flash",
