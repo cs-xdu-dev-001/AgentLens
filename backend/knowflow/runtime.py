@@ -1330,6 +1330,8 @@ def generate_answer(
             event_callback=event_callback,
         )
     except Exception as exc:
+        if event_callback is not None:
+            raise
         if has_remote_model_config(chat_config):
             return remote_model_error_answer(chat_config, exc)
         return fallback_answer(question, chunks, history, agent_mode, use_rag, attachments) + f"\n\nModel call failure reason: {exc}"

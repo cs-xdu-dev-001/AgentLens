@@ -209,7 +209,7 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
         except _ChatStreamCancelled:
             queue.put(("cancelled", None))
         except Exception as exc:
-            queue.put(("error", exc))
+            queue.put(("error", gateway._safe_error(exc)))
 
     Thread(target=worker, daemon=True).start()
 
@@ -234,7 +234,7 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
                         {
                             "type": "error",
                             "code": "chat_stream_failed",
-                            "message": "Chat stream failed.",
+                            "message": str(value),
                         },
                     )
                     return

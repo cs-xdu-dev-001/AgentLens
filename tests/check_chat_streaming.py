@@ -75,6 +75,24 @@ class FakeComplete:
         return {"role": "assistant", "content": "alphabeta"}
 
 
+class FailingComplete:
+    def __call__(
+        self,
+        messages,
+        config,
+        *,
+        tools=None,
+        tool_choice=None,
+        event_callback=None,
+    ):
+        assert event_callback is not None
+        event_callback({"type": "text_delta", "text": "partial"})
+        raise RuntimeError(
+            "upstream failed for sk-live-secret "
+            "Authorization: Bearer hidden-token"
+        )
+
+
 def main() -> None:
     db_path = ROOT / "data" / "test-dbs" / "chat-streaming.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +137,37 @@ def main() -> None:
         {"id": done["messageId"]},
     )
     assert message["content"] == "alphabeta"
+
+    assistant_count = runtime.fetch_one(
+        "SELECT COUNT(*) AS count FROM chat_message WHERE role='assistant'"
+    )["count"]
+    runtime.gateway.complete = FailingComplete()
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={
+            "question": "Fail after one delta.",
+            "chatModelConfigId": model_id,
+            "enableTools": False,
+            "autoAgent": False,
+        },
+    ) as response:
+        assert response.status_code == 200, response.text
+        failed_events = parse_sse("".join(response.iter_text()))
+    assert [
+        event["content"]
+        for event in failed_events
+        if event.get("type") == "answer"
+    ] == ["partial"]
+    error = next(
+        event for event in failed_events if event.get("type") == "error"
+    )
+    assert "RuntimeError" in error["message"]
+    assert "sk-live-secret" not in error["message"]
+    assert "hidden-token" not in error["message"]
+    assert runtime.fetch_one(
+        "SELECT COUNT(*) AS count FROM chat_message WHERE role='assistant'"
+    )["count"] == assistant_count
     print("normal chat forwards upstream response deltas without duplication")
 
 
