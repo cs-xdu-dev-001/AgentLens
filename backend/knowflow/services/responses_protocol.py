@@ -306,8 +306,6 @@ def build_responses_payload(
     if system:
         payload["instructions"] = "\n\n".join(system)
     payload["temperature"] = float(config.get("temperature", 0.3) if config.get("temperature") is not None else 0.3)
-    if config.get("top_p") is not None:
-        payload["top_p"] = float(config["top_p"])
     if config.get("max_tokens") is not None:
         payload["max_output_tokens"] = int(config["max_tokens"])
     return payload

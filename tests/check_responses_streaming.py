@@ -1,6 +1,7 @@
 from pathlib import Path
 from contextlib import contextmanager
 import json
+import requests
 import sys
 
 
@@ -25,12 +26,13 @@ class FakeStreamResponse:
     def __init__(self, chunks):
         self.chunks = list(chunks)
         self.closed = False
+        self.status_code = 200
 
     def raise_for_status(self):
         return None
 
     def iter_content(self, chunk_size=None):
-        assert chunk_size is None
+        assert chunk_size in {None, 8192}
         yield from self.chunks
 
     def close(self):
@@ -300,6 +302,7 @@ def main() -> None:
     )
     assert captured["url"] == "https://example.com/v1/responses"
     assert captured["payload"]["stream"] is True
+    assert "top_p" not in captured["payload"]
     assert deltas == [
         {"type": "text_delta", "text": "Hel"},
         {"type": "text_delta", "text": "lo"},
@@ -311,6 +314,56 @@ def main() -> None:
         "tool_calls": [],
     }
     assert fake_response.closed is True
+
+    class ClosedBodyErrorResponse(FakeStreamResponse):
+        def __init__(self):
+            super().__init__(
+                [
+                    json.dumps(
+                        {
+                            "error": {
+                                "type": "invalid_request_error",
+                                "code": "unsupported_parameter",
+                                "message": (
+                                    "Unsupported parameter: top_p "
+                                    "for sk-live-secret"
+                                ),
+                            }
+                        }
+                    ).encode("utf-8")
+                ]
+            )
+            self.status_code = 400
+
+        def raise_for_status(self):
+            error = requests.HTTPError(
+                "400 Client Error for url: "
+                "https://example.com/v1/responses"
+            )
+            error.response = self
+            raise error
+
+        def json(self):
+            if self.closed:
+                raise RuntimeError("response body is closed")
+            return json.loads(b"".join(self.chunks))
+
+    closed_body_error = ClosedBodyErrorResponse()
+
+    @contextmanager
+    def error_stream(*_args, **_kwargs):
+        try:
+            yield closed_body_error
+        finally:
+            closed_body_error.close()
+
+    gateway.stream_model_json = error_stream
+    status, detail = gateway.test(config)
+    assert status == "unavailable"
+    assert "unsupported_parameter" in detail, detail
+    assert "Unsupported parameter: top_p" in detail, detail
+    assert "sk-live-secret" not in detail
+    assert closed_body_error.closed is True
 
     cancelled_response = FakeStreamResponse(stream_chunks())
 

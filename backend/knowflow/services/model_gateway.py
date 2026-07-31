@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Callable
 
 from fastapi import HTTPException
 
 from .responses_protocol import (
+    ResponsesProtocolError,
     ResponsesStreamAccumulator,
     build_responses_payload,
     iter_sse_json,
     sanitize_upstream_error,
 )
+
+MAX_UPSTREAM_ERROR_BYTES = 65_536
 
 
 class ModelGateway:
@@ -106,11 +110,37 @@ class ModelGateway:
                 for value in (upstream_code, upstream_message)
                 if value
             )
-        if "{" in text or "[" in text:
+        if not isinstance(exc, ResponsesProtocolError) and (
+            "{" in text or "[" in text
+        ):
             text = "Upstream request failed."
         text = sanitize_upstream_error(text, limit=450)
         suffix = f" (HTTP {status})" if status is not None else ""
         return f"{type(exc).__name__}{suffix}: {text}"[:500]
+
+    @staticmethod
+    def _raise_responses_http_error(response) -> None:
+        status = getattr(response, "status_code", None)
+        raw = bytearray()
+        for chunk in response.iter_content(chunk_size=8192):
+            raw.extend(chunk or b"")
+            if len(raw) >= MAX_UPSTREAM_ERROR_BYTES:
+                break
+        code = "upstream_error"
+        message = "Upstream returned an error response."
+        try:
+            payload = json.loads(bytes(raw[:MAX_UPSTREAM_ERROR_BYTES]).decode("utf-8"))
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                code = error.get("code") or error.get("type") or code
+                message = error.get("message") or message
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+        safe_code = sanitize_upstream_error(code, limit=100)
+        safe_message = sanitize_upstream_error(message, limit=300)
+        raise ResponsesProtocolError(
+            f"HTTP {status}: {safe_code}: {safe_message}"
+        )
 
     def endpoint(self, base_url: str, path: str) -> str:
         base = base_url.rstrip("/")
@@ -167,6 +197,8 @@ class ModelGateway:
                 self.headers(config),
                 payload,
             ) as response:
+                if int(getattr(response, "status_code", 200)) >= 400:
+                    self._raise_responses_http_error(response)
                 response.raise_for_status()
                 for upstream_event in iter_sse_json(
                     response.iter_content(chunk_size=None)

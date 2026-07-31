@@ -178,7 +178,9 @@ def main():
     assert payload["instructions"] == "Be concise.\n\nUse plain text."
     assert payload["input"] == [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}]
     assert payload["model"] == "gpt-test" and payload["store"] is False
-    assert payload["max_output_tokens"] == 123 and payload["temperature"] == 0.2 and payload["top_p"] == 0.8
+    assert payload["max_output_tokens"] == 123
+    assert payload["temperature"] == 0.2
+    assert "top_p" not in payload
     assert "previous_response_id" not in payload and "conversation" not in payload
     assert message == {"role": "assistant", "content": "Current answer.", "tool_calls": []}
 
