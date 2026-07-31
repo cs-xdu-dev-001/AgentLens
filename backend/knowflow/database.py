@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 
 class Database:
@@ -48,6 +48,7 @@ class Database:
         id_type = "BIGINT" if self.is_mysql else "INTEGER"
         for table in ["model_config", "knowledge_base", "document", "chat_session", "sync_task"]:
             self.add_column_if_missing(conn, table, "user_id", id_type)
+        self.add_column_if_missing(conn, "model_config", "api_mode", "VARCHAR(30) NOT NULL DEFAULT 'chat_completions'" if self.is_mysql else "TEXT NOT NULL DEFAULT 'chat_completions'")
         trace_type = "LONGTEXT" if self.is_mysql else "TEXT"
         self.add_column_if_missing(
             conn,
@@ -102,7 +103,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Add durable memory operation tracking and retries."
+                    "Add selectable chat model API protocol."
                 ),
             },
         )

@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .responses_protocol import build_responses_payload, parse_responses_message
+
 
 class ModelGateway:
     def __init__(self, *, fetch_one, cipher, post_model_json, local_embedding):
@@ -44,12 +46,35 @@ class ModelGateway:
                 if vector:
                     return "available", f"Connection succeeded. The model returned a {len(vector)}-dimension vector."
             else:
-                answer = self.chat([{"role": "user", "content": "ping"}], config)
+                answer = self.complete([{"role": "user", "content": "ping"}], config)
                 if answer:
-                    return "available", "Connection succeeded. The model returned a normal response."
+                    protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
+                    return "available", f"{protocol} connection succeeded. The model returned a normal response."
         except Exception as exc:
-            return "unavailable", str(exc)
+            if model_type == "embedding":
+                return "unavailable", f"Embedding connection failed: {self._safe_error(exc)}"
+            protocol = "Responses API" if (config.get("api_mode") or "chat_completions") == "responses" else "Chat Completions"
+            return "unavailable", f"{protocol} connection failed: {self._safe_error(exc)}"
         return "unavailable", "The model did not return a valid result."
+
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        try: raw = str(exc)
+        except Exception: raw = ""
+        try: status = getattr(getattr(exc, "response", None), "status_code", None)
+        except Exception: status = None
+        if not isinstance(status, int) and not (isinstance(status, str) and status.isdigit() and len(status) < 5): status = None
+        text = " ".join(raw.split())
+        if "{" in text or "[" in text:
+            text = "Upstream request failed."
+        text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
+        text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
+        text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
+        text = re.sub(r"(?:api[_-]?key|token)=[^\s&]+", "[redacted]", text, flags=re.I)
+        text = re.sub(r"([?&][^=\s]+)=([^&\s]+)", r"\1=[REDACTED]", text)
+        text = re.sub(r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)\s*[:=]\s*[^\s,;]+", "[REDACTED]", text)
+        suffix = f" (HTTP {status})" if status is not None else ""
+        return f"{type(exc).__name__}{suffix}: {text}"[:500]
 
     def endpoint(self, base_url: str, path: str) -> str:
         base = base_url.rstrip("/")
@@ -85,8 +110,19 @@ class ModelGateway:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
     ) -> dict[str, Any]:
-        if not config or not self.cipher.decrypt(config.get("api_key_cipher")):
+        if config is None:
             return {"role": "assistant", "content": self.local_answer(messages)}
+        api_mode = config.get("api_mode") or "chat_completions"
+        if api_mode not in {"chat_completions", "responses"}:
+            raise ValueError(f"Unsupported api_mode: {api_mode}")
+        if not self.cipher.decrypt(config.get("api_key_cipher")):
+            return {"role": "assistant", "content": self.local_answer(messages)}
+        if api_mode == "responses":
+            url = self.endpoint(config["base_url"], "/responses")
+            payload = build_responses_payload(messages, config, tools=tools, tool_choice=tool_choice)
+            response = self.post_model_json(url, self.headers(config), payload)
+            response.raise_for_status()
+            return parse_responses_message(response.json())
         url = self.endpoint(config["base_url"], "/chat/completions")
         payload: dict[str, Any] = {
             "model": config["model_name"],

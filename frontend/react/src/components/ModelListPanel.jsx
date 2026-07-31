@@ -1,6 +1,7 @@
 const modelTypeLabel = { chat: "聊天模型", embedding: "向量模型", rerank: "重排模型" };
 const statusText = { available: "可用", unavailable: "不可用", untested: "待检查" };
 const providerNames = { deepseek: "DeepSeek", mimo: "MiMo", openai: "OpenAI", siliconflow: "SiliconFlow", zhipu: "智谱 AI", bailian: "百炼", custom: "自定义" };
+const apiModeLabel = { chat_completions: "Chat Completions", responses: "Responses API" };
 
 export function ModelListPanel({ models = [], busyModelId = null, onModelEdit, onModelTest, onSetDefaultModel, onDeleteModel }) {
   return (
@@ -18,7 +19,7 @@ export function ModelListPanel({ models = [], busyModelId = null, onModelEdit, o
                 <div>
                   <h3>{model.name}</h3>
                   <p>{provider + " / " + (model.modelName || "未知")}</p>
-                  <small>{modelTypeLabel[model.modelType] || model.modelType || "模型"}</small>
+                  <small>{modelTypeLabel[model.modelType] || model.modelType || "模型"}{model.modelType === "chat" ? " · " + (apiModeLabel[model.apiMode] || apiModeLabel.chat_completions) : ""}</small>
                 </div>
                 <div className={"model-row-meta"}>
                   <span className={status === "available" ? "badge ok" : status === "unavailable" ? "badge warn" : "badge"}>{statusText[status] || status}</span>

@@ -39,13 +39,13 @@ def main() -> None:
     from knowflow.db_schema import MYSQL_SCHEMA
     from knowflow.runtime import fetch_all, fetch_one
 
-    assert CURRENT_SCHEMA_VERSION == 8, CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 9, CURRENT_SCHEMA_VERSION
     version_row = fetch_one(
         "SELECT description FROM schema_version WHERE version=:version",
         {"version": CURRENT_SCHEMA_VERSION},
     )
     assert version_row == {
-        "description": "Add durable memory operation tracking and retries."
+        "description": "Add selectable chat model API protocol."
     }, version_row
 
     tables = {
@@ -237,7 +237,7 @@ def main() -> None:
             ]
         assert [(row["version"], row["count"]) for row in version_rows] == [
             (4, 1),
-            (8, 1),
+            (9, 1),
         ], version_rows
         assert len(chat_columns) == len(set(chat_columns))
         assert len(tool_columns) == len(set(tool_columns))

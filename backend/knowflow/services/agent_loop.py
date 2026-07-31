@@ -127,7 +127,10 @@ class AgentRunner:
                 if not answer: raise ValueError("Model returned neither text nor tool calls.")
                 return AgentRunResult(answer,executions,trace.snapshot() if trace else [])
             if tool_round>=self.max_tool_rounds: raise AgentLoopLimitError("Agent exceeded the maximum tool-call rounds.")
-            working.append({"role":"assistant","content":message.get("content"),"tool_calls":calls})
+            assistant_working={"role":"assistant","content":message.get("content"),"tool_calls":calls}
+            if message.get("_response_items"):
+                assistant_working["_response_items"] = json.loads(json.dumps(message["_response_items"], ensure_ascii=False))
+            working.append(assistant_working)
             for call in calls:
                 prepared=registry.prepare(call); d=prepared.definition; should_invoke=True
                 if prepared.error is not None:
