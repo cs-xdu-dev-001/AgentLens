@@ -222,7 +222,13 @@ function SessionHistory() {
 
   const handleSessionContinue = (sessionId) => {
     if (editingSessionId === sessionId) return;
-    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", { detail: { sessionId } }));
+    const session = sessions.find((item) => item.id === sessionId);
+    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+      detail: {
+        sessionId,
+        chatModelConfigId: session?.chat_model_config_id ?? null,
+      },
+    }));
   };
 
   const startSessionRename = (sessionId) => {

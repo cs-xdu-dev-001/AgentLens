@@ -11904,3 +11904,240 @@ select {
     transition: none;
   }
 }
+
+/* Composer model picker: one compact control bound to the next message. */
+.composer-model-picker {
+  position: relative;
+  z-index: 12;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.composer-model-trigger {
+  max-width: min(260px, 100%);
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1;
+  touch-action: manipulation;
+  transition-property: transform, background-color, border-color, color;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-model-trigger > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-model-picker.open .composer-model-chevron {
+  transform: rotate(180deg);
+}
+
+.composer-model-trigger:active,
+.composer-model-option:active,
+.composer-model-manage:active {
+  transform: scale(0.96);
+}
+
+.composer-model-trigger:focus-visible,
+.composer-model-option:focus-visible,
+.composer-model-manage:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--text) 58%, transparent);
+  outline-offset: 1px;
+}
+
+.composer-model-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.composer-model-mark {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+}
+
+.composer-model-mark svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.composer-model-popover {
+  position: absolute;
+  left: -8px;
+  bottom: calc(100% + 9px);
+  width: min(320px, calc(100vw - 48px));
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--panel-bg);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.08),
+    0 18px 46px rgba(0, 0, 0, 0.14);
+  transform-origin: left bottom;
+  animation: composer-model-enter 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes composer-model-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.composer-model-list {
+  max-height: min(310px, 48vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+
+.composer-model-option {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  touch-action: manipulation;
+  transition-property: transform, background-color;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-model-option.active,
+.composer-model-option.selected {
+  background: var(--control-bg-hover);
+}
+
+.composer-model-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.composer-model-copy strong,
+.composer-model-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-copy strong {
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+
+.composer-model-copy small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.composer-model-check {
+  min-height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.composer-model-manage {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border: 0;
+  border-top: 1px solid var(--control-border);
+  border-radius: 0;
+  background: var(--panel-bg);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 620;
+  text-align: left;
+  touch-action: manipulation;
+  transition-property: transform, background-color, color;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: hover) {
+  .composer-model-trigger:not(:disabled):hover {
+    border-color: var(--control-border);
+    background: var(--control-bg-hover);
+    color: var(--text);
+  }
+
+  .composer-model-option:hover,
+  .composer-model-manage:hover {
+    background: var(--control-bg-hover);
+    color: var(--text);
+  }
+}
+
+@media (max-width: 520px) {
+  .composer-model-trigger {
+    max-width: min(220px, calc(100vw - 132px));
+  }
+
+  .composer-model-popover {
+    left: -60px;
+    width: min(320px, calc(100vw - 32px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-model-trigger,
+  .composer-model-chevron,
+  .composer-model-option,
+  .composer-model-manage {
+    transition: none;
+  }
+
+  .composer-model-popover {
+    animation: none;
+  }
+}

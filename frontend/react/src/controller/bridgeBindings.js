@@ -103,9 +103,16 @@ export function bindReactControllerEvents({
     notifyReactKnowledgeSelectionUpdated(undefined, { selectedChatKnowledgeBaseId: value });
   });
 
-  window.addEventListener("knowflow:react-session-continue", (event) =>
-    continueSession(event.detail?.sessionId).catch((error) => toast(error.message || "打开会话失败", 4200, "error")),
-  );
+  window.addEventListener("knowflow:react-session-continue", (event) => {
+    const modelId = resolveChatModelConfigId(
+      event.detail?.chatModelConfigId || "",
+    );
+    state.selectedChatModelConfigId = modelId;
+    notifyReactModelSelectionUpdated(modelId);
+    continueSession(event.detail?.sessionId).catch((error) =>
+      toast(error.message || "打开会话失败", 4200, "error"),
+    );
+  });
 
   window.addEventListener("knowflow:react-models-refresh-request", () =>
     refreshModels().catch((error) => toast(error.message || "刷新模型失败", 4200, "error")),

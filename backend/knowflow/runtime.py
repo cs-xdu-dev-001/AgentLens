@@ -870,7 +870,12 @@ def get_embedding_config_for_kb(kb_id: int, user_id: int | None = None) -> dict[
 
 def ensure_session(session_id: str | None, knowledge_base_id: int | None, chat_model_config_id: int | None, user_id: int) -> str:
     final_id = session_id or f"session-{uuid.uuid4().hex[:12]}"
-    row = fetch_one("SELECT id FROM chat_session WHERE id=:id AND user_id=:user_id", {"id": final_id, "user_id": user_id})
+    if chat_model_config_id is not None:
+        get_model_config(chat_model_config_id, "chat", user_id)
+    row = fetch_one(
+        "SELECT id, chat_model_config_id FROM chat_session WHERE id=:id AND user_id=:user_id",
+        {"id": final_id, "user_id": user_id},
+    )
     if session_id and not row and fetch_one("SELECT id FROM chat_session WHERE id=:id", {"id": final_id}):
         raise HTTPException(status_code=404, detail="Session not found.")
     if not row:
@@ -887,6 +892,25 @@ def ensure_session(session_id: str | None, knowledge_base_id: int | None, chat_m
                 "chat_model_config_id": chat_model_config_id,
                 "created_at": now_str(),
                 "updated_at": now_str(),
+            },
+        )
+    elif (
+        chat_model_config_id is not None
+        and int(row.get("chat_model_config_id") or 0)
+        != int(chat_model_config_id)
+    ):
+        execute(
+            """
+            UPDATE chat_session
+            SET chat_model_config_id=:chat_model_config_id,
+                updated_at=:updated_at
+            WHERE id=:id AND user_id=:user_id
+            """,
+            {
+                "chat_model_config_id": chat_model_config_id,
+                "updated_at": now_str(),
+                "id": final_id,
+                "user_id": user_id,
             },
         )
     return final_id

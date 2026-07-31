@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi } from "../api/client.js";
+import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { SkillPicker } from "./SkillPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
@@ -430,6 +431,7 @@ export function ChatComposerForm() {
             onPaste={handleChatPaste}
             onKeyDown={handleChatKeyDown}
           />
+          <ComposerModelPicker disabled={sending} inputRef={textareaRef} />
         </div>
         <button className={"composer-send-button"} id={"chat-submit-btn"} type={"submit"} aria-label={sending ? "停止生成" : "发送消息"} title={sending ? "停止生成" : "发送消息"}>
           {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
