@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from typing import Any
-import copy, json
+import copy, json, re
+
+
+MAX_SSE_EVENT_BYTES = 1_048_576
 
 def _normalize_items(items):
     out=copy.deepcopy(items)
@@ -17,6 +21,244 @@ def _normalize_items(items):
 
 class ResponsesProtocolError(ValueError):
     """Raised when a Responses API payload/response violates the expected shape."""
+
+
+def sanitize_upstream_error(value: Any, *, limit: int = 300) -> str:
+    text = " ".join(str(value or "").split())
+    text = re.sub(
+        r"Bearer\s+[^\s,;]+",
+        "Bearer [redacted]",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"sk-[A-Za-z0-9_-]+",
+        "sk-[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)"
+        r"\s*[:=]\s*[^\s,;]+",
+        "[REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(?:api[_-]?key|token)=([^\s&]+)",
+        "[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"([?&][^=\s]+)=([^&\s]+)",
+        r"\1=[REDACTED]",
+        text,
+    )
+    return text[:limit]
+
+
+def iter_sse_json(chunks: Iterable[bytes]) -> Iterator[dict[str, Any]]:
+    buffer = b""
+    for chunk in chunks:
+        buffer += bytes(chunk or b"")
+        if len(buffer) > MAX_SSE_EVENT_BYTES:
+            raise ResponsesProtocolError(
+                "Responses SSE event exceeded the size limit."
+            )
+        buffer = buffer.replace(b"\r\n", b"\n")
+        while b"\n\n" in buffer:
+            raw, buffer = buffer.split(b"\n\n", 1)
+            data_lines = [
+                line[5:].lstrip()
+                for line in raw.split(b"\n")
+                if line.startswith(b"data:")
+            ]
+            if not data_lines:
+                continue
+            data = b"\n".join(data_lines)
+            if data == b"[DONE]":
+                continue
+            try:
+                value = json.loads(data.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ResponsesProtocolError(
+                    "Responses SSE contained invalid JSON."
+                ) from exc
+            if not isinstance(value, dict):
+                raise ResponsesProtocolError(
+                    "Responses SSE event must be an object."
+                )
+            yield value
+    if buffer.strip():
+        raise ResponsesProtocolError(
+            "Responses SSE ended with an incomplete event."
+        )
+
+
+class ResponsesStreamAccumulator:
+    def __init__(self) -> None:
+        self._items: dict[str, dict[str, Any]] = {}
+        self._order: list[str] = []
+        self._text_by_item: dict[str, str] = {}
+        self._tool_args: dict[str, str] = {}
+        self._completed = False
+        self._message: dict[str, Any] | None = None
+
+    @staticmethod
+    def _error_text(code: Any, message: Any) -> str:
+        safe_code = sanitize_upstream_error(
+            code or "responses_stream_error",
+            limit=100,
+        )
+        safe_message = sanitize_upstream_error(
+            message or "Responses stream failed.",
+        )
+        return f"{safe_code}: {safe_message}"
+
+    def _store_item(self, item: Any) -> str:
+        if not isinstance(item, dict):
+            raise ResponsesProtocolError(
+                "Responses SSE output item must be an object."
+            )
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id:
+            raise ResponsesProtocolError(
+                "Responses SSE output item missing id."
+            )
+        if item_id not in self._items:
+            self._order.append(item_id)
+        self._items[item_id] = copy.deepcopy(item)
+        if item.get("type") == "function_call":
+            arguments = item.get("arguments")
+            if isinstance(arguments, str):
+                self._tool_args[item_id] = arguments
+        return item_id
+
+    def _final_items(self, response: dict[str, Any]) -> list[dict[str, Any]]:
+        output = response.get("output")
+        if isinstance(output, list) and output:
+            return copy.deepcopy(output)
+        items: list[dict[str, Any]] = []
+        for item_id in self._order:
+            item = copy.deepcopy(self._items[item_id])
+            if item.get("type") == "message":
+                text = self._text_by_item.get(item_id, "")
+                if text and not item.get("content"):
+                    item["content"] = [
+                        {"type": "output_text", "text": text}
+                    ]
+            if item.get("type") == "function_call":
+                item["arguments"] = self._tool_args.get(
+                    item_id,
+                    str(item.get("arguments") or "{}"),
+                )
+            items.append(item)
+        return items
+
+    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        event_type = event.get("type")
+        if event_type in {
+            "response.output_item.added",
+            "response.output_item.done",
+        }:
+            self._store_item(event.get("item"))
+            return []
+        if event_type == "response.output_text.delta":
+            item_id = event.get("item_id")
+            delta = event.get("delta")
+            if not isinstance(item_id, str) or item_id not in self._items:
+                raise ResponsesProtocolError(
+                    "Responses text delta referenced an unknown item."
+                )
+            if not isinstance(delta, str):
+                raise ResponsesProtocolError(
+                    "Responses text delta must be a string."
+                )
+            self._text_by_item[item_id] = (
+                self._text_by_item.get(item_id, "") + delta
+            )
+            if self._items[item_id].get("type") == "message":
+                return [{"type": "text_delta", "text": delta}]
+            return []
+        if event_type == "response.function_call_arguments.delta":
+            item_id = event.get("item_id")
+            delta = event.get("delta")
+            if not isinstance(item_id, str) or item_id not in self._items:
+                raise ResponsesProtocolError(
+                    "Responses tool delta referenced an unknown item."
+                )
+            if not isinstance(delta, str):
+                raise ResponsesProtocolError(
+                    "Responses tool argument delta must be a string."
+                )
+            self._tool_args[item_id] = (
+                self._tool_args.get(item_id, "") + delta
+            )
+            return []
+        if event_type == "response.function_call_arguments.done":
+            item_id = event.get("item_id")
+            arguments = event.get("arguments")
+            if not isinstance(item_id, str) or item_id not in self._items:
+                raise ResponsesProtocolError(
+                    "Responses tool arguments referenced an unknown item."
+                )
+            if not isinstance(arguments, str):
+                raise ResponsesProtocolError(
+                    "Responses tool arguments must be a string."
+                )
+            self._tool_args[item_id] = arguments
+            return []
+        if event_type == "response.completed":
+            response = event.get("response")
+            if not isinstance(response, dict):
+                raise ResponsesProtocolError(
+                    "Responses completed event missing response."
+                )
+            if response.get("status") not in {None, "completed"}:
+                raise ResponsesProtocolError(
+                    self._error_text(
+                        response.get("status"),
+                        "Responses stream did not complete successfully.",
+                    )
+                )
+            payload = {
+                **response,
+                "output": self._final_items(response),
+            }
+            self._message = parse_responses_message(payload)
+            self._completed = True
+            return [{"type": "completed", "message": self._message}]
+        if event_type == "response.failed":
+            response = event.get("response")
+            error = response.get("error") if isinstance(response, dict) else {}
+            error = error if isinstance(error, dict) else {}
+            raise ResponsesProtocolError(
+                self._error_text(error.get("code"), error.get("message"))
+            )
+        if event_type == "response.incomplete":
+            response = event.get("response")
+            details = (
+                response.get("incomplete_details")
+                if isinstance(response, dict)
+                else {}
+            )
+            details = details if isinstance(details, dict) else {}
+            raise ResponsesProtocolError(
+                self._error_text(
+                    "response_incomplete",
+                    details.get("reason"),
+                )
+            )
+        if event_type == "error":
+            raise ResponsesProtocolError(
+                self._error_text(event.get("code"), event.get("message"))
+            )
+        return []
+
+    def finish(self) -> dict[str, Any]:
+        if not self._completed or self._message is None:
+            raise ResponsesProtocolError(
+                "Responses SSE ended before response.completed."
+            )
+        return self._message
 
 
 def to_responses_tool(tool: dict[str, Any]) -> dict[str, Any]:
@@ -55,6 +297,7 @@ def build_responses_payload(
     payload: dict[str, Any] = {
         "model": config["model_name"],
         "store": False,
+        "stream": True,
         "input": messages_to_response_input(messages),
     }
     if tools:

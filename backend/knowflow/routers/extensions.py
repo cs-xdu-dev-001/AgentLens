@@ -57,6 +57,14 @@ class _CancellationAwareGateway:
 
     def complete(self, *args, **kwargs):
         _raise_if_cancelled(self.cancel_event)
+        callback = kwargs.get("event_callback")
+        if callback is not None:
+            def guarded_callback(event):
+                _raise_if_cancelled(self.cancel_event)
+                callback(event)
+                _raise_if_cancelled(self.cancel_event)
+
+            kwargs["event_callback"] = guarded_callback
         result = self.delegate.complete(*args, **kwargs)
         _raise_if_cancelled(self.cancel_event)
         return result
@@ -762,6 +770,19 @@ def execute_agent_chat(
                     (execution, current_plan_step_id)
                 )
 
+            def forward_model_event(event: dict[str, Any]) -> None:
+                if (
+                    event.get("type") == "text_delta"
+                    and event.get("text")
+                ):
+                    emit_named(
+                        "message",
+                        {
+                            "type": "answer",
+                            "content": str(event["text"]),
+                        },
+                    )
+
             runner = AgentRunner(
                 gateway=_CancellationAwareGateway(
                     gateway,
@@ -810,6 +831,7 @@ def execute_agent_chat(
                                 else None
                             ),
                             execution_callback=record_execution,
+                            model_event_callback=forward_model_event,
                         )
                         answer = run_result.answer
                         plan_created = False
@@ -1343,6 +1365,7 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
 
     def generate() -> Iterable[str]:
         queue: Queue[tuple[str, Any]] = Queue()
+        streamed_answer = False
         def enqueue(
             event_name: str,
             payload_value: dict[str, Any],
@@ -1436,6 +1459,10 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                 }:
                     yield sse_event(event_name, value)
                     continue
+                if event_name == "message":
+                    streamed_answer = True
+                    yield sse_event("message", value)
+                    continue
                 if event_name == "error":
                     yield sse_event(
                         "error",
@@ -1457,20 +1484,21 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                         "tool",
                         {"type": "tool", **call},
                     )
-                for index in range(
-                    0,
-                    len(result["answer"]),
-                    12,
-                ):
-                    yield sse_event(
-                        "message",
-                        {
-                            "type": "answer",
-                            "content": result["answer"][
-                                index : index + 12
-                            ],
-                        },
-                    )
+                if not streamed_answer:
+                    for index in range(
+                        0,
+                        len(result["answer"]),
+                        12,
+                    ):
+                        yield sse_event(
+                            "message",
+                            {
+                                "type": "answer",
+                                "content": result["answer"][
+                                    index : index + 12
+                                ],
+                            },
+                        )
                 for ref in result["references"]:
                     yield sse_event(
                         "reference",

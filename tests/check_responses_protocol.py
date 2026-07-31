@@ -1,4 +1,6 @@
 from pathlib import Path
+from contextlib import contextmanager
+import json
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,35 @@ class FakeResponse:
 
     def json(self):
         return self.data
+
+
+class FakeStreamResponse:
+    def __init__(self, data):
+        event = {
+            "type": "response.completed",
+            "response": {
+                "status": "completed",
+                "output": data.get("output"),
+            },
+        }
+        self.body = (
+            f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        ).encode("utf-8")
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, chunk_size=None):
+        yield self.body
+
+
+def stream_from_post(post_function):
+    @contextmanager
+    def stream(url, headers, payload, timeout=None):
+        response = post_function(url, headers, payload)
+        yield FakeStreamResponse(response.json())
+
+    return stream
 
 
 def main():
@@ -58,7 +89,7 @@ def main():
         if url.endswith('/responses'):
             return FakeResponse({"output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]})
         return FakeResponse({"choices":[{"message":{"role":"assistant","content":"ok"}}]})
-    gwtest=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post_test,local_embedding=lambda _:[0.])
+    gwtest=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post_test,stream_model_json=stream_from_post(post_test),local_embedding=lambda _:[0.])
     status,msg=gwtest.test({"model_type":"chat","api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"})
     assert status=="available" and "Responses API" in msg and calls==["https://x/responses"]
     calls.clear(); status,msg=gwtest.test({"model_type":"chat","model_name":"m","base_url":"https://x","api_key_cipher":"k"})
@@ -68,6 +99,7 @@ def main():
         def failing(url, headers, payload):
             calls.append(url); raise RuntimeError('bad sk-secret Bearer token')
         gwtest.post_model_json=failing
+        gwtest.stream_model_json=stream_from_post(failing)
         cfg={"model_type":"chat","api_mode":mode,"model_name":"m","base_url":"https://x","api_key_cipher":"k"}
         status,msg=gwtest.test(cfg)
         assert status=="unavailable" and ("Responses API" if mode=="responses" else "Chat Completions") in msg and calls==["https://x"+suffix]
@@ -119,7 +151,7 @@ def main():
                {"output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}]}]
     def post(url, headers, payload):
         http_payloads.append(payload); return FakeResponse(responses.pop(0))
-    gw=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post,local_embedding=lambda _:[0.])
+    gw=ModelGateway(fetch_one=lambda *_a,**_k:None,cipher=FakeCipher(),post_model_json=post,stream_model_json=stream_from_post(post),local_embedding=lambda _:[0.])
     reg=ToolRegistry(); reg.register(name="web_search",description="search",input_schema={"type":"object"},handler=lambda args:{"ok":True})
     tr=AgentTraceRecorder(run_id="responses-e2e")
     out=AgentRunner(gateway=gw,max_tool_rounds=2).run(messages=[{"role":"user","content":"find"}],config={"api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"},registry=reg,trace=tr)
@@ -129,7 +161,7 @@ def main():
 
     failed_payloads=[]; failed_responses=[{"output":[{"type":"function_call","call_id":"bad1","name":"boom","arguments":"{}"}]},{"output":[{"type":"message","content":[{"type":"output_text","text":"recovered"}]}]}]
     def post_failed(url,headers,payload): failed_payloads.append(payload); return FakeResponse(failed_responses.pop(0))
-    gw.post_model_json=post_failed; bad=ToolRegistry(); bad.register(name="boom",description="boom",input_schema={"type":"object"},handler=lambda args: (_ for _ in ()).throw(RuntimeError("boom")))
+    gw.post_model_json=post_failed; gw.stream_model_json=stream_from_post(post_failed); bad=ToolRegistry(); bad.register(name="boom",description="boom",input_schema={"type":"object"},handler=lambda args: (_ for _ in ()).throw(RuntimeError("boom")))
     out2=AgentRunner(gateway=gw,max_tool_rounds=2).run(messages=[{"role":"user","content":"go"}],config={"api_mode":"responses","model_name":"m","base_url":"https://x","api_key_cipher":"k"},registry=bad)
     assert out2.answer=="recovered" and out2.executions[0].status=="failed" and any(i.get("type")=="function_call_output" and i.get("call_id")=="bad1" for i in failed_payloads[1]["input"])
     calls = []
@@ -138,7 +170,7 @@ def main():
         calls.append((url, payload))
         return FakeResponse({"output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Current answer."}]}]})
 
-    gateway = ModelGateway(fetch_one=lambda *_a, **_k: None, cipher=FakeCipher(), post_model_json=post_model_json, local_embedding=lambda _: [0.0])
+    gateway = ModelGateway(fetch_one=lambda *_a, **_k: None, cipher=FakeCipher(), post_model_json=post_model_json, stream_model_json=stream_from_post(post_model_json), local_embedding=lambda _: [0.0])
     config = {"api_mode": "responses", "model_name": "gpt-test", "base_url": "https://example.com/v1", "api_key_cipher": "key", "temperature": "0.2", "top_p": "0.8", "max_tokens": 123}
     message = gateway.complete([{ "role": "system", "content": "Be concise."}, {"role": "system", "content": "Use plain text."}, {"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}], config)
     assert calls[0][0] == "https://example.com/v1/responses"
@@ -153,6 +185,7 @@ def main():
     def no_text(*_args):
         return FakeResponse({"output": [{"type": "message", "content": []}]})
     gateway.post_model_json = no_text
+    gateway.stream_model_json = stream_from_post(no_text)
     try:
         gateway.complete([{ "role": "user", "content": "Hi"}], config)
     except ResponsesProtocolError:

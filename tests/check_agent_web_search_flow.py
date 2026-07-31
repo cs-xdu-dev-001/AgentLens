@@ -59,7 +59,15 @@ class FakeComplete:
     def __init__(self):
         self.calls = []
 
-    def __call__(self, messages, config, *, tools=None, tool_choice=None):
+    def __call__(
+        self,
+        messages,
+        config,
+        *,
+        tools=None,
+        tool_choice=None,
+        event_callback=None,
+    ):
         self.calls.append(
             {
                 "messages": [dict(message) for message in messages],
@@ -70,6 +78,16 @@ class FakeComplete:
         if not tools:
             return {"role": "assistant", "content": "No tools configured."}
         if messages[-1]["role"] == "tool":
+            if event_callback is not None:
+                event_callback(
+                    {
+                        "type": "text_delta",
+                        "text": (
+                            "See [Current source]"
+                            "(https://example.com/current)."
+                        ),
+                    }
+                )
             return {
                 "role": "assistant",
                 "content": "See [Current source](https://example.com/current).",

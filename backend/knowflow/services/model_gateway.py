@@ -1,19 +1,33 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from .responses_protocol import build_responses_payload, parse_responses_message
+from .responses_protocol import (
+    ResponsesStreamAccumulator,
+    build_responses_payload,
+    iter_sse_json,
+    sanitize_upstream_error,
+)
 
 
 class ModelGateway:
-    def __init__(self, *, fetch_one, cipher, post_model_json, local_embedding):
+    def __init__(
+        self,
+        *,
+        fetch_one,
+        cipher,
+        post_model_json,
+        local_embedding,
+        stream_model_json=None,
+    ):
         self.fetch_one = fetch_one
         self.cipher = cipher
         self.post_model_json = post_model_json
         self.local_embedding = local_embedding
+        self.stream_model_json = stream_model_json
 
     def get_config(self, config_id: int | None, model_type: str, user_id: int | None = None) -> dict[str, Any] | None:
         if config_id:
@@ -61,18 +75,40 @@ class ModelGateway:
     def _safe_error(exc: Exception) -> str:
         try: raw = str(exc)
         except Exception: raw = ""
-        try: status = getattr(getattr(exc, "response", None), "status_code", None)
+        try: response = getattr(exc, "response", None)
+        except Exception: response = None
+        try: status = getattr(response, "status_code", None)
         except Exception: status = None
         if not isinstance(status, int) and not (isinstance(status, str) and status.isdigit() and len(status) < 5): status = None
+        upstream_code = ""
+        upstream_message = ""
+        if response is not None:
+            try:
+                payload = response.json()
+                error = (
+                    payload.get("error")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                if isinstance(error, dict):
+                    upstream_code = str(
+                        error.get("code")
+                        or error.get("type")
+                        or ""
+                    )
+                    upstream_message = str(error.get("message") or "")
+            except Exception:
+                pass
         text = " ".join(raw.split())
+        if upstream_code or upstream_message:
+            text = " ".join(
+                value
+                for value in (upstream_code, upstream_message)
+                if value
+            )
         if "{" in text or "[" in text:
             text = "Upstream request failed."
-        text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
-        text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
-        text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
-        text = re.sub(r"(?:api[_-]?key|token)=[^\s&]+", "[redacted]", text, flags=re.I)
-        text = re.sub(r"([?&][^=\s]+)=([^&\s]+)", r"\1=[REDACTED]", text)
-        text = re.sub(r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)\s*[:=]\s*[^\s,;]+", "[REDACTED]", text)
+        text = sanitize_upstream_error(text, limit=450)
         suffix = f" (HTTP {status})" if status is not None else ""
         return f"{type(exc).__name__}{suffix}: {text}"[:500]
 
@@ -109,6 +145,7 @@ class ModelGateway:
         *,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
+        event_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         if config is None:
             return {"role": "assistant", "content": self.local_answer(messages)}
@@ -118,11 +155,26 @@ class ModelGateway:
         if not self.cipher.decrypt(config.get("api_key_cipher")):
             return {"role": "assistant", "content": self.local_answer(messages)}
         if api_mode == "responses":
+            if self.stream_model_json is None:
+                raise RuntimeError(
+                    "Responses streaming transport is not configured."
+                )
             url = self.endpoint(config["base_url"], "/responses")
             payload = build_responses_payload(messages, config, tools=tools, tool_choice=tool_choice)
-            response = self.post_model_json(url, self.headers(config), payload)
-            response.raise_for_status()
-            return parse_responses_message(response.json())
+            accumulator = ResponsesStreamAccumulator()
+            with self.stream_model_json(
+                url,
+                self.headers(config),
+                payload,
+            ) as response:
+                response.raise_for_status()
+                for upstream_event in iter_sse_json(
+                    response.iter_content(chunk_size=None)
+                ):
+                    for public_event in accumulator.feed(upstream_event):
+                        if event_callback is not None:
+                            event_callback(public_event)
+            return accumulator.finish()
         url = self.endpoint(config["base_url"], "/chat/completions")
         payload: dict[str, Any] = {
             "model": config["model_name"],
@@ -152,8 +204,14 @@ class ModelGateway:
         self,
         messages: list[dict[str, Any]],
         config: dict[str, Any] | None = None,
+        *,
+        event_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> str:
-        message = self.complete(messages, config)
+        message = self.complete(
+            messages,
+            config,
+            event_callback=event_callback,
+        )
         return str(message.get("content") or "")
 
     def local_answer(self, messages: list[dict[str, Any]]) -> str:

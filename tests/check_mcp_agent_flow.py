@@ -154,6 +154,7 @@ class ScenarioGateway:
         *,
         tools=None,
         tool_choice=None,
+        event_callback=None,
     ):
         available = {
             item["function"]["name"] for item in (tools or [])
@@ -169,6 +170,13 @@ class ScenarioGateway:
             1 for message in messages if message["role"] == "tool"
         )
         if completed >= len(self.tool_names):
+            if event_callback is not None:
+                event_callback(
+                    {
+                        "type": "text_delta",
+                        "text": self.final_answer,
+                    }
+                )
             return {
                 "role": "assistant",
                 "content": self.final_answer,

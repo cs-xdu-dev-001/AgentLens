@@ -13,6 +13,7 @@ import secrets
 import time
 import uuid
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -492,6 +493,31 @@ def post_model_json(url: str, headers: dict[str, str], payload: dict[str, Any], 
         session.close()
 
 
+@contextmanager
+def stream_model_json(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout: int | None = None,
+):
+    session = requests.Session()
+    session.trust_env = MODEL_TRUST_ENV
+    response = None
+    try:
+        response = session.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=timeout or MODEL_REQUEST_TIMEOUT,
+            stream=True,
+        )
+        yield response
+    finally:
+        if response is not None:
+            response.close()
+        session.close()
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     iterations = 210_000
@@ -777,6 +803,7 @@ gateway = ModelGateway(
     fetch_one=fetch_one,
     cipher=cipher,
     post_model_json=post_model_json,
+    stream_model_json=stream_model_json,
     local_embedding=local_embedding,
 )
 
@@ -1266,7 +1293,7 @@ def remote_model_error_answer(chat_config: dict[str, Any], exc: Exception) -> st
             "",
             f"- Model configuration: {model_identity(chat_config)}",
             f"- Endpoint: {base_url or 'not configured'}",
-            f"- Failure reason: {exc}",
+            f"- Failure reason: {gateway._safe_error(exc)}",
             "",
             "Suggested checks:",
             *[f"- {hint}" for hint in hints],
@@ -1283,6 +1310,7 @@ def generate_answer(
     use_rag: bool = False,
     attachments: list[ChatAttachment] | None = None,
     memories: list[dict[str, Any]] | None = None,
+    event_callback=None,
 ) -> str:
     if use_rag and not chunks and not attachments:
         return fallback_answer(question, chunks, history, agent_mode, use_rag, attachments)
@@ -1299,8 +1327,11 @@ def generate_answer(
                 memories,
             ),
             chat_config,
+            event_callback=event_callback,
         )
     except Exception as exc:
+        if event_callback is not None:
+            raise
         if has_remote_model_config(chat_config):
             return remote_model_error_answer(chat_config, exc)
         return fallback_answer(question, chunks, history, agent_mode, use_rag, attachments) + f"\n\nModel call failure reason: {exc}"

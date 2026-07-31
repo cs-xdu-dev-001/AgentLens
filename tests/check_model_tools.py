@@ -58,7 +58,11 @@ def main() -> None:
     require(backend, "ToolRegistry", "generic tool registry")
     require(backend, '"web_search"', "web search tool")
     require(backend, "TavilyWebSearch", "Tavily web search provider")
-    require(backend, 'tool_choice="auto"', "model-controlled tool choice")
+    require(
+        backend,
+        '"tool_choice": "auto"',
+        "model-controlled tool choice",
+    )
 
     require(frontend, 'id={"composer-plus-btn"}', "composer plus button")
     require(frontend, 'id={"composer-menu"}', "composer tool menu")
@@ -101,4 +105,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -189,7 +189,13 @@ def main() -> None:
             self.calls = 0
 
         def complete(
-            self, messages, config, *, tools=None, tool_choice=None
+            self,
+            messages,
+            config,
+            *,
+            tools=None,
+            tool_choice=None,
+            event_callback=None,
         ):
             self.calls += 1
             if self.calls == 1:
@@ -292,7 +298,13 @@ def main() -> None:
             self.calls = 0
 
         def complete(
-            self, messages, config, *, tools=None, tool_choice=None
+            self,
+            messages,
+            config,
+            *,
+            tools=None,
+            tool_choice=None,
+            event_callback=None,
         ):
             self.calls += 1
             if self.calls == 1:
@@ -329,6 +341,13 @@ def main() -> None:
                         },
                     ],
                 }
+            if event_callback is not None:
+                event_callback(
+                    {
+                        "type": "text_delta",
+                        "text": "snapshot answer",
+                    }
+                )
             return {"content": "snapshot answer"}
 
     class Pool:

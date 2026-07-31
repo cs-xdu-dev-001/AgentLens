@@ -200,7 +200,7 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 
 Do not commit `backend/.env`. The repository `.gitignore` excludes local environment files, runtime databases, uploads, logs, browser test profiles, and build output.
 
-Each chat model configuration can select either Chat Completions or the Responses API. Chat Completions is intended for traditional OpenAI-compatible endpoints; Responses requires the upstream service to genuinely support `POST /v1/responses`. KnowFlow does not auto-detect protocol support or automatically downgrade after a failure, preventing duplicate requests or tool execution. The OpenAI chat preset defaults to Responses, while existing configurations and configurations with the protocol field omitted default to Chat Completions. Mem0's separate LLM configuration is independent of the protocol selection in the settings page.
+Each chat model configuration can select either Chat Completions or the Responses API. Chat Completions is intended for traditional OpenAI-compatible endpoints. Responses sends `stream: true` to `POST /v1/responses`, expects standard SSE events, and requires a final `response.completed` event. Text deltas are forwarded to the browser as they arrive; tool arguments are aggregated before execution. KnowFlow does not auto-detect protocol support or downgrade after a failure, preventing duplicate requests or tool execution. If a compatible gateway returns HTTP 400, check that the selected model route supports Responses SSE rather than only Chat Completions. The OpenAI chat preset defaults to Responses, while existing configurations and configurations with the protocol field omitted default to Chat Completions. Mem0's separate LLM configuration is independent of the protocol selection in the settings page.
 
 ## Agent Tools and Traces
 
@@ -296,6 +296,7 @@ KnowFlow AI calls chat and embedding models through OpenAI-compatible endpoints:
 
 ```text
 POST {baseUrl}/chat/completions
+POST {baseUrl}/responses
 POST {baseUrl}/embeddings
 ```
 
