@@ -4,7 +4,7 @@
 
 **Goal:** 在现有Agent运行状态机上增加脱敏失败分类和右侧运行栏恢复操作，不重复实现执行器。
 
-**Architecture:** 后端新增纯函数失败分类器，执行路径保存具体错误码和固定公开摘要，`AgentRunStore`从持久化步骤或trace派生`failure`。前端新增`AgentRecoveryPanel`，复用既有`resume`、消息重试和页面导航事件。
+**Architecture:** 后端新增纯函数失败分类器，执行路径保存具体错误码和固定公开摘要，`AgentRunStore`从持久化步骤或trace派生`failure`。前端新增`AgentRecoveryPanel`，复用既有`resume`和页面导航；整轮重启由后端复制已持久化请求创建替代run，刷新后仍可用。
 
 **Tech Stack:** Python 3.10+、FastAPI、SQLAlchemy、React 18、SSE、项目现有`tests/check_*.py`契约测试。
 
@@ -14,6 +14,7 @@
 
 - Create: `backend/knowflow/services/agent_failure.py`，失败分类和快照恢复元数据。
 - Modify: `backend/knowflow/services/agent_run_store.py`，在run快照中派生`failure`。
+- Modify: `backend/knowflow/routers/agent_runs.py`，提供用户隔离的整轮重启接口。
 - Modify: `backend/knowflow/routers/extensions.py`，保留具体步骤错误并写入公开摘要。
 - Create: `frontend/react/src/components/AgentRecoveryPanel.jsx`，失败原因和恢复动作。
 - Modify: `frontend/react/src/components/ChatEvidenceDrawer.jsx`，挂载恢复面板。
@@ -106,7 +107,7 @@ Expected: PASS。
 require("AgentRecoveryPanel.jsx", "从失败步骤继续")
 require("AgentRecoveryPanel.jsx", "重新运行本轮")
 require("AgentRecoveryPanel.jsx", "knowflow:react-agent-run-action")
-require("AgentRecoveryPanel.jsx", "knowflow:react-message-retry")
+require("AgentRecoveryPanel.jsx", 'action: "restart"')
 require("AgentRecoveryPanel.jsx", "knowflow:react-page-activated")
 ```
 
@@ -117,7 +118,7 @@ Expected: FAIL，组件不存在。
 
 - [ ] **Step 3: 实现恢复组件**
 
-组件接收`run`和`messageId`，只在失败、已中断或已取消时渲染。计划失败主操作派发`resume`；其他情况派发消息重试。目标按钮只导航，不自动更改配置。
+组件接收`run`和`messageId`，只在失败、已中断或已取消时渲染。计划失败主操作派发`resume`；“重新运行本轮”调用后端`restart`，不依赖页面内存。目标按钮只导航，不自动更改配置。
 
 - [ ] **Step 4: 接入右侧运行栏**
 

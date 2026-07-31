@@ -7,6 +7,8 @@ import uuid
 
 from sqlalchemy import text
 
+from .agent_failure import recovery_from_snapshot
+
 
 RUN_TRANSITIONS: dict[str, set[str]] = {
     "planning": {"waiting_start", "running", "failed", "cancelled"},
@@ -115,6 +117,7 @@ class AgentRunStore:
         row: dict[str, Any],
         steps: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        trace = _json_value(row.get("trace_json"), [])
         return {
             "id": row["id"],
             "sessionId": row["session_id"],
@@ -124,7 +127,12 @@ class AgentRunStore:
             "triggerMode": row["trigger_mode"],
             "status": row["status"],
             "currentStepId": row.get("current_step_id"),
-            "trace": _json_value(row.get("trace_json"), []),
+            "trace": trace,
+            "failure": recovery_from_snapshot(
+                str(row["status"]),
+                steps,
+                trace,
+            ),
             "version": int(row.get("version") or 1),
             "startedAt": (
                 str(row["started_at"])
@@ -184,6 +192,7 @@ class AgentRunStore:
         user_id: int,
         session_id: str,
         user_message_id: int | None,
+        assistant_message_id: int | None = None,
         goal_summary: str,
         trigger_mode: str,
         request_payload: dict[str, Any] | None = None,
@@ -223,12 +232,14 @@ class AgentRunStore:
                     """
                     INSERT INTO agent_run(
                       id, user_id, session_id, user_message_id,
+                      assistant_message_id,
                       goal_summary, request_json, trigger_mode,
                       status, trace_json,
                       version, created_at, updated_at
                     )
                     VALUES (
                       :id, :user_id, :session_id, :user_message_id,
+                      :assistant_message_id,
                       :goal_summary, :request_json, :trigger_mode,
                       'planning', '[]',
                       1, :created_at, :updated_at
@@ -240,6 +251,7 @@ class AgentRunStore:
                     "user_id": user_id,
                     "session_id": session_id,
                     "user_message_id": user_message_id,
+                    "assistant_message_id": assistant_message_id,
                     "goal_summary": str(goal_summary)[:700],
                     "request_json": json.dumps(
                         request_payload or {},
@@ -304,6 +316,46 @@ class AgentRunStore:
             return None
         value = _json_value(row.get("request_json"), {})
         return value if isinstance(value, dict) else {}
+
+    def restart_run(
+        self,
+        user_id: int,
+        source_run_id: str,
+        *,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        snapshot = self.get_snapshot(user_id, source_run_id)
+        if snapshot is None:
+            raise AgentRunStoreError(
+                "agent_run_not_found",
+                "Agent run was not found.",
+            )
+        if snapshot["status"] not in {
+            "completed",
+            "failed",
+            "interrupted",
+            "cancelled",
+        }:
+            raise AgentRunStoreError(
+                "agent_run_not_restartable",
+                "Agent run cannot be restarted yet.",
+            )
+        request_payload = self.load_request(user_id, source_run_id)
+        if not request_payload:
+            raise AgentRunStoreError(
+                "agent_run_request_unavailable",
+                "Agent run request is unavailable.",
+            )
+        return self.create_run(
+            user_id=user_id,
+            session_id=str(snapshot["sessionId"]),
+            user_message_id=snapshot.get("userMessageId"),
+            assistant_message_id=snapshot.get("assistantMessageId"),
+            goal_summary=str(snapshot.get("goalSummary") or "Agent task"),
+            trigger_mode="auto",
+            request_payload=request_payload,
+            run_id=run_id,
+        )
 
     def attach_assistant_message(
         self,

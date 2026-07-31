@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentRunSummary } from "./AgentRunSummary.jsx";
+import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
 import { AgentTraceView } from "./AgentTraceView.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 
@@ -190,6 +191,10 @@ export function ChatEvidenceDrawer() {
           id={"agent-trace-panel"}
           role={"tabpanel"}
         >
+          <AgentRecoveryPanel
+            messageId={messageId}
+            run={run}
+          />
           {approvals.length ? (
             <div className={"agent-approval-drawer-list"}>
               {approvals.map((approval) => (

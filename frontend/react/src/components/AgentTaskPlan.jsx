@@ -130,15 +130,6 @@ export function AgentTaskPlan({
             </button>
           </>
         ) : null}
-        {["interrupted", "failed"].includes(run.status) ? (
-          <button
-            type={"button"}
-            className={"primary"}
-            onClick={() => dispatchAction(run, "resume", messageId)}
-          >
-            {"继续执行"}
-          </button>
-        ) : null}
         {active ? (
           <button
             type={"button"}

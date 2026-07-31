@@ -86,6 +86,7 @@ def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
         "start": {"waiting_start"},
         "replan": {"waiting_start"},
         "resume": {"interrupted", "failed"},
+        "restart": {"planning"},
     }[action]
     if snapshot["status"] not in allowed:
         raise HTTPException(
@@ -187,6 +188,34 @@ def replan_agent_run(run_id: str, request: Request) -> dict[str, Any]:
 def resume_agent_run(run_id: str, request: Request) -> dict[str, Any]:
     return api_success(
         _launch(current_user_id(request), run_id, "resume")
+    )
+
+
+@router.post("/api/agent/runs/{run_id}/restart")
+def restart_agent_run(run_id: str, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    _snapshot_or_404(user_id, run_id)
+    if _run_executor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent run executor is unavailable.",
+        )
+    try:
+        replacement = agent_runs.restart_run(user_id, run_id)
+    except AgentRunStoreError as exc:
+        status_code = (
+            404 if exc.code == "agent_run_not_found" else 409
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+    launched = _launch(user_id, replacement["id"], "restart")
+    return api_success(
+        {
+            "run": launched,
+            "replacesRunId": run_id,
+        }
     )
 
 

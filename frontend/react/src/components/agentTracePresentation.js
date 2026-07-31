@@ -424,7 +424,13 @@ export function traceStepFields(step) {
     && !["无", "执行中"].includes(isolated.outputSummary)
     && !output
   ) {
-    addField(fields, "结果摘要", isolated.outputSummary);
+    addField(
+      fields,
+      normalizeTraceStatus(step?.status) === "failed"
+        ? "失败原因"
+        : "结果摘要",
+      isolated.outputSummary,
+    );
   }
   if (isolated.errorCode) {
     addField(fields, "错误码", isolated.errorCode);

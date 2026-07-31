@@ -102,7 +102,6 @@ console.log(JSON.stringify({
     for token, label in (
         ("开始执行", "plan start action"),
         ("重新规划", "plan replan action"),
-        ("继续执行", "interrupted resume action"),
         ("停止任务", "running cancel action"),
         ("aria-current", "current step accessibility"),
         ("AgentTraceView", "selected step trace"),
@@ -110,6 +109,12 @@ console.log(JSON.stringify({
         ('role={"status"}', "empty step live status"),
     ):
         require(component, token, label)
+
+    require(
+        "frontend/react/src/components/AgentRecoveryPanel.jsx",
+        "从失败步骤继续",
+        "interrupted resume action",
+    )
 
     require(
         "frontend/react/src/api/client.js",

@@ -152,6 +152,10 @@ export const agentRunApi = {
     apiRequest(`/api/agent/runs/${runId}/resume`, {
       method: "POST",
     }),
+  restart: (runId) =>
+    apiRequest(`/api/agent/runs/${runId}/restart`, {
+      method: "POST",
+    }),
   cancel: (runId) =>
     apiRequest(`/api/agent/runs/${runId}/cancel`, {
       method: "POST",

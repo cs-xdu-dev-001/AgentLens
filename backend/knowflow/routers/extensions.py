@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from ..runtime import *
 from ..services.agent_loop import AgentRunner, ToolRegistry
+from ..services.agent_failure import classify_agent_failure
 from ..services.agent_trace import (
     AgentTraceRecorder,
     sanitize_trace_value,
@@ -43,6 +44,13 @@ class AgentRunCancelled(RuntimeError):
 
 class TaskPlanCreated(RuntimeError):
     pass
+
+
+class AgentStepExecutionError(RuntimeError):
+    def __init__(self, failure: dict[str, Any]):
+        self.failure = dict(failure)
+        self.code = str(failure["code"])
+        super().__init__(str(failure["summary"]))
 
 
 def _raise_if_cancelled(cancel_event: Event | None) -> None:
@@ -340,7 +348,7 @@ def execute_agent_chat(
         if command_mode == "plan_only"
         else payload.executionMode
     )
-    if run_action in {"start", "resume"}:
+    if run_action in {"start", "resume", "restart"}:
         execution_mode = "auto"
     if not normalized_question:
         raise HTTPException(
@@ -731,7 +739,7 @@ def execute_agent_chat(
 
             should_plan = (
                 existing_run_id is None
-                or run_action == "replan"
+                or run_action in {"replan", "restart"}
             ) and (
                 payload.autoAgent
                 or execution_mode == "plan_only"
@@ -928,9 +936,11 @@ def execute_agent_chat(
                             None,
                         )
                         if failed_execution is not None:
-                            raise RuntimeError(
-                                failed_execution.error_message
-                                or "Plan step failed."
+                            raise AgentStepExecutionError(
+                                classify_agent_failure(
+                                    code=failed_execution.error_code,
+                                    source="tool",
+                                )
                             )
                         public_result = (
                             sanitize_trace_value(
@@ -967,6 +977,11 @@ def execute_agent_chat(
             except Exception as exc:
                 if isinstance(exc, (AgentRunCancelled, TaskPlanCreated)):
                     raise
+                failure = (
+                    exc.failure
+                    if isinstance(exc, AgentStepExecutionError)
+                    else classify_agent_failure(exc)
+                )
                 run_failed = True
                 if current_plan_step_id:
                     snapshot = agent_runs.get_snapshot(
@@ -992,13 +1007,15 @@ def execute_agent_chat(
                             durable_run_id,
                             current_plan_step_id,
                             "failed",
-                            error_code="agent_step_failed",
+                            output_summary=str(failure["summary"]),
+                            error_code=str(failure["code"]),
                         )
                 trace.finish_step(
                     root_step,
                     status="failed",
                     title="Agent run failed",
-                    error_code="agent_run_failed",
+                    output_summary=failure["summary"],
+                    error_code=str(failure["code"]),
                 )
                 if has_remote_model_config(chat_config):
                     answer = remote_model_error_answer(
@@ -1263,13 +1280,15 @@ def execute_agent_chat(
             )
         publish_snapshot("cancelled")
         raise
-    except Exception:
+    except Exception as exc:
+        failure = classify_agent_failure(exc)
         if trace.steps[root_step]["status"] == "running":
             trace.finish_step(
                 root_step,
                 status="failed",
                 title="Agent run failed",
-                error_code="agent_run_failed",
+                output_summary=failure["summary"],
+                error_code=str(failure["code"]),
             )
         snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
         if snapshot and snapshot["status"] in {
@@ -1412,25 +1431,20 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                         )
                     )
                     return
-                error_code = (
-                    exc.code
-                    if isinstance(
-                        exc,
-                        McpToolConfigurationError,
-                    )
-                    else "agent_run_failed"
+                failure = classify_agent_failure(
+                    exc,
+                    source=(
+                        "mcp"
+                        if isinstance(exc, McpToolConfigurationError)
+                        else "agent"
+                    ),
                 )
                 queue.put(
                     (
                         "error",
                         {
-                            "code": error_code,
-                            "message": (
-                                "MCP tool configuration is invalid."
-                                if error_code
-                                == "mcp_tool_configuration_invalid"
-                                else "Agent run failed."
-                            ),
+                            "code": failure["code"],
+                            "message": failure["summary"],
                         },
                     )
                 )

@@ -681,17 +681,18 @@ export function createChatFlow({
     if (
       !runId
       || !messageId
-      || !["start", "replan", "resume", "cancel"].includes(action)
+      || !["start", "replan", "resume", "restart", "cancel"].includes(action)
     ) return;
     try {
       setSending(true);
       const result = await agentRunApi[action](runId);
       const nextRun = result?.run || result;
+      const nextRunId = nextRun?.id || runId;
       renderAgentRun({ messageId }, nextRun);
       if (action !== "cancel") {
-        state.activeRunId = runId;
+        state.activeRunId = nextRunId;
         state.activeRunMessageId = messageId;
-        await reconnectAgentRun(runId, messageId);
+        await reconnectAgentRun(nextRunId, messageId);
       } else {
         state.activeRunId = null;
         state.activeRunMessageId = null;

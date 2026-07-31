@@ -10885,6 +10885,98 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--inverse-text);
 }
 
+.agent-recovery-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--control-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+
+.agent-recovery-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.agent-recovery-signal {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.agent-recovery-heading > div {
+  min-width: 0;
+}
+
+.agent-recovery-heading strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
+.agent-recovery-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-recovery-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-left: 17px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.agent-recovery-code {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-left: 17px;
+}
+
+.agent-recovery-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 670;
+}
+
+.agent-recovery-actions button.primary {
+  border-color: var(--inverse-bg);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+}
+
 .agent-task-plan.compact {
   width: min(620px, 88%);
   margin: 0 0 12px;
@@ -10902,6 +10994,11 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .agent-task-actions button:hover {
     border-color: color-mix(in srgb, var(--text) 22%, var(--control-border));
   }
+
+  .agent-recovery-actions button:hover {
+    border-color: color-mix(in srgb, var(--text) 24%, var(--control-border));
+    background: var(--control-bg-hover);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -10914,6 +11011,16 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 @media (max-width: 760px) {
   .agent-task-plan.compact {
     width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .agent-recovery-actions {
+    padding-left: 0;
+  }
+
+  .agent-recovery-actions button {
+    flex: 1 1 140px;
   }
 }
 

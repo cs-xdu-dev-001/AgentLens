@@ -242,6 +242,55 @@ def main() -> None:
         f"/api/agent/runs/{completed['id']}/resume"
     )
     assert invalid_resume.status_code == 409, invalid_resume.text
+
+    restart_source = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id="session-run-restart",
+        user_message_id=5,
+        goal_summary="重新运行任务",
+        trigger_mode="auto",
+        request_payload={
+            "question": "重新运行任务",
+            "sessionId": "session-run-restart",
+        },
+        run_id="run_api_restart_source",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        restart_source["id"],
+        "running",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        restart_source["id"],
+        "failed",
+    )
+    restarted = Event()
+
+    def restart_executor(user_id, run_id, action, cancel_event, publish):
+        assert user_id == alice_id
+        assert run_id != restart_source["id"]
+        assert action == "restart"
+        assert runtime.agent_runs.load_request(user_id, run_id) == {
+            "question": "重新运行任务",
+            "sessionId": "session-run-restart",
+        }
+        runtime.agent_runs.transition_run(user_id, run_id, "running")
+        runtime.agent_runs.transition_run(user_id, run_id, "completed")
+        restarted.set()
+
+    run_router.configure_agent_run_executor(restart_executor)
+    restart_response = alice.post(
+        f"/api/agent/runs/{restart_source['id']}/restart"
+    )
+    assert restart_response.status_code == 200, restart_response.text
+    restart_data = restart_response.json()["data"]
+    assert restart_data["replacesRunId"] == restart_source["id"]
+    assert restart_data["run"]["id"] != restart_source["id"]
+    assert restarted.wait(1)
+    assert bob.post(
+        f"/api/agent/runs/{restart_source['id']}/restart"
+    ).status_code == 404
     print("agent run API and coordinator checks passed")
 
 
