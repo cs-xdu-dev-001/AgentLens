@@ -34,6 +34,11 @@ def forbid_in_function(path: str, function_name: str, needle: str, label: str) -
 
 
 def main() -> None:
+    settings = "frontend/react/src/components/SettingsPage.jsx"
+    form_path = "frontend/react/src/components/ModelConfigForm.jsx"
+    list_panel = "frontend/react/src/components/ModelListPanel.jsx"
+    details = "frontend/react/src/components/ModelConfigDetails.jsx"
+    styles = "frontend/styles.css"
     require("frontend/react/src/api/client.js", "modelConfigApi", "model config API helper")
     require("frontend/react/src/data/settings.js", "export const providerPresets", "provider preset data module")
     require("frontend/react/src/components/SettingsPage.jsx", "modelConfigApi", "settings page owns model API calls")
@@ -50,29 +55,30 @@ def main() -> None:
     require("frontend/react/src/components/ModelConfigForm.jsx", "onChange={onFieldChange}", "controlled model form input change")
     require("frontend/react/src/components/ModelConfigForm.jsx", "onSubmit={onSubmit}", "React submit callback")
     require("frontend/react/src/components/ModelConfigForm.jsx", "selectedPresetValue", "controlled preset select")
-    require("frontend/react/src/components/ModelConfigForm.jsx", "{editingModelId ? (", "cancel action only appears while editing")
+    require(form_path, "onCancel", "model form cancel action")
     require("frontend/react/src/components/ModelProviderSelector.jsx", "selectedProvider", "controlled provider selector")
     require("frontend/react/src/components/ModelProviderSelector.jsx", "aria-pressed={selectedProvider === provider.key}", "provider selection accessibility state")
     require("frontend/styles.css", "Compact provider selector pass", "compact provider selector styles")
     require("frontend/styles.css", "grid-template-columns: repeat(2, minmax(0, 1fr))", "two-column mobile provider selector")
     require("frontend/styles.css", ':root[data-theme="mono-dark"] #page-settings #provider-grid .provider-card.selected', "dark provider selected state")
     require("frontend/styles.css", "color: var(--text) !important;", "dark provider selected text contrast")
-    require("frontend/react/src/components/ModelListPanel.jsx", "onModelEdit", "model edit callback prop")
-    require("frontend/react/src/components/ModelListPanel.jsx", "onModelTest", "model test callback prop")
+    require(details, "onModelEdit", "model edit callback prop")
+    require(details, "onModelTest", "model test callback prop")
     require("frontend/react/src/components/ModelListPanel.jsx", "待检查", "productized unchecked model status")
-    require("frontend/react/src/components/ModelListPanel.jsx", "检查", "productized model connection action")
+    require(details, "检查连接", "productized model connection action")
     require("frontend/react/src/components/SettingsPage.jsx", "模型连接检查完成", "productized model connection success copy")
     require("frontend/react/src/components/SettingsPage.jsx", "检查模型失败", "productized model connection failure copy")
-    require("frontend/react/src/components/ModelListPanel.jsx", "onSetDefaultModel", "default model callback prop")
-    require("frontend/react/src/components/ModelListPanel.jsx", "onDeleteModel", "delete model callback prop")
+    require(details, "onSetDefaultModel", "default model callback prop")
+    require(details, "onDeleteModel", "delete model callback prop")
     settings_page = read("frontend/react/src/components/SettingsPage.jsx")
     form = read("frontend/react/src/components/ModelConfigForm.jsx")
     require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: "chat_completions"', "default API protocol")
     require("frontend/react/src/components/SettingsPage.jsx", 'function normalizeApiMode(value)', "API protocol normalization")
     require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: normalizeApiMode(preset.apiMode)', "preset API fallback")
     require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: normalizeApiMode(model.apiMode)', "model API fallback")
-    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: formValues.modelType === "chat" ? normalizeApiMode(formValues.apiMode) : "chat_completions"', "payload API protocol")
-    require("frontend/react/src/components/SettingsPage.jsx", 'name === "modelType" && value !== "chat" ? { apiMode: "chat_completions" }', "non-chat protocol reset")
+    require("frontend/react/src/components/SettingsPage.jsx", 'apiMode: formValues.modelType === "chat"', "payload API protocol condition")
+    require("frontend/react/src/components/SettingsPage.jsx", '? normalizeApiMode(formValues.apiMode)', "payload API protocol value")
+    require("frontend/react/src/components/SettingsPage.jsx", 'name === "modelType" && value !== "chat"', "non-chat protocol reset")
     if not re.search(r'formValues\.modelType === "chat" \? \(\s*<label>[\s\S]*?name=\{"apiMode"\}', form):
         raise AssertionError("API protocol select must be conditional on chat model type")
     for needle in ['value={"chat_completions"}>{"Chat Completions"}', 'value={"responses"}>{"Responses API"}']:
@@ -132,6 +138,43 @@ def main() -> None:
         "setEditingModelId(null)",
         "preset selection clearing model edit state",
     )
+
+    require(settings, "selectedModelId", "selected model state")
+    require(settings, "panelMode", "details and form mode")
+    require(settings, "ModelConfigDetails", "model details surface")
+    require(settings, "handleCreateModel", "create model workspace action")
+    require(list_panel, "aria-selected={selected}", "accessible selected row")
+    require(list_panel, "onModelSelect", "model selection callback")
+    require(details, "apiKeyMasked", "masked API key detail")
+    require(details, "onModelTest", "detail connection action")
+    require(details, "onSetDefaultModel", "detail default action")
+    require(details, "onDeleteModel", "detail delete action")
+    forbid(settings, "SettingsSidePanel", "obsolete settings note")
+
+    for field in ("temperature", "topP", "maxTokens"):
+        forbid(
+            form_path,
+            f'name={{"{field}"}}',
+            f"hidden {field} input",
+        )
+        require(
+            settings,
+            f"{field}:",
+            f"compatible {field} payload",
+        )
+    require(
+        form_path,
+        'providerKey === "custom"',
+        "custom-only provider identifier",
+    )
+    for token in (
+        "--font-size-page-title",
+        "--font-size-body",
+        "--control-height",
+        ".settings-workspace-shell",
+        ".model-config-details",
+    ):
+        require(styles, token, f"settings design token {token}")
 
     print("model settings are owned by React instead of legacy DOM bridges")
 

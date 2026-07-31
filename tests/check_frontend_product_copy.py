@@ -104,7 +104,7 @@ def main() -> None:
         "frontend/react/src/components/SettingsHeader.jsx": [
             "管理模型提供商、常用模型、API 密钥和接口文档。",
         ],
-        "frontend/react/src/components/SettingsSidePanel.jsx": [
+        "frontend/react/src/components/ModelConfigDetails.jsx": [
             "FastAPI 会生成交互式文档，方便本地调试接口。",
             "当前产品取舍",
             "第一版聚焦对话、RAG 和文档处理闭环。",
@@ -124,7 +124,7 @@ def main() -> None:
 
     require("frontend/react/src/components/ChatTopbar.jsx", "问答", "short chat title")
     require("frontend/react/src/components/KnowledgeHeader.jsx", "知识库", "short knowledge title")
-    require("frontend/react/src/components/SettingsHeader.jsx", "设置", "short settings title")
+    require("frontend/react/src/components/SettingsHeader.jsx", "模型配置", "short settings title")
     require("frontend/react/src/components/KnowledgeDocuments.jsx", "添加文档", "short upload action")
     require("frontend/react/src/components/KnowledgeRetrievalDrawer.jsx", "暂无结果", "short retrieval empty state")
     require("frontend/react/src/components/ModelListPanel.jsx", "暂无配置", "short model empty state")

@@ -189,7 +189,9 @@ def main() -> None:
     theme_toggle = read_text("frontend/react/src/components/ThemeToggle.jsx")
     react_index = read_text("frontend/react/index.html")
     navigation = read_text("frontend/react/src/data/navigation.js")
-    settings_side = read_text("frontend/react/src/components/SettingsSidePanel.jsx")
+    settings_details = read_text(
+        "frontend/react/src/components/ModelConfigDetails.jsx"
+    )
     required_theme_toggle = [
         ("function ThemeToggle", "theme toggle component"),
         ("knowflow-theme", "persisted theme key"),
@@ -203,10 +205,10 @@ def main() -> None:
         assert_contains(react_index, token, "pre-render theme bootstrap")
     for token in ['key: "api-docs"', 'label: "API 文档"', 'href: "/docs"']:
         assert token not in navigation, f"developer docs should not be a primary sidebar item: {token}"
-    assert "默认模型" in settings_side, "settings side panel should explain product state"
-    assert "<details" not in settings_side, "developer resources should not render in product settings"
+    assert "模型详情" in settings_details, "settings should expose selected model details"
+    assert "<details" not in settings_details, "developer resources should not render in product settings"
     for token in ["/docs", "/redoc", "/openapi.json", "/api/health", "高级入口", "接口文档"]:
-        assert token not in settings_side, f"developer resource should not render in product settings: {token}"
+        assert token not in settings_details, f"developer resource should not render in product settings: {token}"
     assert "Waiting for response" not in combined, "thinking state should not render visible waiting copy"
     assert "streaming:empty" not in css, "empty streaming pseudo-copy should not come back"
 

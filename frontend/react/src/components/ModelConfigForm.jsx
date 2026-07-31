@@ -17,9 +17,20 @@ export function ModelConfigForm({
   const presets = providerPresets[providerKey]?.models || [];
 
   return (
-    <form className={"panel stack-form"} id={"model-form"} onSubmit={onSubmit}>
-      <div className={"panel-title"}>
+    <form className={"model-config-form"} id={"model-form"} onSubmit={onSubmit}>
+      <div className={"model-config-form-header"}>
         <h2 id={"model-form-title"}>{editingModelId ? "编辑模型配置" : "新建模型配置"}</h2>
+        <button
+          className={"icon-button"}
+          type={"button"}
+          aria-label={"关闭配置表单"}
+          disabled={submitting}
+          onClick={onCancel}
+        >
+          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+            <path d={"M6 6l12 12M18 6 6 18"} />
+          </svg>
+        </button>
       </div>
 
       <ModelProviderSelector selectedProvider={providerKey} onProviderSelect={onProviderSelect} />
@@ -40,10 +51,12 @@ export function ModelConfigForm({
             ))}
           </select>
         </label>
-        <label>
-          {"提供商标识"}
-          <input name={"provider"} id={"model-provider"} value={formValues.provider} placeholder={"openai, newapi, oneapi, siliconflow"} required onChange={onFieldChange} />
-        </label>
+        {providerKey === "custom" ? (
+          <label>
+            {"提供商标识"}
+            <input name={"provider"} id={"model-provider"} value={formValues.provider} placeholder={"例如 newapi"} required onChange={onFieldChange} />
+          </label>
+        ) : null}
         <label>
           {"模型类型"}
           <select name={"modelType"} value={formValues.modelType} onChange={onFieldChange}>
@@ -70,31 +83,24 @@ export function ModelConfigForm({
           <input name={"baseUrl"} value={formValues.baseUrl} required onChange={onFieldChange} />
         </label>
         <label className={"wide"}>
-          {"API 密钥"}
-          <input name={"apiKey"} value={formValues.apiKey} type={"password"} placeholder={"sk-xxx"} onChange={onFieldChange} />
-        </label>
-        <label>
-          {"温度"}
-          <input name={"temperature"} type={"number"} step={"0.1"} value={formValues.temperature} onChange={onFieldChange} />
-        </label>
-        <label>
-          {"Top P"}
-          <input name={"topP"} type={"number"} step={"0.1"} value={formValues.topP} onChange={onFieldChange} />
-        </label>
-        <label>
-          {"最大 token 数"}
-          <input name={"maxTokens"} type={"number"} value={formValues.maxTokens} onChange={onFieldChange} />
+          {"API密钥"}
+          <input
+            name={"apiKey"}
+            value={formValues.apiKey}
+            type={"password"}
+            autoComplete={"new-password"}
+            placeholder={editingModelId ? "留空则沿用现有密钥" : "输入API密钥"}
+            onChange={onFieldChange}
+          />
         </label>
       </div>
       <div className={"button-row"}>
         <button type={"submit"} id={"model-submit-btn"} disabled={submitting}>
           {submitting ? "正在保存..." : editingModelId ? "更新配置" : "保存配置"}
         </button>
-        {editingModelId ? (
-          <button className={"secondary-button"} type={"button"} id={"model-cancel-btn"} onClick={onCancel} disabled={submitting}>
-            {"取消编辑"}
-          </button>
-        ) : null}
+        <button className={"secondary-button"} type={"button"} id={"model-cancel-btn"} onClick={onCancel} disabled={submitting}>
+          {"取消"}
+        </button>
       </div>
     </form>
   );
