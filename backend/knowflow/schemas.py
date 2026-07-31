@@ -16,6 +16,7 @@ class ModelConfigIn(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxTokens: int | None = None
+    apiMode: str = "chat_completions"
 
 
 class ModelConfigUpdate(BaseModel):
@@ -28,6 +29,7 @@ class ModelConfigUpdate(BaseModel):
     temperature: float | None = None
     topP: float | None = None
     maxTokens: int | None = None
+    apiMode: str | None = None
 
 
 class ToolConfigUpdate(BaseModel):

@@ -200,6 +200,8 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 
 Do not commit `backend/.env`. The repository `.gitignore` excludes local environment files, runtime databases, uploads, logs, browser test profiles, and build output.
 
+Each chat model configuration can select either Chat Completions or the Responses API. Chat Completions is intended for traditional OpenAI-compatible endpoints; Responses requires the upstream service to genuinely support `POST /v1/responses`. KnowFlow does not auto-detect protocol support or automatically downgrade after a failure, preventing duplicate requests or tool execution. The OpenAI chat preset defaults to Responses, while existing configurations and configurations with the protocol field omitted default to Chat Completions. Mem0's separate LLM configuration is independent of the protocol selection in the settings page.
+
 ## Agent Tools and Traces
 
 Each signed-in user configures their own Tavily key in the 设置页. The backend encrypts it in `tool_config`, never returns the plaintext key, and does not load a global Tavily key from the environment or startup script. The connection check uses one Tavily credit.

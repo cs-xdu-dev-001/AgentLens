@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,22 @@ def main() -> None:
     settings_page = read("frontend/react/src/components/SettingsPage.jsx")
     model_list = read("frontend/react/src/components/ModelListPanel.jsx")
     provider_doc = read("rag-test-documents/11_model_provider_config.yaml")
+    openai = re.search(r'openai:\s*\{([\s\S]*?)\n  \},\n  siliconflow:', settings)
+    if not openai:
+        raise AssertionError("unable to isolate OpenAI preset block")
+    openai_block = openai.group(1)
+    openai_objects = re.findall(r'\{([^{}]+)\}', openai_block)
+    for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]:
+        matches = [obj for obj in openai_objects if f'label: "{model}"' in obj or f'modelName: "{model}"' in obj]
+        if len(matches) != 1 or 'apiMode: "responses"' not in matches[0]:
+            raise AssertionError(f"OpenAI preset missing responses protocol: {model}")
+    embedding_objects = [obj for obj in openai_objects if 'modelType: "embedding"' in obj]
+    if any('apiMode: "responses"' in obj for obj in embedding_objects):
+        raise AssertionError("OpenAI embedding presets must not use responses protocol")
+    for provider in ["deepseek", "mimo", "siliconflow", "zhipu", "bailian"]:
+        block = re.search(rf'{provider}:\s*\{{([\s\S]*?)(?=\n  [a-z]+: \{{|\n  custom:)', settings)
+        if block and any('apiMode: "responses"' in obj for obj in re.findall(r'\{([^{}]+)\}', block.group(1))):
+            raise AssertionError(f"non-OpenAI provider incorrectly uses responses: {provider}")
 
     for model in [
         "deepseek-v4-flash",

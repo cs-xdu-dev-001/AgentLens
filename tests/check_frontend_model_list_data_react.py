@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,12 @@ def forbid(relative_path: str, needle: str, label: str) -> None:
 
 
 def main() -> None:
+    panel = read("frontend/react/src/components/ModelListPanel.jsx")
+    require("frontend/react/src/components/ModelListPanel.jsx", 'chat_completions: "Chat Completions"', "Chat Completions protocol label")
+    require("frontend/react/src/components/ModelListPanel.jsx", 'responses: "Responses API"', "Responses protocol label")
+    require("frontend/react/src/components/ModelListPanel.jsx", 'apiModeLabel[model.apiMode] || apiModeLabel.chat_completions', "legacy API protocol fallback")
+    if not re.search(r'model\.modelType === "chat" \? " · "', panel):
+        raise AssertionError("protocol must only render for chat models")
     require("frontend/react/src/components/SettingsPage.jsx", "loadModels", "React settings model loader")
     require("frontend/react/src/components/SettingsPage.jsx", "modelConfigApi.list", "React settings loads model list")
     require("frontend/react/src/components/SettingsPage.jsx", "setModels", "React settings owns model list state")
