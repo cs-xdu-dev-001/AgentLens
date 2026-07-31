@@ -1,3 +1,6 @@
+from queue import Empty, Queue
+from threading import Event, Thread
+
 from fastapi import APIRouter
 
 from ..runtime import *
@@ -69,8 +72,16 @@ async def upload_chat_attachment(file: UploadFile = File(...)) -> dict[str, Any]
     )
 
 
-@router.post("/api/chat", tags=CHAT_TAGS, summary="Create a chat answer")
-def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
+class _ChatStreamCancelled(BaseException):
+    pass
+
+
+def run_chat(
+    payload: ChatRequest,
+    request: Request,
+    *,
+    model_event_callback=None,
+) -> dict[str, Any]:
     user_id = current_user_id(request)
     use_rag = bool(payload.knowledgeBaseId) or payload.useRag
     if use_rag and not payload.knowledgeBaseId:
@@ -109,14 +120,19 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
         else []
     )
     chat_config = get_model_config(payload.chatModelConfigId, "chat", user_id)
+    answer_options = {
+        "use_rag": use_rag,
+        "attachments": payload.attachments,
+        "memories": memories if memory_active else None,
+    }
+    if model_event_callback is not None:
+        answer_options["event_callback"] = model_event_callback
     answer = generate_answer(
         payload.question,
         chunks,
         history,
         chat_config,
-        use_rag=use_rag,
-        attachments=payload.attachments,
-        memories=memories if memory_active else None,
+        **answer_options,
     )
     message_id = save_message(session_id, "assistant", answer)
     memory_activity = None
@@ -148,6 +164,11 @@ def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
     )
 
 
+@router.post("/api/chat", tags=CHAT_TAGS, summary="Create a chat answer")
+def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
+    return run_chat(payload, request)
+
+
 @router.post("/api/chat/stream", tags=CHAT_TAGS, summary="Stream a chat answer")
 def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
     if should_route_to_agent(payload):
@@ -156,27 +177,108 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
             or payload.useRag
         )
         return agent_chat_stream(payload, request)
-    result = chat(payload, request)["data"]
+    queue: Queue[tuple[str, Any]] = Queue()
+    cancelled = Event()
+
+    def forward_model_event(event: dict[str, Any]) -> None:
+        if cancelled.is_set():
+            raise _ChatStreamCancelled()
+        if event.get("type") == "text_delta" and event.get("text"):
+            queue.put(
+                (
+                    "message",
+                    {
+                        "type": "answer",
+                        "content": str(event["text"]),
+                    },
+                )
+            )
+
+    def worker() -> None:
+        try:
+            queue.put(
+                (
+                    "result",
+                    run_chat(
+                        payload,
+                        request,
+                        model_event_callback=forward_model_event,
+                    )["data"],
+                )
+            )
+        except _ChatStreamCancelled:
+            queue.put(("cancelled", None))
+        except Exception as exc:
+            queue.put(("error", exc))
+
+    Thread(target=worker, daemon=True).start()
 
     def generate() -> Iterable[str]:
-        for call in result.get("toolCalls", []):
-            yield sse_event("tool", {"type": "tool", **call})
-        for i in range(0, len(result["answer"]), 12):
-            yield sse_event("message", {"type": "answer", "content": result["answer"][i : i + 12]})
-            time.sleep(0.02)
-        for ref in result["references"]:
-            yield sse_event("reference", {"type": "reference", **ref})
-        if result.get("ragQuality", {}).get("enabled"):
-            yield sse_event("quality", {"type": "quality", "ragQuality": result["ragQuality"], "retrievalRun": result.get("retrievalRun")})
-        yield sse_event(
-            "done",
-            {
-                "type": "done",
-                "sessionId": result["sessionId"],
-                "messageId": result["messageId"],
-                "memoryActivity": result.get("memoryActivity"),
-            },
-        )
+        streamed_answer = False
+        try:
+            while True:
+                try:
+                    event_name, value = queue.get(timeout=0.25)
+                except Empty:
+                    yield ": keepalive\n\n"
+                    continue
+                if event_name == "message":
+                    streamed_answer = True
+                    yield sse_event("message", value)
+                    continue
+                if event_name == "cancelled":
+                    return
+                if event_name == "error":
+                    yield sse_event(
+                        "error",
+                        {
+                            "type": "error",
+                            "code": "chat_stream_failed",
+                            "message": str(value) or "Chat stream failed.",
+                        },
+                    )
+                    return
+                result = value
+                for call in result.get("toolCalls", []):
+                    yield sse_event(
+                        "tool",
+                        {"type": "tool", **call},
+                    )
+                if not streamed_answer:
+                    for i in range(0, len(result["answer"]), 12):
+                        yield sse_event(
+                            "message",
+                            {
+                                "type": "answer",
+                                "content": result["answer"][i : i + 12],
+                            },
+                        )
+                for ref in result["references"]:
+                    yield sse_event(
+                        "reference",
+                        {"type": "reference", **ref},
+                    )
+                if result.get("ragQuality", {}).get("enabled"):
+                    yield sse_event(
+                        "quality",
+                        {
+                            "type": "quality",
+                            "ragQuality": result["ragQuality"],
+                            "retrievalRun": result.get("retrievalRun"),
+                        },
+                    )
+                yield sse_event(
+                    "done",
+                    {
+                        "type": "done",
+                        "sessionId": result["sessionId"],
+                        "messageId": result["messageId"],
+                        "memoryActivity": result.get("memoryActivity"),
+                    },
+                )
+                return
+        finally:
+            cancelled.set()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

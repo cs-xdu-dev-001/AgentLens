@@ -1310,6 +1310,7 @@ def generate_answer(
     use_rag: bool = False,
     attachments: list[ChatAttachment] | None = None,
     memories: list[dict[str, Any]] | None = None,
+    event_callback=None,
 ) -> str:
     if use_rag and not chunks and not attachments:
         return fallback_answer(question, chunks, history, agent_mode, use_rag, attachments)
@@ -1326,6 +1327,7 @@ def generate_answer(
                 memories,
             ),
             chat_config,
+            event_callback=event_callback,
         )
     except Exception as exc:
         if has_remote_model_config(chat_config):

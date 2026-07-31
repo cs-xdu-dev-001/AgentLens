@@ -181,8 +181,14 @@ class ModelGateway:
         self,
         messages: list[dict[str, Any]],
         config: dict[str, Any] | None = None,
+        *,
+        event_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> str:
-        message = self.complete(messages, config)
+        message = self.complete(
+            messages,
+            config,
+            event_callback=event_callback,
+        )
         return str(message.get("content") or "")
 
     def local_answer(self, messages: list[dict[str, Any]]) -> str:
