@@ -109,14 +109,21 @@ class AgentRunner:
     def __init__(self, *, gateway, max_tool_rounds=3): self.gateway=gateway; self.max_tool_rounds=max(0,max_tool_rounds)
     def run(self, *, messages, config, registry, trace=None, parent_step_id=None, approval_gate=None,
             skill_snapshot: dict[str, Any] | None = None,
-            execution_callback: Callable[[ToolExecution, str | None], None] | None = None):
+            execution_callback: Callable[[ToolExecution, str | None], None] | None = None,
+            model_event_callback: Callable[[dict[str, Any]], None] | None = None):
         working=[dict(m) for m in messages]; executions=[]; current_parent_step_id=parent_step_id
         current_skill_snapshot=dict(skill_snapshot) if skill_snapshot else None
         for tool_round in range(self.max_tool_rounds+1):
             schemas=registry.schemas()
             ms=trace.start_step(kind="model",name="model_completion",title="Model is analyzing",parent_id=current_parent_step_id,input_summary={"messageCount":len(working),"toolCount":len(schemas)}) if trace else None
             try:
-                message=self.gateway.complete(working,config,tools=schemas or None,tool_choice="auto" if schemas else None)
+                completion_options = {
+                    "tools": schemas or None,
+                    "tool_choice": "auto" if schemas else None,
+                }
+                if model_event_callback is not None:
+                    completion_options["event_callback"] = model_event_callback
+                message=self.gateway.complete(working,config,**completion_options)
             except Exception:
                 if trace and ms: trace.finish_step(ms,status="failed",title="Model request failed",error_code="model_request_failed")
                 raise

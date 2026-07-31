@@ -65,10 +65,24 @@ class FakeComplete:
         *,
         tools=None,
         tool_choice=None,
+        event_callback=None,
     ):
         assert tools
         assert tool_choice == "auto"
         if messages[-1]["role"] == "tool":
+            if event_callback is not None:
+                event_callback(
+                    {
+                        "type": "text_delta",
+                        "text": "See [Current source]",
+                    }
+                )
+                event_callback(
+                    {
+                        "type": "text_delta",
+                        "text": "(https://example.com/current).",
+                    }
+                )
             return {
                 "role": "assistant",
                 "content": (
@@ -226,12 +240,18 @@ def main() -> None:
         for index, event in enumerate(events)
         if event.get("type") == "answer"
     )
-    last_trace_event = max(
+    last_tool_event = max(
         index
         for index, event in enumerate(events)
         if event.get("type") == "agent_step"
+        and event.get("kind") == "tool"
     )
-    assert last_trace_event < first_answer
+    assert last_tool_event < first_answer
+    assert "".join(
+        str(event.get("content") or "")
+        for event in events
+        if event.get("type") == "answer"
+    ) == "See [Current source](https://example.com/current)."
     done = next(
         event
         for event in events

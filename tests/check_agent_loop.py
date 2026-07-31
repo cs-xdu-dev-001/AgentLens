@@ -99,6 +99,60 @@ def main() -> None:
         for step in result.trace
     )
 
+    class StreamingGateway:
+        def __init__(self):
+            self.round = 0
+
+        def complete(
+            self,
+            messages,
+            config,
+            *,
+            tools=None,
+            tool_choice=None,
+            event_callback=None,
+        ):
+            self.round += 1
+            if self.round == 1:
+                return {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call()],
+                }
+            assert messages[-1]["role"] == "tool"
+            if event_callback:
+                event_callback({"type": "text_delta", "text": "final "})
+                event_callback({"type": "text_delta", "text": "answer"})
+                event_callback(
+                    {
+                        "type": "completed",
+                        "message": {
+                            "role": "assistant",
+                            "content": "final answer",
+                            "tool_calls": [],
+                        },
+                    }
+                )
+            return {
+                "role": "assistant",
+                "content": "final answer",
+                "tool_calls": [],
+            }
+
+    model_events = []
+    streaming = AgentRunner(gateway=StreamingGateway()).run(
+        messages=[{"role": "user", "content": "Search then answer"}],
+        config={"model_name": "fake"},
+        registry=make_registry(),
+        model_event_callback=model_events.append,
+    )
+    assert streaming.answer == "final answer"
+    assert len(streaming.executions) == 1
+    assert [event["text"] for event in model_events if event["type"] == "text_delta"] == [
+        "final ",
+        "answer",
+    ]
+
     direct_gateway = FakeGateway(
         [{"role": "assistant", "content": "No search needed."}]
     )
