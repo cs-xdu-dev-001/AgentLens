@@ -260,6 +260,7 @@ def build_responses_payload(
     payload: dict[str, Any] = {
         "model": config["model_name"],
         "store": False,
+        "stream": True,
         "input": messages_to_response_input(messages),
     }
     if tools:

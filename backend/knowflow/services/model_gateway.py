@@ -1,19 +1,32 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from .responses_protocol import build_responses_payload, parse_responses_message
+from .responses_protocol import (
+    ResponsesStreamAccumulator,
+    build_responses_payload,
+    iter_sse_json,
+)
 
 
 class ModelGateway:
-    def __init__(self, *, fetch_one, cipher, post_model_json, local_embedding):
+    def __init__(
+        self,
+        *,
+        fetch_one,
+        cipher,
+        post_model_json,
+        local_embedding,
+        stream_model_json=None,
+    ):
         self.fetch_one = fetch_one
         self.cipher = cipher
         self.post_model_json = post_model_json
         self.local_embedding = local_embedding
+        self.stream_model_json = stream_model_json
 
     def get_config(self, config_id: int | None, model_type: str, user_id: int | None = None) -> dict[str, Any] | None:
         if config_id:
@@ -109,6 +122,7 @@ class ModelGateway:
         *,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
+        event_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         if config is None:
             return {"role": "assistant", "content": self.local_answer(messages)}
@@ -118,11 +132,26 @@ class ModelGateway:
         if not self.cipher.decrypt(config.get("api_key_cipher")):
             return {"role": "assistant", "content": self.local_answer(messages)}
         if api_mode == "responses":
+            if self.stream_model_json is None:
+                raise RuntimeError(
+                    "Responses streaming transport is not configured."
+                )
             url = self.endpoint(config["base_url"], "/responses")
             payload = build_responses_payload(messages, config, tools=tools, tool_choice=tool_choice)
-            response = self.post_model_json(url, self.headers(config), payload)
-            response.raise_for_status()
-            return parse_responses_message(response.json())
+            accumulator = ResponsesStreamAccumulator()
+            with self.stream_model_json(
+                url,
+                self.headers(config),
+                payload,
+            ) as response:
+                response.raise_for_status()
+                for upstream_event in iter_sse_json(
+                    response.iter_content(chunk_size=None)
+                ):
+                    for public_event in accumulator.feed(upstream_event):
+                        if event_callback is not None:
+                            event_callback(public_event)
+            return accumulator.finish()
         url = self.endpoint(config["base_url"], "/chat/completions")
         payload: dict[str, Any] = {
             "model": config["model_name"],

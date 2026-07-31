@@ -1,4 +1,6 @@
 from pathlib import Path
+from contextlib import contextmanager
+import json
 import sys
 
 
@@ -10,6 +12,67 @@ from knowflow.services.responses_protocol import (
     ResponsesStreamAccumulator,
     iter_sse_json,
 )
+from knowflow.services.model_gateway import ModelGateway
+
+
+class FakeCipher:
+    def decrypt(self, value):
+        return value or ""
+
+
+class FakeStreamResponse:
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.closed = False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, chunk_size=None):
+        assert chunk_size is None
+        yield from self.chunks
+
+    def close(self):
+        self.closed = True
+
+
+def stream_chunks(text: str = "Hello"):
+    events = [
+        {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "msg_gateway",
+                "type": "message",
+                "content": [],
+            },
+        },
+        {
+            "type": "response.output_text.delta",
+            "item_id": "msg_gateway",
+            "delta": text[:3],
+        },
+        {
+            "type": "response.output_text.delta",
+            "item_id": "msg_gateway",
+            "delta": text[3:],
+        },
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "id": "msg_gateway",
+                "type": "message",
+                "content": [{"type": "output_text", "text": text}],
+            },
+        },
+        {
+            "type": "response.completed",
+            "response": {"status": "completed", "output": []},
+        },
+    ]
+    return [
+        f"data: {json.dumps(event)}\n\n".encode("utf-8")
+        for event in events
+    ]
 
 
 def expect_protocol_error(callback, expected: str) -> None:
@@ -166,6 +229,74 @@ def main() -> None:
         ResponsesStreamAccumulator().finish,
         "response.completed",
     )
+
+    captured = {}
+    fake_response = FakeStreamResponse(stream_chunks())
+
+    @contextmanager
+    def stream_model_json(url, headers, payload, timeout=None):
+        captured.update(
+            url=url,
+            headers=headers,
+            payload=payload,
+            timeout=timeout,
+        )
+        try:
+            yield fake_response
+        finally:
+            fake_response.close()
+
+    gateway = ModelGateway(
+        fetch_one=lambda *_args, **_kwargs: None,
+        cipher=FakeCipher(),
+        post_model_json=lambda *_args, **_kwargs: None,
+        stream_model_json=stream_model_json,
+        local_embedding=lambda _text: [0.0],
+    )
+    deltas = []
+    config = {
+        "model_type": "chat",
+        "api_mode": "responses",
+        "model_name": "gpt-test",
+        "base_url": "https://example.com/v1",
+        "api_key_cipher": "test-key",
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "max_tokens": 123,
+    }
+    message = gateway.complete(
+        [{"role": "user", "content": "Hi"}],
+        config,
+        event_callback=deltas.append,
+    )
+    assert captured["url"] == "https://example.com/v1/responses"
+    assert captured["payload"]["stream"] is True
+    assert deltas == [
+        {"type": "text_delta", "text": "Hel"},
+        {"type": "text_delta", "text": "lo"},
+        {"type": "completed", "message": message},
+    ]
+    assert message == {
+        "role": "assistant",
+        "content": "Hello",
+        "tool_calls": [],
+    }
+    assert fake_response.closed is True
+
+    test_response = FakeStreamResponse(stream_chunks("pong"))
+
+    @contextmanager
+    def test_stream(*_args, **_kwargs):
+        try:
+            yield test_response
+        finally:
+            test_response.close()
+
+    gateway.stream_model_json = test_stream
+    status, detail = gateway.test(config)
+    assert status == "available"
+    assert "Responses API" in detail
+    assert test_response.closed is True
     print("responses streaming protocol parses SSE and aggregates output")
 
 

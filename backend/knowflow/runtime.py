@@ -13,6 +13,7 @@ import secrets
 import time
 import uuid
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -492,6 +493,31 @@ def post_model_json(url: str, headers: dict[str, str], payload: dict[str, Any], 
         session.close()
 
 
+@contextmanager
+def stream_model_json(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout: int | None = None,
+):
+    session = requests.Session()
+    session.trust_env = MODEL_TRUST_ENV
+    response = None
+    try:
+        response = session.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=timeout or MODEL_REQUEST_TIMEOUT,
+            stream=True,
+        )
+        yield response
+    finally:
+        if response is not None:
+            response.close()
+        session.close()
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     iterations = 210_000
@@ -777,6 +803,7 @@ gateway = ModelGateway(
     fetch_one=fetch_one,
     cipher=cipher,
     post_model_json=post_model_json,
+    stream_model_json=stream_model_json,
     local_embedding=local_embedding,
 )
 
