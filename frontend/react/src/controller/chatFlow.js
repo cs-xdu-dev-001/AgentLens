@@ -200,6 +200,7 @@ export function createChatFlow({
     renderAgentTrace(null, []);
     renderAgentApprovals(null, []);
     renderAgentRun(null, null);
+    window.dispatchEvent(new CustomEvent("knowflow:react-drawer-close"));
     requestComposerReset({ focus: true });
     state.chatAttachments = [];
     renderAttachmentTray();
