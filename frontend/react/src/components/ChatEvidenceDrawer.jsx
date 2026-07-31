@@ -207,7 +207,10 @@ export function ChatEvidenceDrawer() {
             trace={trace}
           />
           {!run?.steps?.length ? (
-            <AgentTraceView trace={trace} />
+            <AgentTraceView
+              messageId={messageId}
+              trace={trace}
+            />
           ) : null}
         </div>
       ) : (

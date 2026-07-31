@@ -177,7 +177,10 @@ def main() -> None:
     messages = "frontend/react/src/components/ChatMessages.jsx"
     events = "frontend/react/src/controller/messageEvents.js"
     flow = "frontend/react/src/controller/chatFlow.js"
-    trace = "frontend/react/src/components/AgentTraceView.jsx"
+    trace = (
+        "frontend/react/src/components/agentTracePresentation.js"
+    )
+    activity = "frontend/react/src/controller/memoryActivity.js"
     styles = "frontend/react/src/styles.css"
 
     require(
@@ -241,7 +244,7 @@ def main() -> None:
         "memory detail drawer reuse",
     )
     require(
-        messages,
+        activity,
         "knowflow:react-memory-activity-updated",
         "settled activity broadcast",
     )
@@ -266,7 +269,7 @@ def main() -> None:
         "history memory state",
     )
     require(trace, 'memory: "MEMORY"', "memory trace badge")
-    require(trace, "memoryDetailsForDisplay", "safe memory item details")
+    require(trace, "traceMemoryItems", "safe memory item details")
     require(styles, ".memory-activity-status", "compact status styling")
     require(styles, ".memory-activity-retry", "retry styling")
     check_memory_trace_reconciliation()

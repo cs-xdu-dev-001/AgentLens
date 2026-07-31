@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_trace import AgentTraceRecorder
+from knowflow.services.agent_loop import AgentRunner, ToolRegistry
 
 
 class FakeClock:
@@ -17,6 +18,12 @@ class FakeClock:
 
     def __call__(self):
         return self.value
+
+
+class FakeGateway:
+    @staticmethod
+    def complete(messages, config, **options):
+        return {"content": "done", "tool_calls": []}
 
 
 def main() -> None:
@@ -81,6 +88,32 @@ def main() -> None:
         memory,
     ]
     assert all(step["status"] == "success" for step in snapshot)
+
+    model_trace = AgentTraceRecorder(run_id="run_model_trace")
+    AgentRunner(gateway=FakeGateway(), max_tool_rounds=0).run(
+        messages=[{"role": "user", "content": "hello"}],
+        config={
+            "model_name": "gpt-safe-display",
+            "api_mode": "responses",
+            "api_key": "model-super-secret",
+            "base_url": "https://private.example/v1",
+        },
+        registry=ToolRegistry(),
+        trace=model_trace,
+    )
+    model_step = next(
+        step
+        for step in model_trace.snapshot()
+        if step["name"] == "model_completion"
+    )
+    assert model_step["details"] == {
+        "modelName": "gpt-safe-display",
+        "apiMode": "responses",
+    }
+    serialized_model = json.dumps(model_step, ensure_ascii=False)
+    assert "model-super-secret" not in serialized_model
+    assert "private.example" not in serialized_model
+
     extension_source = (
         ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
     ).read_text(encoding="utf-8")

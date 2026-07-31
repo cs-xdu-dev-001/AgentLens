@@ -5,6 +5,7 @@ import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js"
 import {
   memoryActivityTrace,
   mergeMemoryActivityTrace,
+  publishMemoryActivity,
 } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
@@ -85,22 +86,7 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
 
   const publishActivity = (nextActivity) => {
     setActivity(nextActivity);
-    const detail = {
-      messageId,
-      memoryActivity: nextActivity,
-    };
-    window.dispatchEvent(
-      new CustomEvent(
-        "knowflow:react-message-memory-activity",
-        { detail },
-      ),
-    );
-    window.dispatchEvent(
-      new CustomEvent(
-        "knowflow:react-memory-activity-updated",
-        { detail },
-      ),
-    );
+    publishMemoryActivity(messageId, nextActivity);
   };
 
   useEffect(() => {

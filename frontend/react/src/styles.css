@@ -8855,13 +8855,23 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .agent-trace-row {
   width: calc(100% - var(--trace-depth) * 18px);
   margin-left: calc(var(--trace-depth) * 18px);
+  overflow: hidden;
+  border-radius: 11px;
+}
+
+.agent-trace-row.expanded {
+  margin-block: 3px 7px;
+  background: var(--surface);
+  box-shadow:
+    0 5px 18px rgba(19, 26, 34, 0.08),
+    inset 0 0 0 1px var(--control-border);
 }
 
 .agent-trace-node {
   width: 100%;
   min-height: 52px;
   display: grid;
-  grid-template-columns: 12px 56px minmax(0, 1fr) auto;
+  grid-template-columns: 12px 56px minmax(0, 1fr) auto 16px;
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
@@ -8879,7 +8889,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .agent-trace-node.running,
 .agent-trace-node.waiting,
-.agent-trace-node.selected {
+.agent-trace-node.selected:not(.expanded) {
   background: var(--surface);
   box-shadow:
     0 4px 14px rgba(19, 26, 34, 0.08),
@@ -8920,45 +8930,104 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: color-mix(in srgb, var(--warning) 88%, var(--text));
 }
 
-.agent-trace-detail {
+.agent-trace-node-chevron {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--control-bg);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  place-items: center;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.agent-trace-detail > div {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
+.agent-trace-node[aria-expanded="true"] .agent-trace-node-chevron {
+  transform: rotate(180deg);
 }
 
-.agent-trace-detail span {
+.agent-trace-step-detail {
+  display: grid;
+  gap: 12px;
+  padding: 2px 11px 12px 76px;
+  border-top: 1px solid var(--control-border);
+}
+
+.agent-trace-reason {
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+}
+
+.agent-trace-reason > span,
+.agent-trace-memory-items > span {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 680;
+}
+
+.agent-trace-reason p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.agent-trace-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.agent-trace-fields > div {
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+
+.agent-trace-fields dt {
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-size: 11px;
   font-weight: 650;
 }
 
-.agent-trace-detail code {
-  max-height: 132px;
-  overflow: auto;
-  color: var(--text-soft);
-  font-family: "Cascadia Code", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.5;
+.agent-trace-fields dd {
+  margin: 0;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.4;
 }
 
-.agent-trace-detail > .agent-trace-context {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 7px 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--control-border);
+.agent-trace-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.agent-trace-detail-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.agent-trace-detail-actions button.primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--surface);
+}
+
+.agent-trace-detail-actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
 }
 
 .agent-approval-list,
@@ -9144,13 +9213,17 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   .agent-trace-node {
     min-height: 48px;
-    grid-template-columns: 12px 50px minmax(0, 1fr) auto;
+    grid-template-columns: 12px 50px minmax(0, 1fr) auto 14px;
     padding-inline: 7px;
   }
 
   .agent-trace-row {
     width: calc(100% - var(--trace-depth) * 12px);
     margin-left: calc(var(--trace-depth) * 12px);
+  }
+
+  .agent-trace-step-detail {
+    padding-left: 10px;
   }
 
   .agent-trace-strip {

@@ -58,7 +58,10 @@ def extract_object_const(source: str, name: str) -> str:
 
 
 def check_skill_renderer_fixture() -> None:
-    path = "frontend/react/src/components/AgentTraceView.jsx"
+    path = (
+        "frontend/react/src/components/"
+        "agentTracePresentation.js"
+    )
     source = read(path)
     declarations = "\n".join(
         [
@@ -424,8 +427,23 @@ def main() -> None:
         "current step accessibility",
     )
     view = "frontend/react/src/components/AgentTraceView.jsx"
-    require(view, 'kind === "skill"', "Skill title branch")
-    require(view, 'skill: "SKILL"', "Skill kind badge")
+    detail = (
+        "frontend/react/src/components/"
+        "AgentTraceStepDetail.jsx"
+    )
+    presentation = (
+        "frontend/react/src/components/"
+        "agentTracePresentation.js"
+    )
+    require(
+        view,
+        "AgentTraceStepDetail",
+        "inline trace detail component",
+    )
+    require(view, "aria-expanded={expanded}", "node expansion state")
+    require(view, "userSelectedRef", "manual selection preservation")
+    require(presentation, 'kind === "skill"', "Skill title branch")
+    require(presentation, 'skill: "SKILL"', "Skill kind badge")
     for token in (
         "displayName",
         "version",
@@ -433,7 +451,7 @@ def main() -> None:
         "requiredTools",
         "requiredMcp",
     ):
-        require(view, token, f"safe Skill detail {token}")
+        require(presentation, token, f"safe Skill detail {token}")
     for token in (
         "systemMessage",
         "system_message",
@@ -444,45 +462,46 @@ def main() -> None:
         "packagePath",
         "localPath",
     ):
-        forbid(view, token, f"private Skill detail {token}")
+        forbid(presentation, token, f"private Skill detail {token}")
     for token in (
-        "selected.details?.token",
-        "selected.details?.key",
-        "selected.details?.email",
-        "summaryText(selected.inputSummary",
-        "summaryText(selected.outputSummary",
-        "selected.errorCode",
-        "JSON.stringify(selected.details",
+        "step.details?.token",
+        "step.details?.key",
+        "step.details?.email",
+        "JSON.stringify(step.details",
         "JSON.stringify(details",
-        "summaryText(selected.details",
+        "summaryText(step.details",
     ):
-        forbid(view, token, "whole/private Skill detail rendering")
+        forbid(
+            presentation,
+            token,
+            "whole/private Skill detail rendering",
+        )
     require(
-        view,
-        "traceDetailsForDisplay(selected)",
+        presentation,
+        "traceDetailsForDisplay(step)",
         "Skill and generic detail isolation",
     )
     require(
-        view,
-        "selectedDetails.inputSummary",
-        "generic input reads isolated detail",
+        detail,
+        "traceStepFields(step)",
+        "generic fields use isolated presentation",
     )
     require(
-        view,
-        "selectedDetails.outputSummary",
-        "generic output reads isolated detail",
+        detail,
+        "traceStepReason(step)",
+        "human-readable execution reason",
     )
     for token in (
-        "selected.details?.toolName",
-        "selected.details?.risk",
-        "selected.outputSummary?.decision",
+        "step.details?.toolName",
+        "step.details?.risk",
+        "step.outputSummary?.decision",
         "kindLabels[step.kind] || step.kind",
         "statusLabels[step.status] || step.status",
     ):
-        forbid(view, token, "unsafe direct React child")
+        forbid(detail, token, "unsafe direct React child")
     require(
-        view,
-        "traceContextForDisplay(selected)",
+        presentation,
+        "traceContextForDisplay(step)",
         "safe MCP and approval context",
     )
     require(
@@ -494,6 +513,40 @@ def main() -> None:
         view,
         "traceStatusLabel(step.status)",
         "safe status fallback",
+    )
+    for token in (
+        "为什么执行",
+        "复制详情",
+        "管理长期记忆",
+        "重新运行本轮",
+    ):
+        require(detail, token, f"interactive detail {token}")
+    for token in (
+        "traceStepReason",
+        "traceStepFields",
+        "traceCopyText",
+        "traceStepTarget",
+    ):
+        require(
+            presentation,
+            token,
+            f"trace presentation helper {token}",
+        )
+    require(detail, "memoryApi.retryOperation", "memory retry API")
+    require(
+        detail,
+        "knowflow:react-message-retry",
+        "failed run retry event",
+    )
+    require(
+        detail,
+        "knowflow:react-page-activated",
+        "related page navigation",
+    )
+    forbid(
+        detail,
+        "JSON.stringify(step.details",
+        "raw trace details rendering",
     )
     check_skill_renderer_fixture()
     require(

@@ -115,7 +115,23 @@ class AgentRunner:
         current_skill_snapshot=dict(skill_snapshot) if skill_snapshot else None
         for tool_round in range(self.max_tool_rounds+1):
             schemas=registry.schemas()
-            ms=trace.start_step(kind="model",name="model_completion",title="Model is analyzing",parent_id=current_parent_step_id,input_summary={"messageCount":len(working),"toolCount":len(schemas)}) if trace else None
+            ms=trace.start_step(
+                kind="model",
+                name="model_completion",
+                title="Model is analyzing",
+                parent_id=current_parent_step_id,
+                input_summary={
+                    "messageCount": len(working),
+                    "toolCount": len(schemas),
+                },
+                details={
+                    "modelName": str(config.get("model_name") or ""),
+                    "apiMode": str(
+                        config.get("api_mode")
+                        or "chat_completions"
+                    ),
+                },
+            ) if trace else None
             try:
                 completion_options = {
                     "tools": schemas or None,

@@ -47,6 +47,25 @@ export function memoryActivityTrace(activity) {
   return operations(activity).map(operationTraceStep);
 }
 
+export function publishMemoryActivity(messageId, memoryActivity) {
+  const detail = {
+    messageId,
+    memoryActivity,
+  };
+  window.dispatchEvent(
+    new CustomEvent(
+      "knowflow:react-message-memory-activity",
+      { detail },
+    ),
+  );
+  window.dispatchEvent(
+    new CustomEvent(
+      "knowflow:react-memory-activity-updated",
+      { detail },
+    ),
+  );
+}
+
 export function mergeMemoryActivityTrace(trace, activity) {
   const safeTrace = Array.isArray(trace) ? trace : [];
   const operationSteps = new Map(

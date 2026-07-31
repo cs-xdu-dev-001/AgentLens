@@ -97,7 +97,10 @@ export function AgentTaskPlan({
               {selected ? (
                 <div className={"agent-task-step-trace"}>
                   {selectedTrace.length ? (
-                    <AgentTraceView trace={selectedTrace} />
+                    <AgentTraceView
+                      messageId={messageId}
+                      trace={selectedTrace}
+                    />
                   ) : (
                     <p className={"agent-task-step-empty"} role={"status"}>
                       {"暂无执行记录"}

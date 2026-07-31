@@ -55,13 +55,15 @@ def main() -> None:
     require(strip, 'step.status === "waiting"', "waiting step priority")
     require(strip, 'step.kind === "approval"', "approval step priority")
 
-    view = "frontend/react/src/components/AgentTraceView.jsx"
-    require(view, 'mcp: "MCP"', "MCP node")
-    require(view, 'approval: "APPROVAL"', "approval node")
-    require(view, "serverName", "server detail")
-    require(view, "toolName", "tool detail")
-    require(view, "risk", "risk detail")
-    require(view, "decision", "decision detail")
+    presentation = (
+        "frontend/react/src/components/agentTracePresentation.js"
+    )
+    require(presentation, 'mcp: "MCP"', "MCP node")
+    require(presentation, 'approval: "APPROVAL"', "approval node")
+    require(presentation, "serverName", "server detail")
+    require(presentation, "toolName", "tool detail")
+    require(presentation, "risk", "risk detail")
+    require(presentation, "decision", "decision detail")
 
     summary = "frontend/react/src/components/AgentRunSummary.jsx"
     require(summary, 'step.kind === "tool" || step.kind === "mcp"', "MCP tool count")
