@@ -39,7 +39,10 @@ def main() -> None:
     extension_source = (
         BACKEND / "knowflow" / "routers" / "extensions.py"
     ).read_text(encoding="utf-8")
-    assert "memories=memories if memory_active else None" in chat_source
+    assert (
+        '"memories": memories if memory_active else None'
+        in chat_source
+    )
     assert "memories=memories if memory_active else None" in extension_source
 
     print("memory-enabled answers do not claim an unverified write")

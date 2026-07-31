@@ -1293,7 +1293,7 @@ def remote_model_error_answer(chat_config: dict[str, Any], exc: Exception) -> st
             "",
             f"- Model configuration: {model_identity(chat_config)}",
             f"- Endpoint: {base_url or 'not configured'}",
-            f"- Failure reason: {exc}",
+            f"- Failure reason: {gateway._safe_error(exc)}",
             "",
             "Suggested checks:",
             *[f"- {hint}" for hint in hints],

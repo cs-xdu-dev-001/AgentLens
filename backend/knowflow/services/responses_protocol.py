@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from typing import Any
-import copy, json
+import copy, json, re
 
 
 MAX_SSE_EVENT_BYTES = 1_048_576
@@ -21,6 +21,38 @@ def _normalize_items(items):
 
 class ResponsesProtocolError(ValueError):
     """Raised when a Responses API payload/response violates the expected shape."""
+
+
+def sanitize_upstream_error(value: Any, *, limit: int = 300) -> str:
+    text = " ".join(str(value or "").split())
+    text = re.sub(
+        r"Bearer\s+[^\s,;]+",
+        "Bearer [redacted]",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"sk-[A-Za-z0-9_-]+",
+        "sk-[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)"
+        r"\s*[:=]\s*[^\s,;]+",
+        "[REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(?:api[_-]?key|token)=([^\s&]+)",
+        "[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"([?&][^=\s]+)=([^&\s]+)",
+        r"\1=[REDACTED]",
+        text,
+    )
+    return text[:limit]
 
 
 def iter_sse_json(chunks: Iterable[bytes]) -> Iterator[dict[str, Any]]:
@@ -72,9 +104,14 @@ class ResponsesStreamAccumulator:
 
     @staticmethod
     def _error_text(code: Any, message: Any) -> str:
-        safe_code = str(code or "responses_stream_error")[:100]
-        safe_message = " ".join(str(message or "Responses stream failed.").split())
-        return f"{safe_code}: {safe_message[:300]}"
+        safe_code = sanitize_upstream_error(
+            code or "responses_stream_error",
+            limit=100,
+        )
+        safe_message = sanitize_upstream_error(
+            message or "Responses stream failed.",
+        )
+        return f"{safe_code}: {safe_message}"
 
     def _store_item(self, item: Any) -> str:
         if not isinstance(item, dict):

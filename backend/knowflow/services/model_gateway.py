@@ -9,6 +9,7 @@ from .responses_protocol import (
     ResponsesStreamAccumulator,
     build_responses_payload,
     iter_sse_json,
+    sanitize_upstream_error,
 )
 
 
@@ -74,18 +75,40 @@ class ModelGateway:
     def _safe_error(exc: Exception) -> str:
         try: raw = str(exc)
         except Exception: raw = ""
-        try: status = getattr(getattr(exc, "response", None), "status_code", None)
+        try: response = getattr(exc, "response", None)
+        except Exception: response = None
+        try: status = getattr(response, "status_code", None)
         except Exception: status = None
         if not isinstance(status, int) and not (isinstance(status, str) and status.isdigit() and len(status) < 5): status = None
+        upstream_code = ""
+        upstream_message = ""
+        if response is not None:
+            try:
+                payload = response.json()
+                error = (
+                    payload.get("error")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                if isinstance(error, dict):
+                    upstream_code = str(
+                        error.get("code")
+                        or error.get("type")
+                        or ""
+                    )
+                    upstream_message = str(error.get("message") or "")
+            except Exception:
+                pass
         text = " ".join(raw.split())
+        if upstream_code or upstream_message:
+            text = " ".join(
+                value
+                for value in (upstream_code, upstream_message)
+                if value
+            )
         if "{" in text or "[" in text:
             text = "Upstream request failed."
-        text = re.sub(r"Bearer\s+[^\s,;]+", "Bearer [redacted]", text, flags=re.I)
-        text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-[redacted]", text)
-        text = re.sub(r"Authorization\s*[:=]\s*[^\s,;]+", "Authorization: [redacted]", text, flags=re.I)
-        text = re.sub(r"(?:api[_-]?key|token)=[^\s&]+", "[redacted]", text, flags=re.I)
-        text = re.sub(r"([?&][^=\s]+)=([^&\s]+)", r"\1=[REDACTED]", text)
-        text = re.sub(r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)\s*[:=]\s*[^\s,;]+", "[REDACTED]", text)
+        text = sanitize_upstream_error(text, limit=450)
         suffix = f" (HTTP {status})" if status is not None else ""
         return f"{type(exc).__name__}{suffix}: {text}"[:500]
 

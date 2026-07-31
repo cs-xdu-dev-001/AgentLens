@@ -67,7 +67,15 @@ class FakeProvider:
 
 
 class FakeComplete:
-    def __call__(self, messages, config, *, tools=None, tool_choice=None):
+    def __call__(
+        self,
+        messages,
+        config,
+        *,
+        tools=None,
+        tool_choice=None,
+        event_callback=None,
+    ):
         names = {
             item["function"]["name"]
             for item in (tools or [])
@@ -78,6 +86,10 @@ class FakeComplete:
         )
         if "create_task_plan" in names:
             if "简单问候" in joined:
+                if event_callback is not None:
+                    event_callback(
+                        {"type": "text_delta", "text": "你好！"}
+                    )
                 return {"role": "assistant", "content": "你好！"}
             return {
                 "role": "assistant",

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.responses_protocol import (
+    MAX_SSE_EVENT_BYTES,
     ResponsesProtocolError,
     ResponsesStreamAccumulator,
     iter_sse_json,
@@ -191,19 +192,47 @@ def main() -> None:
         "incomplete event",
     )
     expect_protocol_error(
+        lambda: list(iter_sse_json([b"x" * (MAX_SSE_EVENT_BYTES + 1)])),
+        "size limit",
+    )
+    expect_protocol_error(
         lambda: ResponsesStreamAccumulator().feed(
             {
                 "type": "response.failed",
                 "response": {
                     "error": {
                         "code": "upstream_failed",
-                        "message": "The model failed.",
+                        "message": (
+                            "The model failed for sk-live-secret with "
+                            "Authorization: Bearer hidden-token."
+                        ),
                     }
                 },
             }
         ),
         "upstream_failed",
     )
+    try:
+        ResponsesStreamAccumulator().feed(
+            {
+                "type": "response.failed",
+                "response": {
+                    "error": {
+                        "code": "upstream_failed",
+                        "message": (
+                            "The model failed for sk-live-secret with "
+                            "Authorization: Bearer hidden-token."
+                        ),
+                    }
+                },
+            }
+        )
+    except ResponsesProtocolError as exc:
+        public_error = str(exc)
+        assert "sk-live-secret" not in public_error
+        assert "hidden-token" not in public_error
+    else:
+        raise AssertionError("expected sanitized ResponsesProtocolError")
     expect_protocol_error(
         lambda: ResponsesStreamAccumulator().feed(
             {
@@ -282,6 +311,61 @@ def main() -> None:
         "tool_calls": [],
     }
     assert fake_response.closed is True
+
+    cancelled_response = FakeStreamResponse(stream_chunks())
+
+    @contextmanager
+    def cancelled_stream(*_args, **_kwargs):
+        try:
+            yield cancelled_response
+        finally:
+            cancelled_response.close()
+
+    gateway.stream_model_json = cancelled_stream
+    try:
+        gateway.complete(
+            [{"role": "user", "content": "Hi"}],
+            config,
+            event_callback=lambda _event: (_ for _ in ()).throw(
+                RuntimeError("cancel stream")
+            ),
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "cancel stream"
+    else:
+        raise AssertionError("expected callback cancellation")
+    assert cancelled_response.closed is True
+
+    class ErrorResponse:
+        status_code = 400
+
+        @staticmethod
+        def json():
+            return {
+                "error": {
+                    "type": "invalid_request_error",
+                    "code": "unsupported_parameter",
+                    "message": (
+                        "Unsupported stream option for sk-live-secret "
+                        "Authorization: Bearer hidden-token."
+                    ),
+                }
+            }
+
+    class ErrorWithResponse(RuntimeError):
+        def __init__(self):
+            super().__init__(
+                "400 Client Error for url: "
+                "https://model.example/v1/responses?api_key=secret"
+            )
+            self.response = ErrorResponse()
+
+    public_error = gateway._safe_error(ErrorWithResponse())
+    assert "unsupported_parameter" in public_error, public_error
+    assert "Unsupported stream option" in public_error, public_error
+    assert "sk-live-secret" not in public_error
+    assert "hidden-token" not in public_error
+    assert "api_key=secret" not in public_error
 
     test_response = FakeStreamResponse(stream_chunks("pong"))
 

@@ -234,7 +234,7 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
                         {
                             "type": "error",
                             "code": "chat_stream_failed",
-                            "message": str(value) or "Chat stream failed.",
+                            "message": "Chat stream failed.",
                         },
                     )
                     return
