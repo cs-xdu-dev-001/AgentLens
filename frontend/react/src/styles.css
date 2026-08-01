@@ -12205,3 +12205,84 @@ select {
     border-radius: 20px !important;
   }
 }
+
+/* Compact composer chrome. */
+#page-chat.chat-empty #chat-form.composer .composer-shell,
+#page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+  grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+  grid-template-rows: minmax(24px, auto) 36px !important;
+  column-gap: 4px !important;
+  row-gap: 1px !important;
+  min-height: 0 !important;
+  padding: 7px 9px 7px 12px !important;
+  border-radius: 18px !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 22px rgba(0, 0, 0, 0.06) !important;
+}
+
+#chat-form.composer .composer-input-stack {
+  display: contents !important;
+}
+
+#chat-form.composer .composer-input-stack textarea {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+  min-height: 24px !important;
+  padding: 0 3px !important;
+  font-size: 15px !important;
+  line-height: 24px !important;
+}
+
+#chat-form.composer .composer-plus {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+}
+
+#chat-form.composer .composer-model-picker {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  align-self: center;
+}
+
+#page-chat #chat-form.composer .composer-shell > button#chat-submit-btn.composer-send-button[type="submit"] {
+  grid-column: 3 !important;
+  grid-row: 2 !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 12px !important;
+}
+
+#chat-form.composer .composer-shell:has(.selected-skill-pill) {
+  grid-template-rows: auto minmax(24px, auto) 36px !important;
+}
+
+#chat-form.composer .composer-shell:has(.selected-skill-pill) .selected-skill-pill {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+}
+
+#chat-form.composer .composer-shell:has(.selected-skill-pill) textarea {
+  grid-row: 2 !important;
+}
+
+#chat-form.composer .composer-shell:has(.selected-skill-pill) .composer-plus,
+#chat-form.composer .composer-shell:has(.selected-skill-pill) .composer-model-picker,
+#chat-form.composer .composer-shell:has(.selected-skill-pill) #chat-submit-btn {
+  grid-row: 3 !important;
+}
+
+@media (max-width: 520px) {
+  #page-chat.chat-empty #chat-form.composer .composer-shell,
+  #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+    padding: 7px 8px 7px 10px !important;
+    border-radius: 17px !important;
+  }
+}
