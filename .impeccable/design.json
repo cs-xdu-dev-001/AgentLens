@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-02T00:00:00+08:00",
+  "title": "Design System: KnowFlow AI",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "暖灰画布", "canonical": "#f2f2ef", "tonalRamp": ["#1d1d1b", "#373734", "#565651", "#777771", "#9a9a93", "#bdbdb6", "#ddddD7", "#f2f2ef"] },
+      "surface": { "role": "neutral", "displayName": "纸面白", "canonical": "#fbfbf9", "tonalRamp": ["#1e1e1d", "#393938", "#585856", "#7a7a77", "#9e9e9a", "#c2c2be", "#e2e2df", "#fbfbf9"] },
+      "text": { "role": "primary", "displayName": "工作台黑", "canonical": "#171717", "tonalRamp": ["#171717", "#303030", "#4b4b4a", "#686866", "#878783", "#a7a7a2", "#cecec8", "#f3f3ef"] },
+      "border": { "role": "neutral", "displayName": "结构灰线", "canonical": "#d8d8d0", "tonalRamp": ["#242422", "#40403d", "#5e5e59", "#7e7e77", "#9f9f98", "#bfbfb8", "#d8d8d0", "#f0f0ec"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "页面标题", "purpose": "页面名称和高价值分区标题。" },
+      "title": { "displayName": "内容标题", "purpose": "卡片、抽屉和任务节点名称。" },
+      "body": { "displayName": "正文", "purpose": "聊天、表单和主要说明。" },
+      "label": { "displayName": "标签", "purpose": "控件、状态和紧凑元数据。" }
+    },
+    "shadows": [
+      { "name": "floating-composer", "value": "0 18px 46px rgba(15, 23, 42, 0.10)", "purpose": "底部悬浮输入框。" },
+      { "name": "temporary-overlay", "value": "0 10px 24px rgba(19, 26, 34, 0.16)", "purpose": "菜单和对话框。" }
+    ],
+    "motion": [
+      { "name": "state-change", "value": "160ms ease", "purpose": "悬停、选中和展开的短状态变化。" }
+    ],
+    "breakpoints": [
+      { "name": "wide", "value": "1180px" },
+      { "name": "workspace", "value": "900px" },
+      { "name": "mobile", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "操作区中的唯一主要动作。",
+      "html": "<button class=\"ds-btn-primary\">保存配置</button>",
+      "css": ".ds-btn-primary{border:0;border-radius:10px;background:#151515;color:#f7f7f2;padding:10px 16px;font:600 14px/1.4 Inter,system-ui,sans-serif;transition:background 160ms ease,transform 160ms ease}.ds-btn-primary:hover{background:#303030}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid #171717;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "取消、刷新和次级管理动作。",
+      "html": "<button class=\"ds-btn-secondary\">取消</button>",
+      "css": ".ds-btn-secondary{border:1px solid #d8d8d0;border-radius:10px;background:#fbfbf9;color:#171717;padding:10px 16px;font:600 14px/1.4 Inter,system-ui,sans-serif;transition:background 160ms ease,border-color 160ms ease}.ds-btn-secondary:hover{background:#f6f6f3;border-color:#c8c8bf}.ds-btn-secondary:focus-visible{outline:2px solid #171717;outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "设置和搜索中的标准输入字段。",
+      "html": "<label class=\"ds-field\"><span>模型名称</span><input value=\"gpt-5.5\" /></label>",
+      "css": ".ds-field{display:grid;gap:6px;color:#303030;font:600 14px/1.4 Inter,system-ui,sans-serif}.ds-field input{border:1px solid #d8d8d0;border-radius:10px;background:#fbfbf9;color:#171717;padding:10px 12px;font:400 16px/1.4 Inter,system-ui,sans-serif}.ds-field input:hover{border-color:#c8c8bf}.ds-field input:focus-visible{outline:2px solid #171717;outline-offset:1px}"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "description": "左侧主导航的选中状态。",
+      "html": "<button class=\"ds-nav-item\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 6h16M4 12h16M4 18h10\"/></svg><span>工具与MCP</span></button>",
+      "css": ".ds-nav-item{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:10px;background:#e7e7e2;color:#171717;padding:10px 12px;font:600 16px/1.4 Inter,system-ui,sans-serif;text-align:left}.ds-nav-item svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}.ds-nav-item:hover{background:#deded8}.ds-nav-item:focus-visible{outline:2px solid #171717;outline-offset:2px}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "表示运行状态和连接状态。",
+      "html": "<span class=\"ds-status-chip\"><i></i>已完成</span>",
+      "css": ".ds-status-chip{display:inline-flex;align-items:center;gap:7px;border-radius:999px;background:#e7e7e2;color:#303030;padding:4px 10px;font:600 14px/1.4 Inter,system-ui,sans-serif}.ds-status-chip i{width:7px;height:7px;border-radius:50%;background:#171717}"
+    },
+    {
+      "name": "Agent Trace Row",
+      "kind": "custom",
+      "description": "右侧运行轨迹的一条可选择节点。",
+      "html": "<button class=\"ds-trace-row\"><span class=\"ds-trace-dot\"></span><span class=\"ds-trace-kind\">TOOL</span><span class=\"ds-trace-copy\"><strong>联网搜索完成</strong><small>工具 · 已完成</small></span><time>967ms</time></button>",
+      "css": ".ds-trace-row{display:grid;grid-template-columns:8px 54px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;border:1px solid transparent;border-radius:14px;background:transparent;color:#171717;padding:12px;text-align:left}.ds-trace-row:hover{background:#f6f6f3}.ds-trace-row:focus-visible{outline:2px solid #171717;outline-offset:2px}.ds-trace-dot{width:8px;height:8px;border-radius:50%;background:#171717}.ds-trace-kind{font:700 12px/1 Inter,system-ui,sans-serif}.ds-trace-copy{display:grid;gap:2px;min-width:0}.ds-trace-copy strong{font:650 16px/1.35 Inter,system-ui,sans-serif}.ds-trace-copy small,.ds-trace-row time{color:#696965;font:400 14px/1.35 Inter,system-ui,sans-serif}"
+    },
+    {
+      "name": "Composer",
+      "kind": "custom",
+      "description": "聊天页的两层融合输入框。",
+      "html": "<div class=\"ds-composer\"><input placeholder=\"有问题尽管问。输入 / 选择Skill\"/><div><button class=\"ds-model\">GPT-5.5⌄</button><button class=\"ds-send\" aria-label=\"发送\">↑</button></div></div>",
+      "css": ".ds-composer{display:grid;gap:8px;border:1px solid #d8d8d0;border-radius:18px;background:#fbfbf9;padding:12px 12px 10px;box-shadow:0 18px 46px rgba(15,23,42,.10)}.ds-composer input{border:0;outline:0;background:transparent;color:#171717;padding:0 4px;font:400 16px/1.5 Inter,system-ui,sans-serif}.ds-composer>div{display:flex;align-items:center;justify-content:space-between}.ds-model{border:0;border-radius:8px;background:transparent;color:#303030;padding:5px 8px;font:600 14px/1.4 Inter,system-ui,sans-serif}.ds-model:hover{background:#f6f6f3}.ds-send{width:36px;height:36px;border:0;border-radius:10px;background:#151515;color:#f7f7f2;font-size:22px}.ds-model:focus-visible,.ds-send:focus-visible{outline:2px solid #171717;outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "安静的可见工作台",
+    "overview": "KnowFlow AI不是仪表盘陈列馆，也不是重新包装的聊天框。它是一张安静、专业的Agent工作台：主体让用户专注任务，右侧运行面板把模型、工具、Skills、MCP、记忆和计划的关键状态讲清楚。界面保持低饱和黑白中性色，不用装饰制造高级感，而通过清晰层级、稳定密度和真实状态建立可信度。优化以现有界面为基础，保留当前导航、三栏聊天布局、黑白视觉语言和主要交互，只收敛字体、间距、圆角、边框、控件和信息密度。",
+    "keyCharacteristics": ["安静克制的黑白中性色", "桌面优先、长时间使用友好的工作台密度", "状态优先、细节按需展开的Agent过程", "统一而不过度圆润的控件语言", "中文优先、专业但不晦涩的表达"],
+    "rules": [
+      { "name": "The Monochrome-First Rule", "body": "默认操作和结构只使用中性色；语义色必须对应真实状态，不能作为装饰。", "section": "colors" },
+      { "name": "The Four-Level Rule", "body": "一个界面最多同时使用四级文字角色，避免用零散字号制造层级。", "section": "typography" },
+      { "name": "The Existing-Skeleton Rule", "body": "优化不得改变现有信息架构和主导航位置；任何结构变化必须解决明确的可用性问题并单独确认。", "section": "layout" },
+      { "name": "The Flat-By-Default Rule", "body": "常驻表面默认无阴影；只有空间上真实悬浮的元素才获得阴影。", "section": "elevation" },
+      { "name": "The Radius Budget Rule", "body": "同一组件只使用一个主圆角；大圆角不能层层嵌套。", "section": "shapes" }
+    ],
+    "dos": ["Do 在现有黑白三栏界面上做系统性收敛，而不是换一套视觉世界。", "Do 让模型、工具、Skills、MCP、记忆和计划使用一致的状态语言。", "Do 同时验证桌面、窄屏、长文本、空状态和键盘操作。"],
+    "donts": ["Don't 用大标题配一段低对比小字来制造层级。", "Don't 为高级感增加渐变、玻璃拟态、发光、厚阴影或装饰性色块。", "Don't 改名、换Logo、重排导航或改变核心交互，除非用户另行确认。"]
+  }
+}
