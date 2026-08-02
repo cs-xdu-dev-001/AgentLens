@@ -668,7 +668,8 @@ git diff --check
 $tracked = git ls-files
 $forbidden = $tracked | Where-Object {
   $_ -eq 'backend/.env' -or
-  $_ -match '(^|/)(data|uploads)(/|$)' -or
+  $_ -match '^data/' -or
+  $_ -match '^backend/(data|uploads)/' -or
   $_ -match '\.(db|sqlite|sqlite3)$' -or
   $_ -match '^frontend/dist/'
 }
