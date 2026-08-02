@@ -50,6 +50,17 @@ def main() -> None:
         ".agent-trace-step-detail",
     ):
         assert token in source, f"missing chat refinement: {token}"
+    form = read("frontend/react/src/components/ModelConfigForm.jsx")
+    for field in ('name={"temperature"}', 'name={"topP"}'):
+        assert field not in form, f"non-essential field returned: {field}"
+    for token in (
+        "/* KnowFlow refinement: settings */",
+        ".settings-workspace-shell",
+        ".model-config-item",
+        ".model-config-details",
+        ".model-config-form",
+    ):
+        assert token in source, f"missing settings refinement: {token}"
     print("frontend refinement system is wired")
 
 

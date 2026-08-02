@@ -482,3 +482,234 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* KnowFlow refinement: settings */
+#page-settings .settings-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.settings-workspace-shell {
+  min-height: 0;
+  grid-template-columns: 292px minmax(0, 1fr);
+  margin: 20px 24px 24px;
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: var(--kf-radius-panel);
+  background: var(--panel-bg);
+  box-shadow: none;
+}
+
+.model-config-list {
+  border-right: 1px solid var(--control-border);
+  background: color-mix(in srgb, var(--workspace-bg) 72%, var(--panel-bg));
+}
+
+.model-config-list-header {
+  min-height: 48px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.model-config-list-header strong {
+  font-size: var(--kf-type-label);
+  font-weight: 680;
+}
+
+.model-config-list-header span {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  font-size: 12px;
+}
+
+.model-config-item {
+  min-height: 76px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--control-border);
+  background: transparent;
+  transition: background-color var(--kf-transition);
+}
+
+.model-config-item::before {
+  inset-block: 12px;
+  width: 2px;
+}
+
+.model-config-item.selected {
+  background: var(--panel-bg);
+}
+
+.model-config-provider-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--control-bg);
+  font-size: 10px;
+}
+
+.model-config-item-copy {
+  gap: 2px;
+}
+
+.model-config-item-copy strong {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.model-config-item-copy span {
+  font-size: 13px;
+}
+
+.model-config-item-copy small,
+.model-config-status,
+.model-config-default {
+  font-size: 12px;
+}
+
+.model-config-default {
+  padding: 2px 6px;
+}
+
+.settings-workspace-detail {
+  min-width: 0;
+  background: var(--panel-bg);
+}
+
+.model-config-details,
+.model-config-form {
+  min-width: 0;
+  gap: 18px;
+  padding: 22px 24px 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.model-config-detail-header,
+.model-config-form-header {
+  min-height: 52px;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.model-config-detail-header h2,
+.model-config-form-header h2 {
+  margin: 5px 0 2px;
+  font-size: var(--kf-type-title);
+  font-weight: 700;
+}
+
+.model-config-detail-header p {
+  font-size: 13px;
+}
+
+.model-config-detail-grid {
+  gap: 0 24px;
+}
+
+.model-config-detail-grid > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.model-config-detail-grid dt {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-config-detail-grid dd {
+  font-size: 14px;
+  font-weight: 580;
+}
+
+.model-config-detail-actions,
+#page-settings .button-row {
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.model-config-detail-actions button,
+#page-settings .button-row button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: var(--kf-radius-control);
+  font-size: 14px;
+  font-weight: 640;
+}
+
+#page-settings .model-config-form .form-grid {
+  gap: 14px 12px;
+}
+
+#page-settings .model-config-form label {
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+#page-settings .model-config-form input,
+#page-settings .model-config-form select {
+  min-height: 40px;
+  border-radius: var(--kf-radius-control);
+  background: var(--control-bg);
+}
+
+#page-settings #provider-grid.provider-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+}
+
+#page-settings #provider-grid .provider-card {
+  width: auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: var(--control-bg);
+  box-shadow: none;
+}
+
+#page-settings #provider-grid .provider-card strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+#page-settings #provider-grid .provider-card.selected {
+  border-color: var(--inverse-bg);
+  color: var(--inverse-text);
+  background: var(--inverse-bg);
+}
+
+.settings-list-empty,
+.settings-detail-empty {
+  min-height: 220px;
+  gap: 6px;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+@media (hover: hover) {
+  .model-config-item:hover {
+    background: var(--control-bg-hover);
+  }
+
+  #page-settings #provider-grid .provider-card:hover:not(.selected) {
+    border-color: var(--line-strong);
+    color: var(--text);
+    background: var(--control-bg-hover);
+  }
+}
