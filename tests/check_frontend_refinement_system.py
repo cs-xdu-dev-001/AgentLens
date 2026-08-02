@@ -61,6 +61,17 @@ def main() -> None:
         ".model-config-form",
     ):
         assert token in source, f"missing settings refinement: {token}"
+    for token in (
+        "/* KnowFlow refinement: management pages */",
+        "#page-knowledge",
+        "#page-skills",
+        "#page-memory",
+        "#page-tools",
+        ".skills-list-row",
+        ".memory-item",
+        ".mcp-server-card",
+    ):
+        assert token in source, f"missing management refinement: {token}"
     print("frontend refinement system is wired")
 
 

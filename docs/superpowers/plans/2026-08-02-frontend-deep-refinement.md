@@ -408,7 +408,7 @@ git commit -m "style: simplify model settings workspace"
         "#page-skills",
         "#page-memory",
         "#page-tools",
-        ".skill-row",
+        ".skills-list-row",
         ".memory-item",
         ".mcp-server-card",
     ):
@@ -434,7 +434,7 @@ Expected: FAIL，提示缺少管理页面精修规则。
   border-bottom: 1px solid var(--control-border);
 }
 
-:where(.skill-row, .memory-item, .mcp-server-card) {
+:where(.skills-list-row, .memory-item, .mcp-server-card) {
   border: 0;
   border-bottom: 1px solid var(--control-border);
   border-radius: 0;
@@ -442,7 +442,7 @@ Expected: FAIL，提示缺少管理页面精修规则。
   box-shadow: none;
 }
 
-:where(.skill-row, .memory-item, .mcp-server-card):hover {
+:where(.skills-list-row, .memory-item, .mcp-server-card):hover {
   background: var(--control-bg-hover);
 }
 
