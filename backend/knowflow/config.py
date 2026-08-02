@@ -45,6 +45,13 @@ def env_float(name: str, default: float) -> float:
         return default
 
 
+def normalize_agent_engine_name(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "current":
+        return normalized
+    return "current"
+
+
 def normalize_sqlite_db_url(raw_url: str) -> str:
     if not raw_url.startswith("sqlite:///"):
         return raw_url
@@ -128,6 +135,9 @@ DEFAULT_TOP_K = env_int("KNOWFLOW_TOP_K", 5)
 RETRIEVAL_SCORE_THRESHOLD = env_float("KNOWFLOW_RAG_SCORE_THRESHOLD", 0.25)
 MODEL_REQUEST_TIMEOUT = env_int("KNOWFLOW_MODEL_REQUEST_TIMEOUT", 45)
 MODEL_TRUST_ENV = os.getenv("KNOWFLOW_MODEL_TRUST_ENV", "0") == "1"
+AGENT_ENGINE = normalize_agent_engine_name(
+    os.getenv("KNOWFLOW_AGENT_ENGINE", "current")
+)
 WEB_SEARCH_TIMEOUT = max(1, env_int("KNOWFLOW_WEB_SEARCH_TIMEOUT", 15))
 WEB_SEARCH_MAX_RESULTS = max(
     1,
