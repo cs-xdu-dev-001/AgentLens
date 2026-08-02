@@ -72,6 +72,14 @@ def main() -> None:
         ".mcp-server-card",
     ):
         assert token in source, f"missing management refinement: {token}"
+    for token in (
+        "/* KnowFlow refinement: responsive */",
+        "@media (max-width: 1180px)",
+        "@media (max-width: 900px)",
+        "@media (max-width: 720px)",
+        "@media (prefers-reduced-motion: reduce)",
+    ):
+        assert token in source, f"missing responsive rule: {token}"
     print("frontend refinement system is wired")
 
 
