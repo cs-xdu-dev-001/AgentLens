@@ -47,7 +47,7 @@ def env_float(name: str, default: float) -> float:
 
 def normalize_agent_engine_name(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
-    if normalized == "current":
+    if normalized in {"current", "langgraph"}:
         return normalized
     return "current"
 

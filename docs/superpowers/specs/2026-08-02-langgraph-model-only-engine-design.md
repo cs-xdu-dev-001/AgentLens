@@ -37,7 +37,7 @@
 
 ## 依赖
 
-后端固定使用`langgraph==1.2.9`。固定版本用于保证Windows本地环境、服务器虚拟环境和测试环境获得一致行为。
+后端固定使用`langgraph==1.2.10`。固定版本用于保证Windows本地环境、服务器虚拟环境和测试环境获得一致行为。由于该版本需要新版`langchain-core`，现有文本切分依赖同步升级为`langchain-text-splitters==1.1.2`；项目仍不引入完整LangChain模型封装。
 
 LangGraph可以脱离LangChain模型适配器使用，因此本阶段不引入LangChain聊天模型封装。模型调用继续使用KnowFlow AI已有实现。
 

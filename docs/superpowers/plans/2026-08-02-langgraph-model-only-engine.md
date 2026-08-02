@@ -6,7 +6,7 @@
 
 **Architecture:** 使用`StateGraph`建立`START → model → END`单节点图。图状态只保存消息和回答；模型配置、网关、trace和回调通过LangGraph运行时上下文传入。`agent_engine.py`继续承担引擎工厂职责，并仅在选择`langgraph`时延迟加载新实现。
 
-**Tech Stack:** Python 3.10+、LangGraph 1.2.9、FastAPI、现有`ModelGateway`、`AgentTraceRecorder`、PowerShell 7、`tests/check_*.py`检查体系。
+**Tech Stack:** Python 3.10+、LangGraph 1.2.10、langchain-text-splitters 1.1.2、FastAPI、现有`ModelGateway`、`AgentTraceRecorder`、PowerShell 7、`tests/check_*.py`检查体系。
 
 ---
 
@@ -15,7 +15,7 @@
 - 创建`backend/knowflow/services/langgraph_agent_engine.py`：定义纯模型图状态、运行时上下文、模型节点和执行引擎。
 - 修改`backend/knowflow/services/agent_engine.py`：延迟构造LangGraph引擎并提供明确的依赖不可用错误。
 - 修改`backend/knowflow/config.py`：正式接受`langgraph`配置值，未知值仍回退`current`。
-- 修改`backend/requirements.txt`：固定`langgraph==1.2.9`。
+- 修改`backend/requirements.txt`：固定`langgraph==1.2.10`并将文本切分依赖升级为兼容的`langchain-text-splitters==1.1.2`。
 - 创建`tests/check_langgraph_agent_engine.py`：验证图结构、模型协议透传、流式回调、trace和失败路径。
 - 修改`tests/check_agent_engine.py`：验证工厂能够选择LangGraph并保留当前执行器契约。
 - 修改`tests/check_agent_engine_config.py`：验证环境变量可以选择LangGraph。
@@ -34,13 +34,13 @@
 在`backend/requirements.txt`末尾增加：
 
 ```text
-langgraph==1.2.9
+langgraph==1.2.10
 ```
 
 Run:
 
 ```powershell
-py -3.13 -m pip install langgraph==1.2.9
+py -3.13 -m pip install langgraph==1.2.10 langchain-text-splitters==1.1.2
 ```
 
 Expected：安装成功，`py -3.13 -c "import langgraph"`退出码为0。

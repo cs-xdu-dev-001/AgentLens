@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,11 +8,13 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_engine import (
     AgentEngineSelectionError,
+    AgentEngineUnavailableError,
     CurrentAgentEngine,
     build_agent_engine,
 )
 from knowflow.services.agent_loop import ToolRegistry
 from knowflow.services.agent_trace import AgentTraceRecorder
+from knowflow.services.langgraph_agent_engine import LangGraphAgentEngine
 
 
 class FakeGateway:
@@ -100,11 +103,32 @@ def main() -> None:
         "model",
     ]
 
+    langgraph_engine = build_agent_engine(
+        "langgraph",
+        gateway=FakeGateway(),
+    )
+    assert isinstance(langgraph_engine, LangGraphAgentEngine)
+    assert langgraph_engine.name == "langgraph"
+
     try:
-        build_agent_engine("langgraph", gateway=FakeGateway())
+        build_agent_engine("unknown", gateway=FakeGateway())
         raise AssertionError("unsupported engine should fail explicitly")
     except AgentEngineSelectionError as exc:
-        assert exc.engine_name == "langgraph"
+        assert exc.engine_name == "unknown"
+
+    missing_dependency = ModuleNotFoundError(
+        "No module named 'langgraph'",
+        name="langgraph",
+    )
+    with patch(
+        "knowflow.services.agent_engine.importlib.import_module",
+        side_effect=missing_dependency,
+    ):
+        try:
+            build_agent_engine("langgraph", gateway=FakeGateway())
+            raise AssertionError("missing dependency should fail explicitly")
+        except AgentEngineUnavailableError as exc:
+            assert exc.engine_name == "langgraph"
 
     print("current agent engine preserves the existing runner contract")
 

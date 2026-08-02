@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from typing import Any, Callable, Protocol
 
 from .agent_loop import (
@@ -37,6 +38,12 @@ class AgentEngineSelectionError(ValueError):
     def __init__(self, engine_name: str):
         self.engine_name = engine_name
         super().__init__(f"Unsupported Agent engine: {engine_name}")
+
+
+class AgentEngineUnavailableError(RuntimeError):
+    def __init__(self, engine_name: str):
+        self.engine_name = engine_name
+        super().__init__(f"Agent engine is unavailable: {engine_name}")
 
 
 class CurrentAgentEngine:
@@ -83,6 +90,20 @@ def build_agent_engine(
     normalized = str(engine_name or "").strip().lower()
     if normalized == "current":
         return CurrentAgentEngine(
+            gateway=gateway,
+            max_tool_rounds=max_tool_rounds,
+        )
+    if normalized == "langgraph":
+        try:
+            module = importlib.import_module(
+                ".langgraph_agent_engine",
+                __package__,
+            )
+        except ModuleNotFoundError as exc:
+            if str(exc.name or "").startswith("langgraph"):
+                raise AgentEngineUnavailableError("langgraph") from exc
+            raise
+        return module.LangGraphAgentEngine(
             gateway=gateway,
             max_tool_rounds=max_tool_rounds,
         )

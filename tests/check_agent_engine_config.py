@@ -29,7 +29,8 @@ def read_engine(value: str) -> str:
 assert read_engine("") == "current"
 assert read_engine("current") == "current"
 assert read_engine("CURRENT") == "current"
-assert read_engine("langgraph") == "current"
+assert read_engine("langgraph") == "langgraph"
+assert read_engine(" LANGGRAPH ") == "langgraph"
 assert read_engine("typo") == "current"
 
 print("agent engine configuration defaults safely to current")
