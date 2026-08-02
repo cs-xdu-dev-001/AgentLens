@@ -8,7 +8,8 @@ import uuid
 from fastapi import APIRouter
 
 from ..runtime import *
-from ..services.agent_loop import AgentRunner, ToolRegistry
+from ..services.agent_engine import build_agent_engine
+from ..services.agent_loop import ToolRegistry
 from ..services.agent_failure import classify_agent_failure
 from ..services.agent_trace import (
     AgentTraceRecorder,
@@ -791,7 +792,8 @@ def execute_agent_chat(
                         },
                     )
 
-            runner = AgentRunner(
+            engine = build_agent_engine(
+                AGENT_ENGINE,
                 gateway=_CancellationAwareGateway(
                     gateway,
                     cancel_event,
@@ -826,7 +828,7 @@ def execute_agent_chat(
                             },
                         )
                     try:
-                        run_result = runner.run(
+                        run_result = engine.run(
                             messages=planning_messages,
                             config=chat_config,
                             registry=registry,
@@ -910,7 +912,7 @@ def execute_agent_chat(
                             }
                         )
                         record_start = len(execution_records)
-                        step_result = runner.run(
+                        step_result = engine.run(
                             messages=step_messages,
                             config=chat_config,
                             registry=registry,
