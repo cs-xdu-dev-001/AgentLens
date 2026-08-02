@@ -134,6 +134,7 @@ function preferredModel(models, preferredId, currentId) {
 
 export function SettingsPage({ active = false }) {
   const [busyModelId, setBusyModelId] = useState(null);
+  const [connectionResult, setConnectionResult] = useState(null);
   const [editingModelId, setEditingModelId] = useState(null);
   const [formValues, setFormValues] = useState(defaultModelFormValues);
   const [models, setModels] = useState([]);
@@ -185,6 +186,7 @@ export function SettingsPage({ active = false }) {
 
   const handleCreateModel = () => {
     resetModelForm();
+    setConnectionResult(null);
     setPanelMode("form");
   };
 
@@ -269,13 +271,33 @@ export function SettingsPage({ active = false }) {
   };
 
   const handleModelTest = async (modelId) => {
+    const startedAt = Date.now();
     setBusyModelId(modelId);
+    setConnectionResult({
+      modelId,
+      status: "checking",
+      message: "正在请求模型服务",
+      latencyMs: null,
+    });
     try {
       const result = await modelConfigApi.test(modelId);
-      notifyToast(result?.message || "模型连接检查完成");
+      const message = result?.message || "模型连接检查完成";
+      setConnectionResult({
+        modelId,
+        status: "success",
+        message,
+        latencyMs: Date.now() - startedAt,
+      });
+      notifyToast(message);
       await loadModels(modelId);
       requestModelOptionsRefresh();
     } catch (error) {
+      setConnectionResult({
+        modelId,
+        status: "error",
+        message: error?.message || "检查模型失败",
+        latencyMs: Date.now() - startedAt,
+      });
       notifyError(error, "检查模型失败");
     } finally {
       setBusyModelId(null);
@@ -348,6 +370,7 @@ export function SettingsPage({ active = false }) {
             ) : (
               <ModelConfigDetails
                 busy={sameId(busyModelId, selectedModelId)}
+                connectionResult={sameId(connectionResult?.modelId, selectedModelId) ? connectionResult : null}
                 model={selectedModel}
                 onDeleteModel={handleDeleteModel}
                 onModelEdit={handleModelEdit}

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 const modelTypeLabel = {
   chat: "聊天模型",
   embedding: "向量模型",
@@ -37,11 +39,14 @@ function DetailItem({ label, value }) {
 export function ModelConfigDetails({
   model,
   busy = false,
+  connectionResult = null,
   onDeleteModel,
   onModelEdit,
   onModelTest,
   onSetDefaultModel,
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   if (!model) {
     return (
       <div className={"settings-detail-empty"}>
@@ -59,18 +64,20 @@ export function ModelConfigDetails({
   return (
     <section className={"model-config-details"} aria-label={"模型详情"}>
       <div className={"model-config-detail-header"}>
-        <div>
-          <span className={`model-config-status ${status}`}>
-            {statusText[status] || status}
-          </span>
+        <div className={"model-config-heading"}>
+          <div className={"model-config-heading-state"}>
+            <span className={`model-config-status ${status}`}>
+              {statusText[status] || status}
+            </span>
+            {model.isDefault ? <span className={"model-config-default"}>{"默认"}</span> : null}
+          </div>
           <h2>{model.name || model.modelName || "未命名配置"}</h2>
           <p>{model.modelName || "未设置模型名称"}</p>
         </div>
-        {model.isDefault ? (
-          <span className={"model-config-default"}>
-            {`${modelTypeLabel[model.modelType] || "模型"}默认`}
-          </span>
-        ) : null}
+        <div className={"model-config-capabilities"} aria-label={"模型能力"}>
+          <span>{modelTypeLabel[model.modelType] || model.modelType || "模型"}</span>
+          {model.modelType === "chat" ? <span>{protocol}</span> : null}
+        </div>
       </div>
 
       <dl className={"model-config-detail-grid"}>
@@ -86,13 +93,30 @@ export function ModelConfigDetails({
         <DetailItem label={"接口地址"} value={model.baseUrl} />
         <DetailItem
           label={"API密钥"}
-          value={model.apiKeyMasked || "未配置"}
+          value={model.apiKeyMasked ? "已配置" : "未配置"}
         />
       </dl>
 
+      {connectionResult ? (
+        <div className={"model-config-connection-result"} data-status={connectionResult.status} role={connectionResult.status === "error" ? "alert" : "status"}>
+          <span className={"model-config-connection-dot"} aria-hidden={"true"} />
+          <div>
+            <strong>
+              {connectionResult.status === "checking"
+                ? "正在检查连接"
+                : connectionResult.status === "success"
+                  ? "连接可用"
+                  : "连接失败"}
+              {Number.isFinite(connectionResult.latencyMs) ? ` · ${connectionResult.latencyMs}ms` : ""}
+            </strong>
+            <span>{connectionResult.message}</span>
+          </div>
+        </div>
+      ) : null}
+
       <div className={"model-config-detail-actions"}>
         <button
-          className={"secondary-button"}
+          className={"model-config-test-button"}
           type={"button"}
           disabled={busy}
           onClick={() => onModelTest?.(model.id)}
@@ -107,22 +131,52 @@ export function ModelConfigDetails({
         >
           {"编辑"}
         </button>
-        <button
-          className={"secondary-button"}
-          type={"button"}
-          disabled={busy || model.isDefault}
-          onClick={() => onSetDefaultModel?.(model.id)}
+        {!model.isDefault ? (
+          <button
+            className={"secondary-button"}
+            type={"button"}
+            disabled={busy}
+            onClick={() => onSetDefaultModel?.(model.id)}
+          >
+            {"设为默认"}
+          </button>
+        ) : null}
+        <div
+          className={menuOpen ? "model-config-more-menu is-open" : "model-config-more-menu"}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setMenuOpen(false);
+          }}
         >
-          {model.isDefault ? "已是默认" : "设为默认"}
-        </button>
-        <button
-          className={"secondary-button danger"}
-          type={"button"}
-          disabled={busy}
-          onClick={() => onDeleteModel?.(model.id)}
-        >
-          {"删除"}
-        </button>
+          <button
+            className={"model-config-more-trigger"}
+            type={"button"}
+            aria-expanded={menuOpen}
+            aria-haspopup={"menu"}
+            aria-label={"更多模型操作"}
+            title={"更多操作"}
+            onClick={() => setMenuOpen((current) => !current)}
+          >
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <circle cx={"5"} cy={"12"} r={"1.5"} />
+              <circle cx={"12"} cy={"12"} r={"1.5"} />
+              <circle cx={"19"} cy={"12"} r={"1.5"} />
+            </svg>
+          </button>
+          {menuOpen ? <div className={"model-config-more-popover"} role={"menu"}>
+            <button
+              className={"danger"}
+              type={"button"}
+              role={"menuitem"}
+              disabled={busy}
+              onClick={() => {
+                setMenuOpen(false);
+                onDeleteModel?.(model.id);
+              }}
+            >
+              {"删除配置"}
+            </button>
+          </div> : null}
+        </div>
       </div>
     </section>
   );

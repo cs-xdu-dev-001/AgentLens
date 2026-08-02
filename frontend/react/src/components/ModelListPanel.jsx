@@ -63,22 +63,20 @@ export function ModelListPanel({
                   {providerMark(model.provider)}
                 </span>
                 <span className={"model-config-item-copy"}>
-                  <strong>{model.name || model.modelName || "未命名配置"}</strong>
-                  <span>{model.modelName || "未设置模型"}</span>
-                  <small>
-                    {modelType}
-                    {model.modelType === "chat" ? " · " + (apiModeLabel[model.apiMode] || apiModeLabel.chat_completions) : ""}
-                  </small>
+                  <span className={"model-config-item-title"}>
+                    <strong>{model.name || model.modelName || "未命名配置"}</strong>
+                    {model.isDefault ? <span className={"model-config-default"}>{"默认"}</span> : null}
+                  </span>
+                  <span className={"model-config-item-meta"}>
+                    {model.modelName || "未设置模型"}
+                    {model.modelType === "chat" ? " · " + (apiModeLabel[model.apiMode] || apiModeLabel.chat_completions)
+                      : " · " + modelType}
+                  </span>
                 </span>
                 <span className={"model-config-item-state"}>
                   <span className={`model-config-status ${status}`}>
                     {statusText[status] || status}
                   </span>
-                  {model.isDefault ? (
-                    <span className={"model-config-default"}>
-                      {`${modelTypeLabel[model.modelType] || "模型"}默认`}
-                    </span>
-                  ) : null}
                 </span>
               </button>
             );
