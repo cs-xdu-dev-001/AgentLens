@@ -179,7 +179,7 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 | `KNOWFLOW_DB_URL` | SQLAlchemy database URL | `sqlite:///./data/knowflow.db` |
 | `KNOWFLOW_UPLOAD_DIR` | Uploaded document storage directory | `./data/uploads` |
 | `KNOWFLOW_SECRET_KEY` | Key used to encrypt stored model API keys | `change-this-dev-secret` |
-| `KNOWFLOW_AGENT_ENGINE` | Agent execution engine; phase 1 supports only `current` | `current` |
+| `KNOWFLOW_AGENT_ENGINE` | Agent execution engine: `current` or model-only `langgraph` | `current` |
 | `KNOWFLOW_WEB_SEARCH_TIMEOUT` | Tavily request timeout in seconds | `15` |
 | `KNOWFLOW_WEB_SEARCH_MAX_RESULTS` | Maximum normalized results returned to the model | `5` |
 | `KNOWFLOW_BASE_URL` | Public backend URL, used by OAuth callbacks | `http://127.0.0.1:8010` |
@@ -217,7 +217,7 @@ Longer Agent tasks also persist a public plan and step state in the database. Th
 
 Execution and live SSE subscriptions are process-local, while run, plan, trace, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart safely marks unfinished work as 已中断; it never silently replays side effects, and the user must choose 继续执行. Keep this deployment on one backend worker until the coordinator and approval broker move to shared infrastructure.
 
-The backend now routes Agent requests through an internal execution-engine interface. `KNOWFLOW_AGENT_ENGINE=current` remains the only enabled engine in this phase and preserves the existing `AgentRunner` behavior. Unknown values fall back to `current`; LangGraph is not enabled until its own model-only implementation and tests land in a later phase.
+The backend routes Agent requests through an internal execution-engine interface. `KNOWFLOW_AGENT_ENGINE=current` remains the default and preserves tools, MCP, Skills, approvals, task planning, and memory workflows. `KNOWFLOW_AGENT_ENGINE=langgraph` enables the phase-3 model-only `START -> model -> END` graph while reusing the selected model configuration, Chat Completions or Responses API transport, streaming text events, and existing run records. Model-only mode intentionally does not expose tools; checkpointing and the remaining Agent capabilities will migrate in later phases. Empty or unknown values safely fall back to `current`.
 
 ### Skills
 
