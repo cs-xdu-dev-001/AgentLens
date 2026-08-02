@@ -14,4 +14,127 @@
   --kf-space-4: 16px;
   --kf-space-6: 24px;
   --kf-space-8: 32px;
+  --kf-control-height: 40px;
+  --kf-transition: 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* KnowFlow refinement: shell and controls */
+html {
+  color-scheme: light;
+}
+
+:root[data-theme="mono-dark"] {
+  color-scheme: dark;
+}
+
+body {
+  color: var(--text);
+  background: var(--workspace-bg);
+  font-size: var(--kf-type-body);
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+}
+
+:where(button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+:where(button, input, textarea, select):disabled {
+  cursor: not-allowed;
+}
+
+:where(button, a, input, textarea, select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.workspace-page {
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--workspace-bg);
+}
+
+:where(.settings-header, .memory-header) {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kf-space-4);
+  padding: 0 var(--kf-space-6);
+  border-bottom: 1px solid var(--control-border);
+  background: var(--workspace-bg);
+}
+
+:where(.settings-header, .memory-header) h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--kf-type-page);
+  font-weight: 720;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+:where(.panel-title, .model-config-detail-header, .model-config-form-header) h2 {
+  color: var(--text);
+  font-size: var(--kf-type-title);
+  font-weight: 680;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+:where(input, textarea, select) {
+  min-height: var(--kf-control-height);
+  border-color: var(--control-border);
+  border-radius: var(--kf-radius-control);
+  color: var(--text);
+  background: var(--control-bg);
+  box-shadow: none;
+  font-size: var(--kf-type-body);
+}
+
+:where(input, textarea, select):hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+:where(input, textarea, select):focus {
+  border-color: var(--text);
+  box-shadow: none;
+}
+
+:where(.icon-button, .secondary-button) {
+  min-height: 38px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--kf-radius-control);
+  color: var(--text-soft);
+  background: var(--control-bg);
+  box-shadow: none;
+  font-size: var(--kf-type-label);
+  font-weight: 620;
+  transition:
+    background-color var(--kf-transition),
+    border-color var(--kf-transition),
+    color var(--kf-transition),
+    transform var(--kf-transition);
+}
+
+.icon-button {
+  width: 38px;
+  padding: 0;
+}
+
+:where(.icon-button, .secondary-button):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+@media (hover: hover) {
+  :where(.icon-button, .secondary-button):hover:not(:disabled) {
+    border-color: var(--line-strong);
+    color: var(--text);
+    background: var(--control-bg-hover);
+  }
 }

@@ -26,6 +26,16 @@ def main() -> None:
         "/* KnowFlow refinement: foundation */",
     ):
         assert token in source, f"missing refinement token: {token}"
+    for token in (
+        "/* KnowFlow refinement: shell and controls */",
+        "body {",
+        ":focus-visible",
+        ".workspace-page",
+        ".settings-header",
+        ".icon-button",
+        ".secondary-button",
+    ):
+        assert token in source, f"missing foundation rule: {token}"
     print("frontend refinement system is wired")
 
 
