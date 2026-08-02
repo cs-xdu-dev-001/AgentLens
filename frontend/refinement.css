@@ -139,195 +139,6 @@ body {
   }
 }
 
-/* KnowFlow refinement: responsive */
-@media (max-width: 1180px) {
-  :root {
-    --drawer-width: min(360px, 38vw);
-  }
-
-  .evidence-drawer {
-    min-width: 320px;
-  }
-
-  .agent-trace-node {
-    grid-template-columns: 10px 48px minmax(0, 1fr) auto 14px;
-    gap: 7px;
-  }
-}
-
-@media (max-width: 900px) {
-  .settings-workspace-shell {
-    min-height: 0;
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .model-config-list {
-    max-height: 300px;
-    border-right: 0;
-    border-bottom: 1px solid var(--control-border);
-  }
-
-  #page-knowledge .knowledge-shell {
-    grid-template-columns: minmax(220px, 30vw) minmax(0, 1fr);
-  }
-
-  #page-tools .tools-content {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 720px) {
-  :root {
-    --kf-type-page: 24px;
-  }
-
-  :where(.settings-header, .memory-header) {
-    min-height: 64px;
-    padding-inline: 16px;
-  }
-
-  #chat-form.composer {
-    padding-inline: 12px;
-  }
-
-  #page-chat.chat-empty #chat-form.composer .composer-shell,
-  #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
-    padding: 7px 8px 7px 10px !important;
-    border-radius: 17px !important;
-  }
-
-  #chat-form.composer .composer-model-trigger {
-    max-width: min(220px, calc(100vw - 132px));
-  }
-
-  .evidence-drawer {
-    min-width: 0;
-  }
-
-  .agent-trace-section {
-    padding-inline: 10px;
-  }
-
-  .agent-trace-row {
-    width: calc(100% - var(--trace-depth) * 10px);
-    margin-left: calc(var(--trace-depth) * 10px);
-  }
-
-  .agent-trace-node {
-    min-height: 58px;
-    grid-template-columns: 8px 44px minmax(0, 1fr) 14px;
-    gap: 7px;
-    padding: 9px;
-  }
-
-  .agent-trace-node-time {
-    grid-column: 3;
-    justify-self: start;
-  }
-
-  .agent-trace-node-chevron {
-    grid-column: 4;
-    grid-row: 1 / span 2;
-  }
-
-  .agent-trace-step-detail {
-    margin-left: 54px;
-    padding: 10px;
-  }
-
-  .agent-trace-fields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .settings-workspace-shell {
-    margin: 12px 14px 18px;
-    border-radius: 12px;
-  }
-
-  .model-config-details,
-  .model-config-form {
-    padding: 18px 16px 22px;
-  }
-
-  .model-config-detail-grid,
-  #page-settings .model-config-form .form-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  #page-settings .model-config-form .form-grid .wide {
-    grid-column: auto;
-  }
-
-  #page-knowledge .knowledge-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  #page-knowledge .knowledge-rail {
-    max-height: 260px;
-    border-right: 0;
-    border-bottom: 1px solid var(--control-border);
-  }
-
-  #page-knowledge :where(.knowledge-hero, .knowledge-tabbar, .document-toolbar, .knowledge-actionbar) {
-    padding-inline: 16px;
-  }
-
-  #page-skills .skills-content,
-  #page-tools .tools-content {
-    margin: 12px 14px 18px;
-  }
-
-  #page-skills .skills-content {
-    border-radius: 12px;
-  }
-
-  #page-skills .skills-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  #page-skills .skills-list-row {
-    min-height: 0;
-  }
-
-  #page-skills .skill-row-detail {
-    min-height: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-  }
-
-  #page-memory .memory-workspace {
-    padding-inline: 16px;
-  }
-
-  #page-memory .memory-header {
-    margin-inline: -16px;
-    padding-inline: 16px;
-  }
-
-  #page-memory .memory-item-meta {
-    align-items: flex-start;
-  }
-
-  #page-tools .tools-content {
-    padding: 0;
-  }
-
-  #page-tools .tools-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
 /* KnowFlow refinement: management pages */
 :where(#page-knowledge, #page-skills, #page-memory, #page-tools) .workspace-page {
   min-height: 100vh;
@@ -1258,5 +1069,194 @@ body {
     border-color: var(--line-strong);
     color: var(--text);
     background: var(--control-bg-hover);
+  }
+}
+
+/* KnowFlow refinement: responsive */
+@media (max-width: 1180px) {
+  :root {
+    --drawer-width: min(360px, 38vw);
+  }
+
+  .evidence-drawer {
+    min-width: 320px;
+  }
+
+  .agent-trace-node {
+    grid-template-columns: 10px 48px minmax(0, 1fr) auto 14px;
+    gap: 7px;
+  }
+}
+
+@media (max-width: 900px) {
+  .settings-workspace-shell {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-config-list {
+    max-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--control-border);
+  }
+
+  #page-knowledge .knowledge-shell {
+    grid-template-columns: minmax(220px, 30vw) minmax(0, 1fr);
+  }
+
+  #page-tools .tools-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --kf-type-page: 24px;
+  }
+
+  :where(.settings-header, .memory-header) {
+    min-height: 64px;
+    padding-inline: 16px;
+  }
+
+  #chat-form.composer {
+    padding-inline: 12px;
+  }
+
+  #page-chat.chat-empty #chat-form.composer .composer-shell,
+  #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+    padding: 7px 8px 7px 10px !important;
+    border-radius: 17px !important;
+  }
+
+  #chat-form.composer .composer-model-trigger {
+    max-width: min(220px, calc(100vw - 132px));
+  }
+
+  .evidence-drawer {
+    min-width: 0;
+  }
+
+  .agent-trace-section {
+    padding-inline: 10px;
+  }
+
+  .agent-trace-row {
+    width: calc(100% - var(--trace-depth) * 10px);
+    margin-left: calc(var(--trace-depth) * 10px);
+  }
+
+  .agent-trace-node {
+    min-height: 58px;
+    grid-template-columns: 8px 44px minmax(0, 1fr) 14px;
+    gap: 7px;
+    padding: 9px;
+  }
+
+  .agent-trace-node-time {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .agent-trace-node-chevron {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+  }
+
+  .agent-trace-step-detail {
+    margin-left: 54px;
+    padding: 10px;
+  }
+
+  .agent-trace-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-workspace-shell {
+    margin: 12px 14px 18px;
+    border-radius: 12px;
+  }
+
+  .model-config-details,
+  .model-config-form {
+    padding: 18px 16px 22px;
+  }
+
+  .model-config-detail-grid,
+  #page-settings .model-config-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #page-settings .model-config-form .form-grid .wide {
+    grid-column: auto;
+  }
+
+  #page-knowledge .knowledge-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #page-knowledge .knowledge-rail {
+    max-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid var(--control-border);
+  }
+
+  #page-knowledge :where(.knowledge-hero, .knowledge-tabbar, .document-toolbar, .knowledge-actionbar) {
+    padding-inline: 16px;
+  }
+
+  #page-skills .skills-content,
+  #page-tools .tools-content {
+    margin: 12px 14px 18px;
+  }
+
+  #page-skills .skills-content {
+    border-radius: 12px;
+  }
+
+  #page-skills .skills-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #page-skills .skills-list-row {
+    min-height: 0;
+  }
+
+  #page-skills .skill-row-detail {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  #page-memory .memory-workspace {
+    padding-inline: 16px;
+  }
+
+  #page-memory .memory-header {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+
+  #page-memory .memory-item-meta {
+    align-items: flex-start;
+  }
+
+  #page-tools .tools-content {
+    padding: 0;
+  }
+
+  #page-tools .tools-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
