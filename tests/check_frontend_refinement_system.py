@@ -36,6 +36,20 @@ def main() -> None:
         ".secondary-button",
     ):
         assert token in source, f"missing foundation rule: {token}"
+    drawer = read("frontend/react/src/components/ChatEvidenceDrawer.jsx")
+    trace = read("frontend/react/src/components/AgentTraceView.jsx")
+    assert 'aria-live={"polite"}' in drawer
+    assert 'aria-atomic={"true"}' in drawer
+    assert 'aria-label={"Agent运行步骤"}' in trace
+    for token in (
+        "/* KnowFlow refinement: composer */",
+        "/* KnowFlow refinement: run drawer */",
+        ".composer-shell",
+        ".composer-model-popover",
+        ".agent-trace-node",
+        ".agent-trace-step-detail",
+    ):
+        assert token in source, f"missing chat refinement: {token}"
     print("frontend refinement system is wired")
 
 

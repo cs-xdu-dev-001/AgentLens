@@ -153,7 +153,11 @@ export function ChatEvidenceDrawer() {
 
   return (
     <aside className={"evidence-drawer"} id={"evidence-drawer"}>
-      <div className={"drawer-header"}>
+      <div
+        className={"drawer-header"}
+        aria-live={"polite"}
+        aria-atomic={"true"}
+      >
         <AgentRunSummary trace={trace} run={run} />
         <button className={"icon-button"} id={"inspector-close"} type={"button"} title={"收起运行面板"} aria-label={"收起运行面板"} onClick={handleDrawerClose}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
