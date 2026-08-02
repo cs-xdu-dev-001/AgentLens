@@ -919,6 +919,448 @@ body {
   transform: none !important;
 }
 
+/* KnowFlow refinement: Codex white sidebar and knowledge */
+:root {
+  --sidebar-width: 252px;
+  --sidebar-collapsed-width: 56px;
+}
+
+.sidebar {
+  width: var(--sidebar-width) !important;
+  padding: 10px 8px !important;
+  gap: 4px !important;
+}
+
+:root:not([data-theme="mono-dark"]) .sidebar {
+  border-right-color: #e7e7e7 !important;
+  background: #fff !important;
+}
+
+.sidebar-brand {
+  min-height: 42px !important;
+  margin: 0 0 2px !important;
+  padding: 2px 4px !important;
+  gap: 9px !important;
+}
+
+.sidebar .brand-mark {
+  width: 30px !important;
+  height: 30px !important;
+  flex-basis: 30px !important;
+  border-radius: 9px !important;
+}
+
+.sidebar .brand-copy strong {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em;
+}
+
+.sidebar #sidebar-toggle {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+}
+
+.sidebar .new-chat-button,
+.sidebar .sidebar-tool {
+  min-height: 36px !important;
+  padding: 6px 8px !important;
+  gap: 10px !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.sidebar .new-chat-button span,
+.sidebar .nav-icon {
+  width: 20px !important;
+  height: 20px !important;
+  flex-basis: 20px !important;
+}
+
+:root:not([data-theme="mono-dark"]) .sidebar #sidebar-toggle:hover,
+:root:not([data-theme="mono-dark"]) .sidebar .new-chat-button:hover,
+:root:not([data-theme="mono-dark"]) .sidebar .sidebar-tool:hover,
+:root:not([data-theme="mono-dark"]) .sidebar .user-menu-button:hover,
+:root:not([data-theme="mono-dark"]) .sidebar .sidebar-list-item:hover,
+:root:not([data-theme="mono-dark"]) .sidebar-search input:hover,
+:root:not([data-theme="mono-dark"]) .sidebar-search input:focus,
+:root:not([data-theme="mono-dark"]) .sidebar-refresh-button:hover {
+  background: #f5f5f5 !important;
+}
+
+:root:not([data-theme="mono-dark"]) .sidebar .sidebar-tool.active,
+:root:not([data-theme="mono-dark"]) .sidebar .session-row.active,
+:root:not([data-theme="mono-dark"]) .sidebar .session-row.menu-open {
+  background: #ececec !important;
+}
+
+.chat-history-shell {
+  padding-top: 4px !important;
+}
+
+.sidebar-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 8px;
+}
+
+.sidebar-search {
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.sidebar-search span {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+}
+
+.sidebar-search input {
+  width: 100%;
+  min-height: 36px !important;
+  padding: 6px 9px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+}
+
+:root:not([data-theme="mono-dark"]) .sidebar-search input {
+  color: #161616 !important;
+  background: #fff !important;
+}
+
+.sidebar-refresh-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-refresh-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.history-group-title {
+  padding: 10px 8px 4px !important;
+  font-size: 12px !important;
+  font-weight: 620 !important;
+}
+
+.sidebar-list {
+  gap: 2px !important;
+  padding-right: 0 !important;
+}
+
+.session-row {
+  min-height: 36px;
+  grid-template-columns: minmax(0, 1fr) 28px !important;
+  gap: 0 !important;
+  border-radius: 8px !important;
+}
+
+.sidebar-list-item {
+  min-height: 36px !important;
+  padding: 6px 8px !important;
+  border-radius: 8px !important;
+}
+
+.sidebar-list-item span {
+  font-size: 14px !important;
+  font-weight: 450 !important;
+}
+
+.session-menu-button {
+  width: 28px !important;
+  height: 28px !important;
+  opacity: 0;
+  transition: opacity var(--kf-transition), background-color var(--kf-transition);
+}
+
+.session-row:hover .session-menu-button,
+.session-row:focus-within .session-menu-button,
+.session-row.menu-open .session-menu-button {
+  opacity: 1;
+}
+
+.sidebar-bottom-tools {
+  gap: 1px !important;
+  padding-top: 6px !important;
+}
+
+.user-menu {
+  margin-top: 4px !important;
+  padding-top: 5px !important;
+  border-top: 1px solid var(--control-border) !important;
+}
+
+.sidebar .user-menu-button {
+  min-height: 42px !important;
+  padding: 6px 8px !important;
+  gap: 9px !important;
+  border-radius: 8px !important;
+}
+
+.sidebar .user-avatar {
+  width: 26px !important;
+  height: 26px !important;
+  flex-basis: 26px !important;
+}
+
+body.sidebar-collapsed .sidebar {
+  width: var(--sidebar-collapsed-width) !important;
+  padding: 10px 6px !important;
+  gap: 5px !important;
+}
+
+body.sidebar-collapsed .sidebar-brand {
+  width: 100%;
+  flex-direction: column;
+  gap: 4px !important;
+  padding: 0 !important;
+}
+
+body.sidebar-collapsed .sidebar #sidebar-toggle {
+  margin: 0 !important;
+}
+
+body.sidebar-collapsed .sidebar .new-chat-button,
+body.sidebar-collapsed .sidebar .sidebar-tool,
+body.sidebar-collapsed .sidebar .user-menu-button {
+  width: 40px !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  border-radius: 9px !important;
+}
+
+:root:not([data-theme="mono-dark"]) :where(
+  #page-knowledge,
+  #page-knowledge .workspace-page,
+  #page-knowledge .knowledge-hero,
+  #page-knowledge .knowledge-shell,
+  #page-knowledge .knowledge-rail,
+  #page-knowledge .knowledge-primary,
+  #page-knowledge .knowledge-tabbar,
+  #page-knowledge .knowledge-tab-panel,
+  #page-knowledge .documents-tab-content,
+  #page-knowledge .document-toolbar,
+  #page-knowledge .panel,
+  #page-knowledge .settings-panel-card
+) {
+  background: #fff !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge :where(
+  .knowledge-hero,
+  .knowledge-shell,
+  .knowledge-rail,
+  .knowledge-tabbar,
+  .document-toolbar,
+  .settings-panel-card,
+  input,
+  select,
+  textarea
+) {
+  border-color: #e7e7e7 !important;
+}
+
+#page-knowledge .knowledge-hero {
+  min-height: 64px !important;
+  padding: 0 28px !important;
+}
+
+#page-knowledge .knowledge-hero .eyebrow,
+#page-knowledge .kb-list-header .section-label {
+  display: none !important;
+}
+
+#page-knowledge .knowledge-hero h1 {
+  font-size: 26px !important;
+  font-weight: 680 !important;
+  letter-spacing: -0.02em;
+}
+
+#page-knowledge .knowledge-shell {
+  grid-template-columns: 288px minmax(0, 1fr) !important;
+  border-top: 0 !important;
+}
+
+#page-knowledge .knowledge-rail {
+  padding: 20px 16px !important;
+  border-right: 1px solid var(--control-border) !important;
+}
+
+#page-knowledge .kb-list-header {
+  min-height: 32px !important;
+  margin-bottom: 10px !important;
+}
+
+#page-knowledge .kb-list-header h2 {
+  font-size: 16px !important;
+  font-weight: 650 !important;
+}
+
+#page-knowledge .kb-search-box input,
+#page-knowledge .active-kb-select select {
+  min-height: 40px !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge .kb-search-box input,
+:root:not([data-theme="mono-dark"]) #page-knowledge .active-kb-select select {
+  color: #161616 !important;
+  background: #fff !important;
+}
+
+#page-knowledge .kb-card-list {
+  gap: 2px !important;
+}
+
+#page-knowledge .kb-row,
+#page-knowledge .kb-row-main {
+  border: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row:hover,
+:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row-main:hover {
+  background: #f5f5f5 !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row.active,
+:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row.active .kb-row-main {
+  background: #ececec !important;
+}
+
+#page-knowledge .knowledge-tabbar {
+  min-height: 54px !important;
+  gap: 20px !important;
+  padding: 0 24px !important;
+  border-bottom: 1px solid var(--control-border) !important;
+}
+
+#page-knowledge .knowledge-tab {
+  min-height: 54px !important;
+  padding: 0 2px !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge .knowledge-tab:hover {
+  color: #161616 !important;
+  background: transparent !important;
+}
+
+:root:not([data-theme="mono-dark"]) #page-knowledge .knowledge-tab.active {
+  border-bottom-color: #161616 !important;
+  color: #161616 !important;
+  background: transparent !important;
+}
+
+#page-knowledge .knowledge-tab-panel {
+  padding: 20px 24px !important;
+}
+
+#page-knowledge .document-toolbar {
+  padding: 0 0 16px !important;
+  border-bottom: 1px solid var(--control-border) !important;
+}
+
+#page-knowledge .document-table-panel {
+  margin-top: 16px !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+#page-knowledge .document-table > .empty-state,
+#page-knowledge .kb-card-list > .empty-state {
+  margin: 0 !important;
+  padding: 20px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+#page-knowledge .settings-panel-card {
+  border: 1px solid var(--control-border) !important;
+  box-shadow: none !important;
+}
+
+@media (hover: none) {
+  .session-menu-button {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar,
+  .sidebar.collapsed,
+  body.sidebar-collapsed .sidebar {
+    width: 100% !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  .sidebar-brand,
+  body.sidebar-collapsed .sidebar-brand {
+    width: auto !important;
+    flex-direction: row !important;
+    padding: 0 !important;
+  }
+
+  .sidebar #sidebar-toggle,
+  .chat-history-shell {
+    display: none !important;
+  }
+
+  .sidebar-bottom-tools,
+  body.sidebar-collapsed .sidebar-bottom-tools {
+    width: auto !important;
+    display: flex !important;
+    flex-direction: row !important;
+    margin: 0 0 0 auto !important;
+    padding: 0 !important;
+  }
+
+  #page-knowledge .knowledge-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #page-knowledge .knowledge-rail {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--control-border) !important;
+  }
+}
+
 /* KnowFlow refinement: run drawer */
 .evidence-drawer {
   border: 0 !important;
@@ -1576,5 +2018,50 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keep the white shell usable on narrow screens without changing desktop hierarchy. */
+@media (max-width: 760px) {
+  .sidebar-bottom-tools,
+  body.sidebar-collapsed .sidebar-bottom-tools {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .sidebar-bottom-tools::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-knowledge .knowledge-hero {
+    width: 100%;
+    box-sizing: border-box;
+    gap: 12px !important;
+    padding-inline: 0 !important;
+  }
+
+  #page-knowledge .knowledge-hero .hero-actions {
+    min-width: 0;
+    flex: 0 1 auto;
+    justify-content: flex-end;
+  }
+
+  #page-knowledge .knowledge-hero .hero-actions button {
+    white-space: nowrap;
+  }
+
+  #page-knowledge .knowledge-primary,
+  #page-knowledge .document-toolbar,
+  #page-knowledge .active-kb-select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  #page-knowledge .active-kb-select select {
+    width: 100%;
   }
 }

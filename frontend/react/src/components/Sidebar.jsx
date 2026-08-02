@@ -344,14 +344,16 @@ function SessionHistory() {
 
   return (
     <section className={"chat-history-shell"} ref={historyRef}>
-      <label className={"sidebar-search"}>
-        <span>{"搜索会话"}</span>
-        <input id={"sidebar-session-search"} placeholder={"搜索聊天"} value={searchQuery} onChange={handleSessionSearch} />
-      </label>
-      <div className={"sidebar-heading-row"}>
-        <span className={"sidebar-heading"}>{"历史记录"}</span>
-        <button className={"mini-link"} id={"history-refresh-btn"} type={"button"} onClick={loadSessions}>
-          {"刷新"}
+      <div className={"sidebar-search-row"}>
+        <label className={"sidebar-search"}>
+          <span>{"搜索会话"}</span>
+          <input id={"sidebar-session-search"} placeholder={"搜索聊天"} value={searchQuery} onChange={handleSessionSearch} />
+        </label>
+        <button className={"sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新会话"} title={"刷新会话"} onClick={loadSessions}>
+          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+            <path d={"M20 11a8 8 0 1 0-2.34 5.66"} />
+            <path d={"M20 5v6h-6"} />
+          </svg>
         </button>
       </div>
       <div className={"sidebar-list chat-history-list"} id={"session-list"}>
