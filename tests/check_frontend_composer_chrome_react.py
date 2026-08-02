@@ -22,8 +22,8 @@ def forbid(path: str, needle: str, label: str) -> None:
 
 def main() -> None:
     require("frontend/react/src/components/ChatComposerForm.jsx", "composer-settings-panel", "React composer settings panel")
-    require("frontend/react/src/components/ChatComposerForm.jsx", "composer-context-summary", "React composer context summary")
-    require("frontend/react/src/components/ChatComposerForm.jsx", "selectedKnowledgeBaseId ? \"\u5df2\u9009\u62e9\u77e5\u8bc6\u5e93\" : \"\u672a\u9009\u62e9\u77e5\u8bc6\u5e93\"", "React composer summary text")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "menu-item-current", "React inline knowledge selection")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "selectedKnowledgeBaseName", "React selected knowledge name")
 
     for stylesheet in (
         "frontend/styles.css",

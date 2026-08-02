@@ -313,6 +313,9 @@ export function ChatComposerForm() {
 
   const composerPlusClassName = menuOpen ? "composer-plus active" : "composer-plus";
   const composerMenuClassName = menuOpen ? "composer-menu open" : "composer-menu";
+  const selectedKnowledgeBaseName =
+    knowledgeBases.find((kb) => valueOf(kb.id) === selectedKnowledgeBaseId)?.name ||
+    "不使用知识库";
   const activeOptionId =
     pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
       ? `skill-option-${filteredSkills[activeIndex].id}`
@@ -367,9 +370,9 @@ export function ChatComposerForm() {
             <path d={"M12 5v14M5 12h14"} />
           </svg>
         </button>
-        <div className={composerMenuClassName} id={"composer-menu"} aria-label={"文件与工具菜单"} onClick={handleComposerMenuClick}>
-          <section>
-            <label className={"menu-card upload-item"}>
+          <div className={composerMenuClassName} id={"composer-menu"} aria-label={"文件与工具菜单"} onClick={handleComposerMenuClick}>
+            <section>
+              <label className={"menu-card upload-item"}>
               <input id={"chat-file-input"} type={"file"} multiple accept={".txt,.md,.markdown,.pdf,.docx,.xlsx,.xlsm,.pptx,.html,.htm,.json,.csv,.tsv,.yaml,.yml,.xml,.log,.rtf,.png,.jpg,.jpeg,.webp,.gif,.bmp"} onChange={handleChatFileChange} />
               <span className={"menu-icon"} aria-hidden={"true"}>
                 <svg viewBox={"0 0 24 24"} focusable={"false"}>
@@ -377,18 +380,25 @@ export function ChatComposerForm() {
                   <path d={"M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"} />
                 </svg>
               </span>
-              <span>
-                <strong>{"文件"}</strong>
-                <small>{"上传附件"}</small>
-              </span>
+              <strong className={"menu-item-label"}>{"上传文件"}</strong>
             </label>
           </section>
           <section className={"composer-settings-panel"} id={"composer-settings-panel"}>
-            <div className={"menu-section-title"}>
-              <strong>{"知识库"}</strong>
-            </div>
             <label className={"menu-select-card knowledge-select-card"}>
-              <span>{"范围"}</span>
+              <span className={"menu-icon"} aria-hidden={"true"}>
+                <svg viewBox={"0 0 24 24"} focusable={"false"}>
+                  <ellipse cx={"12"} cy={"6"} rx={"7"} ry={"3"} />
+                  <path d={"M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6"} />
+                  <path d={"M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"} />
+                </svg>
+              </span>
+              <strong className={"menu-item-label"}>{"知识库"}</strong>
+              <span className={"menu-item-current"}>{selectedKnowledgeBaseName}</span>
+              <span className={"menu-select-chevron"} aria-hidden={"true"}>
+                <svg viewBox={"0 0 24 24"} focusable={"false"}>
+                  <path d={"M8 10l4 4 4-4"} />
+                </svg>
+              </span>
               <select id={"composer-kb-select"} aria-label={"选择知识库"} value={selectedKnowledgeBaseId} onChange={handleComposerKnowledgeBaseChange}>
                 <option value={""}>{"不使用知识库"}</option>
                 {knowledgeBases.map((kb) => (
@@ -396,9 +406,6 @@ export function ChatComposerForm() {
                 ))}
               </select>
             </label>
-            <p className={"composer-menu-summary"} id={"composer-context-summary"}>
-              {selectedKnowledgeBaseId ? "已选择知识库" : "未选择知识库"}
-            </p>
           </section>
         </div>
         <div className={"composer-input-stack"}>

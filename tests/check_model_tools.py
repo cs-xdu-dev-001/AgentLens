@@ -70,7 +70,7 @@ def main() -> None:
     require(frontend, 'id={"attachment-tray"}', "attachment tray")
     require(frontend, "menu-card", "compact menu card rows")
     require(frontend, 'id={"composer-kb-select"}', "composer knowledge-base selector")
-    require(frontend, "\u672a\u9009\u62e9\u77e5\u8bc6\u5e93", "simplified composer context copy")
+    require(frontend, "\u4e0d\u4f7f\u7528\u77e5\u8bc6\u5e93", "simplified composer context copy")
     require(frontend, 'id={"tool-timeline-mini"}', "tool drawer")
     for token in ["tool-mode-tabs", "tool-option-grid", 'name="tool-mode"', 'value="manual"', 'data-tool="knowledge_search"']:
         forbid(frontend, token, "manual tool control")
@@ -87,7 +87,7 @@ def main() -> None:
     require(app_js, "uploadChatAttachment", "frontend uploads chat attachment")
     require(app_js, "removeChatAttachment", "frontend removes chat attachment")
     require(app_js, "previewUrl", "frontend image preview")
-    require(frontend, "\u5df2\u9009\u62e9\u77e5\u8bc6\u5e93", "frontend renders composer knowledge status")
+    require(frontend, "selectedKnowledgeBaseName", "frontend renders composer knowledge status")
     for token in ["react-tool-mode-change", "react-tool-selection-change", "selectedTools", "persistToolSettings"]:
         forbid(app_js, token, "manual tool frontend state")
 

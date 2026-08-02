@@ -781,6 +781,144 @@ body {
   grid-template-rows: auto minmax(50px, auto) 36px !important;
 }
 
+/* KnowFlow refinement: compact composer menu */
+#chat-form.composer .composer-menu {
+  left: 0 !important;
+  bottom: calc(100% + 10px) !important;
+  width: min(288px, calc(100vw - 24px)) !important;
+  padding: 6px !important;
+  gap: 2px !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: 14px !important;
+  background: var(--panel-bg) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.12) !important;
+  backdrop-filter: none !important;
+}
+
+:root:not([data-theme="mono-dark"]) #chat-form.composer .composer-menu {
+  background: #fff !important;
+}
+
+#chat-form.composer .composer-menu.open {
+  display: grid;
+}
+
+#chat-form.composer .composer-menu > section,
+#chat-form.composer .composer-settings-panel {
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+#chat-form.composer .menu-card.upload-item,
+#chat-form.composer .menu-select-card.knowledge-select-card {
+  position: relative;
+  min-height: 46px;
+  margin: 0;
+  padding: 7px 8px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms ease-out;
+}
+
+#chat-form.composer .menu-card.upload-item {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+#chat-form.composer .menu-select-card.knowledge-select-card {
+  display: grid;
+  grid-template-columns: 32px auto minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+}
+
+#chat-form.composer .composer-menu .menu-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 9px;
+  background: var(--control-bg) !important;
+  color: var(--text);
+}
+
+#chat-form.composer .composer-menu .menu-icon svg,
+#chat-form.composer .menu-select-chevron svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#chat-form.composer .menu-item-label {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 610;
+  line-height: 20px;
+}
+
+#chat-form.composer .menu-item-current {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#chat-form.composer .menu-select-chevron {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+#chat-form.composer .menu-select-card.knowledge-select-card select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+#chat-form.composer .menu-card.upload-item:hover,
+#chat-form.composer .menu-select-card.knowledge-select-card:hover {
+  border: 0 !important;
+  background: var(--control-bg-hover) !important;
+  transform: none !important;
+}
+
+#chat-form.composer .menu-card.upload-item:has(input:focus-visible),
+#chat-form.composer .menu-select-card.knowledge-select-card:has(select:focus-visible) {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: -2px;
+}
+
+#chat-form.composer .composer-plus.active,
+#chat-form.composer .composer-plus.active svg {
+  transform: none !important;
+}
+
 /* KnowFlow refinement: run drawer */
 .evidence-drawer {
   border: 0 !important;
