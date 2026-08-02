@@ -1,0 +1,17 @@
+/* KnowFlow refinement: foundation */
+:root {
+  --kf-type-page: 28px;
+  --kf-type-title: 18px;
+  --kf-type-body: 16px;
+  --kf-type-label: 14px;
+  --kf-type-meta: 13px;
+  --kf-radius-control: 10px;
+  --kf-radius-panel: 14px;
+  --kf-radius-floating: 18px;
+  --kf-space-1: 4px;
+  --kf-space-2: 8px;
+  --kf-space-3: 12px;
+  --kf-space-4: 16px;
+  --kf-space-6: 24px;
+  --kf-space-8: 32px;
+}

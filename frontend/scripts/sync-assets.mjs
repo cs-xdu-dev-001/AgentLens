@@ -7,6 +7,7 @@ const frontendDir = resolve(scriptDir, "..");
 
 const assets = [
   ["styles.css", "react/src/styles.css"],
+  ["refinement.css", "react/src/refinement.css"],
 ];
 
 const vendorAssets = [
