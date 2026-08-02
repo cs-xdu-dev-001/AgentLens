@@ -26,8 +26,33 @@ def main() -> None:
         )
         require(
             source,
-            "--kf-empty-chat-column: min(760px, calc(100% - 32px));",
+            "/* KnowFlow refinement: Codex composer surface */",
+            "Codex composer contract",
+        )
+        require(
+            source,
+            "--kf-empty-chat-column: min(860px, calc(100% - 32px));",
             "shared empty-state column",
+        )
+        require(
+            source,
+            "background: #fff !important;",
+            "pure white chat surface",
+        )
+        require(
+            source,
+            "grid-template-rows: minmax(50px, auto) 36px !important;",
+            "large input surface",
+        )
+        require(
+            source,
+            "justify-self: end;",
+            "right aligned model picker",
+        )
+        require(
+            source,
+            "--kf-empty-chat-column: calc(100vw - 24px);",
+            "viewport bounded mobile composer",
         )
         require(
             source,
@@ -36,7 +61,7 @@ def main() -> None:
         )
         require(
             source,
-            "inset: 64px 0 112px !important;",
+            "inset: 64px 0 144px !important;",
             "welcome content centering area",
         )
         require(
