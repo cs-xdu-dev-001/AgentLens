@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import tempfile
 from unittest.mock import patch
 
 
@@ -71,25 +72,31 @@ def main() -> None:
     trace = AgentTraceRecorder(run_id="run_engine_contract")
     executions = []
     model_events = []
-    engine = build_agent_engine(
-        "current",
-        gateway=FakeGateway(),
-        max_tool_rounds=3,
-    )
+    with tempfile.TemporaryDirectory() as temporary:
+        checkpoint_path = Path(temporary) / "current.sqlite3"
+        engine = build_agent_engine(
+            "current",
+            gateway=FakeGateway(),
+            max_tool_rounds=3,
+            checkpoint_db_path=checkpoint_path,
+        )
 
-    assert isinstance(engine, CurrentAgentEngine)
-    assert engine.name == "current"
-    result = engine.run(
-        messages=[{"role": "user", "content": "Echo hello"}],
-        config={"model_name": "fake"},
-        registry=registry,
-        trace=trace,
-        parent_step_id="step_root",
-        execution_callback=lambda execution, parent_id: executions.append(
-            (execution, parent_id)
-        ),
-        model_event_callback=model_events.append,
-    )
+        assert isinstance(engine, CurrentAgentEngine)
+        assert engine.name == "current"
+        result = engine.run(
+            user_id=17,
+            run_id="run_engine_contract",
+            messages=[{"role": "user", "content": "Echo hello"}],
+            config={"model_name": "fake"},
+            registry=registry,
+            trace=trace,
+            parent_step_id="step_root",
+            execution_callback=lambda execution, parent_id: executions.append(
+                (execution, parent_id)
+            ),
+            model_event_callback=model_events.append,
+        )
+        assert not checkpoint_path.exists()
 
     assert result.answer == "done"
     assert len(result.executions) == 1
@@ -106,6 +113,7 @@ def main() -> None:
     langgraph_engine = build_agent_engine(
         "langgraph",
         gateway=FakeGateway(),
+        checkpoint_db_path=ROOT / "data" / "unused-checkpoint.sqlite3",
     )
     assert isinstance(langgraph_engine, LangGraphAgentEngine)
     assert langgraph_engine.name == "langgraph"

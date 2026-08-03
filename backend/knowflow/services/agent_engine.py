@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .agent_loop import (
@@ -21,6 +22,8 @@ class AgentEngine(Protocol):
     def run(
         self,
         *,
+        user_id: int,
+        run_id: str,
         messages,
         config,
         registry: ToolRegistry,
@@ -30,6 +33,7 @@ class AgentEngine(Protocol):
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
+        resume_from_checkpoint: bool = False,
     ) -> AgentRunResult:
         ...
 
@@ -58,6 +62,8 @@ class CurrentAgentEngine:
     def run(
         self,
         *,
+        user_id: int,
+        run_id: str,
         messages,
         config,
         registry: ToolRegistry,
@@ -67,7 +73,9 @@ class CurrentAgentEngine:
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
+        resume_from_checkpoint: bool = False,
     ) -> AgentRunResult:
+        del user_id, run_id, resume_from_checkpoint
         return self._runner.run(
             messages=messages,
             config=config,
@@ -86,6 +94,7 @@ def build_agent_engine(
     *,
     gateway,
     max_tool_rounds: int = 3,
+    checkpoint_db_path: Path | None = None,
 ) -> AgentEngine:
     normalized = str(engine_name or "").strip().lower()
     if normalized == "current":
@@ -106,5 +115,6 @@ def build_agent_engine(
         return module.LangGraphAgentEngine(
             gateway=gateway,
             max_tool_rounds=max_tool_rounds,
+            checkpoint_db_path=checkpoint_db_path,
         )
     raise AgentEngineSelectionError(normalized or "unknown")

@@ -799,6 +799,7 @@ def execute_agent_chat(
                     cancel_event,
                 ),
                 max_tool_rounds=3,
+                checkpoint_db_path=LANGGRAPH_CHECKPOINT_DB,
             )
             answer = ""
             run_result = None
@@ -811,6 +812,30 @@ def execute_agent_chat(
                     plan_created = bool(
                         (planned or {}).get("steps")
                     )
+                    if (
+                        run_action == "resume"
+                        and not plan_created
+                        and engine.name == "langgraph"
+                    ):
+                        run_result = engine.run(
+                            user_id=user_id,
+                            run_id=durable_run_id,
+                            messages=[],
+                            config=chat_config,
+                            registry=registry,
+                            trace=trace,
+                            parent_step_id=run_parent_step,
+                            approval_gate=approval_gate,
+                            skill_snapshot=(
+                                activation.active.snapshot()
+                                if activation.active is not None
+                                else None
+                            ),
+                            execution_callback=record_execution,
+                            model_event_callback=forward_model_event,
+                            resume_from_checkpoint=True,
+                        )
+                        answer = run_result.answer
                 else:
                     planning_messages = [
                         dict(message)
@@ -829,6 +854,8 @@ def execute_agent_chat(
                         )
                     try:
                         run_result = engine.run(
+                            user_id=user_id,
+                            run_id=durable_run_id,
                             messages=planning_messages,
                             config=chat_config,
                             registry=registry,
@@ -913,6 +940,8 @@ def execute_agent_chat(
                         )
                         record_start = len(execution_records)
                         step_result = engine.run(
+                            user_id=user_id,
+                            run_id=durable_run_id,
                             messages=step_messages,
                             config=chat_config,
                             registry=registry,

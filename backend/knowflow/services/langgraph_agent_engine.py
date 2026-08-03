@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from .agent_loop import AgentRunResult, ToolRegistry
+from .langgraph_checkpoint import (
+    LangGraphCheckpointError,
+    LangGraphCheckpointStore,
+)
 
 
 class LangGraphState(TypedDict):
+    schema_version: int
     messages: list[dict[str, Any]]
     answer: str
 
@@ -35,17 +41,31 @@ class LangGraphToolCallError(RuntimeError):
 class LangGraphAgentEngine:
     name = "langgraph"
 
-    def __init__(self, *, gateway, max_tool_rounds: int = 3):
+    def __init__(
+        self,
+        *,
+        gateway,
+        checkpoint_db_path: Path | None,
+        max_tool_rounds: int = 3,
+    ):
         self._gateway = gateway
+        if checkpoint_db_path is None:
+            raise LangGraphCheckpointError(
+                "langgraph_checkpoint_unavailable",
+                "LangGraph checkpoint存储暂不可用。",
+            )
+        self._checkpoints = LangGraphCheckpointStore(
+            checkpoint_db_path
+        )
         del max_tool_rounds
-        builder = StateGraph(
+        self._builder = StateGraph(
             LangGraphState,
             context_schema=LangGraphRunContext,
         )
-        builder.add_node("model", self._call_model)
-        builder.add_edge(START, "model")
-        builder.add_edge("model", END)
-        self._graph = builder.compile()
+        self._builder.add_node("model", self._call_model)
+        self._builder.add_edge(START, "model")
+        self._builder.add_edge("model", END)
+        self._graph = self._builder.compile()
 
     @staticmethod
     def _call_model(
@@ -135,6 +155,8 @@ class LangGraphAgentEngine:
     def run(
         self,
         *,
+        user_id: int,
+        run_id: str,
         messages,
         config,
         registry: ToolRegistry,
@@ -144,22 +166,64 @@ class LangGraphAgentEngine:
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback=None,
         model_event_callback=None,
+        resume_from_checkpoint: bool = False,
     ) -> AgentRunResult:
-        output = self._graph.invoke(
-            {
-                "messages": [dict(message) for message in messages],
-                "answer": "",
-            },
-            context=LangGraphRunContext(
-                gateway=self._gateway,
-                config=config,
-                trace=trace,
-                parent_step_id=parent_step_id,
-                model_event_callback=model_event_callback,
-            ),
+        if int(user_id) <= 0:
+            raise ValueError("A valid user_id is required.")
+        thread_id = str(run_id or "").strip()
+        if not thread_id:
+            raise ValueError("A run_id is required.")
+
+        graph_config = {
+            "configurable": {"thread_id": thread_id}
+        }
+        context = LangGraphRunContext(
+            gateway=self._gateway,
+            config=config,
+            trace=trace,
+            parent_step_id=parent_step_id,
+            model_event_callback=model_event_callback,
         )
+        with self._checkpoints.open(
+            create=not resume_from_checkpoint
+        ) as saver:
+            if saver is None:
+                raise self._checkpoint_not_found()
+            graph = self._builder.compile(checkpointer=saver)
+            if resume_from_checkpoint:
+                snapshot = graph.get_state(graph_config)
+                values = snapshot.values or {}
+                if values.get("schema_version") != 1:
+                    raise self._checkpoint_not_found()
+                if snapshot.next:
+                    output = graph.invoke(
+                        None,
+                        graph_config,
+                        context=context,
+                    )
+                else:
+                    output = values
+            else:
+                output = graph.invoke(
+                    {
+                        "schema_version": 1,
+                        "messages": [
+                            dict(message) for message in messages
+                        ],
+                        "answer": "",
+                    },
+                    graph_config,
+                    context=context,
+                )
         return AgentRunResult(
             answer=str(output["answer"]),
             executions=[],
             trace=trace.snapshot() if trace else [],
+        )
+
+    @staticmethod
+    def _checkpoint_not_found() -> LangGraphCheckpointError:
+        return LangGraphCheckpointError(
+            "langgraph_checkpoint_not_found",
+            "LangGraph checkpoint不存在，无法继续任务。",
         )

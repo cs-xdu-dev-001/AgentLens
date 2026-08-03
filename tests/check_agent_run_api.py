@@ -243,6 +243,36 @@ def main() -> None:
     )
     assert invalid_resume.status_code == 409, invalid_resume.text
 
+    isolated_resume = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id="session-run-isolated-resume",
+        user_message_id=6,
+        goal_summary="隔离恢复",
+        trigger_mode="auto",
+        run_id="run_api_isolated_resume",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        isolated_resume["id"],
+        "running",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        isolated_resume["id"],
+        "interrupted",
+    )
+    foreign_executor_called = Event()
+
+    def isolated_executor(*args, **kwargs):
+        foreign_executor_called.set()
+
+    run_router.configure_agent_run_executor(isolated_executor)
+    foreign_resume = bob.post(
+        f"/api/agent/runs/{isolated_resume['id']}/resume"
+    )
+    assert foreign_resume.status_code == 404, foreign_resume.text
+    assert not foreign_executor_called.is_set()
+
     restart_source = runtime.agent_runs.create_run(
         user_id=alice_id,
         session_id="session-run-restart",
