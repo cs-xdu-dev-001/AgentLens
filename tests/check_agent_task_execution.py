@@ -154,12 +154,20 @@ class FakeComplete:
 
 def main() -> None:
     db_path = ROOT / "data" / "test-dbs" / "agent-task-execution.db"
+    checkpoint_path = (
+        ROOT / "data" / "test-dbs" / "agent-task-execution-checkpoints.db"
+    )
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.unlink(missing_ok=True)
+    checkpoint_path.unlink(missing_ok=True)
     os.environ["KNOWFLOW_DB_URL"] = f"sqlite:///{db_path.as_posix()}"
     os.environ["KNOWFLOW_SECRET_KEY"] = "agent-task-execution-secret"
     os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
+    os.environ["KNOWFLOW_AGENT_ENGINE"] = "langgraph"
+    os.environ["KNOWFLOW_LANGGRAPH_CHECKPOINT_DB"] = str(
+        checkpoint_path
+    )
     sys.path.insert(0, str(BACKEND))
 
     app_module = importlib.import_module("main")

@@ -169,6 +169,7 @@ def main() -> None:
         handler=lambda args: {"results": []},
     )
     session.register_activation_tool(registry)
+    assert "activate_skill" in registry.eligible_names("langgraph")
     gateway = Gateway()
     result = AgentRunner(gateway=gateway).run(
         messages=[
@@ -207,6 +208,8 @@ def main() -> None:
     except SkillRuntimeError as exc:
         assert exc.code == "skill_not_active"
     fresh.activate(41)
+    fresh.register_read_resource(registry)
+    assert "read_skill_resource" in registry.eligible_names("langgraph")
     resource = fresh.read_resource("references/info.txt")
     assert resource.output == {"path": "references/info.txt", "content": "reference text"}
     assert resource.audit_output == {"characterCount": 14}
@@ -216,6 +219,35 @@ def main() -> None:
         raise AssertionError("traversal must fail")
     except SkillRuntimeError as exc:
         assert exc.code == "skill_resource_invalid"
+
+    saved_snapshot = fresh.active.snapshot()
+    restored = SkillActivationSession(
+        store=store,
+        user_id=7,
+        available_tools={"web_search"},
+    )
+    assert restored.restore(saved_snapshot).snapshot() == saved_snapshot
+    changed_snapshot = {**saved_snapshot, "skillContentHash": "b" * 64}
+    mismatched = SkillActivationSession(
+        store=store,
+        user_id=7,
+        available_tools={"web_search"},
+    )
+    try:
+        mismatched.restore(changed_snapshot)
+        raise AssertionError("changed Skill snapshots must not restore")
+    except SkillRuntimeError as exc:
+        assert exc.code == "skill_snapshot_changed"
+    invalid_snapshot = {**saved_snapshot, "skillId": "not-an-id"}
+    try:
+        SkillActivationSession(
+            store=store,
+            user_id=7,
+            available_tools={"web_search"},
+        ).restore(invalid_snapshot)
+        raise AssertionError("invalid Skill snapshots must not restore")
+    except SkillRuntimeError as exc:
+        assert exc.code == "skill_snapshot_invalid"
 
     with tempfile.TemporaryDirectory() as temporary:
         package = Path(temporary) / "package"

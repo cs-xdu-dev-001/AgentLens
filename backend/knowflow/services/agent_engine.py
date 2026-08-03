@@ -14,6 +14,7 @@ from .agent_loop import (
 
 ExecutionCallback = Callable[[ToolExecution, str | None], None]
 ModelEventCallback = Callable[[dict[str, Any]], None]
+SkillRestoreCallback = Callable[[dict[str, Any]], None]
 
 
 class AgentEngine(Protocol):
@@ -36,6 +37,7 @@ class AgentEngine(Protocol):
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
+        skill_restore: SkillRestoreCallback | None = None,
     ) -> AgentRunResult:
         ...
 
@@ -78,6 +80,7 @@ class CurrentAgentEngine:
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
+        skill_restore: SkillRestoreCallback | None = None,
     ) -> AgentRunResult:
         del (
             user_id,
@@ -85,6 +88,7 @@ class CurrentAgentEngine:
             resume_from_checkpoint,
             tool_operation_store,
             approval_decision,
+            skill_restore,
         )
         return self._runner.run(
             messages=messages,

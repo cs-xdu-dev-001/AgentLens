@@ -123,6 +123,26 @@ def main() -> None:
     captured: list[dict] = []
     registry = ToolRegistry()
     register_task_planner(registry, captured.append)
+    assert "create_task_plan" in registry.eligible_names("langgraph")
+    definition = registry.prepare(
+        {
+            "id": "plan-definition",
+            "type": "function",
+            "function": {
+                "name": "create_task_plan",
+                "arguments": json.dumps(
+                    {
+                        "steps": [
+                            {"title": "搜索 Notion", "kind": "mcp"},
+                            {"title": "整理回答", "kind": "answer"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        }
+    ).definition
+    assert definition.ends_run_on_success is True
     callback_executions = []
     result = AgentRunner(gateway=Gateway()).run(
         messages=[{"role": "user", "content": "整理资料"}],

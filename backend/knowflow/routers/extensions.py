@@ -579,6 +579,14 @@ def execute_agent_chat(
                 user_id=user_id,
                 available_tools=available_skill_dependencies,
             )
+
+            def restore_langgraph_skill(
+                snapshot: dict[str, Any],
+            ) -> None:
+                activation.restore(snapshot)
+                activation.register_read_resource(registry)
+                registry.unregister("activate_skill")
+
             run_parent_step = root_step
             explicit_activation = None
             if payload.skillId is not None:
@@ -788,7 +796,8 @@ def execute_agent_chat(
                         target_status,
                     )
                     publish_snapshot("plan_created")
-                    raise TaskPlanCreated()
+                    if selected_engine_name != "langgraph":
+                        raise TaskPlanCreated()
                 execution_records.append(
                     (execution, current_plan_step_id)
                 )
@@ -928,6 +937,7 @@ def execute_agent_chat(
                     **kwargs,
                     tool_operation_store=agent_tool_operations,
                     approval_decision=approval_decision,
+                    skill_restore=restore_langgraph_skill,
                 )
                 if result.paused:
                     return pause_for_approval(result)
@@ -1005,7 +1015,7 @@ def execute_agent_chat(
                         if isinstance(run_result, dict):
                             return run_result
                         answer = run_result.answer
-                        plan_created = False
+                        plan_created = plan_snapshot is not None
                     except TaskPlanCreated:
                         plan_created = True
 

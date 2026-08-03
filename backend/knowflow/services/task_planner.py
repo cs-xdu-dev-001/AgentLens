@@ -67,7 +67,9 @@ def register_task_planner(
         arguments_model=TaskPlan,
         handler=create_plan,
         read_only=True,
+        engine_names={"current", "langgraph"},
         trace_kind="system",
         internal=True,
         remove_after_success=True,
+        ends_run_on_success=True,
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -10,6 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_loop import (
     AgentLoopLimitError,
+    ToolHandlerResult,
     ToolRegistry,
 )
 from knowflow.services.agent_trace import AgentTraceRecorder
@@ -18,6 +20,7 @@ from knowflow.services.langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
+from knowflow.services.task_planner import register_task_planner
 from knowflow.database import Database
 from knowflow.services.agent_run_store import AgentRunStore
 from knowflow.services.agent_tool_operations import AgentToolOperationStore
@@ -74,6 +77,8 @@ def run_engine(
     model_event_callback=None,
     tool_operation_store=None,
     approval_decision=None,
+    skill_snapshot=None,
+    skill_restore=None,
 ):
     return engine.run(
         user_id=17,
@@ -88,6 +93,8 @@ def run_engine(
         model_event_callback=model_event_callback,
         tool_operation_store=tool_operation_store,
         approval_decision=approval_decision,
+        skill_snapshot=skill_snapshot,
+        skill_restore=skill_restore,
     )
 
 
@@ -183,6 +190,85 @@ def register_write_mcp(
         risk="write",
         server_name="Notes",
     )
+
+
+SKILL_SNAPSHOT = {
+    "skillId": 41,
+    "skillSlug": "research",
+    "skillVersion": "1.2.3",
+    "skillContentHash": "a" * 64,
+}
+
+
+class FakeSkillRuntime:
+    def __init__(self, registry: ToolRegistry):
+        self.registry = registry
+        self.active = False
+        self.activation_calls = 0
+        self.restore_calls = 0
+        self.resource_calls: list[dict] = []
+
+    def _register_resource(self) -> None:
+        self.registry.register(
+            name="read_skill_resource",
+            description="Read an active Skill resource.",
+            input_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            handler=lambda arguments: (
+                self.resource_calls.append(arguments)
+                or ToolHandlerResult(
+                    output={"content": "restored reference"},
+                    skill_snapshot=dict(SKILL_SNAPSHOT),
+                )
+            ),
+            read_only=True,
+            engine_names={"current", "langgraph"},
+            trace_kind="skill",
+            internal=True,
+        )
+
+    def register_activation(self) -> None:
+        def activate(arguments):
+            assert arguments == {"skill": "research"}
+            self.activation_calls += 1
+            self.active = True
+            self._register_resource()
+            return ToolHandlerResult(
+                output={
+                    "activated": True,
+                    "instructions": "Use the restored Skill resource.",
+                },
+                skill_snapshot=dict(SKILL_SNAPSHOT),
+            )
+
+        self.registry.register(
+            name="activate_skill",
+            description="Activate a Skill.",
+            input_schema={
+                "type": "object",
+                "properties": {"skill": {"type": "string"}},
+                "required": ["skill"],
+                "additionalProperties": False,
+            },
+            handler=activate,
+            read_only=True,
+            engine_names={"current", "langgraph"},
+            trace_kind="skill",
+            internal=True,
+            becomes_parent_on_success=True,
+            remove_after_success=True,
+        )
+
+    def restore(self, snapshot: dict) -> None:
+        assert snapshot == SKILL_SNAPSHOT
+        self.restore_calls += 1
+        self.active = True
+        self._register_resource()
+        self.registry.unregister("activate_skill")
 
 
 def main() -> None:
@@ -520,6 +606,74 @@ def main() -> None:
         assert shadow_result.executions[0].error_code == "unknown_tool"
         assert shadow_calls == []
 
+        captured_plans: list[dict] = []
+        unexpected_plan_calls: list[dict] = []
+        plan_registry = ToolRegistry()
+        register_task_planner(plan_registry, captured_plans.append)
+        plan_registry.register(
+            name="should_not_run",
+            description="Must not run after a task plan is created.",
+            input_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
+            handler=lambda arguments: (
+                unexpected_plan_calls.append(arguments) or {"ran": True}
+            ),
+            read_only=True,
+            engine_names={"current", "langgraph"},
+        )
+        plan_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "create_task_plan",
+                        json.dumps(
+                            {
+                                "steps": [
+                                    {
+                                        "title": "Collect sources",
+                                        "kind": "tool",
+                                        "tool_name": "should_not_run",
+                                    },
+                                    {
+                                        "title": "Write answer",
+                                        "kind": "answer",
+                                    },
+                                ]
+                            }
+                        ),
+                        "call_create_plan",
+                    ),
+                    tool_call(
+                        "should_not_run",
+                        '{"value":"same model response"}',
+                        "call_after_plan",
+                    ),
+                ],
+            }
+        )
+        plan_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=plan_gateway,
+                checkpoint_db_path=root / "plan.sqlite3",
+            ),
+            plan_registry,
+            run_id="run_plan_only",
+            messages=[{"role": "user", "content": "Plan this task"}],
+        )
+        assert plan_result.answer == "The task plan was created."
+        assert len(plan_gateway.calls) == 1
+        assert len(captured_plans) == 1
+        assert unexpected_plan_calls == []
+        assert [item.tool_name for item in plan_result.executions] == [
+            "create_task_plan"
+        ]
+
         limited_calls: list[dict] = []
         limited_registry = ToolRegistry()
         register_tools(limited_registry, limited_calls, [])
@@ -792,6 +946,118 @@ def main() -> None:
         assert denied_result.answer == "The note was not created."
         assert denied_result.executions[0].error_code == "permission_denied"
         assert denied_calls == []
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-skill-resume",
+            user_message_id=3,
+            goal_summary="Activate a Skill, write, and read a resource",
+            trigger_mode="auto",
+            run_id="run_skill_resume",
+        )
+        skill_write_calls: list[dict] = []
+        first_skill_registry = ToolRegistry()
+        register_write_mcp(first_skill_registry, skill_write_calls)
+        first_skill_runtime = FakeSkillRuntime(first_skill_registry)
+        first_skill_runtime.register_activation()
+        skill_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "activate_skill",
+                        '{"skill":"research"}',
+                        "call_skill_activate",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"from skill"}',
+                        "call_skill_write",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "read_skill_resource",
+                        '{"path":"references/guide.md"}',
+                        "call_skill_resource",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "Skill workflow completed.",
+                "tool_calls": [],
+            },
+        )
+        skill_engine = LangGraphAgentEngine(
+            gateway=skill_gateway,
+            checkpoint_db_path=root / "skill-resume.sqlite3",
+        )
+        skill_pause = run_engine(
+            skill_engine,
+            first_skill_registry,
+            run_id="run_skill_resume",
+            messages=[{"role": "user", "content": "Use the Skill"}],
+            tool_operation_store=operation_store,
+            skill_restore=first_skill_runtime.restore,
+        )
+        assert skill_pause.paused is True
+        assert skill_pause.interrupt["toolCallId"] == "call_skill_write"
+        assert first_skill_runtime.activation_calls == 1
+        assert "activate_skill" not in {
+            item["function"]["name"]
+            for item in skill_gateway.calls[1]["tools"]
+        }
+        skill_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_skill_resume",
+            tool_call_id="call_skill_write",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "from skill"},
+        )
+        assert operation_store.resolve(
+            17,
+            skill_operation["approvalId"],
+            "allow_once",
+        )
+
+        resumed_skill_registry = ToolRegistry()
+        register_write_mcp(resumed_skill_registry, skill_write_calls)
+        resumed_skill_runtime = FakeSkillRuntime(resumed_skill_registry)
+        resumed_skill_runtime.register_activation()
+        skill_result = run_engine(
+            skill_engine,
+            resumed_skill_registry,
+            run_id="run_skill_resume",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="allow_once",
+            skill_restore=resumed_skill_runtime.restore,
+        )
+        assert skill_result.answer == "Skill workflow completed."
+        assert resumed_skill_runtime.activation_calls == 0
+        assert resumed_skill_runtime.restore_calls >= 1
+        assert resumed_skill_runtime.resource_calls == [
+            {"path": "references/guide.md"}
+        ]
+        assert skill_write_calls == [{"title": "from skill"}]
+        assert all(
+            execution.skill_snapshot == SKILL_SNAPSHOT
+            for execution in skill_result.executions
+        )
         approval_database.engine.dispose()
 
     print("langgraph engine checkpoints and runs the web search loop safely")

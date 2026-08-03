@@ -146,6 +146,41 @@ class SkillActivationSession:
             skill_snapshot=active.snapshot(),
         )
 
+    def restore(self, snapshot: dict[str, Any]) -> ActivatedSkill:
+        try:
+            expected = {
+                "skillId": int(snapshot.get("skillId") or 0),
+                "skillSlug": str(snapshot.get("skillSlug") or ""),
+                "skillVersion": str(snapshot.get("skillVersion") or ""),
+                "skillContentHash": str(
+                    snapshot.get("skillContentHash") or ""
+                ),
+            }
+        except (TypeError, ValueError) as exc:
+            raise SkillRuntimeError(
+                "skill_snapshot_invalid",
+                "The saved Skill snapshot is invalid.",
+            ) from exc
+        if (
+            expected["skillId"] <= 0
+            or not expected["skillSlug"]
+            or not expected["skillVersion"]
+            or not expected["skillContentHash"]
+        ):
+            raise SkillRuntimeError(
+                "skill_snapshot_invalid",
+                "The saved Skill snapshot is invalid.",
+            )
+        if self.active is None:
+            self.activate(expected["skillId"])
+        if self.active is None or self.active.snapshot() != expected:
+            self.active = None
+            raise SkillRuntimeError(
+                "skill_snapshot_changed",
+                "The saved Skill version is no longer available.",
+            )
+        return self.active
+
     def read_resource(self, path: str) -> ToolHandlerResult:
         if self.active is None:
             raise SkillRuntimeError(
@@ -188,6 +223,7 @@ class SkillActivationSession:
             arguments_model=ReadSkillResourceArguments,
             handler=lambda args: self.read_resource(args.path),
             read_only=True,
+            engine_names={"current", "langgraph"},
             trace_kind="skill",
             internal=True,
         )
@@ -206,6 +242,7 @@ class SkillActivationSession:
             arguments_model=ActivateSkillArguments,
             handler=activate,
             read_only=True,
+            engine_names={"current", "langgraph"},
             trace_kind="skill",
             internal=True,
             becomes_parent_on_success=True,

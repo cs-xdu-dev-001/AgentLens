@@ -18,6 +18,7 @@ class ToolDefinition:
     internal: bool = False
     becomes_parent_on_success: bool = False
     remove_after_success: bool = False
+    ends_run_on_success: bool = False
     def __post_init__(self):
         if (self.arguments_model is None) == (self.input_schema is None):
             raise ValueError("exactly one of arguments_model or input_schema is required")
@@ -64,14 +65,16 @@ class ToolRegistry:
                  engine_names: set[str] | frozenset[str] | tuple[str, ...] = ("current",),
                  trace_kind: str = "tool", risk: str = "read", server_name: str | None = None,
                  internal: bool = False, becomes_parent_on_success: bool = False,
-                 remove_after_success: bool = False) -> None:
+                 remove_after_success: bool = False,
+                 ends_run_on_success: bool = False) -> None:
         self._definitions[name] = ToolDefinition(name=name, description=description, handler=handler,
             arguments_model=arguments_model, input_schema=input_schema, read_only=read_only,
             engine_names=frozenset(engine_names),
             trace_kind=trace_kind, risk=risk, server_name=server_name,
             internal=internal,
             becomes_parent_on_success=becomes_parent_on_success,
-            remove_after_success=remove_after_success)
+            remove_after_success=remove_after_success,
+            ends_run_on_success=ends_run_on_success)
     def names(self) -> tuple[str, ...]:
         return tuple(self._definitions)
     def eligible_names(self, engine_name: str) -> frozenset[str]:

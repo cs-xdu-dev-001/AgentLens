@@ -31,6 +31,7 @@ class LangGraphState(TypedDict):
     tool_rounds: int
     pending_tool_calls: list[dict[str, Any]]
     tool_call_index: int
+    skill_snapshot: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,6 @@ class LangGraphRunContext:
     config: dict[str, Any] | None
     registry: ToolRegistry
     max_tool_rounds: int
-    allowed_tool_names: frozenset[str]
     user_id: int
     run_id: str
     tool_operation_store: Any = None
@@ -51,6 +51,7 @@ class LangGraphRunContext:
     model_event_callback: (
         Callable[[dict[str, Any]], None] | None
     ) = None
+    skill_restore: Callable[[dict[str, Any]], None] | None = None
 
 
 class LangGraphAgentEngine:
@@ -88,9 +89,23 @@ class LangGraphAgentEngine:
         self._builder.add_conditional_edges(
             "tools",
             self._route_after_tools,
-            {"tools": "tools", "model": "model"},
+            {"tools": "tools", "model": "model", "end": END},
         )
         self._graph = self._builder.compile()
+
+    @staticmethod
+    def _restore_skill(
+        state: LangGraphState,
+        context: LangGraphRunContext,
+    ) -> dict[str, Any] | None:
+        snapshot = state.get("skill_snapshot")
+        if not isinstance(snapshot, dict) or not snapshot:
+            return None
+        normalized = json.loads(json.dumps(snapshot, ensure_ascii=False))
+        if context.skill_restore is None:
+            raise ValueError("Skill restore callback is unavailable.")
+        context.skill_restore(normalized)
+        return normalized
 
     @staticmethod
     def _call_model(
@@ -100,7 +115,10 @@ class LangGraphAgentEngine:
         context = runtime.context
         config = context.config or {}
         trace = context.trace
-        allowed_names = set(context.allowed_tool_names)
+        LangGraphAgentEngine._restore_skill(state, context)
+        allowed_names = set(
+            context.registry.eligible_names("langgraph")
+        )
         schemas = context.registry.schemas(
             allowed_names,
             engine_name="langgraph",
@@ -220,6 +238,8 @@ class LangGraphAgentEngine:
 
     @staticmethod
     def _route_after_tools(state: LangGraphState) -> str:
+        if str(state.get("answer") or "").strip():
+            return "end"
         calls = state.get("pending_tool_calls") or []
         index = int(state.get("tool_call_index") or 0)
         return "tools" if index < len(calls) else "model"
@@ -248,7 +268,13 @@ class LangGraphAgentEngine:
         if call_index >= len(calls):
             raise ValueError("LangGraph tool state cannot be routed.")
         executions = list(state.get("executions") or [])
-        allowed_names = set(context.allowed_tool_names)
+        current_skill_snapshot = LangGraphAgentEngine._restore_skill(
+            state,
+            context,
+        )
+        allowed_names = set(
+            context.registry.eligible_names("langgraph")
+        )
         prepared = context.registry.prepare(
             calls[call_index],
             allowed_names=allowed_names,
@@ -326,6 +352,16 @@ class LangGraphAgentEngine:
                     )
         if execution is None:
             execution = context.registry.invoke(prepared)
+        activation_succeeded = bool(
+            execution.status == "success"
+            and definition is not None
+            and definition.becomes_parent_on_success
+            and execution.skill_snapshot
+        )
+        if activation_succeeded:
+            current_skill_snapshot = dict(execution.skill_snapshot or {})
+        elif current_skill_snapshot:
+            execution.skill_snapshot = dict(current_skill_snapshot)
         tool_step = (
             trace.start_step(
                 kind=(
@@ -369,6 +405,17 @@ class LangGraphAgentEngine:
             )
         if context.execution_callback is not None:
             context.execution_callback(execution, tool_step)
+        if (
+            execution.status == "success"
+            and definition is not None
+            and definition.remove_after_success
+        ):
+            context.registry.unregister(definition.name)
+        ends_run = bool(
+            execution.status == "success"
+            and definition is not None
+            and definition.ends_run_on_success
+        )
         executions.append(LangGraphAgentEngine._execution_to_state(execution))
         messages.append(
             {
@@ -388,6 +435,12 @@ class LangGraphAgentEngine:
             ),
             "pending_tool_calls": calls,
             "tool_call_index": call_index + 1,
+            "skill_snapshot": current_skill_snapshot,
+            "answer": (
+                "The task plan was created."
+                if ends_run
+                else str(state.get("answer") or "")
+            ),
         }
 
     @staticmethod
@@ -457,8 +510,9 @@ class LangGraphAgentEngine:
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
+        skill_restore: Callable[[dict[str, Any]], None] | None = None,
     ) -> AgentRunResult:
-        del approval_gate, skill_snapshot
+        del approval_gate
         if int(user_id) <= 0:
             raise ValueError("A valid user_id is required.")
         thread_id = self._checkpoints.thread_id(user_id, run_id)
@@ -472,7 +526,6 @@ class LangGraphAgentEngine:
             config=config,
             registry=registry,
             max_tool_rounds=self._max_tool_rounds,
-            allowed_tool_names=registry.eligible_names("langgraph"),
             user_id=user_id,
             run_id=run_id,
             tool_operation_store=tool_operation_store,
@@ -480,6 +533,7 @@ class LangGraphAgentEngine:
             parent_step_id=parent_step_id,
             execution_callback=execution_callback,
             model_event_callback=model_event_callback,
+            skill_restore=skill_restore,
         )
         with self._checkpoints.open(
             create=not resume_from_checkpoint
@@ -516,6 +570,11 @@ class LangGraphAgentEngine:
                         "tool_rounds": 0,
                         "pending_tool_calls": [],
                         "tool_call_index": 0,
+                        "skill_snapshot": (
+                            dict(skill_snapshot)
+                            if skill_snapshot
+                            else None
+                        ),
                     },
                     graph_config,
                     context=context,
