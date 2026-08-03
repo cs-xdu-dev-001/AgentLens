@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TypedDict
@@ -7,35 +8,44 @@ from typing import Any, Callable, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from .agent_loop import AgentRunResult, ToolRegistry
+from .agent_loop import (
+    AgentLoopLimitError,
+    AgentRunResult,
+    ToolExecution,
+    ToolRegistry,
+)
 from .langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
 
 
+LANGGRAPH_TOOL_NAMES = frozenset({"web_search"})
+
+
 class LangGraphState(TypedDict):
     schema_version: int
     messages: list[dict[str, Any]]
     answer: str
+    executions: list[dict[str, Any]]
+    tool_rounds: int
 
 
 @dataclass(frozen=True)
 class LangGraphRunContext:
     gateway: Any
     config: dict[str, Any] | None
+    registry: ToolRegistry
+    max_tool_rounds: int
+    allowed_tool_names: frozenset[str]
     trace: Any = None
     parent_step_id: str | None = None
-    model_event_callback: Callable[[dict[str, Any]], None] | None = None
-
-
-class LangGraphToolCallError(RuntimeError):
-    code = "langgraph_tools_not_supported"
-
-    def __init__(self):
-        super().__init__(
-            "LangGraph model-only mode does not support tool calls."
-        )
+    execution_callback: (
+        Callable[[ToolExecution, str | None], None] | None
+    ) = None
+    model_event_callback: (
+        Callable[[dict[str, Any]], None] | None
+    ) = None
 
 
 class LangGraphAgentEngine:
@@ -49,6 +59,7 @@ class LangGraphAgentEngine:
         max_tool_rounds: int = 3,
     ):
         self._gateway = gateway
+        self._max_tool_rounds = max(0, max_tool_rounds)
         if checkpoint_db_path is None:
             raise LangGraphCheckpointError(
                 "langgraph_checkpoint_unavailable",
@@ -57,24 +68,34 @@ class LangGraphAgentEngine:
         self._checkpoints = LangGraphCheckpointStore(
             checkpoint_db_path
         )
-        del max_tool_rounds
         self._builder = StateGraph(
             LangGraphState,
             context_schema=LangGraphRunContext,
         )
         self._builder.add_node("model", self._call_model)
+        self._builder.add_node("tools", self._call_tools)
         self._builder.add_edge(START, "model")
-        self._builder.add_edge("model", END)
+        self._builder.add_conditional_edges(
+            "model",
+            self._route_after_model,
+            {"tools": "tools", "end": END},
+        )
+        self._builder.add_edge("tools", "model")
         self._graph = self._builder.compile()
 
     @staticmethod
     def _call_model(
         state: LangGraphState,
         runtime: Runtime[LangGraphRunContext],
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         context = runtime.context
         config = context.config or {}
         trace = context.trace
+        allowed_names = set(context.allowed_tool_names)
+        schemas = context.registry.schemas(
+            allowed_names,
+            engine_name="langgraph",
+        )
         model_step = (
             trace.start_step(
                 kind="model",
@@ -83,7 +104,7 @@ class LangGraphAgentEngine:
                 parent_id=context.parent_step_id,
                 input_summary={
                     "messageCount": len(state["messages"]),
-                    "toolCount": 0,
+                    "toolCount": len(schemas),
                 },
                 details={
                     "modelName": str(config.get("model_name") or ""),
@@ -97,8 +118,8 @@ class LangGraphAgentEngine:
             else None
         )
         completion_options: dict[str, Any] = {
-            "tools": None,
-            "tool_choice": None,
+            "tools": schemas or None,
+            "tool_choice": "auto" if schemas else None,
         }
         if context.model_event_callback is not None:
             completion_options["event_callback"] = (
@@ -121,36 +142,199 @@ class LangGraphAgentEngine:
             raise
 
         tool_calls = message.get("tool_calls") or []
-        if tool_calls:
-            if trace and model_step:
-                trace.finish_step(
-                    model_step,
-                    status="failed",
-                    title="Model requested an unavailable tool",
-                    output_summary={"toolCallCount": len(tool_calls)},
-                    error_code="langgraph_tools_not_supported",
-                )
-            raise LangGraphToolCallError()
-
         answer = str(message.get("content") or "").strip()
-        if not answer:
-            if trace and model_step:
-                trace.finish_step(
-                    model_step,
-                    status="failed",
-                    title="Model response was invalid",
-                    error_code="invalid_model_response",
-                )
-            raise ValueError("Model returned no text response.")
-
         if trace and model_step:
             trace.finish_step(
                 model_step,
-                status="success",
-                title="Model generated an answer",
-                output_summary={"toolCallCount": 0},
+                status="success" if tool_calls or answer else "failed",
+                title=(
+                    "Model selected a tool"
+                    if tool_calls
+                    else (
+                        "Model generated an answer"
+                        if answer
+                        else "Model response was invalid"
+                    )
+                ),
+                output_summary=(
+                    {"toolCallCount": len(tool_calls)}
+                    if tool_calls or answer
+                    else None
+                ),
+                error_code=(
+                    None
+                    if tool_calls or answer
+                    else "invalid_model_response"
+                ),
             )
+        if tool_calls:
+            if int(state.get("tool_rounds") or 0) >= (
+                context.max_tool_rounds
+            ):
+                raise AgentLoopLimitError(
+                    "Agent exceeded the maximum tool-call rounds."
+                )
+            assistant_message = {
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": json.loads(
+                    json.dumps(tool_calls, ensure_ascii=False)
+                ),
+            }
+            if message.get("_response_items"):
+                assistant_message["_response_items"] = json.loads(
+                    json.dumps(
+                        message["_response_items"],
+                        ensure_ascii=False,
+                    )
+                )
+            return {
+                "messages": [*state["messages"], assistant_message],
+                "answer": "",
+            }
+        if not answer:
+            raise ValueError("Model returned neither text nor tool calls.")
         return {"answer": answer}
+
+    @staticmethod
+    def _route_after_model(state: LangGraphState) -> str:
+        if str(state.get("answer") or "").strip():
+            return "end"
+        messages = state.get("messages") or []
+        if messages and (messages[-1].get("tool_calls") or []):
+            return "tools"
+        raise ValueError("LangGraph model state cannot be routed.")
+
+    @staticmethod
+    def _call_tools(
+        state: LangGraphState,
+        runtime: Runtime[LangGraphRunContext],
+    ) -> dict[str, Any]:
+        context = runtime.context
+        trace = context.trace
+        messages = [dict(message) for message in state["messages"]]
+        calls = messages[-1].get("tool_calls") or []
+        executions = list(state.get("executions") or [])
+        allowed_names = set(context.allowed_tool_names)
+        for call in calls:
+            prepared = context.registry.prepare(
+                call,
+                allowed_names=allowed_names,
+                engine_name="langgraph",
+            )
+            definition = prepared.definition
+            tool_step = (
+                trace.start_step(
+                    kind=(
+                        definition.trace_kind
+                        if definition is not None
+                        else "tool"
+                    ),
+                    name=prepared.tool_name,
+                    title=f"Running {prepared.tool_name}",
+                    parent_id=context.parent_step_id,
+                    input_summary=(
+                        None
+                        if definition is not None and definition.internal
+                        else prepared.arguments
+                    ),
+                )
+                if trace
+                else None
+            )
+            execution = context.registry.invoke(prepared)
+            if trace and tool_step:
+                trace.finish_step(
+                    tool_step,
+                    status=(
+                        "success"
+                        if execution.status == "success"
+                        else "failed"
+                    ),
+                    title=(
+                        f"{prepared.tool_name} completed"
+                        if execution.status == "success"
+                        else f"{prepared.tool_name} failed"
+                    ),
+                    output_summary=(
+                        execution.public_output()
+                        if execution.status == "success"
+                        else execution.error_message
+                    ),
+                    error_code=(
+                        None
+                        if execution.status == "success"
+                        else execution.error_code
+                    ),
+                )
+            if context.execution_callback is not None:
+                context.execution_callback(execution, tool_step)
+            executions.append(
+                LangGraphAgentEngine._execution_to_state(execution)
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": execution.call_id,
+                    "name": execution.tool_name,
+                    "content": execution.model_content(),
+                }
+            )
+        return {
+            "messages": messages,
+            "executions": executions,
+            "tool_rounds": int(state.get("tool_rounds") or 0) + 1,
+        }
+
+    @staticmethod
+    def _execution_to_state(
+        execution: ToolExecution,
+    ) -> dict[str, Any]:
+        return {
+            "call_id": execution.call_id,
+            "tool_name": execution.tool_name,
+            "arguments": execution.arguments,
+            "output": execution.output,
+            "status": execution.status,
+            "error_code": execution.error_code,
+            "error_message": execution.error_message,
+            "latency_ms": execution.latency_ms,
+            "audit_output": execution.audit_output,
+            "skill_snapshot": execution.skill_snapshot,
+        }
+
+    @staticmethod
+    def _execution_from_state(value: dict[str, Any]) -> ToolExecution:
+        arguments = value.get("arguments")
+        output = value.get("output")
+        audit_output = value.get("audit_output")
+        skill_snapshot = value.get("skill_snapshot")
+        return ToolExecution(
+            call_id=str(value.get("call_id") or ""),
+            tool_name=str(value.get("tool_name") or "unknown"),
+            arguments=arguments if isinstance(arguments, dict) else {},
+            output=output if isinstance(output, dict) else {},
+            status=str(value.get("status") or "failed"),
+            error_code=(
+                str(value["error_code"])
+                if value.get("error_code") is not None
+                else None
+            ),
+            error_message=(
+                str(value["error_message"])
+                if value.get("error_message") is not None
+                else None
+            ),
+            latency_ms=int(value.get("latency_ms") or 0),
+            audit_output=(
+                audit_output if isinstance(audit_output, dict) else None
+            ),
+            skill_snapshot=(
+                skill_snapshot
+                if isinstance(skill_snapshot, dict)
+                else None
+            ),
+        )
 
     def run(
         self,
@@ -168,18 +352,24 @@ class LangGraphAgentEngine:
         model_event_callback=None,
         resume_from_checkpoint: bool = False,
     ) -> AgentRunResult:
+        del approval_gate, skill_snapshot
         if int(user_id) <= 0:
             raise ValueError("A valid user_id is required.")
         thread_id = self._checkpoints.thread_id(user_id, run_id)
 
         graph_config = {
-            "configurable": {"thread_id": thread_id}
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": max(4, self._max_tool_rounds * 2 + 4),
         }
         context = LangGraphRunContext(
             gateway=self._gateway,
             config=config,
+            registry=registry,
+            max_tool_rounds=self._max_tool_rounds,
+            allowed_tool_names=LANGGRAPH_TOOL_NAMES,
             trace=trace,
             parent_step_id=parent_step_id,
+            execution_callback=execution_callback,
             model_event_callback=model_event_callback,
         )
         with self._checkpoints.open(
@@ -209,13 +399,19 @@ class LangGraphAgentEngine:
                             dict(message) for message in messages
                         ],
                         "answer": "",
+                        "executions": [],
+                        "tool_rounds": 0,
                     },
                     graph_config,
                     context=context,
                 )
         return AgentRunResult(
             answer=str(output["answer"]),
-            executions=[],
+            executions=[
+                self._execution_from_state(value)
+                for value in (output.get("executions") or [])
+                if isinstance(value, dict)
+            ],
             trace=trace.snapshot() if trace else [],
         )
 

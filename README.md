@@ -179,7 +179,7 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 | `KNOWFLOW_DB_URL` | SQLAlchemy database URL | `sqlite:///./data/knowflow.db` |
 | `KNOWFLOW_UPLOAD_DIR` | Uploaded document storage directory | `./data/uploads` |
 | `KNOWFLOW_SECRET_KEY` | Key used to encrypt stored model API keys | `change-this-dev-secret` |
-| `KNOWFLOW_AGENT_ENGINE` | Agent execution engine: `current` or model-only `langgraph` | `current` |
+| `KNOWFLOW_AGENT_ENGINE` | Agent execution engine: `current` or incremental `langgraph` | `current` |
 | `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` | Separate SQLite file for LangGraph execution checkpoints | `./data/langgraph/checkpoints.sqlite3` |
 | `KNOWFLOW_WEB_SEARCH_TIMEOUT` | Tavily request timeout in seconds | `15` |
 | `KNOWFLOW_WEB_SEARCH_MAX_RESULTS` | Maximum normalized results returned to the model | `5` |
@@ -218,7 +218,7 @@ Longer Agent tasks also persist a public plan and step state in the database. Th
 
 Execution and live SSE subscriptions are process-local, while run, plan, trace, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart safely marks unfinished work as 已中断; it never silently replays side effects, and the user must choose 继续执行. Keep this deployment on one backend worker until the coordinator and approval broker move to shared infrastructure.
 
-The backend routes Agent requests through an internal execution-engine interface. `KNOWFLOW_AGENT_ENGINE=current` remains the default and preserves tools, MCP, Skills, approvals, task planning, and memory workflows. `KNOWFLOW_AGENT_ENGINE=langgraph` enables the model-only `START -> model -> END` graph while reusing the selected model configuration, Chat Completions or Responses API transport, streaming text events, and existing run records. Its node-boundary state is stored with the official SQLite checkpointer, keyed by the existing run ID. After an interrupted model-only run, the signed-in owner can explicitly continue from the latest checkpoint; completed runs return the saved answer without another model request. Model-only mode still does not expose tools, MCP, Skills, approvals, or Mem0 nodes. Empty or unknown engine values safely fall back to `current`.
+The backend routes Agent requests through an internal execution-engine interface. `KNOWFLOW_AGENT_ENGINE=current` remains the default and preserves tools, MCP, Skills, approvals, task planning, and memory workflows. `KNOWFLOW_AGENT_ENGINE=langgraph` enables the incremental `START -> model -> tools -> model -> END` graph while reusing the selected model configuration, Chat Completions or Responses API transport, streaming text events, existing tool audit callbacks, and run records. This graph currently exposes only the registered, per-user `web_search` tool; MCP, Skills, approvals, task planning, and Mem0 nodes remain on the current engine until their migration phases are complete. Tool schemas and execution are both restricted by the same allowlist, so a hallucinated tool name cannot reach an unexposed handler. Node-boundary state is stored with the official SQLite checkpointer, keyed by the existing run ID. After an interrupted run, the signed-in owner can explicitly continue from the latest checkpoint; a completed web search is not repeated when the following model node is resumed, and completed runs return the saved answer without another model request. Empty or unknown engine values safely fall back to `current`.
 
 ### Skills
 

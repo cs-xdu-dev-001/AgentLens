@@ -11,6 +11,7 @@ class ToolDefinition:
     arguments_model: type[BaseModel] | None = None
     input_schema: dict[str, Any] | None = None
     read_only: bool = True
+    engine_names: frozenset[str] = frozenset({"current"})
     trace_kind: str = "tool"
     risk: str = "read"
     server_name: str | None = None
@@ -58,11 +59,13 @@ class ToolRegistry:
     def __init__(self): self._definitions: dict[str, ToolDefinition] = {}
     def register(self, *, name: str, description: str, handler: Callable[[Any], Any], read_only: bool = True,
                  arguments_model: type[BaseModel] | None = None, input_schema: dict[str, Any] | None = None,
+                 engine_names: set[str] | frozenset[str] | tuple[str, ...] = ("current",),
                  trace_kind: str = "tool", risk: str = "read", server_name: str | None = None,
                  internal: bool = False, becomes_parent_on_success: bool = False,
                  remove_after_success: bool = False) -> None:
         self._definitions[name] = ToolDefinition(name=name, description=description, handler=handler,
             arguments_model=arguments_model, input_schema=input_schema, read_only=read_only,
+            engine_names=frozenset(engine_names),
             trace_kind=trace_kind, risk=risk, server_name=server_name,
             internal=internal,
             becomes_parent_on_success=becomes_parent_on_success,
@@ -71,15 +74,25 @@ class ToolRegistry:
         return tuple(self._definitions)
     def unregister(self, name: str) -> bool:
         return self._definitions.pop(name, None) is not None
-    def schemas(self):
+    def schemas(self, allowed_names: set[str] | None = None, *, engine_name: str | None = None):
         out=[]
         for d in self._definitions.values():
+            if (
+                (allowed_names is not None and d.name not in allowed_names)
+                or (engine_name is not None and engine_name not in d.engine_names)
+            ):
+                continue
             params = d.arguments_model.model_json_schema() if d.arguments_model else d.input_schema
             out.append({"type":"function","function":{"name":d.name,"description":d.description,"parameters":params}})
         return out
-    def prepare(self, tool_call: dict[str, Any]) -> PreparedToolCall:
+    def prepare(self, tool_call: dict[str, Any], allowed_names: set[str] | None = None, *, engine_name: str | None = None) -> PreparedToolCall:
         fn = tool_call.get("function") or {}; cid=str(tool_call.get("id") or ""); name=str(fn.get("name") or "")
         d=self._definitions.get(name); started=time.perf_counter()
+        if (
+            (allowed_names is not None and name not in allowed_names)
+            or (d is not None and engine_name is not None and engine_name not in d.engine_names)
+        ):
+            d=None
         if not d: return PreparedToolCall(None,cid,name or "unknown",{},self._failure(cid,name or "unknown",{},"unknown_tool","The requested tool is not registered.",started))
         try:
             raw=fn.get("arguments") or "{}"; args=json.loads(raw) if isinstance(raw,str) else raw

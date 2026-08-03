@@ -250,6 +250,7 @@ def build_tool_registry(
             arguments_model=WebSearchArguments,
             handler=run_web_search,
             read_only=True,
+            engine_names={"current", "langgraph"},
         )
         registered_names.add("web_search")
     if not enable_tools or mcp_pool is None:
