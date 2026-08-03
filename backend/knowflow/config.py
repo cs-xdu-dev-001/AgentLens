@@ -138,6 +138,16 @@ MODEL_TRUST_ENV = os.getenv("KNOWFLOW_MODEL_TRUST_ENV", "0") == "1"
 AGENT_ENGINE = normalize_agent_engine_name(
     os.getenv("KNOWFLOW_AGENT_ENGINE", "current")
 )
+LANGGRAPH_CHECKPOINT_DB = Path(
+    os.getenv(
+        "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB",
+        str(DATA_DIR / "langgraph" / "checkpoints.sqlite3"),
+    )
+).expanduser()
+if not LANGGRAPH_CHECKPOINT_DB.is_absolute():
+    LANGGRAPH_CHECKPOINT_DB = (
+        PROJECT_DIR / LANGGRAPH_CHECKPOINT_DB
+    ).resolve()
 WEB_SEARCH_TIMEOUT = max(1, env_int("KNOWFLOW_WEB_SEARCH_TIMEOUT", 15))
 WEB_SEARCH_MAX_RESULTS = max(
     1,
