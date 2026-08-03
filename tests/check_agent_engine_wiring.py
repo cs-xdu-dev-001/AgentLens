@@ -36,7 +36,19 @@ assert "ToolRegistry" in agent_loop_imports
 assert "AgentRunner" not in agent_loop_imports
 assert "build_agent_engine" in agent_engine_imports
 assert len(factory_calls) == 1
-assert len(engine_run_calls) == 2
+assert len(engine_run_calls) == 3
+for call in engine_run_calls:
+    keyword_names = {keyword.arg for keyword in call.keywords}
+    assert {"user_id", "run_id"}.issubset(keyword_names)
+assert sum(
+    any(
+        keyword.arg == "resume_from_checkpoint"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value is True
+        for keyword in call.keywords
+    )
+    for call in engine_run_calls
+) == 1
 assert "AGENT_ENGINE" in source
 
 print("agent routes depend on the engine interface")

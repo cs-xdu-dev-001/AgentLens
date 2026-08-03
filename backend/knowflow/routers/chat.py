@@ -424,6 +424,19 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
     for run_row in run_rows:
         approval_broker.cancel_run(run_row["id"])
         agent_run_coordinator.cancel(run_row["id"])
+    try:
+        langgraph_checkpoints.delete_threads(
+            [str(run_row["id"]) for run_row in run_rows]
+        )
+    except LangGraphCheckpointError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": exc.code,
+                "message": exc.message,
+                "data": None,
+            },
+        ) from exc
     execute(
         """
         DELETE FROM agent_run_step

@@ -44,6 +44,10 @@ from .services.mcp_oauth import McpOAuthCoordinator
 from .services.approval import ApprovalBroker
 from .services.agent_run_coordinator import AgentRunCoordinator
 from .services.agent_run_store import AgentRunStore
+from .services.langgraph_checkpoint import (
+    LangGraphCheckpointError,
+    LangGraphCheckpointStore,
+)
 from .services.skill_archive import SkillArchiveLimits
 from .services.skill_store import SkillStore
 from .services.memory import Mem0MemoryProvider, MemoryManager
@@ -76,6 +80,9 @@ def mappings(rows: Iterable[Any]) -> list[dict[str, Any]]:
 db = Database(DB_URL)
 agent_runs = AgentRunStore(database=db)
 agent_run_coordinator = AgentRunCoordinator()
+langgraph_checkpoints = LangGraphCheckpointStore(
+    LANGGRAPH_CHECKPOINT_DB
+)
 memory_operation_store = MemoryOperationStore(database=db)
 
 
