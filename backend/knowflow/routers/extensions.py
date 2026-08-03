@@ -323,6 +323,11 @@ def build_tool_registry(
                 )
             ),
             read_only=read_only,
+            engine_names=(
+                {"current", "langgraph"}
+                if read_only
+                else {"current"}
+            ),
             trace_kind="mcp",
             risk=tool_risk(tool),
             server_name=str(tool["serverName"]),

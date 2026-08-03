@@ -72,6 +72,12 @@ class ToolRegistry:
             remove_after_success=remove_after_success)
     def names(self) -> tuple[str, ...]:
         return tuple(self._definitions)
+    def eligible_names(self, engine_name: str) -> frozenset[str]:
+        return frozenset(
+            definition.name
+            for definition in self._definitions.values()
+            if engine_name in definition.engine_names
+        )
     def unregister(self, name: str) -> bool:
         return self._definitions.pop(name, None) is not None
     def schemas(self, allowed_names: set[str] | None = None, *, engine_name: str | None = None):

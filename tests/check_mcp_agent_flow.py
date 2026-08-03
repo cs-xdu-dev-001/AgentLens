@@ -422,6 +422,20 @@ def main() -> None:
     FakePool.instances.clear()
     extensions.McpRunSessionPool = FakePool
 
+    eligibility_registry = extensions.build_tool_registry(
+        1,
+        True,
+        mcp_pool=FakePool(),
+    )
+    assert set(eligibility_registry.eligible_names("langgraph")) == {
+        configured["readNotion"]["modelName"],
+        configured["readDocs"]["modelName"],
+    }
+    assert configured["writeNotion"]["modelName"] not in (
+        eligibility_registry.eligible_names("langgraph")
+    )
+    FakePool.instances.clear()
+
     allow_gateway = ScenarioGateway(
         [
             configured["readNotion"]["modelName"],

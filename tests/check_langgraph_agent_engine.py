@@ -128,6 +128,31 @@ def register_tools(
     )
 
 
+def register_read_only_mcp(
+    registry: ToolRegistry,
+    calls: list[dict],
+) -> None:
+    registry.register(
+        name="mcp_notes_search",
+        description="Search notes without changing them.",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        handler=lambda arguments: (
+            calls.append(arguments)
+            or {"results": [{"title": "Note"}]}
+        ),
+        read_only=True,
+        engine_names={"current", "langgraph"},
+        trace_kind="mcp",
+        risk="read",
+        server_name="Notes",
+    )
+
+
 def main() -> None:
     registry = ToolRegistry()
     search_calls: list[dict] = []
@@ -340,6 +365,51 @@ def main() -> None:
         assert second_messages[-2]["role"] == "assistant"
         assert second_messages[-1]["role"] == "tool"
         assert second_messages[-1]["name"] == "web_search"
+
+        mcp_calls: list[dict] = []
+        mcp_registry = ToolRegistry()
+        register_read_only_mcp(mcp_registry, mcp_calls)
+        mcp_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_search",
+                        '{"query":"agent notes"}',
+                        "call_mcp_read_1",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "I found the note.",
+                "tool_calls": [],
+            },
+        )
+        mcp_trace = AgentTraceRecorder(run_id="run_mcp_read")
+        mcp_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=mcp_gateway,
+                checkpoint_db_path=root / "mcp-read.sqlite3",
+            ),
+            mcp_registry,
+            run_id="run_mcp_read",
+            messages=[{"role": "user", "content": "Search notes"}],
+            trace=mcp_trace,
+        )
+        assert mcp_result.answer == "I found the note."
+        assert mcp_calls == [{"query": "agent notes"}]
+        assert mcp_result.executions[0].tool_name == "mcp_notes_search"
+        assert [step["kind"] for step in mcp_trace.snapshot()] == [
+            "model",
+            "mcp",
+            "model",
+        ]
+        assert [
+            item["function"]["name"]
+            for item in mcp_gateway.calls[0]["tools"]
+        ] == ["mcp_notes_search"]
 
         blocked_gateway = FakeGateway(
             {

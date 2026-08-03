@@ -20,9 +20,6 @@ from .langgraph_checkpoint import (
 )
 
 
-LANGGRAPH_TOOL_NAMES = frozenset({"web_search"})
-
-
 class LangGraphState(TypedDict):
     schema_version: int
     messages: list[dict[str, Any]]
@@ -366,7 +363,7 @@ class LangGraphAgentEngine:
             config=config,
             registry=registry,
             max_tool_rounds=self._max_tool_rounds,
-            allowed_tool_names=LANGGRAPH_TOOL_NAMES,
+            allowed_tool_names=registry.eligible_names("langgraph"),
             trace=trace,
             parent_step_id=parent_step_id,
             execution_callback=execution_callback,
