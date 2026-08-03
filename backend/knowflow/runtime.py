@@ -44,6 +44,7 @@ from .services.mcp_oauth import McpOAuthCoordinator
 from .services.approval import ApprovalBroker
 from .services.agent_run_coordinator import AgentRunCoordinator
 from .services.agent_run_store import AgentRunStore
+from .services.agent_tool_operations import AgentToolOperationStore
 from .services.langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
@@ -79,6 +80,10 @@ def mappings(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 db = Database(DB_URL)
 agent_runs = AgentRunStore(database=db)
+agent_tool_operations = AgentToolOperationStore(
+    database=db,
+    approval_timeout_seconds=MCP_APPROVAL_TIMEOUT,
+)
 agent_run_coordinator = AgentRunCoordinator()
 langgraph_checkpoints = LangGraphCheckpointStore(
     LANGGRAPH_CHECKPOINT_DB

@@ -116,6 +116,24 @@ def main() -> None:
         trigger_mode="auto",
         run_id="run_checkpoint_bob",
     )
+    alice_operation = runtime.agent_tool_operations.ensure_waiting(
+        user_id=alice_id,
+        run_id=alice_run["id"],
+        tool_call_id="call-alice-delete",
+        tool_name="mcp__notion__create_page",
+        server_name="Notion",
+        risk="write",
+        input_summary={"title": "Alice"},
+    )
+    bob_operation = runtime.agent_tool_operations.ensure_waiting(
+        user_id=bob_id,
+        run_id=bob_run["id"],
+        tool_call_id="call-bob-keep",
+        tool_name="mcp__notion__create_page",
+        server_name="Notion",
+        risk="write",
+        input_summary={"title": "Bob"},
+    )
     runtime.agent_runs.transition_run(
         alice_id, alice_run["id"], "running"
     )
@@ -142,6 +160,14 @@ def main() -> None:
     assert runtime.fetch_one(
         "SELECT id FROM chat_session WHERE id=:id",
         {"id": bob_session},
+    ) is not None
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_tool_operation WHERE id=:id",
+        {"id": alice_operation["approvalId"]},
+    ) is None
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_tool_operation WHERE id=:id",
+        {"id": bob_operation["approvalId"]},
     ) is not None
 
     retry_session = runtime.ensure_session(

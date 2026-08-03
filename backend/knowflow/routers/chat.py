@@ -466,6 +466,16 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
         ) from exc
     execute(
         """
+        DELETE FROM agent_tool_operation
+        WHERE run_id IN (
+          SELECT id FROM agent_run
+          WHERE session_id=:session_id AND user_id=:user_id
+        )
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
+    execute(
+        """
         DELETE FROM agent_run_step
         WHERE run_id IN (
           SELECT id FROM agent_run

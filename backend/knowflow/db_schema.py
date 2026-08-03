@@ -159,6 +159,26 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   run_step_id TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS agent_tool_operation (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  run_id TEXT NOT NULL,
+  tool_call_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  server_name TEXT,
+  risk TEXT NOT NULL DEFAULT 'unknown',
+  input_summary TEXT,
+  status TEXT NOT NULL DEFAULT 'waiting',
+  decision TEXT,
+  execution_json TEXT,
+  expires_at TEXT NOT NULL,
+  resolved_at TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (run_id, tool_call_id)
+);
 CREATE TABLE IF NOT EXISTS tool_config (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -307,6 +327,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_user_time ON agent_run(user_id, created
 CREATE INDEX IF NOT EXISTS idx_agent_run_session_time ON agent_run(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_run_step_run_position ON agent_run_step(run_id, position);
 CREATE INDEX IF NOT EXISTS idx_tool_session_time ON agent_tool_call(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_operation_user_status ON agent_tool_operation(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_operation_run ON agent_tool_operation(run_id);
 CREATE INDEX IF NOT EXISTS idx_memory_operation_due ON memory_operation(status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_memory_operation_user_message ON memory_operation(user_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_memory_operation_user_time ON memory_operation(user_id, created_at);
@@ -484,6 +506,28 @@ CREATE TABLE IF NOT EXISTS agent_tool_call (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   KEY idx_tool_session_time (session_id, created_at),
   KEY idx_tool_run_step (run_id, run_step_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS agent_tool_operation (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  tool_call_id VARCHAR(255) NOT NULL,
+  tool_name VARCHAR(160) NOT NULL,
+  server_name VARCHAR(255),
+  risk VARCHAR(30) NOT NULL DEFAULT 'unknown',
+  input_summary LONGTEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'waiting',
+  decision VARCHAR(30),
+  execution_json LONGTEXT,
+  expires_at DATETIME NOT NULL,
+  resolved_at DATETIME,
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_agent_tool_operation_call (run_id, tool_call_id),
+  KEY idx_agent_tool_operation_user_status (user_id, status),
+  KEY idx_agent_tool_operation_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS tool_config (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,

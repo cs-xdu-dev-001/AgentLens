@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 9, CURRENT_SCHEMA_VERSION
-    assert "protocol" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 10, CURRENT_SCHEMA_VERSION
+    assert "tool approvals" in row["description"].lower(), row
     model_columns = {item["name"] for item in fetch_all("PRAGMA table_info(model_config)")}
     assert "api_mode" in model_columns, model_columns
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
@@ -73,6 +73,20 @@ def main() -> None:
         for item in fetch_all("PRAGMA table_info(agent_tool_call)")
     }
     assert {"run_id", "run_step_id"}.issubset(tool_columns), tool_columns
+    tool_operation_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(agent_tool_operation)")
+    }
+    assert {
+        "id",
+        "user_id",
+        "run_id",
+        "tool_call_id",
+        "status",
+        "decision",
+        "execution_json",
+        "expires_at",
+    }.issubset(tool_operation_columns), tool_operation_columns
     memory_columns = {
         item["name"]
         for item in fetch_all("PRAGMA table_info(memory_config)")
