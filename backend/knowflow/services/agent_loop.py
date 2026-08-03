@@ -53,6 +53,8 @@ class PreparedToolCall:
 @dataclass
 class AgentRunResult:
     answer: str; executions: list[ToolExecution]; trace: list[dict[str, Any]]
+    paused: bool = False
+    interrupt: dict[str, Any] | None = None
 class AgentLoopLimitError(RuntimeError): pass
 
 class ToolRegistry:

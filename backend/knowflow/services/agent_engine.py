@@ -34,6 +34,8 @@ class AgentEngine(Protocol):
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
         resume_from_checkpoint: bool = False,
+        tool_operation_store=None,
+        approval_decision: str | None = None,
     ) -> AgentRunResult:
         ...
 
@@ -74,8 +76,16 @@ class CurrentAgentEngine:
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
         resume_from_checkpoint: bool = False,
+        tool_operation_store=None,
+        approval_decision: str | None = None,
     ) -> AgentRunResult:
-        del user_id, run_id, resume_from_checkpoint
+        del (
+            user_id,
+            run_id,
+            resume_from_checkpoint,
+            tool_operation_store,
+            approval_decision,
+        )
         return self._runner.run(
             messages=messages,
             config=config,

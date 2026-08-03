@@ -270,6 +270,34 @@ class AgentToolOperationStore:
             return normalized
         return [item for item in normalized if item["status"] in statuses]
 
+    def get(self, user_id: int, approval_id: str) -> dict[str, Any] | None:
+        with self.database.engine.connect() as conn:
+            row = self._row(conn, user_id, approval_id)
+        return self._normalize(row) if row else None
+
+    def get_for_call(
+        self,
+        user_id: int,
+        run_id: str,
+        tool_call_id: str,
+    ) -> dict[str, Any] | None:
+        with self.database.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT * FROM agent_tool_operation
+                    WHERE user_id=:user_id AND run_id=:run_id
+                      AND tool_call_id=:tool_call_id
+                    """
+                ),
+                {
+                    "user_id": user_id,
+                    "run_id": run_id,
+                    "tool_call_id": tool_call_id,
+                },
+            ).mappings().first()
+        return self._normalize(dict(row)) if row else None
+
     def claim_execution(
         self,
         user_id: int,

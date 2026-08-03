@@ -323,11 +323,7 @@ def build_tool_registry(
                 )
             ),
             read_only=read_only,
-            engine_names=(
-                {"current", "langgraph"}
-                if read_only
-                else {"current"}
-            ),
+            engine_names={"current", "langgraph"},
             trace_kind="mcp",
             risk=tool_risk(tool),
             server_name=str(tool["serverName"]),
@@ -348,6 +344,7 @@ def execute_agent_chat(
     existing_run_id: str | None = None,
     run_action: str | None = None,
     persisted_engine_name: str | None = None,
+    approval_decision: str | None = None,
 ) -> dict[str, Any]:
     command_mode, normalized_question = parse_execution_mode(
         payload.question
@@ -489,7 +486,12 @@ def execute_agent_chat(
     retrieval_run: dict[str, Any] | None = None
     rag_quality: dict[str, Any] = {"enabled": False}
     chunks: list[dict[str, Any]] = []
-    current_plan_step_id: str | None = None
+    current_plan_step_id: str | None = (
+        str(durable_snapshot.get("currentStepId"))
+        if approval_decision
+        and durable_snapshot.get("currentStepId")
+        else None
+    )
     execution_records: list[tuple[Any, str | None]] = []
     plan_snapshot: dict[str, Any] | None = None
     run_failed = False
@@ -815,6 +817,122 @@ def execute_agent_chat(
             )
             answer = ""
             run_result = None
+
+            def pause_for_approval(result) -> dict[str, Any]:
+                nonlocal current_plan_step_id
+                interrupt_value = result.interrupt or {}
+                tool_call_id = str(
+                    interrupt_value.get("toolCallId") or ""
+                )
+                tool_name = str(
+                    interrupt_value.get("toolName") or ""
+                )
+                if not tool_call_id or not tool_name:
+                    raise RuntimeError(
+                        "LangGraph approval interrupt is invalid."
+                    )
+                operation = agent_tool_operations.ensure_waiting(
+                    user_id=user_id,
+                    run_id=durable_run_id,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    server_name=str(
+                        interrupt_value.get("serverName") or "MCP"
+                    ),
+                    risk=str(
+                        interrupt_value.get("risk") or "unknown"
+                    ),
+                    input_summary=interrupt_value.get("inputSummary"),
+                )
+                approval_step_id = trace.start_step(
+                    kind="approval",
+                    name="approval_required",
+                    title="Waiting for approval",
+                    parent_id=run_parent_step,
+                    status="waiting",
+                    details={
+                        "approvalId": operation["approvalId"],
+                        "runId": durable_run_id,
+                        "serverName": operation["serverName"],
+                        "toolName": operation["toolName"],
+                        "risk": operation["risk"],
+                        "expiresAt": operation["expiresAt"],
+                    },
+                    input_summary=operation["inputSummary"],
+                )
+                snapshot = agent_runs.get_snapshot(
+                    user_id,
+                    durable_run_id,
+                )
+                if current_plan_step_id:
+                    current_step = next(
+                        (
+                            item
+                            for item in (snapshot or {}).get("steps", [])
+                            if item["id"] == current_plan_step_id
+                        ),
+                        None,
+                    )
+                    if current_step and current_step["status"] == "running":
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "waiting_approval",
+                        )
+                snapshot = agent_runs.get_snapshot(
+                    user_id,
+                    durable_run_id,
+                )
+                if snapshot and snapshot["status"] in {
+                    "planning",
+                    "running",
+                }:
+                    agent_runs.transition_run(
+                        user_id,
+                        durable_run_id,
+                        "waiting_approval",
+                    )
+                public_event = {
+                    "type": "approval_required",
+                    "approvalId": operation["approvalId"],
+                    "runId": durable_run_id,
+                    "stepId": approval_step_id,
+                    "serverName": operation["serverName"],
+                    "toolName": operation["toolName"],
+                    "risk": operation["risk"],
+                    "inputSummary": operation["inputSummary"],
+                    "expiresAt": operation["expiresAt"],
+                }
+                if approval_emit:
+                    approval_emit(public_event)
+                emit_named("approval_required", public_event)
+                paused_snapshot = publish_snapshot("run_updated")
+                return {
+                    "paused": True,
+                    "sessionId": session_id,
+                    "messageId": None,
+                    "answer": "",
+                    "references": [],
+                    "toolCalls": [],
+                    "ragQuality": rag_quality,
+                    "retrievalRun": retrieval_run,
+                    "trace": trace.snapshot(),
+                    "runId": durable_run_id,
+                    "run": paused_snapshot,
+                    "memoryActivity": None,
+                }
+
+            def engine_run(**kwargs):
+                result = engine.run(
+                    **kwargs,
+                    tool_operation_store=agent_tool_operations,
+                    approval_decision=approval_decision,
+                )
+                if result.paused:
+                    return pause_for_approval(result)
+                return result
+
             try:
                 if run_action in {"start", "resume"}:
                     planned = agent_runs.get_snapshot(
@@ -829,7 +947,7 @@ def execute_agent_chat(
                         and not plan_created
                         and engine.name == "langgraph"
                     ):
-                        run_result = engine.run(
+                        run_result = engine_run(
                             user_id=user_id,
                             run_id=durable_run_id,
                             messages=[],
@@ -847,6 +965,8 @@ def execute_agent_chat(
                             model_event_callback=forward_model_event,
                             resume_from_checkpoint=True,
                         )
+                        if isinstance(run_result, dict):
+                            return run_result
                         answer = run_result.answer
                 else:
                     planning_messages = [
@@ -865,7 +985,7 @@ def execute_agent_chat(
                             },
                         )
                     try:
-                        run_result = engine.run(
+                        run_result = engine_run(
                             user_id=user_id,
                             run_id=durable_run_id,
                             messages=planning_messages,
@@ -882,6 +1002,8 @@ def execute_agent_chat(
                             execution_callback=record_execution,
                             model_event_callback=forward_model_event,
                         )
+                        if isinstance(run_result, dict):
+                            return run_result
                         answer = run_result.answer
                         plan_created = False
                     except TaskPlanCreated:
@@ -902,19 +1024,25 @@ def execute_agent_chat(
                                     str(step["outputSummary"])
                                 )
                             continue
+                        resume_plan_step = (
+                            step["status"] == "waiting_approval"
+                            and approval_decision is not None
+                            and step["id"] == current_plan_step_id
+                        )
                         if step["status"] not in {
                             "pending",
                             "failed",
-                        }:
+                        } and not resume_plan_step:
                             continue
                         _raise_if_cancelled(cancel_event)
                         current_plan_step_id = step["id"]
-                        agent_runs.transition_step(
-                            user_id,
-                            durable_run_id,
-                            current_plan_step_id,
-                            "running",
-                        )
+                        if step["status"] != "running":
+                            agent_runs.transition_step(
+                                user_id,
+                                durable_run_id,
+                                current_plan_step_id,
+                                "running",
+                            )
                         publish_snapshot("step_updated")
                         plan_trace_step = trace.start_step(
                             kind="system",
@@ -951,10 +1079,12 @@ def execute_agent_chat(
                             }
                         )
                         record_start = len(execution_records)
-                        step_result = engine.run(
+                        step_result = engine_run(
                             user_id=user_id,
                             run_id=durable_run_id,
-                            messages=step_messages,
+                            messages=(
+                                [] if resume_plan_step else step_messages
+                            ),
                             config=chat_config,
                             registry=registry,
                             trace=trace,
@@ -966,7 +1096,10 @@ def execute_agent_chat(
                                 else None
                             ),
                             execution_callback=record_execution,
+                            resume_from_checkpoint=resume_plan_step,
                         )
+                        if isinstance(step_result, dict):
+                            return step_result
                         new_records = execution_records[
                             record_start:
                         ]
@@ -1010,11 +1143,19 @@ def execute_agent_chat(
                         answer = step_result.answer
                     current_plan_step_id = None
                 else:
-                    agent_runs.transition_run(
+                    running_snapshot = agent_runs.get_snapshot(
                         user_id,
                         durable_run_id,
-                        "running",
                     )
+                    if (
+                        running_snapshot
+                        and running_snapshot["status"] != "running"
+                    ):
+                        agent_runs.transition_run(
+                            user_id,
+                            durable_run_id,
+                            "running",
+                        )
                     publish_snapshot("run_updated")
                 _raise_if_cancelled(cancel_event)
             except Exception as exc:
@@ -1376,6 +1517,8 @@ def _publish_agent_result(
     result: dict[str, Any],
     publish: Callable[[dict[str, Any]], None],
 ) -> None:
+    if result.get("paused"):
+        return
     for call in result.get("toolCalls", []):
         publish({"type": "tool", **call})
     for index in range(0, len(result["answer"]), 12):
@@ -1405,17 +1548,71 @@ def execute_persisted_agent_run(
     cancel_event: Event,
     publish: Callable[[dict[str, Any]], None],
 ) -> None:
+    approval_decision = None
+    approval_operation = None
+    if action.startswith("approval:"):
+        approval_id = action.split(":", 1)[1]
+        approval_operation = agent_tool_operations.get(
+            user_id,
+            approval_id,
+        )
+        if (
+            approval_operation is None
+            or approval_operation["runId"] != run_id
+            or approval_operation["status"] not in {"approved", "denied"}
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Approval cannot resume this Agent run.",
+            )
+        approval_decision = approval_operation["decision"]
+        action = "resume"
+    elif action == "resume":
+        run_snapshot = agent_runs.get_snapshot(user_id, run_id)
+        if run_snapshot and run_snapshot["status"] == "waiting_approval":
+            operations = agent_tool_operations.get_for_run(
+                user_id,
+                run_id,
+            )
+            approval_operation = operations[-1] if operations else None
+            if (
+                approval_operation is None
+                or approval_operation["status"] not in {
+                    "approved",
+                    "denied",
+                }
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Agent approval has not been resolved.",
+                )
+            approval_decision = approval_operation["decision"]
     request_payload = agent_runs.load_request(user_id, run_id)
     if request_payload is None:
         raise HTTPException(status_code=404, detail="Agent run not found.")
     persisted_engine_name = request_payload.pop("_agentEngine", None)
     payload = ChatRequest.model_validate(request_payload)
+    if approval_operation is not None:
+        publish(
+            {
+                "type": "approval_resolved",
+                "approvalId": approval_operation["approvalId"],
+                "runId": run_id,
+                "decision": approval_decision,
+                "status": (
+                    "success"
+                    if approval_decision == "allow_once"
+                    else "failed"
+                ),
+            }
+        )
     result = execute_agent_chat(
         payload,
         user_id,
         existing_run_id=run_id,
         run_action=action,
         persisted_engine_name=persisted_engine_name,
+        approval_decision=approval_decision,
         cancel_event=cancel_event,
         event_emit=lambda name, value: publish(
             {"type": name, **value}
@@ -1540,6 +1737,8 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                     )
                     break
                 result = value
+                if result.get("paused"):
+                    break
                 for call in result.get("toolCalls", []):
                     yield sse_event(
                         "tool",

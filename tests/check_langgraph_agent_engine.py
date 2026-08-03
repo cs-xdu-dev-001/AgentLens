@@ -18,6 +18,9 @@ from knowflow.services.langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
+from knowflow.database import Database
+from knowflow.services.agent_run_store import AgentRunStore
+from knowflow.services.agent_tool_operations import AgentToolOperationStore
 
 
 class FakeGateway:
@@ -69,6 +72,8 @@ def run_engine(
     resume: bool = False,
     execution_callback=None,
     model_event_callback=None,
+    tool_operation_store=None,
+    approval_decision=None,
 ):
     return engine.run(
         user_id=17,
@@ -81,6 +86,8 @@ def run_engine(
         resume_from_checkpoint=resume,
         execution_callback=execution_callback,
         model_event_callback=model_event_callback,
+        tool_operation_store=tool_operation_store,
+        approval_decision=approval_decision,
     )
 
 
@@ -149,6 +156,31 @@ def register_read_only_mcp(
         engine_names={"current", "langgraph"},
         trace_kind="mcp",
         risk="read",
+        server_name="Notes",
+    )
+
+
+def register_write_mcp(
+    registry: ToolRegistry,
+    calls: list[dict],
+) -> None:
+    registry.register(
+        name="mcp_notes_create",
+        description="Create a note.",
+        input_schema={
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+            "additionalProperties": False,
+        },
+        handler=lambda arguments: (
+            calls.append(arguments)
+            or {"pageId": f"page-{len(calls)}"}
+        ),
+        read_only=False,
+        engine_names={"current", "langgraph"},
+        trace_kind="mcp",
+        risk="write",
         server_name="Notes",
     )
 
@@ -579,6 +611,188 @@ def main() -> None:
         assert resumed_execution_events == []
         assert len(resumed.executions) == 1
         assert resumed.executions[0].call_id == "call_resume_search"
+
+        approval_database = Database(
+            f"sqlite:///{(root / 'approvals.sqlite3').as_posix()}"
+        )
+        approval_runs = AgentRunStore(database=approval_database)
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-approval",
+            user_message_id=1,
+            goal_summary="Create two notes",
+            trigger_mode="auto",
+            run_id="run_write_approval",
+        )
+        operation_store = AgentToolOperationStore(
+            database=approval_database,
+            approval_timeout_seconds=60,
+        )
+        write_calls: list[dict] = []
+        write_registry = ToolRegistry()
+        register_write_mcp(write_registry, write_calls)
+        write_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"one"}',
+                        "call_write_1",
+                    ),
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"two"}',
+                        "call_write_2",
+                    ),
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "Both notes were created.",
+                "tool_calls": [],
+            },
+        )
+        write_engine = LangGraphAgentEngine(
+            gateway=write_gateway,
+            checkpoint_db_path=root / "write-approval.sqlite3",
+        )
+        first_pause = run_engine(
+            write_engine,
+            write_registry,
+            run_id="run_write_approval",
+            messages=[{"role": "user", "content": "Create two notes"}],
+            tool_operation_store=operation_store,
+        )
+        assert first_pause.paused is True
+        assert first_pause.interrupt["toolCallId"] == "call_write_1"
+        assert write_calls == []
+        first_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_approval",
+            tool_call_id="call_write_1",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "one"},
+        )
+        assert operation_store.resolve(
+            17,
+            first_operation["approvalId"],
+            "allow_once",
+        )
+        second_pause = run_engine(
+            write_engine,
+            write_registry,
+            run_id="run_write_approval",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="allow_once",
+        )
+        assert second_pause.paused is True
+        assert second_pause.interrupt["toolCallId"] == "call_write_2"
+        assert write_calls == [{"title": "one"}]
+        second_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_approval",
+            tool_call_id="call_write_2",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "two"},
+        )
+        assert operation_store.resolve(
+            17,
+            second_operation["approvalId"],
+            "allow_once",
+        )
+        write_result = run_engine(
+            write_engine,
+            write_registry,
+            run_id="run_write_approval",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="allow_once",
+        )
+        assert write_result.answer == "Both notes were created."
+        assert write_calls == [{"title": "one"}, {"title": "two"}]
+        completed_write = run_engine(
+            write_engine,
+            write_registry,
+            run_id="run_write_approval",
+            resume=True,
+            tool_operation_store=operation_store,
+        )
+        assert completed_write.answer == "Both notes were created."
+        assert write_calls == [{"title": "one"}, {"title": "two"}]
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-deny",
+            user_message_id=2,
+            goal_summary="Create a denied note",
+            trigger_mode="auto",
+            run_id="run_write_deny",
+        )
+        denied_calls: list[dict] = []
+        denied_registry = ToolRegistry()
+        register_write_mcp(denied_registry, denied_calls)
+        denied_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"denied"}',
+                        "call_write_denied",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "The note was not created.",
+                "tool_calls": [],
+            },
+        )
+        denied_engine = LangGraphAgentEngine(
+            gateway=denied_gateway,
+            checkpoint_db_path=root / "write-denied.sqlite3",
+        )
+        denied_pause = run_engine(
+            denied_engine,
+            denied_registry,
+            run_id="run_write_deny",
+            messages=[{"role": "user", "content": "Create a note"}],
+            tool_operation_store=operation_store,
+        )
+        denied_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_deny",
+            tool_call_id=denied_pause.interrupt["toolCallId"],
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "denied"},
+        )
+        assert operation_store.resolve(
+            17,
+            denied_operation["approvalId"],
+            "deny",
+        )
+        denied_result = run_engine(
+            denied_engine,
+            denied_registry,
+            run_id="run_write_deny",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="deny",
+        )
+        assert denied_result.answer == "The note was not created."
+        assert denied_result.executions[0].error_code == "permission_denied"
+        assert denied_calls == []
+        approval_database.engine.dispose()
 
     print("langgraph engine checkpoints and runs the web search loop safely")
 

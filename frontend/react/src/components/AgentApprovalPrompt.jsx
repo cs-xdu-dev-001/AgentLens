@@ -121,7 +121,7 @@ export function AgentApprovalPrompt({
         nextDecision === "allow_once"
           ? approvalApi.resolve(approval.approvalId, "allow_once")
           : approvalApi.resolve(approval.approvalId, "deny");
-      await request;
+      const result = await request;
       pendingApprovalIds.delete(approval.approvalId);
       publishLocalState(approval.approvalId, {
         state: "resolved",
@@ -129,6 +129,17 @@ export function AgentApprovalPrompt({
         error: "",
       });
       scheduleLocalStateCleanup(approval.approvalId);
+      if (result?.runId) {
+        window.dispatchEvent(
+          new CustomEvent("knowflow:react-agent-approval-resume", {
+            detail: {
+              runId: result.runId,
+              resumeStarted: Boolean(result.resumeStarted),
+              resumeRequired: Boolean(result.resumeRequired),
+            },
+          }),
+        );
+      }
     } catch (error) {
       pendingApprovalIds.delete(approval.approvalId);
       if (error?.status === 404) {

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from threading import Event
 import time
 from typing import Any
 
@@ -430,10 +431,8 @@ def main() -> None:
     assert set(eligibility_registry.eligible_names("langgraph")) == {
         configured["readNotion"]["modelName"],
         configured["readDocs"]["modelName"],
+        configured["writeNotion"]["modelName"],
     }
-    assert configured["writeNotion"]["modelName"] not in (
-        eligibility_registry.eligible_names("langgraph")
-    )
     FakePool.instances.clear()
 
     allow_gateway = ScenarioGateway(
@@ -586,6 +585,75 @@ def main() -> None:
         overflow_error["code"]
         == "mcp_tool_configuration_invalid"
     )
+
+    original_engine = extensions.AGENT_ENGINE
+    original_checkpoint = extensions.LANGGRAPH_CHECKPOINT_DB
+    langgraph_gateway = ScenarioGateway(
+        [configured["writeNotion"]["modelName"]],
+        "LangGraph created the page.",
+    )
+    extensions.AGENT_ENGINE = "langgraph"
+    extensions.LANGGRAPH_CHECKPOINT_DB = str(
+        ROOT / "data" / "test-dbs" / "mcp-langgraph-checkpoints.db"
+    )
+    Path(extensions.LANGGRAPH_CHECKPOINT_DB).unlink(missing_ok=True)
+    extensions.gateway.complete = langgraph_gateway
+    langgraph_events: list[tuple[str, dict]] = []
+    try:
+        paused = extensions.execute_agent_chat(
+            ChatRequest(
+                question="Create one page with LangGraph.",
+                chatModelConfigId=model_id,
+                enableTools=True,
+                autoAgent=True,
+            ),
+            1,
+            event_emit=lambda name, value: langgraph_events.append(
+                (name, value)
+            ),
+        )
+        assert paused["paused"] is True
+        assert paused["run"]["status"] == "waiting_approval"
+        required = next(
+            value
+            for name, value in langgraph_events
+            if name == "approval_required"
+        )
+        assert runtime.agent_tool_operations.resolve(
+            1,
+            required["approvalId"],
+            "allow_once",
+        )
+        resumed_events: list[dict] = []
+        extensions.execute_persisted_agent_run(
+            1,
+            paused["runId"],
+            f"approval:{required['approvalId']}",
+            Event(),
+            resumed_events.append,
+        )
+        done_event = next(
+            event for event in resumed_events if event["type"] == "done"
+        )
+        assert done_event["run"]["status"] == "completed", json.dumps(
+            done_event,
+            ensure_ascii=False,
+            default=str,
+        )
+        assert any(
+            call[1] == "create_page"
+            for pool in FakePool.instances
+            for call in pool.calls
+        )
+    finally:
+        extensions.AGENT_ENGINE = original_engine
+        extensions.LANGGRAPH_CHECKPOINT_DB = original_checkpoint
+        Path(
+            ROOT
+            / "data"
+            / "test-dbs"
+            / "mcp-langgraph-checkpoints.db"
+        ).unlink(missing_ok=True)
 
     test_retry_policy(extensions)
     print(

@@ -85,7 +85,7 @@ def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
     allowed = {
         "start": {"waiting_start"},
         "replan": {"waiting_start"},
-        "resume": {"interrupted", "failed"},
+        "resume": {"interrupted", "failed", "waiting_approval"},
         "restart": {"planning"},
     }[action]
     if snapshot["status"] not in allowed:

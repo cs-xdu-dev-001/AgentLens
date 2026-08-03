@@ -31,13 +31,25 @@ engine_run_calls = [
     and node.func.value.id == "engine"
     and node.func.attr == "run"
 ]
+wrapped_run_calls = [
+    node
+    for node in ast.walk(tree)
+    if isinstance(node, ast.Call)
+    and isinstance(node.func, ast.Name)
+    and node.func.id == "engine_run"
+]
 
 assert "ToolRegistry" in agent_loop_imports
 assert "AgentRunner" not in agent_loop_imports
 assert "build_agent_engine" in agent_engine_imports
 assert len(factory_calls) == 1
-assert len(engine_run_calls) == 3
-for call in engine_run_calls:
+assert len(engine_run_calls) == 1
+assert len(wrapped_run_calls) == 3
+engine_keyword_names = {keyword.arg for keyword in engine_run_calls[0].keywords}
+assert {"tool_operation_store", "approval_decision"}.issubset(
+    engine_keyword_names
+)
+for call in wrapped_run_calls:
     keyword_names = {keyword.arg for keyword in call.keywords}
     assert {"user_id", "run_id"}.issubset(keyword_names)
 assert sum(
@@ -47,7 +59,7 @@ assert sum(
         and keyword.value.value is True
         for keyword in call.keywords
     )
-    for call in engine_run_calls
+    for call in wrapped_run_calls
 ) == 1
 assert "AGENT_ENGINE" in source
 assert 'stored_request["_agentEngine"] = selected_engine_name' in source

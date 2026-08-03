@@ -562,6 +562,59 @@ def test_approval_api_hides_missing_and_wrong_owner() -> None:
         expired_waiter.join(timeout=1)
     finally:
         approval_router.approval_broker = original_broker
+
+    runtime.agent_runs.create_run(
+        user_id=1,
+        session_id="session-durable-approval",
+        user_message_id=1,
+        goal_summary="Create a durable page",
+        trigger_mode="auto",
+        run_id="run_durable_approval",
+    )
+    durable = runtime.agent_tool_operations.ensure_waiting(
+        user_id=1,
+        run_id="run_durable_approval",
+        tool_call_id="call_durable_write",
+        tool_name="notion_create_page",
+        server_name="Notion",
+        risk="write",
+        input_summary={"title": "Durable"},
+    )
+    durable_resumes: Queue = Queue()
+    original_executor = approval_router._run_executor
+    approval_router.configure_approval_run_executor(
+        lambda user_id, run_id, action, cancel_event, publish: (
+            durable_resumes.put((user_id, run_id, action))
+        )
+    )
+    try:
+        assert (
+            bob.post(
+                f"/api/agent/approvals/{durable['approvalId']}",
+                json={"decision": "allow_once"},
+            ).status_code
+            == 404
+        )
+        durable_response = alice.post(
+            f"/api/agent/approvals/{durable['approvalId']}",
+            json={"decision": "allow_once"},
+        )
+        assert durable_response.status_code == 200, durable_response.text
+        durable_data = durable_response.json()["data"]
+        assert durable_data["resolved"] is True
+        assert durable_data["runId"] == "run_durable_approval"
+        assert durable_data["resumeStarted"] is True
+        assert durable_resumes.get(timeout=1) == (
+            1,
+            "run_durable_approval",
+            f"approval:{durable['approvalId']}",
+        )
+        assert runtime.agent_tool_operations.get(
+            1,
+            durable["approvalId"],
+        )["status"] == "approved"
+    finally:
+        approval_router.configure_approval_run_executor(original_executor)
     assert (
         alice.post(
             "/api/agent/approvals/apr_missing",

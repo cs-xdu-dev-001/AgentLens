@@ -29,6 +29,8 @@ def main() -> None:
     require(flow, "renderAgentApprovals", "approval render bridge")
     require(flow, "knowflow:react-approval-local-state", "local decision reconciliation")
     require(flow, "handleLocalApprovalState", "local decision state handler")
+    require(flow, "handleApprovalResume", "durable approval reconnect")
+    require(flow, "receivedPause", "paused stream preservation")
 
     events = "frontend/react/src/controller/messageEvents.js"
     require(events, "updateReactMessageApprovals", "message approval bridge")
@@ -45,6 +47,7 @@ def main() -> None:
     require(prompt, "disabled={busy", "busy action lock")
     require(prompt, "pendingApprovalIds", "cross-surface request lock")
     require(prompt, "knowflow:react-approval-local-state", "cross-surface state sync")
+    require(prompt, "knowflow:react-agent-approval-resume", "resume dispatch")
     require(prompt, "scheduleLocalStateCleanup", "bounded shared state cleanup")
     require(prompt, "pendingApprovalIds.delete", "successful request lock release")
     require(prompt, "error?.status === 404", "expired approval")

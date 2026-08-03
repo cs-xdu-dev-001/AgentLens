@@ -11,7 +11,13 @@ from .agent_failure import recovery_from_snapshot
 
 
 RUN_TRANSITIONS: dict[str, set[str]] = {
-    "planning": {"waiting_start", "running", "failed", "cancelled"},
+    "planning": {
+        "waiting_start",
+        "waiting_approval",
+        "running",
+        "failed",
+        "cancelled",
+    },
     "waiting_start": {"planning", "running", "cancelled"},
     "running": {
         "waiting_approval",

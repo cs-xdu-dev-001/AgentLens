@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
+from langgraph.types import Command, interrupt
 
 from .agent_loop import (
     AgentLoopLimitError,
@@ -18,6 +20,7 @@ from .langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
+from .agent_trace import sanitize_trace_value
 
 
 class LangGraphState(TypedDict):
@@ -26,6 +29,8 @@ class LangGraphState(TypedDict):
     answer: str
     executions: list[dict[str, Any]]
     tool_rounds: int
+    pending_tool_calls: list[dict[str, Any]]
+    tool_call_index: int
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,9 @@ class LangGraphRunContext:
     registry: ToolRegistry
     max_tool_rounds: int
     allowed_tool_names: frozenset[str]
+    user_id: int
+    run_id: str
+    tool_operation_store: Any = None
     trace: Any = None
     parent_step_id: str | None = None
     execution_callback: (
@@ -77,7 +85,11 @@ class LangGraphAgentEngine:
             self._route_after_model,
             {"tools": "tools", "end": END},
         )
-        self._builder.add_edge("tools", "model")
+        self._builder.add_conditional_edges(
+            "tools",
+            self._route_after_tools,
+            {"tools": "tools", "model": "model"},
+        )
         self._graph = self._builder.compile()
 
     @staticmethod
@@ -188,6 +200,10 @@ class LangGraphAgentEngine:
             return {
                 "messages": [*state["messages"], assistant_message],
                 "answer": "",
+                "pending_tool_calls": json.loads(
+                    json.dumps(tool_calls, ensure_ascii=False)
+                ),
+                "tool_call_index": 0,
             }
         if not answer:
             raise ValueError("Model returned neither text nor tool calls.")
@@ -203,6 +219,12 @@ class LangGraphAgentEngine:
         raise ValueError("LangGraph model state cannot be routed.")
 
     @staticmethod
+    def _route_after_tools(state: LangGraphState) -> str:
+        calls = state.get("pending_tool_calls") or []
+        index = int(state.get("tool_call_index") or 0)
+        return "tools" if index < len(calls) else "model"
+
+    @staticmethod
     def _call_tools(
         state: LangGraphState,
         runtime: Runtime[LangGraphRunContext],
@@ -210,77 +232,162 @@ class LangGraphAgentEngine:
         context = runtime.context
         trace = context.trace
         messages = [dict(message) for message in state["messages"]]
-        calls = messages[-1].get("tool_calls") or []
+        calls = list(state.get("pending_tool_calls") or [])
+        if not calls:
+            assistant = next(
+                (
+                    message
+                    for message in reversed(messages)
+                    if message.get("role") == "assistant"
+                    and message.get("tool_calls")
+                ),
+                None,
+            )
+            calls = list((assistant or {}).get("tool_calls") or [])
+        call_index = int(state.get("tool_call_index") or 0)
+        if call_index >= len(calls):
+            raise ValueError("LangGraph tool state cannot be routed.")
         executions = list(state.get("executions") or [])
         allowed_names = set(context.allowed_tool_names)
-        for call in calls:
-            prepared = context.registry.prepare(
-                call,
-                allowed_names=allowed_names,
-                engine_name="langgraph",
-            )
-            definition = prepared.definition
-            tool_step = (
-                trace.start_step(
-                    kind=(
-                        definition.trace_kind
-                        if definition is not None
-                        else "tool"
-                    ),
-                    name=prepared.tool_name,
-                    title=f"Running {prepared.tool_name}",
-                    parent_id=context.parent_step_id,
-                    input_summary=(
-                        None
-                        if definition is not None and definition.internal
-                        else prepared.arguments
-                    ),
-                )
-                if trace
-                else None
-            )
-            execution = context.registry.invoke(prepared)
-            if trace and tool_step:
-                trace.finish_step(
-                    tool_step,
-                    status=(
-                        "success"
-                        if execution.status == "success"
-                        else "failed"
-                    ),
-                    title=(
-                        f"{prepared.tool_name} completed"
-                        if execution.status == "success"
-                        else f"{prepared.tool_name} failed"
-                    ),
-                    output_summary=(
-                        execution.public_output()
-                        if execution.status == "success"
-                        else execution.error_message
-                    ),
-                    error_code=(
-                        None
-                        if execution.status == "success"
-                        else execution.error_code
-                    ),
-                )
-            if context.execution_callback is not None:
-                context.execution_callback(execution, tool_step)
-            executions.append(
-                LangGraphAgentEngine._execution_to_state(execution)
-            )
-            messages.append(
+        prepared = context.registry.prepare(
+            calls[call_index],
+            allowed_names=allowed_names,
+            engine_name="langgraph",
+        )
+        definition = prepared.definition
+        execution = prepared.error
+        if execution is None and definition is not None and not definition.read_only:
+            decision_value = interrupt(
                 {
-                    "role": "tool",
-                    "tool_call_id": execution.call_id,
-                    "name": execution.tool_name,
-                    "content": execution.model_content(),
+                    "type": "tool_approval",
+                    "toolCallId": prepared.call_id,
+                    "toolName": prepared.tool_name,
+                    "serverName": definition.server_name or "MCP",
+                    "risk": definition.risk,
+                    "inputSummary": sanitize_trace_value(
+                        prepared.arguments
+                    ),
                 }
             )
+            decision = (
+                str(decision_value.get("decision") or "")
+                if isinstance(decision_value, dict)
+                else str(decision_value or "")
+            )
+            if decision != "allow_once":
+                execution = context.registry._failure(
+                    prepared.call_id,
+                    prepared.tool_name,
+                    prepared.arguments,
+                    "permission_denied",
+                    "Tool execution was denied.",
+                    time.perf_counter(),
+                )
+            else:
+                store = context.tool_operation_store
+                operation = (
+                    store.get_for_call(
+                        context.user_id,
+                        context.run_id,
+                        prepared.call_id,
+                    )
+                    if store is not None
+                    else None
+                )
+                if operation and operation["status"] in {
+                    "succeeded",
+                    "failed",
+                } and isinstance(operation.get("execution"), dict):
+                    execution = LangGraphAgentEngine._execution_from_state(
+                        operation["execution"]
+                    )
+                elif operation and operation["status"] == "approved":
+                    claimed = store.claim_execution(
+                        context.user_id,
+                        operation["approvalId"],
+                    )
+                    if claimed is not None:
+                        execution = context.registry.invoke(prepared)
+                        store.finish_execution(
+                            context.user_id,
+                            operation["approvalId"],
+                            LangGraphAgentEngine._execution_to_state(
+                                execution
+                            ),
+                        )
+                if execution is None:
+                    execution = context.registry._failure(
+                        prepared.call_id,
+                        prepared.tool_name,
+                        prepared.arguments,
+                        "tool_execution_indeterminate",
+                        "The write tool state is indeterminate and was not repeated.",
+                        time.perf_counter(),
+                    )
+        if execution is None:
+            execution = context.registry.invoke(prepared)
+        tool_step = (
+            trace.start_step(
+                kind=(
+                    definition.trace_kind
+                    if definition is not None
+                    else "tool"
+                ),
+                name=prepared.tool_name,
+                title=f"Running {prepared.tool_name}",
+                parent_id=context.parent_step_id,
+                input_summary=(
+                    None
+                    if definition is not None and definition.internal
+                    else prepared.arguments
+                ),
+            )
+            if trace
+            else None
+        )
+        if trace and tool_step:
+            trace.finish_step(
+                tool_step,
+                status=(
+                    "success" if execution.status == "success" else "failed"
+                ),
+                title=(
+                    f"{prepared.tool_name} completed"
+                    if execution.status == "success"
+                    else f"{prepared.tool_name} failed"
+                ),
+                output_summary=(
+                    execution.public_output()
+                    if execution.status == "success"
+                    else execution.error_message
+                ),
+                error_code=(
+                    None
+                    if execution.status == "success"
+                    else execution.error_code
+                ),
+            )
+        if context.execution_callback is not None:
+            context.execution_callback(execution, tool_step)
+        executions.append(LangGraphAgentEngine._execution_to_state(execution))
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": execution.call_id,
+                "name": execution.tool_name,
+                "content": execution.model_content(),
+            }
+        )
         return {
             "messages": messages,
             "executions": executions,
-            "tool_rounds": int(state.get("tool_rounds") or 0) + 1,
+            "tool_rounds": (
+                int(state.get("tool_rounds") or 0) + 1
+                if call_index + 1 >= len(calls)
+                else int(state.get("tool_rounds") or 0)
+            ),
+            "pending_tool_calls": calls,
+            "tool_call_index": call_index + 1,
         }
 
     @staticmethod
@@ -348,6 +455,8 @@ class LangGraphAgentEngine:
         execution_callback=None,
         model_event_callback=None,
         resume_from_checkpoint: bool = False,
+        tool_operation_store=None,
+        approval_decision: str | None = None,
     ) -> AgentRunResult:
         del approval_gate, skill_snapshot
         if int(user_id) <= 0:
@@ -364,6 +473,9 @@ class LangGraphAgentEngine:
             registry=registry,
             max_tool_rounds=self._max_tool_rounds,
             allowed_tool_names=registry.eligible_names("langgraph"),
+            user_id=user_id,
+            run_id=run_id,
+            tool_operation_store=tool_operation_store,
             trace=trace,
             parent_step_id=parent_step_id,
             execution_callback=execution_callback,
@@ -382,7 +494,11 @@ class LangGraphAgentEngine:
                     raise self._checkpoint_not_found()
                 if snapshot.next:
                     output = graph.invoke(
-                        None,
+                        (
+                            Command(resume=approval_decision)
+                            if approval_decision is not None
+                            else None
+                        ),
                         graph_config,
                         context=context,
                     )
@@ -398,18 +514,32 @@ class LangGraphAgentEngine:
                         "answer": "",
                         "executions": [],
                         "tool_rounds": 0,
+                        "pending_tool_calls": [],
+                        "tool_call_index": 0,
                     },
                     graph_config,
                     context=context,
                 )
+        interrupts = output.get("__interrupt__") or []
+        interrupt_value = (
+            getattr(interrupts[0], "value", None)
+            if interrupts
+            else None
+        )
         return AgentRunResult(
-            answer=str(output["answer"]),
+            answer=str(output.get("answer") or ""),
             executions=[
                 self._execution_from_state(value)
                 for value in (output.get("executions") or [])
                 if isinstance(value, dict)
             ],
             trace=trace.snapshot() if trace else [],
+            paused=bool(interrupts),
+            interrupt=(
+                dict(interrupt_value)
+                if isinstance(interrupt_value, dict)
+                else None
+            ),
         )
 
     @staticmethod

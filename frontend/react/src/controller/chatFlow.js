@@ -306,6 +306,7 @@ export function createChatFlow({
     let approvals = [];
     let run = null;
     let receivedDone = false;
+    let receivedPause = false;
     const controller = new AbortController();
     state.activeChatController = controller;
     setSending(true);
@@ -421,6 +422,9 @@ export function createChatFlow({
             || eventPayload.type === "step_updated"
           ) {
             run = eventPayload.run || run;
+            if (run?.status === "waiting_approval") {
+              receivedPause = true;
+            }
             state.activeRunId = isActiveRun(run) ? run.id : null;
             state.activeRunMessageId = isActiveRun(run)
               ? answer.messageId
@@ -491,7 +495,7 @@ export function createChatFlow({
           }
         }
       }
-      if (!receivedDone) {
+      if (!receivedDone && !receivedPause) {
         cancelPendingApprovals();
         if (trace.length) {
           trace = markTraceInterrupted(trace);
@@ -499,7 +503,11 @@ export function createChatFlow({
         }
       }
       if (answer.thinking) {
-        setMessageContent(answer, "assistant", answerBuffer || "模型没有返回内容。");
+        setMessageContent(
+          answer,
+          "assistant",
+          answerBuffer || (receivedPause ? "等待确认后继续。" : "模型没有返回内容。"),
+        );
       }
       if (!retryRequest) {
         requestComposerReset();
@@ -705,9 +713,35 @@ export function createChatFlow({
     }
   }
 
+  async function handleApprovalResume(event) {
+    const detail = event.detail || {};
+    const runId = detail.runId;
+    const messageId = state.activeRunMessageId;
+    if (!runId || !messageId) {
+      requestReactSessionsRefresh();
+      return;
+    }
+    try {
+      setSending(true);
+      if (detail.resumeRequired) {
+        await agentRunApi.resume(runId);
+      }
+      state.activeRunId = runId;
+      await reconnectAgentRun(runId, messageId);
+    } catch (error) {
+      toast(error.message || "恢复审批后的任务失败", 4200, "error");
+    } finally {
+      setSending(false);
+    }
+  }
+
   window.addEventListener(
     "knowflow:react-agent-run-action",
     handleAgentRunAction,
+  );
+  window.addEventListener(
+    "knowflow:react-agent-approval-resume",
+    handleApprovalResume,
   );
 
   return {

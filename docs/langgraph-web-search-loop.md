@@ -1,5 +1,7 @@
 # LangGraph联网搜索工具循环
 
+> 本文记录只读工具迁移阶段。MCP写工具审批已在后续阶段完成，当前实现见[LangGraph MCP写工具审批](langgraph-mcp-write-approval.md)。
+
 ## 范围
 
 本阶段把`web_search`和明确标记为只读的MCP工具迁入LangGraph，形成可checkpoint恢复的`模型 → 工具 → 模型`循环。默认`current`执行器不变，MCP写操作、Skills、审批、任务计划和Mem0仍不向LangGraph开放。
