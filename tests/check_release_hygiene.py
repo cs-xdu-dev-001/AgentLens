@@ -77,6 +77,28 @@ def check_forbidden_path_contract() -> None:
     assert not any(is_forbidden_tracked_path(path) for path in allowed)
 
 
+def check_runtime_paths_are_ignored() -> None:
+    required = [
+        "data/langgraph/checkpoints.sqlite3",
+        "data/langgraph/checkpoints.sqlite3-wal",
+        "data/langgraph/checkpoints.sqlite3-shm",
+    ]
+    result = subprocess.run(
+        ["git", "check-ignore", "--no-index", *required],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    ignored = {
+        normalize_repo_path(line)
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+    assert result.returncode == 0, result.stderr
+    assert ignored == {normalize_repo_path(path) for path in required}
+
+
 def check_text_scan_uses_git_index(tracked: list[str]) -> None:
     ignored_parent = ROOT / ".tmp-test"
     created_ignored_parent = not ignored_parent.exists()
@@ -313,6 +335,7 @@ def isolates_secure_cookie_before_app_import(path: Path, text: str) -> bool:
 def main() -> None:
     tracked = tracked_files()
     check_forbidden_path_contract()
+    check_runtime_paths_are_ignored()
     check_text_scan_uses_git_index(tracked)
     text_files = list(iter_text_files(tracked))
     text_offenders = []

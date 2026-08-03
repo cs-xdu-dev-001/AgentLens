@@ -165,13 +165,32 @@ def main() -> None:
             create=False
         ) as saver:
             assert saver is not None
+            thread_id = LangGraphCheckpointStore.thread_id(
+                17, "run_resume"
+            )
             saved = saver.get_tuple(
-                {"configurable": {"thread_id": "run_resume"}}
+                {"configurable": {"thread_id": thread_id}}
             )
             assert saved is not None
-            assert saved.config["configurable"]["thread_id"] == "run_resume"
+            assert saved.config["configurable"]["thread_id"] == thread_id
             assert saved.checkpoint["channel_values"]["schema_version"] == 1
             assert saved.checkpoint["channel_values"]["answer"] == "recovered"
+
+        try:
+            LangGraphAgentEngine(
+                gateway=FakeGateway(),
+                checkpoint_db_path=checkpoint_path,
+            ).run(
+                user_id=18,
+                run_id="run_resume",
+                messages=[],
+                config=config,
+                registry=registry,
+                resume_from_checkpoint=True,
+            )
+            raise AssertionError("another user must not share checkpoints")
+        except LangGraphCheckpointError as exc:
+            assert exc.code == "langgraph_checkpoint_not_found"
 
         missing_path = root / "missing.sqlite3"
         try:

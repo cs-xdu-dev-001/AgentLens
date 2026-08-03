@@ -28,6 +28,14 @@ class LangGraphCheckpointStore:
         self.path = Path(path).expanduser().resolve()
         self.timeout_seconds = max(0.1, float(timeout_seconds))
 
+    @staticmethod
+    def thread_id(user_id: int, run_id: str) -> str:
+        owner_id = int(user_id)
+        identifier = str(run_id or "").strip()
+        if owner_id <= 0 or not identifier:
+            raise ValueError("A valid user_id and run_id are required.")
+        return f"user:{owner_id}:run:{identifier}"
+
     @contextmanager
     def open(
         self,
@@ -71,10 +79,12 @@ class LangGraphCheckpointStore:
             if connection is not None:
                 connection.close()
 
-    def delete_threads(self, run_ids: list[str]) -> None:
+    def delete_threads(self, user_id: int, run_ids: list[str]) -> None:
         thread_ids = tuple(
             dict.fromkeys(
-                str(run_id).strip() for run_id in run_ids if run_id
+                self.thread_id(user_id, run_id)
+                for run_id in run_ids
+                if str(run_id or "").strip()
             )
         )
         if not thread_ids:
@@ -83,8 +93,16 @@ class LangGraphCheckpointStore:
         with self.open(create=False) as saver:
             if saver is None:
                 return
-            for thread_id in thread_ids:
-                saver.delete_thread(thread_id)
+            saver.setup()
+            with saver.conn:
+                saver.conn.executemany(
+                    "DELETE FROM checkpoints WHERE thread_id = ?",
+                    ((thread_id,) for thread_id in thread_ids),
+                )
+                saver.conn.executemany(
+                    "DELETE FROM writes WHERE thread_id = ?",
+                    ((thread_id,) for thread_id in thread_ids),
+                )
 
     @staticmethod
     def _set_mode(path: Path, mode: int) -> None:

@@ -170,9 +170,7 @@ class LangGraphAgentEngine:
     ) -> AgentRunResult:
         if int(user_id) <= 0:
             raise ValueError("A valid user_id is required.")
-        thread_id = str(run_id or "").strip()
-        if not thread_id:
-            raise ValueError("A run_id is required.")
+        thread_id = self._checkpoints.thread_id(user_id, run_id)
 
         graph_config = {
             "configurable": {"thread_id": thread_id}

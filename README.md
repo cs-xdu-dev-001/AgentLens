@@ -245,7 +245,7 @@ Skill packages are isolated per-user. Each signed-in user gets builtin Skills di
 
 A Skill cannot register or enable a tool or MCP connection. Existing tool configuration, MCP connections, and write approval remain authoritative; instructions inside a Skill to skip approval have no effect. Package `scripts/` files are stored for inspection only; the current version不会执行这些脚本. Files under `references/` become available only after activation as bounded, read-only UTF-8 text.
 
-For deployment, each backup must include the database and `data/skills` together. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill directory; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages to Git.
+For deployment, each backup must include the application database, `data/skills`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched checkpoints. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages or checkpoint data to Git.
 
 ### 长期记忆（Mem0）
 

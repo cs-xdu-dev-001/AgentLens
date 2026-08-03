@@ -63,6 +63,23 @@ class AgentRunCoordinator:
             active.cancel_event.set()
             return True
 
+    def cancel_and_wait(
+        self,
+        run_id: str,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> bool:
+        """Request cancellation and wait until the worker releases the run."""
+        with self._lock:
+            active = self._active.get(run_id)
+            if active is None:
+                return True
+            active.cancel_event.set()
+            thread = active.thread
+        if thread is not None:
+            thread.join(max(0.0, float(timeout_seconds)))
+        return not self.is_active(run_id)
+
     def subscribe(self, run_id: str) -> Queue | None:
         with self._lock:
             active = self._active.get(run_id)

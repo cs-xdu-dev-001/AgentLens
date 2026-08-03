@@ -15,6 +15,16 @@ FAILURE_POLICIES: dict[str, dict[str, Any]] = {
         "retryable": True,
         "target": None,
     },
+    "langgraph_checkpoint_not_found": {
+        "summary": "The LangGraph checkpoint is unavailable for this run.",
+        "retryable": False,
+        "target": None,
+    },
+    "langgraph_checkpoint_unavailable": {
+        "summary": "The LangGraph checkpoint store is unavailable.",
+        "retryable": True,
+        "target": None,
+    },
     "mcp_authentication_required": {
         "summary": "The MCP connection requires authorization.",
         "retryable": False,

@@ -415,17 +415,44 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
     get_session_for_user(session_id, user_id)
     run_rows = fetch_all(
         """
-        SELECT id
+        SELECT id, status
         FROM agent_run
         WHERE session_id=:session_id AND user_id=:user_id
         """,
         {"session_id": session_id, "user_id": user_id},
     )
+    busy_run_ids: list[str] = []
+    active_statuses = {
+        "planning",
+        "waiting_start",
+        "running",
+        "waiting_approval",
+    }
     for run_row in run_rows:
+        managed_run = agent_run_coordinator.is_active(run_row["id"])
+        if run_row.get("status") in active_statuses and not managed_run:
+            busy_run_ids.append(str(run_row["id"]))
+            continue
         approval_broker.cancel_run(run_row["id"])
-        agent_run_coordinator.cancel(run_row["id"])
+        if not agent_run_coordinator.cancel_and_wait(
+            run_row["id"],
+            timeout_seconds=5.0,
+        ):
+            busy_run_ids.append(str(run_row["id"]))
+    if busy_run_ids:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "agent_run_still_active",
+                "message": (
+                    "An Agent run is still active. Retry session deletion shortly."
+                ),
+                "data": None,
+            },
+        )
     try:
         langgraph_checkpoints.delete_threads(
+            user_id,
             [str(run_row["id"]) for run_row in run_rows]
         )
     except LangGraphCheckpointError as exc:

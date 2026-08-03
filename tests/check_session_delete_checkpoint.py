@@ -39,13 +39,13 @@ def register(client: TestClient, username: str) -> int:
     return int(response.json()["data"]["user"]["id"])
 
 
-def write_checkpoint(store, run_id: str) -> None:
+def write_checkpoint(store, user_id: int, run_id: str) -> None:
     with store.open() as saver:
         assert saver is not None
         saver.put(
             {
                 "configurable": {
-                    "thread_id": run_id,
+                    "thread_id": store.thread_id(user_id, run_id),
                     "checkpoint_ns": "",
                 }
             },
@@ -55,12 +55,16 @@ def write_checkpoint(store, run_id: str) -> None:
         )
 
 
-def has_checkpoint(store, run_id: str) -> bool:
+def has_checkpoint(store, user_id: int, run_id: str) -> bool:
     with store.open(create=False) as saver:
         return bool(
             saver
             and saver.get_tuple(
-                {"configurable": {"thread_id": run_id}}
+                {
+                    "configurable": {
+                        "thread_id": store.thread_id(user_id, run_id)
+                    }
+                }
             )
         )
 
@@ -112,13 +116,25 @@ def main() -> None:
         trigger_mode="auto",
         run_id="run_checkpoint_bob",
     )
-    write_checkpoint(store, alice_run["id"])
-    write_checkpoint(store, bob_run["id"])
+    runtime.agent_runs.transition_run(
+        alice_id, alice_run["id"], "running"
+    )
+    runtime.agent_runs.transition_run(
+        alice_id, alice_run["id"], "completed"
+    )
+    runtime.agent_runs.transition_run(
+        bob_id, bob_run["id"], "running"
+    )
+    runtime.agent_runs.transition_run(
+        bob_id, bob_run["id"], "completed"
+    )
+    write_checkpoint(store, alice_id, alice_run["id"])
+    write_checkpoint(store, bob_id, bob_run["id"])
 
     deleted = alice.delete(f"/api/sessions/{alice_session}")
     assert deleted.status_code == 200, deleted.text
-    assert not has_checkpoint(store, alice_run["id"])
-    assert has_checkpoint(store, bob_run["id"])
+    assert not has_checkpoint(store, alice_id, alice_run["id"])
+    assert has_checkpoint(store, bob_id, bob_run["id"])
     assert runtime.fetch_one(
         "SELECT id FROM chat_session WHERE id=:id",
         {"id": alice_session},
@@ -139,10 +155,17 @@ def main() -> None:
         trigger_mode="auto",
         run_id="run_checkpoint_retry",
     )
-    write_checkpoint(store, retry_run["id"])
+    runtime.agent_runs.transition_run(
+        alice_id, retry_run["id"], "running"
+    )
+    runtime.agent_runs.transition_run(
+        alice_id, retry_run["id"], "completed"
+    )
+    write_checkpoint(store, alice_id, retry_run["id"])
 
     class FailingStore:
-        def delete_threads(self, run_ids):
+        def delete_threads(self, user_id, run_ids):
+            del user_id, run_ids
             raise checkpoint_module.LangGraphCheckpointError(
                 "langgraph_checkpoint_unavailable",
                 "LangGraph checkpoint存储暂不可用。",
@@ -165,7 +188,31 @@ def main() -> None:
         "SELECT id FROM agent_run WHERE id=:id",
         {"id": retry_run["id"]},
     ) is not None
-    assert has_checkpoint(store, retry_run["id"])
+    assert has_checkpoint(store, alice_id, retry_run["id"])
+
+    active_session = runtime.ensure_session(
+        "session-checkpoint-active", None, None, alice_id
+    )
+    active_run = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id=active_session,
+        user_message_id=None,
+        goal_summary="Active synchronous run",
+        trigger_mode="auto",
+        run_id="run_checkpoint_active",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id, active_run["id"], "running"
+    )
+    write_checkpoint(store, alice_id, active_run["id"])
+    active_delete = alice.delete(f"/api/sessions/{active_session}")
+    assert active_delete.status_code == 409, active_delete.text
+    assert "agent_run_still_active" in active_delete.text
+    assert runtime.fetch_one(
+        "SELECT id FROM chat_session WHERE id=:id",
+        {"id": active_session},
+    ) is not None
+    assert has_checkpoint(store, alice_id, active_run["id"])
 
     cleanup()
     print("session deletion cleans owned LangGraph checkpoints safely")

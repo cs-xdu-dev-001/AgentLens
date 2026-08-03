@@ -37,7 +37,9 @@ def main() -> None:
             saver.put(
                 {
                     "configurable": {
-                        "thread_id": "run_checkpoint_test",
+                        "thread_id": store.thread_id(
+                            7, "run_checkpoint_test"
+                        ),
                         "checkpoint_ns": "",
                     }
                 },
@@ -51,15 +53,17 @@ def main() -> None:
             assert database.parent.stat().st_mode & 0o777 == 0o750
             assert database.stat().st_mode & 0o777 == 0o600
 
-        store.delete_threads(["run_checkpoint_test"])
-        store.delete_threads(["run_checkpoint_test"])
+        store.delete_threads(7, ["run_checkpoint_test"])
+        store.delete_threads(7, ["run_checkpoint_test"])
         with store.open(create=False) as saver:
             assert saver is not None
             assert (
                 saver.get_tuple(
                     {
                         "configurable": {
-                            "thread_id": "run_checkpoint_test"
+                            "thread_id": store.thread_id(
+                                7, "run_checkpoint_test"
+                            )
                         }
                     }
                 )
@@ -67,7 +71,7 @@ def main() -> None:
             )
 
         missing = root / "missing" / "checkpoints.sqlite3"
-        LangGraphCheckpointStore(missing).delete_threads(["run_missing"])
+        LangGraphCheckpointStore(missing).delete_threads(7, ["run_missing"])
         assert not missing.exists()
         assert not missing.parent.exists()
 

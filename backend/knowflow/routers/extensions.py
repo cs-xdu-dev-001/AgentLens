@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from ..runtime import *
 from ..services.agent_engine import build_agent_engine
+from ..services.langgraph_checkpoint import LangGraphCheckpointError
 from ..services.agent_loop import ToolRegistry
 from ..services.agent_failure import classify_agent_failure
 from ..services.agent_trace import (
@@ -340,6 +341,7 @@ def execute_agent_chat(
     cancel_event: Event | None = None,
     existing_run_id: str | None = None,
     run_action: str | None = None,
+    persisted_engine_name: str | None = None,
 ) -> dict[str, Any]:
     command_mode, normalized_question = parse_execution_mode(
         payload.question
@@ -369,6 +371,9 @@ def execute_agent_chat(
         get_kb(payload.knowledgeBaseId, user_id)
     durable_run_id = existing_run_id or run_id or (
         f"run_{uuid.uuid4().hex[:12]}"
+    )
+    selected_engine_name = normalize_agent_engine_name(
+        persisted_engine_name or AGENT_ENGINE
     )
     if existing_run_id:
         durable_snapshot = agent_runs.get_snapshot(
@@ -411,6 +416,7 @@ def execute_agent_chat(
             payload.question,
         )
         stored_request = payload.model_dump(mode="json")
+        stored_request["_agentEngine"] = selected_engine_name
         stored_request["attachments"] = [
             {**item, "previewUrl": None}
             for item in stored_request.get("attachments", [])
@@ -793,7 +799,7 @@ def execute_agent_chat(
                     )
 
             engine = build_agent_engine(
-                AGENT_ENGINE,
+                selected_engine_name,
                 gateway=_CancellationAwareGateway(
                     gateway,
                     cancel_event,
@@ -1048,7 +1054,9 @@ def execute_agent_chat(
                     output_summary=failure["summary"],
                     error_code=str(failure["code"]),
                 )
-                if has_remote_model_config(chat_config):
+                if isinstance(exc, LangGraphCheckpointError):
+                    answer = exc.message
+                elif has_remote_model_config(chat_config):
                     answer = remote_model_error_answer(
                         chat_config,
                         exc,
@@ -1394,12 +1402,14 @@ def execute_persisted_agent_run(
     request_payload = agent_runs.load_request(user_id, run_id)
     if request_payload is None:
         raise HTTPException(status_code=404, detail="Agent run not found.")
+    persisted_engine_name = request_payload.pop("_agentEngine", None)
     payload = ChatRequest.model_validate(request_payload)
     result = execute_agent_chat(
         payload,
         user_id,
         existing_run_id=run_id,
         run_action=action,
+        persisted_engine_name=persisted_engine_name,
         cancel_event=cancel_event,
         event_emit=lambda name, value: publish(
             {"type": name, **value}

@@ -50,5 +50,13 @@ assert sum(
     for call in engine_run_calls
 ) == 1
 assert "AGENT_ENGINE" in source
+assert 'stored_request["_agentEngine"] = selected_engine_name' in source
+assert 'request_payload.pop("_agentEngine", None)' in source
+assert any(
+    call.args
+    and isinstance(call.args[0], ast.Name)
+    and call.args[0].id == "selected_engine_name"
+    for call in factory_calls
+)
 
 print("agent routes depend on the engine interface")
