@@ -371,8 +371,81 @@ def main() -> None:
             )
             assert saved is not None
             assert saved.config["configurable"]["thread_id"] == thread_id
-            assert saved.checkpoint["channel_values"]["schema_version"] == 1
+            assert saved.checkpoint["channel_values"]["schema_version"] == 2
             assert saved.checkpoint["channel_values"]["answer"] == "recovered"
+
+        legacy_gateway = FakeGateway(
+            {"role": "assistant", "content": "legacy recovered"}
+        )
+        legacy_path = root / "legacy-v1.sqlite3"
+        legacy_engine = LangGraphAgentEngine(
+            gateway=legacy_gateway,
+            checkpoint_db_path=legacy_path,
+        )
+        legacy_config = {
+            "configurable": {
+                "thread_id": LangGraphCheckpointStore.thread_id(
+                    17,
+                    "run_legacy_v1",
+                )
+            }
+        }
+        legacy_state = {
+            "schema_version": 1,
+            "messages": [{"role": "user", "content": "resume v1"}],
+            "answer": "",
+            "executions": [],
+            "tool_rounds": 0,
+            "pending_tool_calls": [],
+            "tool_call_index": 0,
+            "skill_snapshot": None,
+            "memories": [],
+            "memory_recalled": True,
+        }
+        with legacy_engine._checkpoints.open() as saver:
+            legacy_graph = legacy_engine._builder.compile(
+                checkpointer=saver
+            )
+            legacy_graph.update_state(
+                legacy_config,
+                legacy_state,
+                as_node="__start__",
+            )
+        legacy_result = run_engine(
+            legacy_engine,
+            ToolRegistry(),
+            run_id="run_legacy_v1",
+            resume=True,
+        )
+        assert legacy_result.answer == "legacy recovered"
+
+        invalid_config = {
+            "configurable": {
+                "thread_id": LangGraphCheckpointStore.thread_id(
+                    17,
+                    "run_invalid_schema",
+                )
+            }
+        }
+        with legacy_engine._checkpoints.open() as saver:
+            invalid_graph = legacy_engine._builder.compile(
+                checkpointer=saver
+            )
+            invalid_graph.update_state(
+                invalid_config,
+                {**legacy_state, "schema_version": 99},
+                as_node="__start__",
+            )
+        try:
+            run_engine(
+                legacy_engine,
+                ToolRegistry(),
+                run_id="run_invalid_schema",
+                resume=True,
+            )
+            raise AssertionError("unknown checkpoint schema must fail")
+        except LangGraphCheckpointError as exc:
+            assert exc.code == "langgraph_checkpoint_not_found"
 
         try:
             LangGraphAgentEngine(

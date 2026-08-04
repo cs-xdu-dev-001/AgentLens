@@ -24,6 +24,10 @@ from .agent_trace import sanitize_trace_value
 from .memory import append_long_term_memory_context
 
 
+LANGGRAPH_STATE_SCHEMA_VERSION = 2
+SUPPORTED_LANGGRAPH_STATE_SCHEMA_VERSIONS = frozenset({1, 2})
+
+
 class LangGraphState(TypedDict):
     schema_version: int
     messages: list[dict[str, Any]]
@@ -743,7 +747,9 @@ class LangGraphAgentEngine:
             if resume_from_checkpoint:
                 snapshot = graph.get_state(graph_config)
                 values = snapshot.values or {}
-                if values.get("schema_version") != 1:
+                if values.get("schema_version") not in (
+                    SUPPORTED_LANGGRAPH_STATE_SCHEMA_VERSIONS
+                ):
                     raise self._checkpoint_not_found()
                 if snapshot.next:
                     output = graph.invoke(
@@ -762,7 +768,8 @@ class LangGraphAgentEngine:
                 previous_values = previous_snapshot.values or {}
                 reused_memory = bool(
                     memory_enabled
-                    and previous_values.get("schema_version") == 1
+                    and previous_values.get("schema_version")
+                    in SUPPORTED_LANGGRAPH_STATE_SCHEMA_VERSIONS
                     and previous_values.get("memory_recalled")
                 )
                 reused_memories = [
@@ -779,7 +786,8 @@ class LangGraphAgentEngine:
                     == "unavailable"
                 )
                 reused_retrieval = bool(
-                    previous_values.get("schema_version") == 1
+                    previous_values.get("schema_version")
+                    in SUPPORTED_LANGGRAPH_STATE_SCHEMA_VERSIONS
                     and previous_values.get("retrieval_completed")
                     and not retrieval_was_unavailable
                 )
@@ -821,7 +829,7 @@ class LangGraphAgentEngine:
                     )
                 output = graph.invoke(
                     {
-                        "schema_version": 1,
+                        "schema_version": LANGGRAPH_STATE_SCHEMA_VERSION,
                         "messages": initial_messages,
                         "answer": "",
                         "executions": [],
