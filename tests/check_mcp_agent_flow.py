@@ -23,6 +23,7 @@ os.environ.update(
     KNOWFLOW_SECRET_KEY="mcp-agent-flow-secret",
     KNOWFLOW_VECTOR_BACKEND="local",
     KNOWFLOW_MCP_APPROVAL_TIMEOUT="10",
+    KNOWFLOW_AGENT_ENGINE="current",
 )
 os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
 sys.path.insert(0, str(BACKEND))

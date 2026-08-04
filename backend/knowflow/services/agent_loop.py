@@ -58,6 +58,10 @@ class AgentRunResult:
     interrupt: dict[str, Any] | None = None
     memories: list[dict[str, Any]] | None = None
     memory_recalled: bool = False
+    retrieval_chunks: list[dict[str, Any]] | None = None
+    retrieval_quality: dict[str, Any] | None = None
+    retrieval_run: dict[str, Any] | None = None
+    retrieval_completed: bool = False
 class AgentLoopLimitError(RuntimeError): pass
 
 class ToolRegistry:

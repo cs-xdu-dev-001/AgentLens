@@ -16,6 +16,7 @@ ExecutionCallback = Callable[[ToolExecution, str | None], None]
 ModelEventCallback = Callable[[dict[str, Any]], None]
 SkillRestoreCallback = Callable[[dict[str, Any]], None]
 MemoryRecallCallback = Callable[[], list[dict[str, Any]]]
+RetrievalContextCallback = Callable[[], dict[str, Any]]
 
 
 class AgentEngine(Protocol):
@@ -41,6 +42,7 @@ class AgentEngine(Protocol):
         skill_restore: SkillRestoreCallback | None = None,
         memory_recall: MemoryRecallCallback | None = None,
         memory_enabled: bool = False,
+        retrieval_context: RetrievalContextCallback | None = None,
     ) -> AgentRunResult:
         ...
 
@@ -86,6 +88,7 @@ class CurrentAgentEngine:
         skill_restore: SkillRestoreCallback | None = None,
         memory_recall: MemoryRecallCallback | None = None,
         memory_enabled: bool = False,
+        retrieval_context: RetrievalContextCallback | None = None,
     ) -> AgentRunResult:
         del (
             user_id,
@@ -96,6 +99,7 @@ class CurrentAgentEngine:
             skill_restore,
             memory_recall,
             memory_enabled,
+            retrieval_context,
         )
         return self._runner.run(
             messages=messages,

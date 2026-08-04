@@ -554,7 +554,11 @@ def execute_agent_chat(
                 "running",
             )
             publish_snapshot("run_updated")
-        if use_rag and payload.knowledgeBaseId:
+        if (
+            use_rag
+            and payload.knowledgeBaseId
+            and selected_engine_name != "langgraph"
+        ):
             started_at = time.perf_counter()
             chunks = retrieve_chunks(
                 payload.knowledgeBaseId,
@@ -787,6 +791,91 @@ def execute_agent_chat(
                 attachments=payload.attachments,
                 memories=memories if memory_active else None,
             )
+
+            def retrieve_langgraph_context() -> dict[str, Any]:
+                if not use_rag or not payload.knowledgeBaseId:
+                    return {
+                        "chunks": [],
+                        "quality": {"enabled": False},
+                        "retrievalRun": None,
+                    }
+                started_at = time.perf_counter()
+                try:
+                    retrieved = retrieve_chunks(
+                        payload.knowledgeBaseId,
+                        payload.question,
+                        DEFAULT_TOP_K,
+                        user_id,
+                    )
+                    enriched = enrich_retrieval_chunks(
+                        payload.question,
+                        retrieved,
+                    )
+                    quality = assess_retrieval_quality(
+                        payload.question,
+                        enriched,
+                    )
+                    duration_ms = int(
+                        (time.perf_counter() - started_at) * 1000
+                    )
+                    retrieval = record_retrieval_run(
+                        user_id=user_id,
+                        knowledge_base_id=payload.knowledgeBaseId,
+                        query=payload.question,
+                        top_k=DEFAULT_TOP_K,
+                        chunks=enriched,
+                        quality=quality,
+                        duration_ms=duration_ms,
+                    )
+                    return {
+                        "chunks": enriched,
+                        "quality": {
+                            **quality,
+                            "retrievalRunId": retrieval.get("id"),
+                        },
+                        "retrievalRun": retrieval,
+                    }
+                except Exception:
+                    duration_ms = int(
+                        (time.perf_counter() - started_at) * 1000
+                    )
+                    quality = {
+                        "enabled": True,
+                        "query": payload.question,
+                        "hitCount": 0,
+                        "matchedCount": 0,
+                        "maxScore": 0,
+                        "avgScore": 0,
+                        "belowThresholdCount": 0,
+                        "scoreBuckets": {
+                            "strong": 0,
+                            "usable": 0,
+                            "weak": 0,
+                        },
+                        "qualityLevel": "unavailable",
+                        "reason": "Knowledge-base retrieval is unavailable.",
+                        "suggestions": [
+                            "Check the selected knowledge base and try again."
+                        ],
+                    }
+                    retrieval = record_retrieval_run(
+                        user_id=user_id,
+                        knowledge_base_id=payload.knowledgeBaseId,
+                        query=payload.question,
+                        top_k=DEFAULT_TOP_K,
+                        chunks=[],
+                        quality=quality,
+                        duration_ms=duration_ms,
+                        status="failed",
+                    )
+                    return {
+                        "chunks": [],
+                        "quality": {
+                            **quality,
+                            "retrievalRunId": retrieval.get("id"),
+                        },
+                        "retrievalRun": retrieval,
+                    }
             if catalog:
                 base_messages[0]["content"] += (
                     "\nAvailable Skills (activate at most one with "
@@ -979,7 +1068,8 @@ def execute_agent_chat(
                 }
 
             def engine_run(**kwargs):
-                nonlocal memories, memory_recall_completed, base_messages
+                nonlocal chunks, memories, memory_recall_completed
+                nonlocal rag_quality, retrieval_run, base_messages
                 result = engine.run(
                     **kwargs,
                     tool_operation_store=agent_tool_operations,
@@ -998,7 +1088,25 @@ def execute_agent_chat(
                         else None
                     ),
                     memory_enabled=memory_active,
+                    retrieval_context=(
+                        retrieve_langgraph_context
+                        if engine.name == "langgraph"
+                        else None
+                    ),
                 )
+                if result.retrieval_completed:
+                    chunks = [
+                        dict(item)
+                        for item in (result.retrieval_chunks or [])
+                    ]
+                    rag_quality = dict(
+                        result.retrieval_quality or {"enabled": False}
+                    )
+                    retrieval_run = (
+                        dict(result.retrieval_run)
+                        if result.retrieval_run
+                        else None
+                    )
                 if result.memory_recalled:
                     memories = [
                         dict(item)

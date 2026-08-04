@@ -35,6 +35,10 @@ class LangGraphState(TypedDict):
     skill_snapshot: dict[str, Any] | None
     memories: list[dict[str, Any]]
     memory_recalled: bool
+    retrieval_chunks: list[dict[str, Any]]
+    retrieval_quality: dict[str, Any]
+    retrieval_run: dict[str, Any] | None
+    retrieval_completed: bool
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ class LangGraphRunContext:
     memory_recall: (
         Callable[[], list[dict[str, Any]]] | None
     ) = None
+    retrieval_context: Callable[[], dict[str, Any]] | None = None
 
 
 class LangGraphAgentEngine:
@@ -85,9 +90,14 @@ class LangGraphAgentEngine:
             context_schema=LangGraphRunContext,
         )
         self._builder.add_node("memory_recall", self._recall_memory)
+        self._builder.add_node(
+            "retrieval_context",
+            self._retrieve_context,
+        )
         self._builder.add_node("model", self._call_model)
         self._builder.add_node("tools", self._call_tools)
-        self._builder.add_edge(START, "memory_recall")
+        self._builder.add_edge(START, "retrieval_context")
+        self._builder.add_edge("retrieval_context", "memory_recall")
         self._builder.add_edge("memory_recall", "model")
         self._builder.add_conditional_edges(
             "model",
@@ -100,6 +110,126 @@ class LangGraphAgentEngine:
             {"tools": "tools", "model": "model", "end": END},
         )
         self._graph = self._builder.compile()
+
+    @staticmethod
+    def _append_retrieval_context(
+        messages: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not chunks:
+            return messages
+        context = "\n\n".join(
+            f"[Reference {idx}] File: {chunk.get('filename', '')}\n"
+            f"Content: {chunk.get('chunk_text', '')}"
+            for idx, chunk in enumerate(chunks, start=1)
+        )
+        updated = [dict(message) for message in messages]
+        marker = "References:\nNo relevant references"
+        for message in updated:
+            if message.get("role") != "user":
+                continue
+            content = str(message.get("content") or "")
+            if marker in content:
+                message["content"] = content.replace(
+                    marker,
+                    f"References:\n{context}",
+                    1,
+                )
+        return updated
+
+    @staticmethod
+    def _retrieve_context(
+        state: LangGraphState,
+        runtime: Runtime[LangGraphRunContext],
+    ) -> dict[str, Any]:
+        if state.get("retrieval_completed"):
+            return {}
+        context = runtime.context
+        if context.retrieval_context is None:
+            return {
+                "retrieval_completed": True,
+                "retrieval_chunks": [],
+                "retrieval_quality": {"enabled": False},
+                "retrieval_run": None,
+            }
+        trace = context.trace
+        retrieval_step = (
+            trace.start_step(
+                kind="system",
+                name="retrieval_context",
+                title="Retrieving knowledge context",
+                parent_id=context.parent_step_id,
+            )
+            if trace
+            else None
+        )
+        try:
+            payload = context.retrieval_context() or {}
+            chunks = [
+                dict(item)
+                for item in (payload.get("chunks") or [])
+                if isinstance(item, dict)
+            ]
+            quality = (
+                dict(payload.get("quality"))
+                if isinstance(payload.get("quality"), dict)
+                else {"enabled": True}
+            )
+            retrieval_run = (
+                dict(payload.get("retrievalRun"))
+                if isinstance(payload.get("retrievalRun"), dict)
+                else None
+            )
+            messages = LangGraphAgentEngine._append_retrieval_context(
+                state["messages"],
+                chunks,
+            )
+        except Exception:
+            if trace and retrieval_step:
+                trace.finish_step(
+                    retrieval_step,
+                    status="failed",
+                    title="Knowledge retrieval unavailable",
+                    output_summary={"hitCount": 0, "degraded": True},
+                    error_code="retrieval_failed",
+                )
+            return {
+                "retrieval_completed": True,
+                "retrieval_chunks": [],
+                "retrieval_quality": {
+                    "enabled": True,
+                    "qualityLevel": "unavailable",
+                    "hitCount": 0,
+                    "reason": "Knowledge-base retrieval is unavailable.",
+                },
+                "retrieval_run": None,
+            }
+        retrieval_degraded = quality.get("qualityLevel") == "unavailable"
+        if trace and retrieval_step:
+            trace.finish_step(
+                retrieval_step,
+                status="failed" if retrieval_degraded else "success",
+                title=(
+                    "Knowledge retrieval unavailable"
+                    if retrieval_degraded
+                    else "Knowledge context retrieved"
+                ),
+                output_summary={
+                    "hitCount": len(chunks),
+                    "qualityLevel": quality.get("qualityLevel"),
+                    "degraded": retrieval_degraded,
+                },
+                error_code=(
+                    "retrieval_failed" if retrieval_degraded else None
+                ),
+            )
+        return {
+            "retrieval_completed": True,
+            "retrieval_chunks": chunks,
+            "retrieval_quality": quality,
+            "retrieval_run": retrieval_run,
+            "messages": messages,
+        }
 
     @staticmethod
     def _recall_memory(
@@ -577,6 +707,7 @@ class LangGraphAgentEngine:
             Callable[[], list[dict[str, Any]]] | None
         ) = None,
         memory_enabled: bool = False,
+        retrieval_context: Callable[[], dict[str, Any]] | None = None,
     ) -> AgentRunResult:
         del approval_gate
         if int(user_id) <= 0:
@@ -601,6 +732,7 @@ class LangGraphAgentEngine:
             model_event_callback=model_event_callback,
             skill_restore=skill_restore,
             memory_recall=memory_recall,
+            retrieval_context=retrieval_context,
         )
         with self._checkpoints.open(
             create=not resume_from_checkpoint
@@ -638,6 +770,40 @@ class LangGraphAgentEngine:
                     for item in (previous_values.get("memories") or [])
                     if isinstance(item, dict)
                 ] if reused_memory else []
+                previous_retrieval_quality = previous_values.get(
+                    "retrieval_quality"
+                )
+                retrieval_was_unavailable = (
+                    isinstance(previous_retrieval_quality, dict)
+                    and previous_retrieval_quality.get("qualityLevel")
+                    == "unavailable"
+                )
+                reused_retrieval = bool(
+                    previous_values.get("schema_version") == 1
+                    and previous_values.get("retrieval_completed")
+                    and not retrieval_was_unavailable
+                )
+                reused_retrieval_chunks = [
+                    dict(item)
+                    for item in (
+                        previous_values.get("retrieval_chunks") or []
+                    )
+                    if isinstance(item, dict)
+                ] if reused_retrieval else []
+                reused_retrieval_quality = (
+                    dict(previous_values.get("retrieval_quality") or {})
+                    if reused_retrieval
+                    else {"enabled": False}
+                )
+                reused_retrieval_run = (
+                    dict(previous_values.get("retrieval_run"))
+                    if reused_retrieval
+                    and isinstance(
+                        previous_values.get("retrieval_run"),
+                        dict,
+                    )
+                    else None
+                )
                 initial_messages = [
                     dict(message) for message in messages
                 ]
@@ -645,6 +811,13 @@ class LangGraphAgentEngine:
                     initial_messages = append_long_term_memory_context(
                         initial_messages,
                         reused_memories,
+                    )
+                if reused_retrieval:
+                    initial_messages = (
+                        self._append_retrieval_context(
+                            initial_messages,
+                            reused_retrieval_chunks,
+                        )
                     )
                 output = graph.invoke(
                     {
@@ -663,6 +836,13 @@ class LangGraphAgentEngine:
                         "memories": reused_memories,
                         "memory_recalled": (
                             reused_memory or not memory_enabled
+                        ),
+                        "retrieval_chunks": reused_retrieval_chunks,
+                        "retrieval_quality": reused_retrieval_quality,
+                        "retrieval_run": reused_retrieval_run,
+                        "retrieval_completed": (
+                            reused_retrieval
+                            or retrieval_context is None
                         ),
                     },
                     graph_config,
@@ -694,6 +874,24 @@ class LangGraphAgentEngine:
                 if isinstance(item, dict)
             ],
             memory_recalled=bool(output.get("memory_recalled")),
+            retrieval_chunks=[
+                dict(item)
+                for item in (output.get("retrieval_chunks") or [])
+                if isinstance(item, dict)
+            ],
+            retrieval_quality=(
+                dict(output.get("retrieval_quality") or {})
+                if isinstance(output.get("retrieval_quality"), dict)
+                else None
+            ),
+            retrieval_run=(
+                dict(output.get("retrieval_run"))
+                if isinstance(output.get("retrieval_run"), dict)
+                else None
+            ),
+            retrieval_completed=bool(
+                output.get("retrieval_completed")
+            ),
         )
 
     @staticmethod

@@ -26,11 +26,11 @@ def read_engine(value: str) -> str:
     return result.stdout.strip().splitlines()[-1]
 
 
-assert read_engine("") == "current"
+assert read_engine("") == "langgraph"
 assert read_engine("current") == "current"
 assert read_engine("CURRENT") == "current"
 assert read_engine("langgraph") == "langgraph"
 assert read_engine(" LANGGRAPH ") == "langgraph"
-assert read_engine("typo") == "current"
+assert read_engine("typo") == "langgraph"
 
-print("agent engine configuration defaults safely to current")
+print("agent engine configuration defaults safely to langgraph")

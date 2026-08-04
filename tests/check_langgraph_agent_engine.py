@@ -81,6 +81,7 @@ def run_engine(
     skill_restore=None,
     memory_recall=None,
     memory_enabled=None,
+    retrieval_context=None,
 ):
     return engine.run(
         user_id=17,
@@ -103,6 +104,7 @@ def run_engine(
             if memory_enabled is None
             else memory_enabled
         ),
+        retrieval_context=retrieval_context,
     )
 
 
@@ -414,6 +416,7 @@ def main() -> None:
         assert [node["id"] for node in graph["nodes"]] == [
             "__start__",
             "memory_recall",
+            "retrieval_context",
             "model",
             "tools",
             "__end__",
