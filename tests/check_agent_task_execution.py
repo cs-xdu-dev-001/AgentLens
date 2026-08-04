@@ -197,7 +197,6 @@ def main() -> None:
     os.environ["KNOWFLOW_SECRET_KEY"] = "agent-task-execution-secret"
     os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
-    os.environ["KNOWFLOW_AGENT_ENGINE"] = "langgraph"
     os.environ["KNOWFLOW_LANGGRAPH_CHECKPOINT_DB"] = str(
         checkpoint_path
     )

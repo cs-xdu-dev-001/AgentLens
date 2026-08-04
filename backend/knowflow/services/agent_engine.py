@@ -17,6 +17,18 @@ ModelEventCallback = Callable[[dict[str, Any]], None]
 SkillRestoreCallback = Callable[[dict[str, Any]], None]
 MemoryRecallCallback = Callable[[], list[dict[str, Any]]]
 RetrievalContextCallback = Callable[[], dict[str, Any]]
+NEW_AGENT_ENGINE = "langgraph"
+HISTORICAL_AGENT_ENGINES = frozenset({"current", "langgraph"})
+
+
+def select_agent_engine_name(
+    persisted_engine_name: str | None,
+) -> str:
+    """Use the stored engine only when resuming an existing run."""
+    normalized = str(persisted_engine_name or "").strip().lower()
+    if normalized in HISTORICAL_AGENT_ENGINES:
+        return normalized
+    return NEW_AGENT_ENGINE
 
 
 class AgentEngine(Protocol):

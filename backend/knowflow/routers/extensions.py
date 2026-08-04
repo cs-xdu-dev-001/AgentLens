@@ -8,7 +8,10 @@ import uuid
 from fastapi import APIRouter
 
 from ..runtime import *
-from ..services.agent_engine import build_agent_engine
+from ..services.agent_engine import (
+    build_agent_engine,
+    select_agent_engine_name,
+)
 from ..services.langgraph_checkpoint import LangGraphCheckpointError
 from ..services.langgraph_plan_executor import (
     LangGraphPlanExecutor,
@@ -381,8 +384,8 @@ def execute_agent_chat(
     durable_run_id = existing_run_id or run_id or (
         f"run_{uuid.uuid4().hex[:12]}"
     )
-    selected_engine_name = normalize_agent_engine_name(
-        persisted_engine_name or AGENT_ENGINE
+    selected_engine_name = select_agent_engine_name(
+        persisted_engine_name
     )
     if existing_run_id:
         durable_snapshot = agent_runs.get_snapshot(

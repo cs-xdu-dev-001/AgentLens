@@ -45,13 +45,6 @@ def env_float(name: str, default: float) -> float:
         return default
 
 
-def normalize_agent_engine_name(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"current", "langgraph"}:
-        return normalized
-    return "langgraph"
-
-
 def normalize_sqlite_db_url(raw_url: str) -> str:
     if not raw_url.startswith("sqlite:///"):
         return raw_url
@@ -135,9 +128,6 @@ DEFAULT_TOP_K = env_int("KNOWFLOW_TOP_K", 5)
 RETRIEVAL_SCORE_THRESHOLD = env_float("KNOWFLOW_RAG_SCORE_THRESHOLD", 0.25)
 MODEL_REQUEST_TIMEOUT = env_int("KNOWFLOW_MODEL_REQUEST_TIMEOUT", 45)
 MODEL_TRUST_ENV = os.getenv("KNOWFLOW_MODEL_TRUST_ENV", "0") == "1"
-AGENT_ENGINE = normalize_agent_engine_name(
-    os.getenv("KNOWFLOW_AGENT_ENGINE", "langgraph")
-)
 LANGGRAPH_CHECKPOINT_DB = Path(
     os.getenv(
         "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB",

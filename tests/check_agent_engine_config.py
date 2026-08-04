@@ -1,36 +1,29 @@
-from pathlib import Path
-import os
-import subprocess
 import sys
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def read_engine(value: str) -> str:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(ROOT / "backend")
-    env["KNOWFLOW_AGENT_ENGINE"] = value
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from knowflow.config import AGENT_ENGINE; print(AGENT_ENGINE)",
-        ],
-        cwd=ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip().splitlines()[-1]
+sys.path.insert(0, str(ROOT / "backend"))
+
+from knowflow.services.agent_engine import select_agent_engine_name
 
 
-assert read_engine("") == "langgraph"
-assert read_engine("current") == "current"
-assert read_engine("CURRENT") == "current"
-assert read_engine("langgraph") == "langgraph"
-assert read_engine(" LANGGRAPH ") == "langgraph"
-assert read_engine("typo") == "langgraph"
+config_source = (ROOT / "backend" / "knowflow" / "config.py").read_text(
+    encoding="utf-8"
+)
+env_example = (ROOT / "backend" / ".env.example").read_text(
+    encoding="utf-8"
+)
+assert "KNOWFLOW_AGENT_ENGINE" not in config_source
+assert "KNOWFLOW_AGENT_ENGINE" not in env_example
+assert select_agent_engine_name(None) == "langgraph"
+assert select_agent_engine_name("") == "langgraph"
+assert select_agent_engine_name("current") == "current"
+assert select_agent_engine_name("CURRENT") == "current"
+assert select_agent_engine_name("langgraph") == "langgraph"
+assert select_agent_engine_name(" LANGGRAPH ") == "langgraph"
+assert select_agent_engine_name("typo") == "langgraph"
 
-print("agent engine configuration defaults safely to langgraph")
+print("new runs use LangGraph while historical engines remain recoverable")

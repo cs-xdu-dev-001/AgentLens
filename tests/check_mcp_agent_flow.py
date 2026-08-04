@@ -23,7 +23,6 @@ os.environ.update(
     KNOWFLOW_SECRET_KEY="mcp-agent-flow-secret",
     KNOWFLOW_VECTOR_BACKEND="local",
     KNOWFLOW_MCP_APPROVAL_TIMEOUT="10",
-    KNOWFLOW_AGENT_ENGINE="current",
 )
 os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
 sys.path.insert(0, str(BACKEND))
@@ -436,6 +435,8 @@ def main() -> None:
     }
     FakePool.instances.clear()
 
+    original_engine_selector = extensions.select_agent_engine_name
+    extensions.select_agent_engine_name = lambda persisted: "current"
     allow_gateway = ScenarioGateway(
         [
             configured["readNotion"]["modelName"],
@@ -587,13 +588,12 @@ def main() -> None:
         == "mcp_tool_configuration_invalid"
     )
 
-    original_engine = extensions.AGENT_ENGINE
+    extensions.select_agent_engine_name = original_engine_selector
     original_checkpoint = extensions.LANGGRAPH_CHECKPOINT_DB
     langgraph_gateway = ScenarioGateway(
         [configured["writeNotion"]["modelName"]],
         "LangGraph created the page.",
     )
-    extensions.AGENT_ENGINE = "langgraph"
     extensions.LANGGRAPH_CHECKPOINT_DB = str(
         ROOT / "data" / "test-dbs" / "mcp-langgraph-checkpoints.db"
     )
@@ -665,7 +665,6 @@ def main() -> None:
             for call in pool.calls
         )
     finally:
-        extensions.AGENT_ENGINE = original_engine
         extensions.LANGGRAPH_CHECKPOINT_DB = original_checkpoint
         Path(
             ROOT

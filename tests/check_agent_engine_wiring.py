@@ -41,7 +41,9 @@ wrapped_run_calls = [
 
 assert "ToolRegistry" in agent_loop_imports
 assert "AgentRunner" not in agent_loop_imports
-assert "build_agent_engine" in agent_engine_imports
+assert {"build_agent_engine", "select_agent_engine_name"}.issubset(
+    agent_engine_imports
+)
 assert len(factory_calls) == 1
 assert len(engine_run_calls) == 1
 assert len(wrapped_run_calls) == 3
@@ -66,7 +68,8 @@ assert sum(
     )
     for call in wrapped_run_calls
 ) == 1
-assert "AGENT_ENGINE" in source
+assert "AGENT_ENGINE" not in source
+assert "select_agent_engine_name" in source
 assert 'stored_request["_agentEngine"] = selected_engine_name' in source
 assert 'request_payload.pop("_agentEngine", None)' in source
 assert any(
