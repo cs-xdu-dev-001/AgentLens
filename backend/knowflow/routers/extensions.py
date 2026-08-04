@@ -10,6 +10,10 @@ from fastapi import APIRouter
 from ..runtime import *
 from ..services.agent_engine import build_agent_engine
 from ..services.langgraph_checkpoint import LangGraphCheckpointError
+from ..services.langgraph_plan_executor import (
+    LangGraphPlanExecutor,
+    PlanStepOutcome,
+)
 from ..services.agent_loop import ToolRegistry
 from ..services.agent_failure import classify_agent_failure
 from ..services.agent_trace import (
@@ -33,6 +37,7 @@ from ..services.task_planner import (
 )
 
 router = APIRouter()
+plan_executor = LangGraphPlanExecutor()
 
 EXTENSION_TAGS = ["Extensions"]
 
@@ -1092,24 +1097,13 @@ def execute_agent_chat(
                         user_id,
                         durable_run_id,
                     )
-                    completed_context: list[str] = []
-                    for step in (planned or {}).get("steps", []):
-                        if step["status"] == "completed":
-                            if step.get("outputSummary"):
-                                completed_context.append(
-                                    str(step["outputSummary"])
-                                )
-                            continue
-                        resume_plan_step = (
-                            step["status"] == "waiting_approval"
-                            and approval_decision is not None
-                            and step["id"] == current_plan_step_id
-                        )
-                        if step["status"] not in {
-                            "pending",
-                            "failed",
-                        } and not resume_plan_step:
-                            continue
+
+                    def execute_public_plan_step(
+                        step: dict[str, Any],
+                        resume_plan_step: bool,
+                        completed_context: list[str],
+                    ) -> PlanStepOutcome:
+                        nonlocal current_plan_step_id
                         _raise_if_cancelled(cancel_event)
                         current_plan_step_id = step["id"]
                         if step["status"] != "running":
@@ -1190,7 +1184,10 @@ def execute_agent_chat(
                             resume_from_checkpoint=resume_plan_step,
                         )
                         if isinstance(step_result, dict):
-                            return step_result
+                            return PlanStepOutcome(
+                                answer="",
+                                pause_payload=step_result,
+                            )
                         new_records = execution_records[
                             record_start:
                         ]
@@ -1230,8 +1227,24 @@ def execute_agent_chat(
                             output_summary=public_result,
                         )
                         publish_snapshot("step_updated")
-                        completed_context.append(public_result)
-                        answer = step_result.answer
+                        return PlanStepOutcome(
+                            answer=step_result.answer,
+                            public_result=public_result,
+                        )
+
+                    plan_execution = plan_executor.run(
+                        steps=list((planned or {}).get("steps", [])),
+                        execute_step=execute_public_plan_step,
+                        resume_step_id=(
+                            current_plan_step_id
+                            if approval_decision is not None
+                            else None
+                        ),
+                        initial_answer=answer,
+                    )
+                    if plan_execution.paused:
+                        return plan_execution.pause_payload
+                    answer = plan_execution.answer
                     current_plan_step_id = None
                 else:
                     running_snapshot = agent_runs.get_snapshot(
