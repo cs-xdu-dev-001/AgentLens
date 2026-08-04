@@ -136,11 +136,11 @@ def register_tools(
                 ]
             }
         ),
-        engine_names={"current", "langgraph"},
+        engine_names={"langgraph"},
     )
     registry.register(
         name="dangerous_write",
-        description="Must not be exposed yet.",
+        description="Requires durable approval before execution.",
         input_schema={
             "type": "object",
             "properties": {"value": {"type": "string"}},
@@ -170,7 +170,7 @@ def register_read_only_mcp(
             or {"results": [{"title": "Note"}]}
         ),
         read_only=True,
-        engine_names={"current", "langgraph"},
+        engine_names={"langgraph"},
         trace_kind="mcp",
         risk="read",
         server_name="Notes",
@@ -195,7 +195,7 @@ def register_write_mcp(
             or {"pageId": f"page-{len(calls)}"}
         ),
         read_only=False,
-        engine_names={"current", "langgraph"},
+        engine_names={"langgraph"},
         trace_kind="mcp",
         risk="write",
         server_name="Notes",
@@ -236,7 +236,7 @@ class FakeSkillRuntime:
                 )
             ),
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
             trace_kind="skill",
             internal=True,
         )
@@ -266,7 +266,7 @@ class FakeSkillRuntime:
             },
             handler=activate,
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
             trace_kind="skill",
             internal=True,
             becomes_parent_on_success=True,
@@ -730,7 +730,8 @@ def main() -> None:
         ]
         exposed = web_gateway.calls[0]["tools"]
         assert [item["function"]["name"] for item in exposed] == [
-            "web_search"
+            "web_search",
+            "dangerous_write",
         ]
         assert web_gateway.calls[0]["tool_choice"] == "auto"
         second_messages = web_gateway.calls[1]["messages"]
@@ -810,10 +811,9 @@ def main() -> None:
             run_id="run_blocked",
             messages=[{"role": "user", "content": "Write"}],
         )
-        assert blocked_result.answer == "I cannot run that tool."
-        assert len(blocked_result.executions) == 1
-        assert blocked_result.executions[0].status == "failed"
-        assert blocked_result.executions[0].error_code == "unknown_tool"
+        assert blocked_result.paused is True
+        assert blocked_result.interrupt["toolName"] == "dangerous_write"
+        assert blocked_result.executions == []
         assert unsafe_calls == []
 
         shadow_calls: list[dict] = []
@@ -828,6 +828,7 @@ def main() -> None:
                 "additionalProperties": False,
             },
             handler=lambda arguments: shadow_calls.append(arguments) or {},
+            engine_names={"unsupported"},
         )
         shadow_gateway = FakeGateway(
             {
@@ -877,7 +878,7 @@ def main() -> None:
                 unexpected_plan_calls.append(arguments) or {"ran": True}
             ),
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
         )
         plan_gateway = FakeGateway(
             {

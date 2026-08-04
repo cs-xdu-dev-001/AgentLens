@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from queue import Queue
 import sys
-from threading import Event, Thread
+from threading import Event
 import time
 
 from fastapi.testclient import TestClient
@@ -191,27 +191,8 @@ def main() -> None:
     duplicate = alice.post(f"/api/agent/runs/{run['id']}/start")
     assert duplicate.status_code == 409, duplicate.text
     assert bob.post(f"/api/agent/runs/{run['id']}/cancel").status_code == 404
-    approval_events: Queue = Queue()
-    approval_result: Queue = Queue()
-    approval_waiter = Thread(
-        target=lambda: approval_result.put(
-            runtime.approval_broker.request(
-                user_id=alice_id,
-                run_id=run["id"],
-                server_name="Notion",
-                tool_name="create_page",
-                risk="write",
-                input_summary="{}",
-                emit=approval_events.put,
-            )
-        )
-    )
-    approval_waiter.start()
-    approval_events.get(timeout=1)
     cancel = alice.post(f"/api/agent/runs/{run['id']}/cancel")
     assert cancel.status_code == 200, cancel.text
-    assert approval_result.get(timeout=1) == "deny"
-    approval_waiter.join(timeout=1)
     assert cancelled.wait(1)
     release.set()
     for _ in range(100):
@@ -219,6 +200,50 @@ def main() -> None:
             break
         time.sleep(0.01)
     assert not runtime.agent_run_coordinator.is_active(run["id"])
+
+    waiting_run = runtime.agent_runs.create_run(
+        user_id=alice_id,
+        session_id="session-run-waiting-approval",
+        user_message_id=6,
+        goal_summary="等待写入审批",
+        trigger_mode="auto",
+        run_id="run_api_waiting_approval",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        waiting_run["id"],
+        "running",
+    )
+    runtime.agent_runs.transition_run(
+        alice_id,
+        waiting_run["id"],
+        "waiting_approval",
+    )
+    waiting_operation = runtime.agent_tool_operations.ensure_waiting(
+        user_id=alice_id,
+        run_id=waiting_run["id"],
+        tool_call_id="call_cancelled_approval",
+        tool_name="mcp_notes_create",
+        server_name="Notes",
+        risk="write",
+        input_summary={"title": "cancelled"},
+    )
+    waiting_cancel = alice.post(
+        f"/api/agent/runs/{waiting_run['id']}/cancel"
+    )
+    assert waiting_cancel.status_code == 200, waiting_cancel.text
+    assert waiting_cancel.json()["data"]["run"]["status"] == "cancelled"
+    cancelled_operation = runtime.agent_tool_operations.get(
+        alice_id,
+        waiting_operation["approvalId"],
+    )
+    assert cancelled_operation is not None
+    assert cancelled_operation["status"] == "cancelled"
+    stale_approval = alice.post(
+        f"/api/agent/approvals/{waiting_operation['approvalId']}",
+        json={"decision": "allow_once"},
+    )
+    assert stale_approval.status_code == 404, stale_approval.text
 
     completed = runtime.agent_runs.create_run(
         user_id=alice_id,
@@ -304,6 +329,7 @@ def main() -> None:
         assert runtime.agent_runs.load_request(user_id, run_id) == {
             "question": "重新运行任务",
             "sessionId": "session-run-restart",
+            "_agentEngine": "langgraph",
         }
         runtime.agent_runs.transition_run(user_id, run_id, "running")
         runtime.agent_runs.transition_run(user_id, run_id, "completed")

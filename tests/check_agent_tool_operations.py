@@ -115,6 +115,28 @@ def main() -> None:
         assert denied_result["status"] == "denied"
         assert store.claim_execution(11, denied["approvalId"]) is None
 
+        cancelled = store.ensure_waiting(
+            user_id=11,
+            run_id="run-operation",
+            tool_call_id="call-write-cancelled",
+            tool_name="mcp__notion__archive_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"pageId": "page-cancelled"},
+        )
+        assert store.cancel_for_run(12, "run-operation") == 0
+        assert store.cancel_for_run(11, "run-operation") == 1
+        cancelled_result = store.get(11, cancelled["approvalId"])
+        assert cancelled_result is not None
+        assert cancelled_result["status"] == "cancelled"
+        assert cancelled_result["decision"] == "cancelled"
+        assert store.resolve(
+            11,
+            cancelled["approvalId"],
+            "allow_once",
+        ) is None
+        assert store.claim_execution(11, cancelled["approvalId"]) is None
+
         expiring = store.ensure_waiting(
             user_id=11,
             run_id="run-operation",

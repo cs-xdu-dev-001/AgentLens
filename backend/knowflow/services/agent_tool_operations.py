@@ -298,6 +298,27 @@ class AgentToolOperationStore:
             ).mappings().first()
         return self._normalize(dict(row)) if row else None
 
+    def cancel_for_run(self, user_id: int, run_id: str) -> int:
+        now = _timestamp(self.clock())
+        with self.database.engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    UPDATE agent_tool_operation
+                    SET status='cancelled', decision='cancelled',
+                        resolved_at=:now, updated_at=:now
+                    WHERE user_id=:user_id AND run_id=:run_id
+                      AND status='waiting'
+                    """
+                ),
+                {
+                    "now": now,
+                    "user_id": user_id,
+                    "run_id": run_id,
+                },
+            )
+        return int(result.rowcount or 0)
+
     def claim_execution(
         self,
         user_id: int,

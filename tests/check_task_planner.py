@@ -12,9 +12,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.schemas import ChatRequest  # noqa: E402
 from knowflow.services.agent_loop import (  # noqa: E402
-    AgentRunner,
     ToolRegistry,
 )
+from langgraph_test_helper import run_langgraph_agent  # noqa: E402
 from knowflow.services.task_planner import (  # noqa: E402
     TaskPlan,
     parse_execution_mode,
@@ -144,7 +144,8 @@ def main() -> None:
     ).definition
     assert definition.ends_run_on_success is True
     callback_executions = []
-    result = AgentRunner(gateway=Gateway()).run(
+    result = run_langgraph_agent(
+        gateway=Gateway(),
         messages=[{"role": "user", "content": "整理资料"}],
         config={},
         registry=registry,
@@ -152,7 +153,7 @@ def main() -> None:
             callback_executions.append((execution, step_id))
         ),
     )
-    assert result.answer == "计划已生成。"
+    assert result.answer == "The task plan was created."
     assert len(captured) == 1
     assert captured[0]["steps"][0]["title"] == "搜索 Notion"
     assert callback_executions[0][0].tool_name == "create_task_plan"

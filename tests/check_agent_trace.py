@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_trace import AgentTraceRecorder
-from knowflow.services.agent_loop import AgentRunner, ToolRegistry
+from knowflow.services.agent_loop import ToolRegistry
+from langgraph_test_helper import run_langgraph_agent
 
 
 class FakeClock:
@@ -90,7 +91,9 @@ def main() -> None:
     assert all(step["status"] == "success" for step in snapshot)
 
     model_trace = AgentTraceRecorder(run_id="run_model_trace")
-    AgentRunner(gateway=FakeGateway(), max_tool_rounds=0).run(
+    run_langgraph_agent(
+        gateway=FakeGateway(),
+        max_tool_rounds=0,
         messages=[{"role": "user", "content": "hello"}],
         config={
             "model_name": "gpt-safe-display",
@@ -109,6 +112,7 @@ def main() -> None:
     assert model_step["details"] == {
         "modelName": "gpt-safe-display",
         "apiMode": "responses",
+        "engineName": "langgraph",
     }
     serialized_model = json.dumps(model_step, ensure_ascii=False)
     assert "model-super-secret" not in serialized_model

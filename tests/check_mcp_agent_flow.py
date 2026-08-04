@@ -435,120 +435,12 @@ def main() -> None:
     }
     FakePool.instances.clear()
 
-    original_engine_selector = extensions.select_agent_engine_name
-    extensions.select_agent_engine_name = lambda persisted: "current"
-    allow_gateway = ScenarioGateway(
-        [
-            configured["readNotion"]["modelName"],
-            configured["readDocs"]["modelName"],
-            configured["writeNotion"]["modelName"],
-        ],
-        "The page was created.",
-    )
-    extensions.gateway.complete = allow_gateway
     payload = ChatRequest(
         question="Search both services and create the weekly report.",
         chatModelConfigId=model_id,
         enableTools=True,
         autoAgent=True,
     )
-    allowed_events = asyncio.run(
-        run_stream(extensions, client, payload, "allow_once")
-    )
-    allowed_names = [name for name, _ in allowed_events]
-    assert "approval_required" in allowed_names
-    assert "approval_resolved" in allowed_names
-    required_index = allowed_names.index("approval_required")
-    resolved_index = allowed_names.index("approval_resolved")
-    mcp_running_index = next(
-        index
-        for index, (name, event) in enumerate(allowed_events)
-        if name == "agent_step"
-        and event.get("kind") == "mcp"
-        and event.get("name")
-        == configured["writeNotion"]["modelName"]
-        and event.get("status") == "running"
-    )
-    assert required_index < resolved_index < mcp_running_index
-    allow_pool = FakePool.instances[0]
-    assert allow_pool.closed is True
-    assert {
-        call[0] for call in allow_pool.calls
-    } == {configured["notion"]["id"], configured["docs"]["id"]}
-    assert [call[1] for call in allow_pool.calls] == [
-        "search_pages",
-        "search_docs",
-        "create_page",
-    ]
-    done = next(
-        event
-        for name, event in allowed_events
-        if name == "done"
-    )
-    rows = runtime.fetch_all(
-        """
-        SELECT tool_name, input_json, output_text
-        FROM agent_tool_call
-        WHERE message_id=:message_id
-        ORDER BY id
-        """,
-        {"message_id": done["messageId"]},
-    )
-    assert [row["tool_name"] for row in rows] == [
-        configured["readNotion"]["modelName"],
-        configured["readDocs"]["modelName"],
-        configured["writeNotion"]["modelName"],
-    ]
-    serialized_rows = json.dumps(rows, ensure_ascii=False)
-    assert "remote-result-secret" not in serialized_rows
-    assert "[REDACTED]" in serialized_rows
-
-    deny_gateway = ScenarioGateway(
-        [configured["writeNotion"]["modelName"]],
-        "The write was denied.",
-    )
-    extensions.gateway.complete = deny_gateway
-    denied_events = asyncio.run(
-        run_stream(extensions, client, payload, "deny")
-    )
-    deny_pool = FakePool.instances[-1]
-    assert deny_pool.closed is True
-    assert deny_pool.calls == []
-    denied_names = [name for name, _ in denied_events]
-    assert "approval_required" in denied_names
-    assert "approval_resolved" in denied_names
-    resolved = next(
-        event
-        for name, event in denied_events
-        if name == "approval_resolved"
-    )
-    assert resolved["decision"] == "deny"
-
-    cancel_gateway = ScenarioGateway(
-        [configured["writeNotion"]["modelName"]],
-        "This answer must not be persisted.",
-    )
-    extensions.gateway.complete = cancel_gateway
-    assistant_count_before = runtime.scalar(
-        "SELECT COUNT(*) FROM chat_message WHERE role='assistant'"
-    )
-    pool_count_before = len(FakePool.instances)
-    asyncio.run(
-        cancel_stream_at_approval(extensions, client, payload)
-    )
-    deadline = time.monotonic() + 1
-    while (
-        len(FakePool.instances) == pool_count_before
-        or not FakePool.instances[-1].closed
-    ) and time.monotonic() < deadline:
-        time.sleep(0.01)
-    cancelled_pool = FakePool.instances[-1]
-    assert cancelled_pool.closed is True
-    assert cancelled_pool.calls == []
-    assert runtime.scalar(
-        "SELECT COUNT(*) FROM chat_message WHERE role='assistant'"
-    ) == assistant_count_before
-
     original_list = extensions.mcp_configs.list_for_user
     too_many = [
         make_tool(
@@ -588,7 +480,6 @@ def main() -> None:
         == "mcp_tool_configuration_invalid"
     )
 
-    extensions.select_agent_engine_name = original_engine_selector
     original_checkpoint = extensions.LANGGRAPH_CHECKPOINT_DB
     langgraph_gateway = ScenarioGateway(
         [configured["writeNotion"]["modelName"]],

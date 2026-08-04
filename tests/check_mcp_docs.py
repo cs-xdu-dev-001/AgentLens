@@ -39,7 +39,7 @@ def main() -> None:
         ("Static headers", "static-header option"),
         ("automatically", "automatic read operations"),
         ("approval", "write approval"),
-        ("single backend process", "single-process approval limit"),
+        ("one backend worker", "process-local run coordinator limit"),
         ("test page", "safe Notion smoke test"),
     ):
         assert token in readme, f"missing README {label}: {token}"

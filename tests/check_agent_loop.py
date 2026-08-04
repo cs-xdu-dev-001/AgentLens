@@ -7,11 +7,11 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_loop import (
     AgentLoopLimitError,
-    AgentRunner,
     ToolRegistry,
 )
 from knowflow.services.agent_trace import AgentTraceRecorder
 from knowflow.services.web_search import WebSearchArguments
+from langgraph_test_helper import run_langgraph_agent
 
 
 def tool_call(name: str = "web_search", arguments: str = '{"query":"today","top_k":3}'):
@@ -70,7 +70,9 @@ def main() -> None:
         ]
     )
     trace = AgentTraceRecorder(run_id="run_agent_loop")
-    result = AgentRunner(gateway=gateway, max_tool_rounds=3).run(
+    result = run_langgraph_agent(
+        gateway=gateway,
+        max_tool_rounds=3,
         messages=[{"role": "user", "content": "What changed today?"}],
         config={"model_name": "fake"},
         registry=make_registry(),
@@ -140,7 +142,8 @@ def main() -> None:
             }
 
     model_events = []
-    streaming = AgentRunner(gateway=StreamingGateway()).run(
+    streaming = run_langgraph_agent(
+        gateway=StreamingGateway(),
         messages=[{"role": "user", "content": "Search then answer"}],
         config={"model_name": "fake"},
         registry=make_registry(),
@@ -156,7 +159,8 @@ def main() -> None:
     direct_gateway = FakeGateway(
         [{"role": "assistant", "content": "No search needed."}]
     )
-    direct = AgentRunner(gateway=direct_gateway).run(
+    direct = run_langgraph_agent(
+        gateway=direct_gateway,
         messages=[{"role": "user", "content": "Say hello"}],
         config={"model_name": "fake"},
         registry=make_registry(),
@@ -174,7 +178,8 @@ def main() -> None:
             {"role": "assistant", "content": "The requested tool is unavailable."},
         ]
     )
-    unknown = AgentRunner(gateway=unknown_gateway).run(
+    unknown = run_langgraph_agent(
+        gateway=unknown_gateway,
         messages=[{"role": "user", "content": "Use an unknown tool"}],
         config={"model_name": "fake"},
         registry=make_registry(),
@@ -195,7 +200,9 @@ def main() -> None:
         ]
     )
     try:
-        AgentRunner(gateway=limited_gateway, max_tool_rounds=1).run(
+        run_langgraph_agent(
+            gateway=limited_gateway,
+            max_tool_rounds=1,
             messages=[{"role": "user", "content": "Loop forever"}],
             config={"model_name": "fake"},
             registry=make_registry(),
@@ -209,7 +216,8 @@ def main() -> None:
         def complete(self, *args, **kwargs):
             raise RuntimeError("boom")
     try:
-        AgentRunner(gateway=RaisingGateway()).run(
+        run_langgraph_agent(
+            gateway=RaisingGateway(),
             messages=[{"role": "user", "content": "x"}], config={},
             registry=make_registry(), trace=failing_trace,
         )
@@ -222,7 +230,8 @@ def main() -> None:
 
     empty_trace = AgentTraceRecorder(run_id="run_invalid_model")
     try:
-        AgentRunner(gateway=FakeGateway([{"role": "assistant", "content": None}])).run(
+        run_langgraph_agent(
+            gateway=FakeGateway([{"role": "assistant", "content": None}]),
             messages=[{"role": "user", "content": "x"}], config={},
             registry=make_registry(), trace=empty_trace,
         )

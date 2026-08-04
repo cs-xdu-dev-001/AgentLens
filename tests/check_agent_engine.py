@@ -10,7 +10,6 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.services.agent_engine import (
     AgentEngineSelectionError,
     AgentEngineUnavailableError,
-    CurrentAgentEngine,
     build_agent_engine,
 )
 from knowflow.services.agent_loop import ToolRegistry
@@ -73,16 +72,16 @@ def main() -> None:
     executions = []
     model_events = []
     with tempfile.TemporaryDirectory() as temporary:
-        checkpoint_path = Path(temporary) / "current.sqlite3"
+        checkpoint_path = Path(temporary) / "langgraph.sqlite3"
         engine = build_agent_engine(
-            "current",
+            "langgraph",
             gateway=FakeGateway(),
             max_tool_rounds=3,
             checkpoint_db_path=checkpoint_path,
         )
 
-        assert isinstance(engine, CurrentAgentEngine)
-        assert engine.name == "current"
+        assert isinstance(engine, LangGraphAgentEngine)
+        assert engine.name == "langgraph"
         result = engine.run(
             user_id=17,
             run_id="run_engine_contract",
@@ -96,12 +95,12 @@ def main() -> None:
             ),
             model_event_callback=model_events.append,
         )
-        assert not checkpoint_path.exists()
+        assert checkpoint_path.exists()
 
     assert result.answer == "done"
     assert len(result.executions) == 1
     assert result.executions[0].tool_name == "echo"
-    assert executions[0][0] is result.executions[0]
+    assert executions[0][0] == result.executions[0]
     assert model_events == [{"type": "text_delta", "text": "done"}]
     assert result.trace == trace.snapshot()
     assert [step["kind"] for step in result.trace] == [
@@ -110,19 +109,12 @@ def main() -> None:
         "model",
     ]
 
-    langgraph_engine = build_agent_engine(
-        "langgraph",
-        gateway=FakeGateway(),
-        checkpoint_db_path=ROOT / "data" / "unused-checkpoint.sqlite3",
-    )
-    assert isinstance(langgraph_engine, LangGraphAgentEngine)
-    assert langgraph_engine.name == "langgraph"
-
-    try:
-        build_agent_engine("unknown", gateway=FakeGateway())
-        raise AssertionError("unsupported engine should fail explicitly")
-    except AgentEngineSelectionError as exc:
-        assert exc.engine_name == "unknown"
+    for retired in ("current", "unknown", ""):
+        try:
+            build_agent_engine(retired, gateway=FakeGateway())
+            raise AssertionError("unsupported engine should fail explicitly")
+        except AgentEngineSelectionError as exc:
+            assert exc.engine_name == (retired or "unknown")
 
     missing_dependency = ModuleNotFoundError(
         "No module named 'langgraph'",
@@ -138,7 +130,7 @@ def main() -> None:
         except AgentEngineUnavailableError as exc:
             assert exc.engine_name == "langgraph"
 
-    print("current agent engine preserves the existing runner contract")
+    print("LangGraph is the only supported agent engine")
 
 
 if __name__ == "__main__":

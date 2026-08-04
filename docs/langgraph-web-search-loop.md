@@ -4,7 +4,7 @@
 
 ## 范围
 
-本阶段把`web_search`和明确标记为只读的MCP工具迁入LangGraph，形成可checkpoint恢复的`模型 → 工具 → 模型`循环。默认`current`执行器不变，MCP写操作、Skills、审批、任务计划和Mem0仍不向LangGraph开放。
+本阶段最初把`web_search`和明确标记为只读的MCP工具迁入LangGraph，形成可checkpoint恢复的`模型 → 工具 → 模型`循环。后续迁移已完成，MCP写操作、Skills、审批、任务计划、RAG和Mem0召回现在都由LangGraph编排。
 
 ```mermaid
 flowchart LR
@@ -25,7 +25,7 @@ LangGraph使用工具注册表的执行引擎声明作为允许列表：
 3. 模型即使生成未暴露的写工具名称，也只会得到`unknown_tool`失败结果，handler不会执行；
 4. `web_search`仍来自当前登录用户自己的工具配置，未配置或未启用时不会出现在schema中。
 
-schema暴露和执行前校验都使用同一份执行引擎声明，可以阻止同名MCP工具冒充原生搜索，也能避免审批节点尚未迁移时发生越权执行。工具默认只允许`current`；原生Tavily搜索和明确带`readOnlyHint=true`且非破坏性的MCP工具才显式允许`langgraph`。
+schema暴露和执行前校验都使用同一份LangGraph工具声明，可以阻止同名MCP工具冒充原生搜索。明确带`readOnlyHint=true`且非破坏性的MCP工具直接执行；其他MCP工具进入持久化审批中断。
 
 ## checkpoint状态
 

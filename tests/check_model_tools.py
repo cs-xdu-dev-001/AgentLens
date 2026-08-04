@@ -54,7 +54,7 @@ def main() -> None:
     require(backend, "Remote model call failed. KnowFlow did not hide the failure with a local fallback answer.", "configured remote model should not silently fallback")
     require(backend, "127.0.0.1/localhost refers to the machine running the KnowFlow backend", "localhost endpoint hint")
     require(chat_router, "from .extensions import agent_chat", "chat endpoint can route automatic tool requests to agent handler")
-    require(backend, "AgentRunner", "native agent loop")
+    require(backend, "LangGraphAgentEngine", "LangGraph agent runtime")
     require(backend, "ToolRegistry", "generic tool registry")
     require(backend, '"web_search"', "web search tool")
     require(backend, "TavilyWebSearch", "Tavily web search provider")

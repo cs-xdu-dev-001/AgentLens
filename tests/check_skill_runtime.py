@@ -10,7 +10,8 @@ from pydantic import ValidationError
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from knowflow.services.agent_loop import AgentRunner, ToolRegistry
+from knowflow.services.agent_loop import ToolRegistry
+from langgraph_test_helper import run_langgraph_agent
 from knowflow.services.skill_runtime import (
     ActivateSkillArguments,
     ReadSkillResourceArguments,
@@ -171,7 +172,8 @@ def main() -> None:
     session.register_activation_tool(registry)
     assert "activate_skill" in registry.eligible_names("langgraph")
     gateway = Gateway()
-    result = AgentRunner(gateway=gateway).run(
+    result = run_langgraph_agent(
+        gateway=gateway,
         messages=[
             {"role": "system", "content": "base"},
             {"role": "user", "content": "research"},

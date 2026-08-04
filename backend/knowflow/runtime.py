@@ -41,7 +41,6 @@ from .schemas import *
 from .services.tool_config import ToolConfigService
 from .services.mcp_config import McpConfigService
 from .services.mcp_oauth import McpOAuthCoordinator
-from .services.approval import ApprovalBroker
 from .services.agent_run_coordinator import AgentRunCoordinator
 from .services.agent_run_store import AgentRunStore
 from .services.agent_tool_operations import AgentToolOperationStore
@@ -495,11 +494,6 @@ mcp_oauth = McpOAuthCoordinator(
     timeout=MCP_REQUEST_TIMEOUT,
     max_bytes=MCP_MAX_RESPONSE_BYTES,
 )
-
-approval_broker = ApprovalBroker(
-    timeout_seconds=MCP_APPROVAL_TIMEOUT,
-)
-
 
 def post_model_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: int | None = None) -> requests.Response:
     session = requests.Session()

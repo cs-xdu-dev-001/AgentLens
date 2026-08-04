@@ -10,10 +10,11 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from knowflow.services.agent_loop import AgentRunner, ToolRegistry
+from knowflow.services.agent_loop import ToolRegistry
 from knowflow.services.agent_trace import AgentTraceRecorder
 from knowflow.services.skill_runtime import SkillActivationSession
 from knowflow.schemas import ChatRequest
+from langgraph_test_helper import run_langgraph_agent
 
 
 class Store:
@@ -80,21 +81,6 @@ class Gateway:
         return {"content": "answer"}
 
 
-class ApprovalGate:
-    def __init__(self):
-        self.requests = []
-        self.parent_step_id = None
-
-    def set_parent_step_id(self, parent_step_id):
-        self.parent_step_id = parent_step_id
-
-    def request(self, definition, arguments, call_id):
-        self.requests.append(
-            (definition.name, call_id, self.parent_step_id)
-        )
-        return "allow_once"
-
-
 def main() -> None:
     registry = ToolRegistry()
     registry.register(
@@ -102,8 +88,7 @@ def main() -> None:
         description="ordinary",
         input_schema={"type": "object"},
         handler=lambda args: {"ok": True},
-        read_only=False,
-        risk="write",
+        read_only=True,
     )
     session = SkillActivationSession(
         store=Store(),
@@ -112,28 +97,17 @@ def main() -> None:
     )
     session.register_activation_tool(registry)
     trace = AgentTraceRecorder(run_id="skill-trace")
-    approval_gate = ApprovalGate()
-    result = AgentRunner(gateway=Gateway()).run(
+    result = run_langgraph_agent(
+        gateway=Gateway(),
         messages=[{"role": "user", "content": "go"}],
         config={},
         registry=registry,
         trace=trace,
         parent_step_id="root",
-        approval_gate=approval_gate,
     )
     skill_step = next(step for step in result.trace if step["kind"] == "skill")
-    selecting_model = result.trace[0]
-    assert skill_step["parentId"] == selecting_model["stepId"]
-    later = [
-        step
-        for step in result.trace
-        if step["stepId"] != skill_step["stepId"]
-        and step is not selecting_model
-    ]
-    assert all(step["parentId"] == skill_step["stepId"] for step in later)
-    assert approval_gate.requests == [
-        ("ordinary", "t1", skill_step["stepId"])
-    ]
+    assert skill_step["parentId"] == "root"
+    assert all(step["parentId"] == "root" for step in result.trace)
     public = json.dumps(
         {
             "trace": result.trace,
@@ -143,10 +117,10 @@ def main() -> None:
     ).lower()
     for secret in ("private body", "c:\\private", "user@example.com", "skip approval"):
         assert secret not in public
-    details = skill_step["details"]
-    assert details["displayName"] == "Safe"
-    assert details["sourceKind"] == "builtin"
-    assert "systemMessage" not in details
+    output_summary = json.loads(skill_step["outputSummary"])
+    assert output_summary["displayName"] == "Safe"
+    assert output_summary["sourceKind"] == "builtin"
+    assert "systemMessage" not in output_summary
 
     failure_registry = ToolRegistry()
     failure_registry.register(
@@ -159,15 +133,6 @@ def main() -> None:
         },
         handler=lambda args: {"ok": True},
     )
-    failure_registry.register(
-        name="denied_tool",
-        description="denied",
-        input_schema={"type": "object"},
-        handler=lambda args: {"ok": True},
-        read_only=False,
-        risk="write",
-    )
-
     def fail_after_activation(args):
         raise RuntimeError("expected")
 
@@ -217,13 +182,6 @@ def main() -> None:
                             },
                         },
                         {
-                            "id": "denied",
-                            "function": {
-                                "name": "denied_tool",
-                                "arguments": "{}",
-                            },
-                        },
-                        {
                             "id": "handler-failure",
                             "function": {
                                 "name": "failing_tool",
@@ -234,27 +192,16 @@ def main() -> None:
                 }
             return {"content": "done"}
 
-    class DenyGate:
-        def __init__(self):
-            self.parent_step_id = None
-
-        def set_parent_step_id(self, parent_step_id):
-            self.parent_step_id = parent_step_id
-
-        def request(self, definition, arguments, call_id):
-            return "deny"
-
-    failure_result = AgentRunner(gateway=FailureGateway()).run(
+    failure_result = run_langgraph_agent(
+        gateway=FailureGateway(),
         messages=[{"role": "user", "content": "failure snapshots"}],
         config={},
         registry=failure_registry,
         trace=AgentTraceRecorder(run_id="skill-failures"),
         parent_step_id="root",
-        approval_gate=DenyGate(),
     )
     assert [item.status for item in failure_result.executions] == [
         "success",
-        "failed",
         "failed",
         "failed",
     ]
@@ -262,7 +209,6 @@ def main() -> None:
         item.error_code for item in failure_result.executions[1:]
     ] == [
         "invalid_arguments",
-        "permission_denied",
         "tool_execution_failed",
     ]
     expected_snapshot = {
@@ -545,7 +491,7 @@ def main() -> None:
         "DELETE FROM chat_session WHERE id=:session_id",
         {"session_id": integration_session},
     )
-    print("Skill traces preserve the activation parent chain and redact instructions")
+    print("Skill traces use the LangGraph parent and redact instructions")
 
 
 if __name__ == "__main__":

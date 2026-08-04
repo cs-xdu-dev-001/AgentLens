@@ -6,7 +6,6 @@ from typing import Any, Callable, Protocol
 
 from .agent_loop import (
     AgentRunResult,
-    AgentRunner,
     ToolExecution,
     ToolRegistry,
 )
@@ -17,18 +16,6 @@ ModelEventCallback = Callable[[dict[str, Any]], None]
 SkillRestoreCallback = Callable[[dict[str, Any]], None]
 MemoryRecallCallback = Callable[[], list[dict[str, Any]]]
 RetrievalContextCallback = Callable[[], dict[str, Any]]
-NEW_AGENT_ENGINE = "langgraph"
-HISTORICAL_AGENT_ENGINES = frozenset({"current", "langgraph"})
-
-
-def select_agent_engine_name(
-    persisted_engine_name: str | None,
-) -> str:
-    """Use the stored engine only when resuming an existing run."""
-    normalized = str(persisted_engine_name or "").strip().lower()
-    if normalized in HISTORICAL_AGENT_ENGINES:
-        return normalized
-    return NEW_AGENT_ENGINE
 
 
 class AgentEngine(Protocol):
@@ -44,7 +31,6 @@ class AgentEngine(Protocol):
         registry: ToolRegistry,
         trace=None,
         parent_step_id: str | None = None,
-        approval_gate=None,
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
@@ -71,61 +57,6 @@ class AgentEngineUnavailableError(RuntimeError):
         super().__init__(f"Agent engine is unavailable: {engine_name}")
 
 
-class CurrentAgentEngine:
-    name = "current"
-
-    def __init__(self, *, gateway, max_tool_rounds: int = 3):
-        self._runner = AgentRunner(
-            gateway=gateway,
-            max_tool_rounds=max_tool_rounds,
-        )
-
-    def run(
-        self,
-        *,
-        user_id: int,
-        run_id: str,
-        messages,
-        config,
-        registry: ToolRegistry,
-        trace=None,
-        parent_step_id: str | None = None,
-        approval_gate=None,
-        skill_snapshot: dict[str, Any] | None = None,
-        execution_callback: ExecutionCallback | None = None,
-        model_event_callback: ModelEventCallback | None = None,
-        resume_from_checkpoint: bool = False,
-        tool_operation_store=None,
-        approval_decision: str | None = None,
-        skill_restore: SkillRestoreCallback | None = None,
-        memory_recall: MemoryRecallCallback | None = None,
-        memory_enabled: bool = False,
-        retrieval_context: RetrievalContextCallback | None = None,
-    ) -> AgentRunResult:
-        del (
-            user_id,
-            run_id,
-            resume_from_checkpoint,
-            tool_operation_store,
-            approval_decision,
-            skill_restore,
-            memory_recall,
-            memory_enabled,
-            retrieval_context,
-        )
-        return self._runner.run(
-            messages=messages,
-            config=config,
-            registry=registry,
-            trace=trace,
-            parent_step_id=parent_step_id,
-            approval_gate=approval_gate,
-            skill_snapshot=skill_snapshot,
-            execution_callback=execution_callback,
-            model_event_callback=model_event_callback,
-        )
-
-
 def build_agent_engine(
     engine_name: str,
     *,
@@ -134,11 +65,6 @@ def build_agent_engine(
     checkpoint_db_path: Path | None = None,
 ) -> AgentEngine:
     normalized = str(engine_name or "").strip().lower()
-    if normalized == "current":
-        return CurrentAgentEngine(
-            gateway=gateway,
-            max_tool_rounds=max_tool_rounds,
-        )
     if normalized == "langgraph":
         try:
             module = importlib.import_module(

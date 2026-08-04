@@ -352,6 +352,7 @@ class AgentRunStore:
                 "agent_run_request_unavailable",
                 "Agent run request is unavailable.",
             )
+        request_payload["_agentEngine"] = "langgraph"
         return self.create_run(
             user_id=user_id,
             session_id=str(snapshot["sessionId"]),

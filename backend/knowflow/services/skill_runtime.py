@@ -223,7 +223,7 @@ class SkillActivationSession:
             arguments_model=ReadSkillResourceArguments,
             handler=lambda args: self.read_resource(args.path),
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
             trace_kind="skill",
             internal=True,
         )
@@ -242,7 +242,7 @@ class SkillActivationSession:
             arguments_model=ActivateSkillArguments,
             handler=activate,
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
             trace_kind="skill",
             internal=True,
             becomes_parent_on_success=True,

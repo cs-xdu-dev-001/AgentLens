@@ -8,10 +8,7 @@ import uuid
 from fastapi import APIRouter
 
 from ..runtime import *
-from ..services.agent_engine import (
-    build_agent_engine,
-    select_agent_engine_name,
-)
+from ..services.agent_engine import build_agent_engine
 from ..services.langgraph_checkpoint import LangGraphCheckpointError
 from ..services.langgraph_plan_executor import (
     LangGraphPlanExecutor,
@@ -24,7 +21,6 @@ from ..services.agent_trace import (
     sanitize_trace_value,
 )
 from ..services.memory import append_long_term_memory_context
-from ..services.approval import AgentApprovalGate
 from ..services.skill_runtime import (
     SkillActivationSession,
     SkillRuntimeError,
@@ -51,10 +47,6 @@ class McpToolConfigurationError(RuntimeError):
 
 class AgentRunCancelled(RuntimeError):
     code = "agent_run_cancelled"
-
-
-class TaskPlanCreated(RuntimeError):
-    pass
 
 
 class AgentStepExecutionError(RuntimeError):
@@ -227,7 +219,6 @@ def build_tool_registry(
     enable_tools: bool,
     *,
     mcp_pool: McpRunSessionPool | None = None,
-    approval_gate: AgentApprovalGate | None = None,
     cancel_event: Event | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
@@ -259,7 +250,7 @@ def build_tool_registry(
             arguments_model=WebSearchArguments,
             handler=run_web_search,
             read_only=True,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
         )
         registered_names.add("web_search")
     if not enable_tools or mcp_pool is None:
@@ -332,7 +323,7 @@ def build_tool_registry(
                 )
             ),
             read_only=read_only,
-            engine_names={"current", "langgraph"},
+            engine_names={"langgraph"},
             trace_kind="mcp",
             risk=tool_risk(tool),
             server_name=str(tool["serverName"]),
@@ -352,7 +343,6 @@ def execute_agent_chat(
     cancel_event: Event | None = None,
     existing_run_id: str | None = None,
     run_action: str | None = None,
-    persisted_engine_name: str | None = None,
     approval_decision: str | None = None,
 ) -> dict[str, Any]:
     command_mode, normalized_question = parse_execution_mode(
@@ -383,9 +373,6 @@ def execute_agent_chat(
         get_kb(payload.knowledgeBaseId, user_id)
     durable_run_id = existing_run_id or run_id or (
         f"run_{uuid.uuid4().hex[:12]}"
-    )
-    selected_engine_name = select_agent_engine_name(
-        persisted_engine_name
     )
     if existing_run_id:
         durable_snapshot = agent_runs.get_snapshot(
@@ -428,7 +415,7 @@ def execute_agent_chat(
             payload.question,
         )
         stored_request = payload.model_dump(mode="json")
-        stored_request["_agentEngine"] = selected_engine_name
+        stored_request["_agentEngine"] = "langgraph"
         stored_request["attachments"] = [
             {**item, "previewUrl": None}
             for item in stored_request.get("attachments", [])
@@ -557,42 +544,6 @@ def execute_agent_chat(
                 "running",
             )
             publish_snapshot("run_updated")
-        if (
-            use_rag
-            and payload.knowledgeBaseId
-            and selected_engine_name != "langgraph"
-        ):
-            started_at = time.perf_counter()
-            chunks = retrieve_chunks(
-                payload.knowledgeBaseId,
-                payload.question,
-                DEFAULT_TOP_K,
-                user_id,
-            )
-            chunks = enrich_retrieval_chunks(
-                payload.question,
-                chunks,
-            )
-            duration_ms = int(
-                (time.perf_counter() - started_at) * 1000
-            )
-            rag_quality = assess_retrieval_quality(
-                payload.question,
-                chunks,
-            )
-            retrieval_run = record_retrieval_run(
-                user_id=user_id,
-                knowledge_base_id=payload.knowledgeBaseId,
-                query=payload.question,
-                top_k=DEFAULT_TOP_K,
-                chunks=chunks,
-                quality=rag_quality,
-                duration_ms=duration_ms,
-            )
-            rag_quality = {
-                **rag_quality,
-                "retrievalRunId": retrieval_run.get("id"),
-            }
         chat_config = get_model_config(
             payload.chatModelConfigId,
             "chat",
@@ -677,87 +628,6 @@ def execute_agent_chat(
                 )
             history = get_recent_history(session_id)
 
-            def durable_approval_emit(
-                event: dict[str, Any],
-            ) -> None:
-                nonlocal current_plan_step_id
-                if current_plan_step_id:
-                    if event["type"] == "approval_required":
-                        agent_runs.transition_step(
-                            user_id,
-                            durable_run_id,
-                            current_plan_step_id,
-                            "waiting_approval",
-                        )
-                        agent_runs.transition_run(
-                            user_id,
-                            durable_run_id,
-                            "waiting_approval",
-                        )
-                        publish_snapshot("step_updated")
-                    elif event["type"] == "approval_resolved":
-                        snapshot = agent_runs.get_snapshot(
-                            user_id,
-                            durable_run_id,
-                        )
-                        step = next(
-                            (
-                                item
-                                for item in (snapshot or {}).get(
-                                    "steps", []
-                                )
-                                if item["id"]
-                                == current_plan_step_id
-                            ),
-                            None,
-                        )
-                        if (
-                            step
-                            and step["status"]
-                            == "waiting_approval"
-                        ):
-                            decision = event.get("decision")
-                            if decision == "allow_once":
-                                agent_runs.transition_step(
-                                    user_id,
-                                    durable_run_id,
-                                    current_plan_step_id,
-                                    "running",
-                                )
-                                agent_runs.transition_run(
-                                    user_id,
-                                    durable_run_id,
-                                    "running",
-                                )
-                            else:
-                                agent_runs.transition_step(
-                                    user_id,
-                                    durable_run_id,
-                                    current_plan_step_id,
-                                    "failed",
-                                    error_code=(
-                                        "approval_timeout"
-                                        if decision == "timeout"
-                                        else "permission_denied"
-                                    ),
-                                )
-                            publish_snapshot("step_updated")
-                if approval_emit:
-                    approval_emit(event)
-                emit_named(str(event["type"]), event)
-
-            approval_gate = (
-                AgentApprovalGate(
-                    broker=approval_broker,
-                    user_id=user_id,
-                    run_id=trace.run_id,
-                    emit=durable_approval_emit,
-                    trace=trace,
-                    parent_step_id=run_parent_step,
-                )
-                if approval_emit or event_emit
-                else None
-            )
             catalog = []
             if payload.skillId is None:
                 catalog = activation.catalog()
@@ -766,24 +636,6 @@ def execute_agent_chat(
             memory_active = memory_manager.active(user_id)
             memories = []
             memory_recall_completed = not memory_active
-            if memory_active and selected_engine_name != "langgraph":
-                memory_recall_step = trace.start_step(
-                    kind="memory",
-                    name="memory_recall",
-                    title="Recalling long-term memory",
-                    parent_id=run_parent_step,
-                )
-                memories = memory_manager.recall(
-                    user_id,
-                    payload.question,
-                )
-                trace.finish_step(
-                    memory_recall_step,
-                    status="success",
-                    title="Long-term memory recall completed",
-                    output_summary={"recalled": len(memories)},
-                )
-                memory_recall_completed = True
             base_messages = build_messages(
                 payload.question,
                 chunks,
@@ -934,8 +786,6 @@ def execute_agent_chat(
                         target_status,
                     )
                     publish_snapshot("plan_created")
-                    if selected_engine_name != "langgraph":
-                        raise TaskPlanCreated()
                 execution_records.append(
                     (execution, current_plan_step_id)
                 )
@@ -954,7 +804,7 @@ def execute_agent_chat(
                     )
 
             engine = build_agent_engine(
-                selected_engine_name,
+                "langgraph",
                 gateway=_CancellationAwareGateway(
                     gateway,
                     cancel_event,
@@ -1087,15 +937,10 @@ def execute_agent_chat(
                         )
                         if memory_active
                         and not memory_recall_completed
-                        and engine.name == "langgraph"
                         else None
                     ),
                     memory_enabled=memory_active,
-                    retrieval_context=(
-                        retrieve_langgraph_context
-                        if engine.name == "langgraph"
-                        else None
-                    ),
+                    retrieval_context=retrieve_langgraph_context,
                 )
                 if result.retrieval_completed:
                     chunks = [
@@ -1137,7 +982,6 @@ def execute_agent_chat(
                     if (
                         run_action == "resume"
                         and not plan_created
-                        and engine.name == "langgraph"
                     ):
                         run_result = engine_run(
                             user_id=user_id,
@@ -1147,7 +991,6 @@ def execute_agent_chat(
                             registry=registry,
                             trace=trace,
                             parent_step_id=run_parent_step,
-                            approval_gate=approval_gate,
                             skill_snapshot=(
                                 activation.active.snapshot()
                                 if activation.active is not None
@@ -1176,30 +1019,26 @@ def execute_agent_chat(
                                 ),
                             },
                         )
-                    try:
-                        run_result = engine_run(
-                            user_id=user_id,
-                            run_id=durable_run_id,
-                            messages=planning_messages,
-                            config=chat_config,
-                            registry=registry,
-                            trace=trace,
-                            parent_step_id=run_parent_step,
-                            approval_gate=approval_gate,
-                            skill_snapshot=(
-                                activation.active.snapshot()
-                                if activation.active is not None
-                                else None
-                            ),
-                            execution_callback=record_execution,
-                            model_event_callback=forward_model_event,
-                        )
-                        if isinstance(run_result, dict):
-                            return run_result
-                        answer = run_result.answer
-                        plan_created = plan_snapshot is not None
-                    except TaskPlanCreated:
-                        plan_created = True
+                    run_result = engine_run(
+                        user_id=user_id,
+                        run_id=durable_run_id,
+                        messages=planning_messages,
+                        config=chat_config,
+                        registry=registry,
+                        trace=trace,
+                        parent_step_id=run_parent_step,
+                        skill_snapshot=(
+                            activation.active.snapshot()
+                            if activation.active is not None
+                            else None
+                        ),
+                        execution_callback=record_execution,
+                        model_event_callback=forward_model_event,
+                    )
+                    if isinstance(run_result, dict):
+                        return run_result
+                    answer = run_result.answer
+                    plan_created = plan_snapshot is not None
 
                 if plan_created and execution_mode == "plan_only":
                     answer = "The plan is ready and waiting to start."
@@ -1249,10 +1088,6 @@ def execute_agent_chat(
                                     "planStepId": current_plan_step_id
                                 },
                             )
-                        if approval_gate:
-                            approval_gate.set_parent_step_id(
-                                plan_trace_step
-                            )
                         step_messages = [
                             dict(message)
                             for message in base_messages
@@ -1285,7 +1120,6 @@ def execute_agent_chat(
                             registry=registry,
                             trace=trace,
                             parent_step_id=plan_trace_step,
-                            approval_gate=approval_gate,
                             skill_snapshot=(
                                 activation.active.snapshot()
                                 if activation.active is not None
@@ -1374,7 +1208,7 @@ def execute_agent_chat(
                     publish_snapshot("run_updated")
                 _raise_if_cancelled(cancel_event)
             except Exception as exc:
-                if isinstance(exc, (AgentRunCancelled, TaskPlanCreated)):
+                if isinstance(exc, AgentRunCancelled):
                     raise
                 failure = (
                     exc.failure
@@ -1805,7 +1639,31 @@ def execute_persisted_agent_run(
     request_payload = agent_runs.load_request(user_id, run_id)
     if request_payload is None:
         raise HTTPException(status_code=404, detail="Agent run not found.")
-    persisted_engine_name = request_payload.pop("_agentEngine", None)
+    persisted_engine_name = str(
+        request_payload.pop("_agentEngine", "") or ""
+    ).strip().lower()
+    unsafe_legacy_resume = bool(
+        persisted_engine_name == "current"
+        and (
+            action == "resume"
+            or action.startswith("approval:")
+        )
+    )
+    if unsafe_legacy_resume:
+        legacy_snapshot = agent_runs.get_snapshot(user_id, run_id)
+        if (
+            legacy_snapshot
+            and legacy_snapshot["status"] == "waiting_approval"
+        ):
+            agent_runs.transition_run(user_id, run_id, "failed")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This historical Agent run used the retired execution "
+                "engine and cannot be resumed safely. Restart it to create "
+                "a new LangGraph run."
+            ),
+        )
     payload = ChatRequest.model_validate(request_payload)
     if approval_operation is not None:
         publish(
@@ -1826,7 +1684,6 @@ def execute_persisted_agent_run(
         user_id,
         existing_run_id=run_id,
         run_action=action,
-        persisted_engine_name=persisted_engine_name,
         approval_decision=approval_decision,
         cancel_event=cancel_event,
         event_emit=lambda name, value: publish(

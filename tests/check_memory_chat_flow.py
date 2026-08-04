@@ -192,7 +192,8 @@ def main() -> None:
     extension_source = Path(extensions_router.__file__).read_text(
         encoding="utf-8"
     )
-    assert "memory_manager.recall(" in extension_source
+    assert "memory_manager.recall_now(" in extension_source
+    assert "memory_recall=" in extension_source
     assert "memory_operation_store.create_for_message(" in extension_source
     assert 'kind="memory"' in extension_source
     assert '"memoryActivity": result.get("memoryActivity")' in extension_source

@@ -699,7 +699,6 @@ class LangGraphAgentEngine:
         registry: ToolRegistry,
         trace=None,
         parent_step_id: str | None = None,
-        approval_gate=None,
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback=None,
         model_event_callback=None,
@@ -713,7 +712,6 @@ class LangGraphAgentEngine:
         memory_enabled: bool = False,
         retrieval_context: Callable[[], dict[str, Any]] | None = None,
     ) -> AgentRunResult:
-        del approval_gate
         if int(user_id) <= 0:
             raise ValueError("A valid user_id is required.")
         thread_id = self._checkpoints.thread_id(user_id, run_id)

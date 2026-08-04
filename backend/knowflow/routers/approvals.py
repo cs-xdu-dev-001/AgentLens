@@ -7,7 +7,6 @@ from ..runtime import (
     agent_run_coordinator,
     agent_tool_operations,
     api_success,
-    approval_broker,
     current_user_id,
 )
 from ..schemas import AgentApprovalDecision
@@ -53,12 +52,6 @@ def resolve_agent_approval(
     request: Request,
 ):
     user_id = current_user_id(request)
-    if approval_broker.resolve(
-        user_id,
-        approval_id,
-        payload.decision,
-    ):
-        return api_success({"resolved": True})
     operation = agent_tool_operations.resolve(
         user_id,
         approval_id,

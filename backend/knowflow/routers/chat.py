@@ -433,7 +433,6 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
         if run_row.get("status") in active_statuses and not managed_run:
             busy_run_ids.append(str(run_row["id"]))
             continue
-        approval_broker.cancel_run(run_row["id"])
         if not agent_run_coordinator.cancel_and_wait(
             run_row["id"],
             timeout_seconds=5.0,

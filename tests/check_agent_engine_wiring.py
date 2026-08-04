@@ -41,9 +41,7 @@ wrapped_run_calls = [
 
 assert "ToolRegistry" in agent_loop_imports
 assert "AgentRunner" not in agent_loop_imports
-assert {"build_agent_engine", "select_agent_engine_name"}.issubset(
-    agent_engine_imports
-)
+assert agent_engine_imports == {"build_agent_engine"}
 assert len(factory_calls) == 1
 assert len(engine_run_calls) == 1
 assert len(wrapped_run_calls) == 3
@@ -69,14 +67,15 @@ assert sum(
     for call in wrapped_run_calls
 ) == 1
 assert "AGENT_ENGINE" not in source
-assert "select_agent_engine_name" in source
-assert 'stored_request["_agentEngine"] = selected_engine_name' in source
-assert 'request_payload.pop("_agentEngine", None)' in source
+assert "select_agent_engine_name" not in source
+assert 'stored_request["_agentEngine"] = "langgraph"' in source
+assert 'request_payload.pop("_agentEngine", "")' in source
+assert 'action.startswith("approval:")' in source
 assert any(
     call.args
-    and isinstance(call.args[0], ast.Name)
-    and call.args[0].id == "selected_engine_name"
+    and isinstance(call.args[0], ast.Constant)
+    and call.args[0].value == "langgraph"
     for call in factory_calls
 )
 
-print("agent routes depend on the engine interface")
+print("agent routes use only the LangGraph engine interface")

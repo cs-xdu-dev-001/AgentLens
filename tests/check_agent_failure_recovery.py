@@ -107,10 +107,10 @@ def main() -> None:
     assert restarted["sessionId"] == snapshot["sessionId"]
     assert restarted["userMessageId"] == snapshot["userMessageId"]
     assert restarted["goalSummary"] == snapshot["goalSummary"]
-    assert store.load_request(1, restarted["id"]) == store.load_request(
-        1,
-        run["id"],
-    )
+    assert store.load_request(1, restarted["id"]) == {
+        **store.load_request(1, run["id"]),
+        "_agentEngine": "langgraph",
+    }
 
     extensions = (
         ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
