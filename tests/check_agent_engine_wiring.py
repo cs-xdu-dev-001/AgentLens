@@ -46,7 +46,12 @@ assert len(factory_calls) == 1
 assert len(engine_run_calls) == 1
 assert len(wrapped_run_calls) == 3
 engine_keyword_names = {keyword.arg for keyword in engine_run_calls[0].keywords}
-assert {"tool_operation_store", "approval_decision"}.issubset(
+assert {
+    "tool_operation_store",
+    "approval_decision",
+    "memory_recall",
+    "memory_enabled",
+}.issubset(
     engine_keyword_names
 )
 for call in wrapped_run_calls:

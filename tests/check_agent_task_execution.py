@@ -67,6 +67,9 @@ class FakeProvider:
 
 
 class FakeComplete:
+    def __init__(self):
+        self.message_batches = []
+
     def __call__(
         self,
         messages,
@@ -76,6 +79,9 @@ class FakeComplete:
         tool_choice=None,
         event_callback=None,
     ):
+        self.message_batches.append(
+            [dict(message) for message in messages]
+        )
         names = {
             item["function"]["name"]
             for item in (tools or [])
@@ -152,6 +158,33 @@ class FakeComplete:
         return {"role": "assistant", "content": "未识别步骤。"}
 
 
+class FakeMemoryManager:
+    def __init__(self):
+        self.recall_queries = []
+
+    @staticmethod
+    def active(user_id: int) -> bool:
+        return True
+
+    def recall_now(self, user_id: int, query: str):
+        self.recall_queries.append(query)
+        return [
+            {
+                "id": "agent-memory-1",
+                "memory": "用户偏好简洁的中文回答。",
+                "score": 0.9,
+            }
+        ]
+
+
+class FakeMemoryRunner:
+    def __init__(self):
+        self.wake_count = 0
+
+    def wake(self):
+        self.wake_count += 1
+
+
 def main() -> None:
     db_path = ROOT / "data" / "test-dbs" / "agent-task-execution.db"
     checkpoint_path = (
@@ -182,7 +215,12 @@ def main() -> None:
     )
     assert saved.status_code == 200, saved.text
     extensions.make_web_search_provider = lambda api_key: FakeProvider()
-    extensions.gateway.complete = FakeComplete()
+    fake_complete = FakeComplete()
+    fake_memory = FakeMemoryManager()
+    fake_memory_runner = FakeMemoryRunner()
+    extensions.gateway.complete = fake_complete
+    extensions.memory_manager = fake_memory
+    extensions.memory_operation_runner = fake_memory_runner
 
     simple = client.post(
         "/api/chat/stream",
@@ -204,6 +242,11 @@ def main() -> None:
     ).json()["data"]
     assert simple_run["status"] == "completed"
     assert simple_run["steps"] == []
+    assert fake_memory.recall_queries == ["简单问候"]
+    assert "用户偏好简洁的中文回答" in json.dumps(
+        fake_complete.message_batches[0],
+        ensure_ascii=False,
+    )
 
     planned = client.post(
         "/api/chat/stream",
@@ -241,6 +284,8 @@ def main() -> None:
             break
         time.sleep(0.01)
     assert snapshot["status"] == "completed", snapshot
+    assert fake_memory.recall_queries == ["简单问候", "买菜"]
+    assert fake_memory_runner.wake_count >= 2
     assert [step["status"] for step in snapshot["steps"]] == [
         "completed",
         "completed",

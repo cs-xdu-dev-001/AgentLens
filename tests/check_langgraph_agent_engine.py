@@ -79,6 +79,8 @@ def run_engine(
     approval_decision=None,
     skill_snapshot=None,
     skill_restore=None,
+    memory_recall=None,
+    memory_enabled=None,
 ):
     return engine.run(
         user_id=17,
@@ -95,6 +97,12 @@ def run_engine(
         approval_decision=approval_decision,
         skill_snapshot=skill_snapshot,
         skill_restore=skill_restore,
+        memory_recall=memory_recall,
+        memory_enabled=(
+            memory_recall is not None
+            if memory_enabled is None
+            else memory_enabled
+        ),
     )
 
 
@@ -405,10 +413,180 @@ def main() -> None:
         graph = topology_engine._graph.get_graph().to_json()
         assert [node["id"] for node in graph["nodes"]] == [
             "__start__",
+            "memory_recall",
             "model",
             "tools",
             "__end__",
         ]
+
+        recalled_items = [
+            {
+                "id": "memory-1",
+                "memory": "用户偏好先给结论。",
+                "score": 0.9,
+            }
+        ]
+        recall_calls = []
+        memory_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": "Used memory safely.",
+                "tool_calls": [],
+            },
+            {
+                "role": "assistant",
+                "content": "Reused memory safely.",
+                "tool_calls": [],
+            },
+            {
+                "role": "assistant",
+                "content": "Memory disabled.",
+                "tool_calls": [],
+            },
+        )
+        memory_trace = AgentTraceRecorder(run_id="run_memory")
+        memory_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=memory_gateway,
+                checkpoint_db_path=root / "memory.sqlite3",
+            ),
+            ToolRegistry(),
+            run_id="run_memory",
+            messages=[
+                {"role": "system", "content": "System rules."},
+                {"role": "user", "content": "How should you answer?"},
+            ],
+            trace=memory_trace,
+            memory_recall=lambda: (
+                recall_calls.append("called") or recalled_items
+            ),
+        )
+        assert recall_calls == ["called"]
+        assert memory_result.memory_recalled is True
+        assert memory_result.memories == recalled_items
+        assert "<user_memories>" in (
+            memory_gateway.calls[0]["messages"][0]["content"]
+        )
+        assert "用户偏好先给结论" in (
+            memory_gateway.calls[0]["messages"][0]["content"]
+        )
+        assert [step["name"] for step in memory_trace.snapshot()] == [
+            "memory_recall",
+            "model_completion",
+        ]
+        reused_memory_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=memory_gateway,
+                checkpoint_db_path=root / "memory.sqlite3",
+            ),
+            ToolRegistry(),
+            run_id="run_memory",
+            messages=[
+                {"role": "system", "content": "System rules."},
+                {"role": "user", "content": "Run the next plan step"},
+            ],
+            memory_recall=lambda: recall_calls.append("unexpected"),
+        )
+        assert reused_memory_result.answer == "Reused memory safely."
+        assert reused_memory_result.memories == recalled_items
+        assert recall_calls == ["called"]
+        assert "用户偏好先给结论" in (
+            memory_gateway.calls[1]["messages"][0]["content"]
+        )
+        disabled_memory_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=memory_gateway,
+                checkpoint_db_path=root / "memory.sqlite3",
+            ),
+            ToolRegistry(),
+            run_id="run_memory",
+            messages=[
+                {"role": "system", "content": "System rules."},
+                {"role": "user", "content": "Do not use memory"},
+            ],
+            memory_enabled=False,
+        )
+        assert disabled_memory_result.answer == "Memory disabled."
+        assert disabled_memory_result.memories == []
+        assert "<user_memories>" not in (
+            memory_gateway.calls[2]["messages"][0]["content"]
+        )
+
+        degraded_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": "Answered without memory.",
+                "tool_calls": [],
+            }
+        )
+        degraded_trace = AgentTraceRecorder(run_id="run_memory_degraded")
+        degraded_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=degraded_gateway,
+                checkpoint_db_path=root / "memory-degraded.sqlite3",
+            ),
+            ToolRegistry(),
+            run_id="run_memory_degraded",
+            messages=[{"role": "user", "content": "Continue anyway"}],
+            trace=degraded_trace,
+            memory_recall=lambda: (_ for _ in ()).throw(
+                RuntimeError("memory upstream failed")
+            ),
+        )
+        assert degraded_result.answer == "Answered without memory."
+        assert degraded_result.memories == []
+        assert degraded_result.memory_recalled is True
+        degraded_memory_step = degraded_trace.snapshot()[0]
+        assert degraded_memory_step["status"] == "failed"
+        assert degraded_memory_step["errorCode"] == "memory_recall_failed"
+
+        checkpoint_recall_calls = []
+        checkpoint_memory_gateway = FakeGateway(
+            RuntimeError("model interrupted after recall"),
+            {
+                "role": "assistant",
+                "content": "Recovered with checkpointed memory.",
+                "tool_calls": [],
+            },
+        )
+        checkpoint_memory_path = root / "memory-resume.sqlite3"
+        try:
+            run_engine(
+                LangGraphAgentEngine(
+                    gateway=checkpoint_memory_gateway,
+                    checkpoint_db_path=checkpoint_memory_path,
+                ),
+                ToolRegistry(),
+                run_id="run_memory_resume",
+                messages=[
+                    {"role": "system", "content": "System rules."},
+                    {"role": "user", "content": "Resume safely"},
+                ],
+                memory_recall=lambda: (
+                    checkpoint_recall_calls.append("called")
+                    or recalled_items
+                ),
+            )
+            raise AssertionError("the model interruption must surface")
+        except RuntimeError as exc:
+            assert str(exc) == "model interrupted after recall"
+        resumed_memory_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=checkpoint_memory_gateway,
+                checkpoint_db_path=checkpoint_memory_path,
+            ),
+            ToolRegistry(),
+            run_id="run_memory_resume",
+            resume=True,
+            memory_recall=lambda: checkpoint_recall_calls.append(
+                "unexpected"
+            ),
+        )
+        assert resumed_memory_result.answer == (
+            "Recovered with checkpointed memory."
+        )
+        assert resumed_memory_result.memories == recalled_items
+        assert checkpoint_recall_calls == ["called"]
 
         empty_trace = AgentTraceRecorder(run_id="run_empty")
         try:

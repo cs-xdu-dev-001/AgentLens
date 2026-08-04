@@ -21,6 +21,7 @@ from .langgraph_checkpoint import (
     LangGraphCheckpointStore,
 )
 from .agent_trace import sanitize_trace_value
+from .memory import append_long_term_memory_context
 
 
 class LangGraphState(TypedDict):
@@ -32,6 +33,8 @@ class LangGraphState(TypedDict):
     pending_tool_calls: list[dict[str, Any]]
     tool_call_index: int
     skill_snapshot: dict[str, Any] | None
+    memories: list[dict[str, Any]]
+    memory_recalled: bool
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,9 @@ class LangGraphRunContext:
         Callable[[dict[str, Any]], None] | None
     ) = None
     skill_restore: Callable[[dict[str, Any]], None] | None = None
+    memory_recall: (
+        Callable[[], list[dict[str, Any]]] | None
+    ) = None
 
 
 class LangGraphAgentEngine:
@@ -78,9 +84,11 @@ class LangGraphAgentEngine:
             LangGraphState,
             context_schema=LangGraphRunContext,
         )
+        self._builder.add_node("memory_recall", self._recall_memory)
         self._builder.add_node("model", self._call_model)
         self._builder.add_node("tools", self._call_tools)
-        self._builder.add_edge(START, "model")
+        self._builder.add_edge(START, "memory_recall")
+        self._builder.add_edge("memory_recall", "model")
         self._builder.add_conditional_edges(
             "model",
             self._route_after_model,
@@ -92,6 +100,60 @@ class LangGraphAgentEngine:
             {"tools": "tools", "model": "model", "end": END},
         )
         self._graph = self._builder.compile()
+
+    @staticmethod
+    def _recall_memory(
+        state: LangGraphState,
+        runtime: Runtime[LangGraphRunContext],
+    ) -> dict[str, Any]:
+        if state.get("memory_recalled"):
+            return {}
+        context = runtime.context
+        if context.memory_recall is None:
+            return {"memory_recalled": True, "memories": []}
+        trace = context.trace
+        memory_step = (
+            trace.start_step(
+                kind="memory",
+                name="memory_recall",
+                title="Recalling long-term memory",
+                parent_id=context.parent_step_id,
+            )
+            if trace
+            else None
+        )
+        try:
+            recalled = context.memory_recall()
+            memories = [
+                dict(item)
+                for item in recalled
+                if isinstance(item, dict)
+            ]
+        except Exception:
+            if trace and memory_step:
+                trace.finish_step(
+                    memory_step,
+                    status="failed",
+                    title="Long-term memory recall unavailable",
+                    output_summary={"recalled": 0, "degraded": True},
+                    error_code="memory_recall_failed",
+                )
+            return {"memory_recalled": True, "memories": []}
+        if trace and memory_step:
+            trace.finish_step(
+                memory_step,
+                status="success",
+                title="Long-term memory recall completed",
+                output_summary={"recalled": len(memories)},
+            )
+        return {
+            "memory_recalled": True,
+            "memories": memories,
+            "messages": append_long_term_memory_context(
+                state["messages"],
+                memories,
+            ),
+        }
 
     @staticmethod
     def _restore_skill(
@@ -511,6 +573,10 @@ class LangGraphAgentEngine:
         tool_operation_store=None,
         approval_decision: str | None = None,
         skill_restore: Callable[[dict[str, Any]], None] | None = None,
+        memory_recall: (
+            Callable[[], list[dict[str, Any]]] | None
+        ) = None,
+        memory_enabled: bool = False,
     ) -> AgentRunResult:
         del approval_gate
         if int(user_id) <= 0:
@@ -534,6 +600,7 @@ class LangGraphAgentEngine:
             execution_callback=execution_callback,
             model_event_callback=model_event_callback,
             skill_restore=skill_restore,
+            memory_recall=memory_recall,
         )
         with self._checkpoints.open(
             create=not resume_from_checkpoint
@@ -559,12 +626,30 @@ class LangGraphAgentEngine:
                 else:
                     output = values
             else:
+                previous_snapshot = graph.get_state(graph_config)
+                previous_values = previous_snapshot.values or {}
+                reused_memory = bool(
+                    memory_enabled
+                    and previous_values.get("schema_version") == 1
+                    and previous_values.get("memory_recalled")
+                )
+                reused_memories = [
+                    dict(item)
+                    for item in (previous_values.get("memories") or [])
+                    if isinstance(item, dict)
+                ] if reused_memory else []
+                initial_messages = [
+                    dict(message) for message in messages
+                ]
+                if reused_memory:
+                    initial_messages = append_long_term_memory_context(
+                        initial_messages,
+                        reused_memories,
+                    )
                 output = graph.invoke(
                     {
                         "schema_version": 1,
-                        "messages": [
-                            dict(message) for message in messages
-                        ],
+                        "messages": initial_messages,
                         "answer": "",
                         "executions": [],
                         "tool_rounds": 0,
@@ -574,6 +659,10 @@ class LangGraphAgentEngine:
                             dict(skill_snapshot)
                             if skill_snapshot
                             else None
+                        ),
+                        "memories": reused_memories,
+                        "memory_recalled": (
+                            reused_memory or not memory_enabled
                         ),
                     },
                     graph_config,
@@ -599,6 +688,12 @@ class LangGraphAgentEngine:
                 if isinstance(interrupt_value, dict)
                 else None
             ),
+            memories=[
+                dict(item)
+                for item in (output.get("memories") or [])
+                if isinstance(item, dict)
+            ],
+            memory_recalled=bool(output.get("memory_recalled")),
         )
 
     @staticmethod

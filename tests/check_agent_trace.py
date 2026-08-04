@@ -114,12 +114,53 @@ def main() -> None:
     assert "model-super-secret" not in serialized_model
     assert "private.example" not in serialized_model
 
+    resumed_clock = FakeClock()
+    original_trace = AgentTraceRecorder(
+        run_id="run_hydrated",
+        clock=resumed_clock,
+    )
+    original_root = original_trace.start_step(
+        kind="system",
+        name="agent_run",
+        title="Agent is running",
+    )
+    waiting = original_trace.start_step(
+        kind="approval",
+        name="approval_required",
+        title="Waiting for approval",
+        parent_id=original_root,
+        status="waiting",
+    )
+    resumed_clock.value = 101.0
+    hydrated = AgentTraceRecorder(
+        run_id="run_hydrated",
+        clock=resumed_clock,
+        initial_steps=original_trace.snapshot(),
+    )
+    resumed_clock.value = 101.2
+    hydrated.finish_step(
+        waiting,
+        status="success",
+        title="Approval granted",
+    )
+    resumed_step = hydrated.start_step(
+        kind="model",
+        name="model_completion",
+        title="Model resumed",
+        parent_id=original_root,
+    )
+    assert resumed_step == "step_3"
+    hydrated_snapshot = hydrated.snapshot()
+    assert hydrated_snapshot[0]["status"] == "running"
+    assert hydrated_snapshot[1]["status"] == "success"
+    assert hydrated_snapshot[1]["durationMs"] == 200
+
     extension_source = (
         ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
     ).read_text(encoding="utf-8")
     assert 'kind="memory"' in extension_source
     assert "memory_operation_store.create_for_message(" in extension_source
-    print("agent trace events are ordered, merged, and sanitized")
+    print("agent trace events are ordered, resumed, merged, and sanitized")
 
 
 if __name__ == "__main__":

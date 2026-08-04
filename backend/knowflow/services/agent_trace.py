@@ -98,12 +98,29 @@ class AgentTraceRecorder:
         emit: Callable[[dict[str, Any]], None] | None = None,
         run_id: str | None = None,
         clock: Callable[[], float] = time.perf_counter,
+        initial_steps: list[dict[str, Any]] | None = None,
     ):
         self.emit = emit
         self.run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         self.clock = clock
         self.steps: dict[str, dict[str, Any]] = {}
         self.started: dict[str, float] = {}
+        for raw_step in initial_steps or []:
+            if not isinstance(raw_step, dict):
+                continue
+            step = _scrub_trace_value(deepcopy(raw_step))
+            step_id = str(step.get("stepId") or "")
+            if (
+                not step_id
+                or step_id in self.steps
+                or step.get("kind") not in TRACE_KINDS
+                or step.get("status") not in TRACE_STATUSES
+            ):
+                continue
+            step["runId"] = self.run_id
+            self.steps[step_id] = step
+            if step["status"] in {"running", "waiting"}:
+                self.started[step_id] = self.clock()
 
     def _publish(self, event: dict[str, Any]) -> None:
         self.steps[event["stepId"]] = event
@@ -127,7 +144,11 @@ class AgentTraceRecorder:
             raise ValueError(
                 f"Unsupported initial trace status: {status}"
             )
-        step_id = f"step_{len(self.steps) + 1}"
+        sequence = len(self.steps) + 1
+        step_id = f"step_{sequence}"
+        while step_id in self.steps:
+            sequence += 1
+            step_id = f"step_{sequence}"
         self.started[step_id] = self.clock()
         self._publish(
             {
@@ -163,9 +184,15 @@ class AgentTraceRecorder:
                 f"Unsupported terminal trace status: {status}"
             )
         current = self.steps[step_id]
-        duration_ms = int(
-            (self.clock() - self.started[step_id]) * 1000
+        started_at = self.started.pop(step_id, None)
+        previous_duration = current.get("durationMs")
+        duration_ms = (
+            int((self.clock() - started_at) * 1000)
+            if started_at is not None
+            else 0
         )
+        if isinstance(previous_duration, (int, float)):
+            duration_ms += int(previous_duration)
         self._publish(
             {
                 **current,

@@ -640,6 +640,24 @@ def main() -> None:
             ensure_ascii=False,
             default=str,
         )
+        resumed_trace = done_event["trace"]
+        assert len(
+            [
+                step
+                for step in resumed_trace
+                if step["name"] == "agent_run"
+            ]
+        ) == 1
+        approval_steps = [
+            step
+            for step in resumed_trace
+            if step["name"] == "approval_required"
+        ]
+        assert len(approval_steps) == 1
+        assert approval_steps[0]["status"] == "success"
+        assert len({step["stepId"] for step in resumed_trace}) == len(
+            resumed_trace
+        )
         assert any(
             call[1] == "create_page"
             for pool in FakePool.instances

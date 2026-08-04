@@ -56,6 +56,8 @@ class AgentRunResult:
     answer: str; executions: list[ToolExecution]; trace: list[dict[str, Any]]
     paused: bool = False
     interrupt: dict[str, Any] | None = None
+    memories: list[dict[str, Any]] | None = None
+    memory_recalled: bool = False
 class AgentLoopLimitError(RuntimeError): pass
 
 class ToolRegistry:

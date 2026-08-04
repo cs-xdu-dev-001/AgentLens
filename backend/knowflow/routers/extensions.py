@@ -16,6 +16,7 @@ from ..services.agent_trace import (
     AgentTraceRecorder,
     sanitize_trace_value,
 )
+from ..services.memory import append_long_term_memory_context
 from ..services.approval import AgentApprovalGate
 from ..services.skill_runtime import (
     SkillActivationSession,
@@ -476,12 +477,50 @@ def execute_agent_chat(
     trace = AgentTraceRecorder(
         emit=persist_trace,
         run_id=durable_run_id,
+        initial_steps=(
+            durable_snapshot.get("trace")
+            if existing_run_id
+            and isinstance(durable_snapshot.get("trace"), list)
+            else None
+        ),
     )
-    root_step = trace.start_step(
-        kind="system",
-        name="agent_run",
-        title="Agent is running",
+    root_step = next(
+        (
+            str(step["stepId"])
+            for step in reversed(trace.snapshot())
+            if step.get("name") == "agent_run"
+            and step.get("status") in {"running", "waiting"}
+        ),
+        None,
     )
+    if root_step is None:
+        root_step = trace.start_step(
+            kind="system",
+            name="agent_run",
+            title="Agent is running",
+        )
+    if approval_decision is not None:
+        approval_trace_step = next(
+            (
+                str(step["stepId"])
+                for step in reversed(trace.snapshot())
+                if step.get("name") == "approval_required"
+                and step.get("status") == "waiting"
+            ),
+            None,
+        )
+        if approval_trace_step is not None:
+            allowed = approval_decision == "allow_once"
+            trace.finish_step(
+                approval_trace_step,
+                status="success" if allowed else "failed",
+                title=(
+                    "Approval granted"
+                    if allowed
+                    else "Approval denied"
+                ),
+                error_code=None if allowed else "permission_denied",
+            )
     calls: list[dict[str, Any]] = []
     retrieval_run: dict[str, Any] | None = None
     rag_quality: dict[str, Any] = {"enabled": False}
@@ -714,7 +753,8 @@ def execute_agent_chat(
                     activation.register_activation_tool(registry)
             memory_active = memory_manager.active(user_id)
             memories = []
-            if memory_active:
+            memory_recall_completed = not memory_active
+            if memory_active and selected_engine_name != "langgraph":
                 memory_recall_step = trace.start_step(
                     kind="memory",
                     name="memory_recall",
@@ -731,6 +771,7 @@ def execute_agent_chat(
                     title="Long-term memory recall completed",
                     output_summary={"recalled": len(memories)},
                 )
+                memory_recall_completed = True
             base_messages = build_messages(
                 payload.question,
                 chunks,
@@ -933,12 +974,37 @@ def execute_agent_chat(
                 }
 
             def engine_run(**kwargs):
+                nonlocal memories, memory_recall_completed, base_messages
                 result = engine.run(
                     **kwargs,
                     tool_operation_store=agent_tool_operations,
                     approval_decision=approval_decision,
                     skill_restore=restore_langgraph_skill,
+                    memory_recall=(
+                        (
+                            lambda: memory_manager.recall_now(
+                                user_id,
+                                payload.question,
+                            )
+                        )
+                        if memory_active
+                        and not memory_recall_completed
+                        and engine.name == "langgraph"
+                        else None
+                    ),
+                    memory_enabled=memory_active,
                 )
+                if result.memory_recalled:
+                    memories = [
+                        dict(item)
+                        for item in (result.memories or [])
+                    ]
+                    if not memory_recall_completed:
+                        base_messages = append_long_term_memory_context(
+                            base_messages,
+                            memories,
+                        )
+                    memory_recall_completed = True
                 if result.paused:
                     return pause_for_approval(result)
                 return result
@@ -1054,15 +1120,30 @@ def execute_agent_chat(
                                 "running",
                             )
                         publish_snapshot("step_updated")
-                        plan_trace_step = trace.start_step(
-                            kind="system",
-                            name="task_plan_step",
-                            title=step["title"],
-                            parent_id=run_parent_step,
-                            details={
-                                "planStepId": current_plan_step_id
-                            },
+                        plan_trace_step = next(
+                            (
+                                str(item["stepId"])
+                                for item in reversed(trace.snapshot())
+                                if item.get("name") == "task_plan_step"
+                                and item.get("status")
+                                in {"running", "waiting"}
+                                and (
+                                    item.get("details") or {}
+                                ).get("planStepId")
+                                == current_plan_step_id
+                            ),
+                            None,
                         )
+                        if plan_trace_step is None:
+                            plan_trace_step = trace.start_step(
+                                kind="system",
+                                name="task_plan_step",
+                                title=step["title"],
+                                parent_id=run_parent_step,
+                                details={
+                                    "planStepId": current_plan_step_id
+                                },
+                            )
                         if approval_gate:
                             approval_gate.set_parent_step_id(
                                 plan_trace_step
