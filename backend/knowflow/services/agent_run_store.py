@@ -717,12 +717,10 @@ class AgentRunStore:
                         error_code='service_restart_interrupted',
                         finished_at=:finished_at,
                         updated_at=:updated_at
-                    WHERE status IN ('running', 'waiting_approval')
+                    WHERE status='running'
                       AND run_id IN (
                         SELECT id FROM agent_run
-                        WHERE status IN (
-                          'planning', 'running', 'waiting_approval'
-                        )
+                        WHERE status IN ('planning', 'running')
                       )
                     """
                 ),
@@ -734,9 +732,7 @@ class AgentRunStore:
                     UPDATE agent_run
                     SET status='interrupted', finished_at=NULL,
                         version=version + 1, updated_at=:updated_at
-                    WHERE status IN (
-                      'planning', 'running', 'waiting_approval'
-                    )
+                    WHERE status IN ('planning', 'running')
                     """
                 ),
                 {"updated_at": now},

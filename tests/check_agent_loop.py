@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import threading
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -242,7 +243,81 @@ def main() -> None:
         assert step["title"] == "Model response was invalid"
         assert step["errorCode"] == "invalid_model_response"
 
-    print("agent loop executes registered tools and stops safely")
+    barrier = threading.Barrier(2, timeout=3)
+    concurrent_threads: list[int] = []
+    serial_calls: list[str] = []
+
+    def concurrent_read(label: str):
+        def run(_args):
+            concurrent_threads.append(threading.get_ident())
+            barrier.wait()
+            return {"label": label}
+
+        return run
+
+    parallel_registry = ToolRegistry()
+    for name in ("read_alpha", "read_beta"):
+        parallel_registry.register(
+            name=name,
+            description=f"Read {name}.",
+            input_schema={"type": "object", "properties": {}},
+            handler=concurrent_read(name),
+            read_only=True,
+            concurrency_safe=True,
+        )
+    parallel_registry.register(
+        name="serial_boundary",
+        description="Run after the safe read batch.",
+        input_schema={"type": "object", "properties": {}},
+        handler=lambda _args: (
+            serial_calls.append("serial") or {"serial": True}
+        ),
+        read_only=True,
+        concurrency_safe=False,
+    )
+
+    def empty_call(name: str, call_id: str) -> dict:
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": name, "arguments": "{}"},
+        }
+
+    parallel_gateway = FakeGateway(
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    empty_call("read_alpha", "call-alpha"),
+                    empty_call("read_beta", "call-beta"),
+                    empty_call("serial_boundary", "call-serial"),
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "Parallel reads completed.",
+            },
+        ]
+    )
+    parallel_result = run_langgraph_agent(
+        gateway=parallel_gateway,
+        messages=[{"role": "user", "content": "Read both sources."}],
+        config={"model_name": "fake"},
+        registry=parallel_registry,
+    )
+    assert parallel_result.answer == "Parallel reads completed."
+    assert [item.tool_name for item in parallel_result.executions] == [
+        "read_alpha",
+        "read_beta",
+        "serial_boundary",
+    ]
+    assert len(set(concurrent_threads)) == 2
+    assert serial_calls == ["serial"]
+
+    print(
+        "agent loop batches safe reads and keeps serial boundaries"
+    )
 
 
 if __name__ == "__main__":

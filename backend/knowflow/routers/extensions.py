@@ -34,6 +34,12 @@ from ..services.task_planner import (
     parse_execution_mode,
     register_task_planner,
 )
+from ..services.tool_result_store import ToolResultStore
+from ..services.workspace_runtime import (
+    SrtSandboxRunner,
+    WorkspaceRuntime,
+    register_workspace_tools,
+)
 
 router = APIRouter()
 plan_executor = LangGraphPlanExecutor()
@@ -220,8 +226,22 @@ def build_tool_registry(
     *,
     mcp_pool: McpRunSessionPool | None = None,
     cancel_event: Event | None = None,
+    run_id: str | None = None,
 ) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(
+        result_store=(
+            ToolResultStore(
+                TOOL_RESULT_DIR,
+                user_id=user_id,
+                run_id=run_id,
+                max_storage_chars=TOOL_RESULT_STORAGE_CHARS,
+                retention_seconds=TOOL_RESULT_RETENTION_SECONDS,
+            )
+            if run_id
+            else None
+        ),
+        default_max_result_size_chars=TOOL_RESULT_CONTEXT_CHARS,
+    )
     config = (
         tool_configs.secret(
             user_id,
@@ -232,6 +252,30 @@ def build_tool_registry(
         else None
     )
     registered_names: set[str] = set()
+    if enable_tools and WORKSPACE_ENABLED:
+        workspace = WorkspaceRuntime(
+            WORKSPACE_DIR,
+            user_id=user_id,
+            max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+        )
+        sandbox = (
+            SrtSandboxRunner(
+                workspace,
+                command=SANDBOX_COMMAND,
+                shell=SANDBOX_SHELL,
+                timeout_seconds=SANDBOX_TIMEOUT,
+                max_output_bytes=SANDBOX_MAX_OUTPUT_BYTES,
+            )
+            if SANDBOX_ENABLED
+            else None
+        )
+        registered_names.update(
+            register_workspace_tools(
+                registry,
+                workspace,
+                sandbox=sandbox,
+            )
+        )
     if config:
         provider = make_web_search_provider(config["api_key"])
 
@@ -251,6 +295,9 @@ def build_tool_registry(
             handler=run_web_search,
             read_only=True,
             engine_names={"langgraph"},
+            concurrency_safe=True,
+            interrupt_behavior="cancel",
+            search_hint="current public web sources",
         )
         registered_names.add("web_search")
     if not enable_tools or mcp_pool is None:
@@ -306,6 +353,10 @@ def build_tool_registry(
             )
             is not True
         )
+        destructive = (
+            (tool.get("annotations") or {}).get("destructiveHint")
+            is True
+        )
         registry.register(
             name=name,
             description=str(tool.get("description") or "")[:1000],
@@ -323,12 +374,24 @@ def build_tool_registry(
                 )
             ),
             read_only=read_only,
+            destructive=destructive,
+            # McpRunSessionPool owns a thread-affine event loop today.
+            # Keep MCP calls serial until the pool becomes async-native.
+            concurrency_safe=False,
+            interrupt_behavior="cancel" if read_only else "block",
             engine_names={"langgraph"},
             trace_kind="mcp",
             risk=tool_risk(tool),
             server_name=str(tool["serverName"]),
+            search_hint=(
+                f"{tool['serverName']} {remote_name}"
+            ),
+            should_defer=True,
         )
         registered_names.add(name)
+    registry.enable_tool_search(
+        threshold=AGENT_TOOL_SEARCH_THRESHOLD,
+    )
     return registry
 
 
@@ -506,15 +569,28 @@ def execute_agent_chat(
         )
         if approval_trace_step is not None:
             allowed = approval_decision == "allow_once"
+            timed_out = approval_decision == "timeout"
             trace.finish_step(
                 approval_trace_step,
                 status="success" if allowed else "failed",
                 title=(
                     "Approval granted"
                     if allowed
-                    else "Approval denied"
+                    else (
+                        "Approval timed out"
+                        if timed_out
+                        else "Approval denied"
+                    )
                 ),
-                error_code=None if allowed else "permission_denied",
+                error_code=(
+                    None
+                    if allowed
+                    else (
+                        "approval_timeout"
+                        if timed_out
+                        else "permission_denied"
+                    )
+                ),
             )
     calls: list[dict[str, Any]] = []
     retrieval_run: dict[str, Any] | None = None
@@ -566,6 +642,7 @@ def execute_agent_chat(
                 payload.enableTools,
                 mcp_pool=mcp_pool,
                 cancel_event=cancel_event,
+                run_id=durable_run_id,
             )
             available_skill_dependencies = set(registry.names())
             if payload.enableTools:
@@ -810,6 +887,8 @@ def execute_agent_chat(
                     cancel_event,
                 ),
                 max_tool_rounds=3,
+                max_tool_concurrency=AGENT_MAX_TOOL_CONCURRENCY,
+                max_context_tokens=AGENT_CONTEXT_MAX_TOKENS,
                 checkpoint_db_path=LANGGRAPH_CHECKPOINT_DB,
             )
             answer = ""
@@ -1608,7 +1687,11 @@ def execute_persisted_agent_run(
         if (
             approval_operation is None
             or approval_operation["runId"] != run_id
-            or approval_operation["status"] not in {"approved", "denied"}
+            or approval_operation["status"] not in {
+                "approved",
+                "denied",
+                "expired",
+            }
         ):
             raise HTTPException(
                 status_code=409,
@@ -1629,6 +1712,7 @@ def execute_persisted_agent_run(
                 or approval_operation["status"] not in {
                     "approved",
                     "denied",
+                    "expired",
                 }
             ):
                 raise HTTPException(

@@ -21,11 +21,11 @@ export function KnowledgeSummary() {
 
   return (
     <section className={"knowledge-summary panel"} id={"kb-detail"}>
-      <div className={"panel-title"}>
-        <h2>{"当前知识库"}</h2>
+      <div className={"knowledge-summary-name"}>
+        <span>{"当前知识库"}</span>
+        <strong>{selectedKnowledgeBase.name}</strong>
       </div>
       <div className={"knowledge-metrics"}>
-        <div><span>{"知识库"}</span><strong>{selectedKnowledgeBase.name}</strong></div>
         <div><span>{"文档"}</span><strong>{selectedKnowledgeBase.document_count || 0}</strong></div>
         <div><span>{"分段"}</span><strong>{selectedKnowledgeBase.chunk_count || 0}</strong></div>
         <div><span>{"向量模型"}</span><strong>{embeddingModel?.name || "未绑定"}</strong></div>

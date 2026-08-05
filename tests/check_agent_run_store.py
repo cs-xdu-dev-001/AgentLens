@@ -121,11 +121,46 @@ def main() -> None:
     )
     assert {"run_id", "run_step_id"}.issubset(columns)
 
+    waiting_run = store.create_run(
+        user_id=1,
+        session_id="session-waiting-restart",
+        user_message_id=19,
+        goal_summary="等待持久化审批",
+        trigger_mode="auto",
+        run_id="run_waiting_restart",
+    )
+    waiting_steps = store.replace_plan(
+        1,
+        waiting_run["id"],
+        [
+            {"title": "写入页面", "kind": "mcp"},
+            {"title": "整理结果", "kind": "answer"},
+        ],
+    )
+    store.transition_run(1, waiting_run["id"], "running")
+    store.transition_step(
+        1,
+        waiting_run["id"],
+        waiting_steps[0]["id"],
+        "running",
+    )
+    store.transition_step(
+        1,
+        waiting_run["id"],
+        waiting_steps[0]["id"],
+        "waiting_approval",
+    )
+    store.transition_run(1, waiting_run["id"], "waiting_approval")
+
     assert store.interrupt_stale_runs() == 1
     interrupted = store.get_snapshot(1, run["id"])
     assert interrupted is not None
     assert interrupted["status"] == "interrupted"
     assert interrupted["steps"][0]["status"] == "completed"
+    waiting_after_restart = store.get_snapshot(1, waiting_run["id"])
+    assert waiting_after_restart is not None
+    assert waiting_after_restart["status"] == "waiting_approval"
+    assert waiting_after_restart["steps"][0]["status"] == "waiting_approval"
 
     expect_code(
         "agent_run_not_found",

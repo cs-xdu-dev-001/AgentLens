@@ -42,8 +42,11 @@ def main() -> None:
     require(messages, "knowflow:react-message-approvals", "message approval listener")
 
     prompt = "frontend/react/src/components/AgentApprovalPrompt.jsx"
-    require(prompt, 'approvalApi.resolve(approval.approvalId, "allow_once")', "allow once")
-    require(prompt, 'approvalApi.resolve(approval.approvalId, "deny")', "deny")
+    require(prompt, "approvalApi.resolve(", "approval submission")
+    require(prompt, 'handleDecision("allow_once")', "allow once")
+    require(prompt, 'handleDecision("deny")', "deny")
+    require(prompt, 'handleDecision("timeout")', "automatic timeout")
+    require(prompt, "approval?.expiresAt", "server expiry timestamp")
     require(prompt, "disabled={busy", "busy action lock")
     require(prompt, "pendingApprovalIds", "cross-surface request lock")
     require(prompt, "knowflow:react-approval-local-state", "cross-surface state sync")

@@ -117,11 +117,10 @@ export function AgentApprovalPrompt({
       error: "",
     });
     try {
-      const request =
-        nextDecision === "allow_once"
-          ? approvalApi.resolve(approval.approvalId, "allow_once")
-          : approvalApi.resolve(approval.approvalId, "deny");
-      const result = await request;
+      const result = await approvalApi.resolve(
+        approval.approvalId,
+        nextDecision,
+      );
       pendingApprovalIds.delete(approval.approvalId);
       publishLocalState(approval.approvalId, {
         state: "resolved",
@@ -159,6 +158,17 @@ export function AgentApprovalPrompt({
       }
     }
   };
+
+  useEffect(() => {
+    if (!pending || busy || !approval?.expiresAt) return undefined;
+    const expiresAt = Date.parse(approval.expiresAt);
+    if (!Number.isFinite(expiresAt)) return undefined;
+    const timer = window.setTimeout(
+      () => handleDecision("timeout"),
+      Math.max(0, expiresAt - Date.now()) + 250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [approval?.approvalId, approval?.expiresAt, pending, busy]);
 
   const resolvedLabel =
     localDecision === "expired"

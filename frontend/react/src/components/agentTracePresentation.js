@@ -7,6 +7,8 @@ const kindLabels = {
   system: "SYS",
   approval: "APPROVAL",
   memory: "MEMORY",
+  workspace: "WORKSPACE",
+  sandbox: "SANDBOX",
 };
 
 const nameLabels = {
@@ -15,6 +17,10 @@ const nameLabels = {
   web_search: "联网搜索",
   memory_recall: "记忆召回",
   memory_write: "记忆整理",
+  list_workspace: "工作区列表",
+  read_workspace_file: "读取工作区文件",
+  write_workspace_file: "写入工作区文件",
+  run_sandbox_command: "沙箱命令",
 };
 
 const statusLabels = {
@@ -274,7 +280,8 @@ function compactValue(value) {
       .join("、");
   }
   if (typeof value === "object") return "";
-  return safeText(value);
+  const text = safeText(value);
+  return text.length > 260 ? `${text.slice(0, 260)}…` : text;
 }
 
 function addField(fields, label, value) {
@@ -290,14 +297,22 @@ function addField(fields, label, value) {
 const summaryFieldLabels = {
   action: "操作",
   database_id: "数据库",
+  eof: "已读完",
+  entries: "条目",
+  exit_code: "退出码",
   messageCount: "上下文消息",
   operation: "操作",
   page_id: "页面",
+  path: "路径",
+  stderr: "错误输出",
+  stdout: "标准输出",
+  timed_out: "是否超时",
   toolCount: "可用工具",
   toolCallCount: "选择工具",
   query: "搜索词",
   top_k: "计划结果",
   resultCount: "返回结果",
+  writtenBytes: "写入字节",
 };
 
 function addSummaryFields(fields, summary, prefix = "") {
@@ -343,6 +358,12 @@ export function traceStepReason(step) {
   }
   if (kind === "mcp") {
     return "通过已连接的MCP服务器完成外部系统操作。";
+  }
+  if (kind === "workspace") {
+    return "在当前用户隔离工作区内查看或修改文件。";
+  }
+  if (kind === "sandbox") {
+    return "在受限沙箱中执行命令，读写范围限定在当前用户工作区。";
   }
   if (kind === "approval") {
     return "该操作可能产生外部影响，需要你确认后才能继续。";
@@ -397,6 +418,30 @@ export function traceStepFields(step) {
     addField(fields, "工具", context.toolName);
     addField(fields, "风险", context.risk);
     addField(fields, "决定", context.decision);
+  } else if (kind === "workspace") {
+    addField(fields, "工具", displayName(step));
+    addField(
+      fields,
+      "权限",
+      details.destructive
+        ? "需要确认 · 可写"
+        : details.readOnly
+          ? "只读"
+          : "工作区访问",
+    );
+    addField(fields, "路径", input?.path || output?.path || "根目录");
+    addField(fields, "条目", Array.isArray(output?.entries) ? output.entries.length : null);
+    addField(fields, "写入字节", output?.writtenBytes);
+    addField(fields, "已读完", output?.eof === true ? "是" : output?.eof === false ? "否" : null);
+  } else if (kind === "sandbox") {
+    addField(fields, "工具", displayName(step));
+    addField(fields, "权限", "需要确认 · 沙箱执行");
+    addField(fields, "命令", input?.command);
+    addField(fields, "超时", input?.timeout_seconds ? `${input.timeout_seconds}s` : null);
+    addField(fields, "退出码", output?.exit_code);
+    addField(fields, "是否超时", output?.timed_out === true ? "是" : output?.timed_out === false ? "否" : null);
+    addField(fields, "标准输出", output?.stdout);
+    addField(fields, "错误输出", output?.stderr);
   } else if (kind === "skill") {
     const skill = skillDetailsForDisplay(step);
     addField(fields, "Skill", skill.displayName);

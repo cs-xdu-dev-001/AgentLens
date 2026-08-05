@@ -22,9 +22,24 @@ load_dotenv(BACKEND_DIR / ".env")
 UPLOAD_DIR = Path(os.getenv("KNOWFLOW_UPLOAD_DIR", str(DATA_DIR / "uploads"))).expanduser()
 if not UPLOAD_DIR.is_absolute():
     UPLOAD_DIR = (PROJECT_DIR / UPLOAD_DIR).resolve()
+TOOL_RESULT_DIR = Path(
+    os.getenv(
+        "KNOWFLOW_TOOL_RESULT_DIR",
+        str(DATA_DIR / "tool-results"),
+    )
+).expanduser()
+if not TOOL_RESULT_DIR.is_absolute():
+    TOOL_RESULT_DIR = (PROJECT_DIR / TOOL_RESULT_DIR).resolve()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TOOL_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+WORKSPACE_DIR = Path(
+    os.getenv("KNOWFLOW_WORKSPACE_DIR", str(DATA_DIR / "workspaces"))
+).expanduser()
+if not WORKSPACE_DIR.is_absolute():
+    WORKSPACE_DIR = (PROJECT_DIR / WORKSPACE_DIR).resolve()
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def env_int(name: str, default: int) -> int:
@@ -128,6 +143,58 @@ DEFAULT_TOP_K = env_int("KNOWFLOW_TOP_K", 5)
 RETRIEVAL_SCORE_THRESHOLD = env_float("KNOWFLOW_RAG_SCORE_THRESHOLD", 0.25)
 MODEL_REQUEST_TIMEOUT = env_int("KNOWFLOW_MODEL_REQUEST_TIMEOUT", 45)
 MODEL_TRUST_ENV = os.getenv("KNOWFLOW_MODEL_TRUST_ENV", "0") == "1"
+TOOL_RESULT_CONTEXT_CHARS = bounded_env_int(
+    "KNOWFLOW_TOOL_RESULT_CONTEXT_CHARS",
+    12_000,
+    1_000,
+    100_000,
+)
+TOOL_RESULT_STORAGE_CHARS = bounded_env_int(
+    "KNOWFLOW_TOOL_RESULT_STORAGE_CHARS",
+    2_000_000,
+    10_000,
+    10_000_000,
+)
+TOOL_RESULT_RETENTION_SECONDS = bounded_env_int(
+    "KNOWFLOW_TOOL_RESULT_RETENTION_SECONDS",
+    7 * 24 * 60 * 60,
+    60,
+    30 * 24 * 60 * 60,
+)
+AGENT_MAX_TOOL_CONCURRENCY = bounded_env_int(
+    "KNOWFLOW_AGENT_MAX_TOOL_CONCURRENCY",
+    4,
+    1,
+    16,
+)
+AGENT_CONTEXT_MAX_TOKENS = bounded_env_int(
+    "KNOWFLOW_AGENT_CONTEXT_MAX_TOKENS",
+    96_000,
+    4_000,
+    1_000_000,
+)
+WORKSPACE_ENABLED = os.getenv("KNOWFLOW_WORKSPACE_ENABLED", "0") == "1"
+WORKSPACE_MAX_FILE_BYTES = bounded_env_int(
+    "KNOWFLOW_WORKSPACE_MAX_FILE_BYTES",
+    1_000_000,
+    1_024,
+    10_000_000,
+)
+SANDBOX_ENABLED = os.getenv("KNOWFLOW_SANDBOX_ENABLED", "0") == "1"
+SANDBOX_COMMAND = os.getenv("KNOWFLOW_SANDBOX_COMMAND", "srt")
+SANDBOX_SHELL = os.getenv("KNOWFLOW_SANDBOX_SHELL", "pwsh")
+SANDBOX_TIMEOUT = bounded_env_int(
+    "KNOWFLOW_SANDBOX_TIMEOUT",
+    60,
+    1,
+    120,
+)
+SANDBOX_MAX_OUTPUT_BYTES = bounded_env_int(
+    "KNOWFLOW_SANDBOX_MAX_OUTPUT_BYTES",
+    1_000_000,
+    1_024,
+    10_000_000,
+)
 LANGGRAPH_CHECKPOINT_DB = Path(
     os.getenv(
         "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB",
@@ -148,6 +215,12 @@ MCP_REQUEST_TIMEOUT = max(1, env_int("KNOWFLOW_MCP_REQUEST_TIMEOUT", 30))
 MCP_APPROVAL_TIMEOUT = max(10, env_int("KNOWFLOW_MCP_APPROVAL_TIMEOUT", 300))
 MCP_MAX_RESPONSE_BYTES = max(4096, env_int("KNOWFLOW_MCP_MAX_RESPONSE_BYTES", 1024 * 1024))
 MCP_MAX_EXPOSED_TOOLS = max(1, env_int("KNOWFLOW_MCP_MAX_EXPOSED_TOOLS", 32))
+AGENT_TOOL_SEARCH_THRESHOLD = bounded_env_int(
+    "KNOWFLOW_AGENT_TOOL_SEARCH_THRESHOLD",
+    8,
+    2,
+    64,
+)
 MCP_ALLOW_PRIVATE_NETWORKS = os.getenv("KNOWFLOW_MCP_ALLOW_PRIVATE_NETWORKS", "0") == "1"
 MEMORY_ENABLED = os.getenv("KNOWFLOW_MEMORY_ENABLED", "0") == "1"
 MEMORY_DEFAULT_ENABLED = (

@@ -1205,6 +1205,68 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-top: 0 !important;
 }
 
+#page-knowledge .knowledge-summary {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 24px;
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+#page-knowledge .knowledge-summary-name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+#page-knowledge .knowledge-summary-name span,
+#page-knowledge .knowledge-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#page-knowledge .knowledge-summary-name strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-knowledge .knowledge-metrics {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+#page-knowledge .knowledge-metrics > div {
+  min-width: 78px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  border-left: 1px solid var(--control-border);
+}
+
+#page-knowledge .knowledge-metrics strong {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #page-knowledge .knowledge-rail {
   padding: 20px 16px !important;
   border-right: 1px solid var(--control-border) !important;
@@ -1307,8 +1369,44 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 #page-knowledge .settings-panel-card {
-  border: 1px solid var(--control-border) !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--control-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   box-shadow: none !important;
+}
+
+#page-knowledge .settings-panel-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 680;
+}
+
+#page-knowledge .knowledge-settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#page-knowledge .knowledge-settings-actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+#page-knowledge .knowledge-settings-actions button:first-child {
+  border-color: var(--inverse-bg);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
 }
 
 @media (hover: none) {
@@ -2064,12 +2162,32 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   #page-knowledge .active-kb-select select {
     width: 100%;
   }
+
+  #page-knowledge .knowledge-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    margin-inline: 0;
+  }
+
+  #page-knowledge .knowledge-metrics {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  #page-knowledge .knowledge-metrics > div:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 /* KnowFlow refinement: model settings workspace */
 #page-settings .settings-workspace-shell {
   grid-template-columns: 304px minmax(0, 1fr);
   background: var(--panel-bg);
+  border-color: #deded9;
+  border-radius: 12px;
 }
 
 :root:not([data-theme="mono-dark"]) #page-settings :where(
@@ -2085,6 +2203,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .model-config-list-header {
   min-height: 46px;
   padding-inline: 16px;
+  background: #fff;
 }
 
 .model-config-item {
@@ -2092,6 +2211,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 10px;
   padding: 10px 12px;
+  transition: background-color 140ms ease, color 140ms ease;
 }
 
 .model-config-item::before {
@@ -2155,6 +2275,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   max-width: 960px;
   margin: 0 auto;
   gap: 20px;
+  padding: 28px 32px 34px;
+}
+
+.model-config-form {
+  max-width: 960px;
+  margin: 0 auto;
   padding: 28px 32px 34px;
 }
 
@@ -2283,6 +2409,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   position: relative;
   justify-content: flex-start;
   align-items: center;
+  padding-top: 4px;
 }
 
 .model-config-detail-actions .model-config-test-button {
@@ -2312,6 +2439,42 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   width: 18px;
   height: 18px;
   fill: currentColor;
+}
+
+#page-settings .model-config-form label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+#page-settings .model-config-form input,
+#page-settings .model-config-form select {
+  min-height: 40px;
+  border-color: #d6d6d1;
+  background: #fff;
+  color: var(--text);
+}
+
+#page-settings .model-config-form input:focus,
+#page-settings .model-config-form select:focus {
+  border-color: #999991;
+  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.08);
+}
+
+#page-settings .model-config-form .button-row {
+  justify-content: flex-start;
+  padding-top: 6px;
+}
+
+#page-settings .model-config-form .button-row button {
+  min-height: 38px;
+  border-radius: 9px;
+}
+
+.settings-list-empty,
+.settings-detail-empty {
+  min-height: 280px;
+  align-content: center;
 }
 
 .model-config-more-menu.is-open .model-config-more-trigger,

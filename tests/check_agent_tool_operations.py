@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.database import CURRENT_SCHEMA_VERSION, Database
 from knowflow.services.agent_run_store import AgentRunStore
 from knowflow.services.agent_tool_operations import (
+    AgentApprovalRunner,
     AgentToolOperationStore,
 )
 
@@ -56,6 +57,7 @@ def main() -> None:
         )
         assert waiting["approvalId"] == duplicate["approvalId"]
         assert waiting["status"] == "waiting"
+        assert waiting["expiresAt"].endswith("Z")
         assert waiting["inputSummary"] == {"title": "Weekly report"}
         assert store.resolve(
             12,
@@ -147,11 +149,14 @@ def main() -> None:
             input_summary={"pageId": "page-3"},
         )
         current[0] += timedelta(seconds=31)
-        assert store.resolve(
+        expired_result = store.resolve(
             11,
             expiring["approvalId"],
             "allow_once",
-        ) is None
+        )
+        assert expired_result is not None
+        assert expired_result["status"] == "expired"
+        assert expired_result["decision"] == "timeout"
         expired = store.get_for_run(
             11,
             "run-operation",
@@ -160,6 +165,134 @@ def main() -> None:
         assert [item["approvalId"] for item in expired] == [
             expiring["approvalId"]
         ]
+
+        runs.create_run(
+            user_id=11,
+            session_id="session-timeout-runner",
+            user_message_id=2,
+            goal_summary="Expire without a browser",
+            trigger_mode="auto",
+            run_id="run-timeout-runner",
+        )
+        runs.transition_run(11, "run-timeout-runner", "running")
+        runs.transition_run(
+            11,
+            "run-timeout-runner",
+            "waiting_approval",
+        )
+        unattended = store.ensure_waiting(
+            user_id=11,
+            run_id="run-timeout-runner",
+            tool_call_id="call-unattended-write",
+            tool_name="mcp__notion__update_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"pageId": "page-unattended"},
+        )
+        current[0] += timedelta(seconds=31)
+        resumed: list[dict] = []
+        def resume_operation(operation: dict) -> bool:
+            resumed.append(operation)
+            runs.transition_run(
+                int(operation["userId"]),
+                str(operation["runId"]),
+                "running",
+            )
+            return True
+
+        runner = AgentApprovalRunner(
+            store=store,
+            resume=resume_operation,
+        )
+        assert runner.run_once() is True
+        assert len(resumed) == 1
+        assert resumed[0]["approvalId"] == unattended["approvalId"]
+        assert resumed[0]["status"] == "expired"
+        assert resumed[0]["decision"] == "timeout"
+        assert store.expire_due() == 0
+
+        runs.create_run(
+            user_id=11,
+            session_id="session-recover-approved",
+            user_message_id=3,
+            goal_summary="Recover an approved checkpoint",
+            trigger_mode="auto",
+            run_id="run-recover-approved",
+        )
+        runs.transition_run(11, "run-recover-approved", "running")
+        runs.transition_run(
+            11,
+            "run-recover-approved",
+            "waiting_approval",
+        )
+        recoverable = store.ensure_waiting(
+            user_id=11,
+            run_id="run-recover-approved",
+            tool_call_id="call-recover-approved",
+            tool_name="mcp__notion__update_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"pageId": "page-approved"},
+        )
+        assert store.resolve(
+            11,
+            recoverable["approvalId"],
+            "allow_once",
+        )["status"] == "approved"
+        assert runner.run_once() is True
+        assert resumed[-1]["approvalId"] == recoverable["approvalId"]
+
+        runs.create_run(
+            user_id=11,
+            session_id="session-latest-approval",
+            user_message_id=4,
+            goal_summary="Resume only the latest approval",
+            trigger_mode="auto",
+            run_id="run-latest-approval",
+        )
+        runs.transition_run(11, "run-latest-approval", "running")
+        runs.transition_run(
+            11,
+            "run-latest-approval",
+            "waiting_approval",
+        )
+        old_operation = store.ensure_waiting(
+            user_id=11,
+            run_id="run-latest-approval",
+            tool_call_id="call-old-timeout",
+            tool_name="mcp__notion__update_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"pageId": "page-old"},
+        )
+        assert store.resolve(
+            11,
+            old_operation["approvalId"],
+            "timeout",
+        )["status"] == "expired"
+        latest_operation = store.ensure_waiting(
+            user_id=11,
+            run_id="run-latest-approval",
+            tool_call_id="call-latest-waiting",
+            tool_name="mcp__notion__update_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"pageId": "page-latest"},
+        )
+        resumable_ids = {
+            item["approvalId"]
+            for item in store.resumable_resolutions()
+        }
+        assert old_operation["approvalId"] not in resumable_ids
+        assert latest_operation["approvalId"] not in resumable_ids
+        current[0] += timedelta(seconds=31)
+        assert store.expire_due() == 1
+        latest_resumable = store.resumable_resolutions()
+        assert [
+            item["approvalId"]
+            for item in latest_resumable
+            if item["runId"] == "run-latest-approval"
+        ] == [latest_operation["approvalId"]]
 
         try:
             store.ensure_waiting(
@@ -187,7 +320,9 @@ def main() -> None:
     )
     assert "UNIQUE (run_id, tool_call_id)" in schema
     assert "uk_agent_tool_operation_call" in schema
-    print("durable Agent tool approvals and execution claims are isolated")
+    print(
+        "durable Agent tool approvals expire and resume without a browser"
+    )
 
 
 if __name__ == "__main__":

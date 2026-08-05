@@ -100,6 +100,12 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
         trigger_mode="auto",
         run_id="run_durable_approval",
     )
+    runtime.agent_runs.transition_run(1, "run_durable_approval", "running")
+    runtime.agent_runs.transition_run(
+        1,
+        "run_durable_approval",
+        "waiting_approval",
+    )
     durable = runtime.agent_tool_operations.ensure_waiting(
         user_id=1,
         run_id="run_durable_approval",
@@ -139,6 +145,51 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
             1,
             durable["approvalId"],
         )["status"] == "approved"
+
+        runtime.agent_runs.create_run(
+            user_id=1,
+            session_id="session-timeout-approval",
+            user_message_id=2,
+            goal_summary="Expire a durable write",
+            trigger_mode="auto",
+            run_id="run_timeout_approval",
+        )
+        runtime.agent_runs.transition_run(
+            1,
+            "run_timeout_approval",
+            "running",
+        )
+        runtime.agent_runs.transition_run(
+            1,
+            "run_timeout_approval",
+            "waiting_approval",
+        )
+        timeout_operation = runtime.agent_tool_operations.ensure_waiting(
+            user_id=1,
+            run_id="run_timeout_approval",
+            tool_call_id="call_timeout_write",
+            tool_name="notion_create_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"title": "Timeout"},
+        )
+        timeout_response = alice.post(
+            f"/api/agent/approvals/{timeout_operation['approvalId']}",
+            json={"decision": "timeout"},
+        )
+        assert timeout_response.status_code == 200, timeout_response.text
+        assert durable_resumes.get(timeout=1) == (
+            1,
+            "run_timeout_approval",
+            f"approval:{timeout_operation['approvalId']}",
+        )
+        expired = runtime.agent_tool_operations.get(
+            1,
+            timeout_operation["approvalId"],
+        )
+        assert expired is not None
+        assert expired["status"] == "expired"
+        assert expired["decision"] == "timeout"
     finally:
         approval_router.configure_approval_run_executor(original_executor)
 
@@ -155,7 +206,12 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
 def main() -> None:
     test_trace_waiting_details_are_sanitized()
     test_durable_approval_api_is_owner_scoped_and_resumes()
-    print("durable LangGraph approvals are owner-scoped and sanitized")
+    extensions = (
+        ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
+    ).read_text(encoding="utf-8")
+    assert '"Approval timed out"' in extensions
+    assert '"approval_timeout"' in extensions
+    print("durable LangGraph approvals are isolated, resumable, and expiring")
 
 
 if __name__ == "__main__":

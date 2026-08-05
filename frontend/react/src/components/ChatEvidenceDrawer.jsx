@@ -25,6 +25,30 @@ function formatScore(value) {
   return Number.isFinite(score) ? score.toFixed(3) : "0.000";
 }
 
+function safePreview(value, limit = 140) {
+  if (value == null || value === "") return "";
+  const text = typeof value === "string"
+    ? value.trim()
+    : JSON.stringify(value, null, 2);
+  const normalized = String(text || "").trim();
+  if (!normalized) return "";
+  return normalized.length > limit
+    ? `${normalized.slice(0, limit)}…`
+    : normalized;
+}
+
+function toolCallStatusLabel(status) {
+  const value = String(status || "").trim();
+  return ({
+    success: "已完成",
+    completed: "已完成",
+    failed: "失败",
+    error: "失败",
+    running: "运行中",
+    waiting: "等待中",
+  }[value] || value || "已记录");
+}
+
 function QualityMetric({ label, value }) {
   return (
     <span className={"quality-metric"}>
@@ -272,16 +296,50 @@ export function ChatEvidenceDrawer() {
                   const input = call.inputJson || call.input_json || "";
                   const output = call.outputText || call.output_text || call.content || "";
                   const latency = call.latencyMs ?? call.latency_ms ?? 0;
+                  const status = call.status || "";
+                  const errorMessage = call.errorMessage || call.error_message || "";
+                  const inputPreview = safePreview(input);
+                  const outputPreview = safePreview(output);
                   return (
-                    <div className={"timeline-item"} key={name + "-" + index}>
-                      <div className={"timeline-dot"}></div>
-                      <div>
-                        <h4>{toolLabels[name] || name}</h4>
-                        <p>{latency ? latency + " ms" : "已记录"}</p>
-                        {input ? <pre>{typeof input === "string" ? input : JSON.stringify(input, null, 2)}</pre> : null}
-                        {output ? <p>{output}</p> : null}
+                    <details className={"timeline-item timeline-item-expandable"} key={name + "-" + index}>
+                      <summary className={"timeline-summary"}>
+                        <div className={"timeline-dot"}></div>
+                        <div className={"timeline-summary-copy"}>
+                          <h4>{toolLabels[name] || name}</h4>
+                          <p>
+                            {toolCallStatusLabel(status)}
+                            {latency ? ` · ${latency} ms` : ""}
+                            {inputPreview ? ` · ${inputPreview}` : ""}
+                          </p>
+                        </div>
+                        <div className={"timeline-summary-meta"}>
+                          {outputPreview ? (
+                            <span>{outputPreview}</span>
+                          ) : null}
+                          <span aria-hidden={"true"}>{"⌄"}</span>
+                        </div>
+                      </summary>
+                      <div className={"timeline-body"}>
+                        {input ? (
+                          <div className={"timeline-body-section"}>
+                            <span>{"公开输入"}</span>
+                            <pre>{typeof input === "string" ? input : JSON.stringify(input, null, 2)}</pre>
+                          </div>
+                        ) : null}
+                        {output ? (
+                          <div className={"timeline-body-section"}>
+                            <span>{"结果摘要"}</span>
+                            <pre>{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>
+                          </div>
+                        ) : null}
+                        {errorMessage ? (
+                          <div className={"timeline-body-section"}>
+                            <span>{"错误信息"}</span>
+                            <p>{errorMessage}</p>
+                          </div>
+                        ) : null}
                       </div>
-                    </div>
+                    </details>
                   );
                 })
               ) : (

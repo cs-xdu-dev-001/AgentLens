@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TypedDict
@@ -13,6 +14,8 @@ from langgraph.types import Command, interrupt
 from .agent_loop import (
     AgentLoopLimitError,
     AgentRunResult,
+    PreparedToolCall,
+    ToolDefinition,
     ToolExecution,
     ToolRegistry,
 )
@@ -22,6 +25,7 @@ from .langgraph_checkpoint import (
 )
 from .agent_trace import sanitize_trace_value
 from .memory import append_long_term_memory_context
+from .model_context_window import prepare_model_context
 
 
 LANGGRAPH_STATE_SCHEMA_VERSION = 2
@@ -53,6 +57,8 @@ class LangGraphRunContext:
     max_tool_rounds: int
     user_id: int
     run_id: str
+    max_tool_concurrency: int
+    max_context_tokens: int
     tool_operation_store: Any = None
     trace: Any = None
     parent_step_id: str | None = None
@@ -78,9 +84,13 @@ class LangGraphAgentEngine:
         gateway,
         checkpoint_db_path: Path | None,
         max_tool_rounds: int = 3,
+        max_tool_concurrency: int = 4,
+        max_context_tokens: int = 96_000,
     ):
         self._gateway = gateway
         self._max_tool_rounds = max(0, max_tool_rounds)
+        self._max_tool_concurrency = max(1, int(max_tool_concurrency))
+        self._max_context_tokens = max(1_000, int(max_context_tokens))
         if checkpoint_db_path is None:
             raise LangGraphCheckpointError(
                 "langgraph_checkpoint_unavailable",
@@ -319,6 +329,10 @@ class LangGraphAgentEngine:
             allowed_names,
             engine_name="langgraph",
         )
+        model_context = prepare_model_context(
+            state["messages"],
+            max_tokens=context.max_context_tokens,
+        )
         model_step = (
             trace.start_step(
                 kind="model",
@@ -327,6 +341,9 @@ class LangGraphAgentEngine:
                 parent_id=context.parent_step_id,
                 input_summary={
                     "messageCount": len(state["messages"]),
+                    "modelMessageCount": len(model_context.messages),
+                    "estimatedTokenCount": model_context.sent_tokens,
+                    "contextTrimmed": model_context.trimmed,
                     "toolCount": len(schemas),
                 },
                 details={
@@ -350,7 +367,7 @@ class LangGraphAgentEngine:
             )
         try:
             message = context.gateway.complete(
-                state["messages"],
+                model_context.messages,
                 context.config,
                 **completion_options,
             )
@@ -441,6 +458,158 @@ class LangGraphAgentEngine:
         return "tools" if index < len(calls) else "model"
 
     @staticmethod
+    def _concurrent_tool_batch(
+        context: LangGraphRunContext,
+        calls: list[dict[str, Any]],
+        start_index: int,
+        first: PreparedToolCall,
+        allowed_names: set[str],
+    ) -> list[PreparedToolCall]:
+        definition = first.definition
+        if (
+            first.error is not None
+            or definition is None
+            or not definition.can_run_concurrently(first.arguments)
+        ):
+            return [first]
+        prepared_batch = [first]
+        for tool_call in calls[start_index + 1 :]:
+            candidate = context.registry.prepare(
+                tool_call,
+                allowed_names=allowed_names,
+                engine_name="langgraph",
+            )
+            candidate_definition = candidate.definition
+            if (
+                candidate.error is not None
+                or candidate_definition is None
+                or not candidate_definition.can_run_concurrently(
+                    candidate.arguments
+                )
+            ):
+                break
+            prepared_batch.append(candidate)
+            if len(prepared_batch) >= context.max_tool_concurrency:
+                break
+        return prepared_batch
+
+    @staticmethod
+    def _record_tool_execution(
+        context: LangGraphRunContext,
+        definition: ToolDefinition | None,
+        prepared: PreparedToolCall,
+        execution: ToolExecution,
+        current_skill_snapshot: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        activation_succeeded = bool(
+            execution.status == "success"
+            and definition is not None
+            and definition.becomes_parent_on_success
+            and execution.skill_snapshot
+        )
+        if activation_succeeded:
+            current_skill_snapshot = dict(execution.skill_snapshot or {})
+        elif current_skill_snapshot:
+            execution.skill_snapshot = dict(current_skill_snapshot)
+        trace = context.trace
+        tool_step = (
+            trace.start_step(
+                kind=(
+                    definition.trace_kind
+                    if definition is not None
+                    else "tool"
+                ),
+                name=prepared.tool_name,
+                title=f"Running {prepared.tool_name}",
+                parent_id=context.parent_step_id,
+                input_summary=(
+                    None
+                    if definition is not None and definition.internal
+                    else prepared.arguments
+                ),
+                details={
+                    "readOnly": bool(definition and definition.read_only),
+                    "destructive": bool(
+                        definition and definition.destructive
+                    ),
+                    "concurrencySafe": bool(
+                        definition
+                        and definition.can_run_concurrently(
+                            prepared.arguments
+                        )
+                    ),
+                },
+            )
+            if trace
+            else None
+        )
+        if trace and tool_step:
+            trace.finish_step(
+                tool_step,
+                status=(
+                    "success" if execution.status == "success" else "failed"
+                ),
+                title=(
+                    f"{prepared.tool_name} completed"
+                    if execution.status == "success"
+                    else f"{prepared.tool_name} failed"
+                ),
+                output_summary=(
+                    execution.public_output()
+                    if execution.status == "success"
+                    else execution.error_message
+                ),
+                error_code=(
+                    None
+                    if execution.status == "success"
+                    else execution.error_code
+                ),
+            )
+        if context.execution_callback is not None:
+            context.execution_callback(execution, tool_step)
+        if (
+            execution.status == "success"
+            and definition is not None
+            and definition.remove_after_success
+        ):
+            context.registry.unregister(definition.name)
+        ends_run = bool(
+            execution.status == "success"
+            and definition is not None
+            and definition.ends_run_on_success
+        )
+        return current_skill_snapshot, ends_run
+
+    @staticmethod
+    def _tool_state_update(
+        state: LangGraphState,
+        *,
+        messages: list[dict[str, Any]],
+        executions: list[dict[str, Any]],
+        calls: list[dict[str, Any]],
+        next_index: int,
+        skill_snapshot: dict[str, Any] | None,
+        ends_run: bool,
+    ) -> dict[str, Any]:
+        return {
+            "messages": messages,
+            "executions": executions,
+            "tool_rounds": (
+                int(state.get("tool_rounds") or 0) + 1
+                if next_index >= len(calls)
+                else int(state.get("tool_rounds") or 0)
+            ),
+            "pending_tool_calls": calls,
+            "tool_call_index": next_index,
+            "skill_snapshot": skill_snapshot,
+            "answer": (
+                "The task plan was created."
+                if ends_run
+                else str(state.get("answer") or "")
+            ),
+        }
+
+    @staticmethod
     def _call_tools(
         state: LangGraphState,
         runtime: Runtime[LangGraphRunContext],
@@ -476,9 +645,72 @@ class LangGraphAgentEngine:
             allowed_names=allowed_names,
             engine_name="langgraph",
         )
+        concurrent_batch = LangGraphAgentEngine._concurrent_tool_batch(
+            context,
+            calls,
+            call_index,
+            prepared,
+            allowed_names,
+        )
+        if len(concurrent_batch) > 1:
+            with ThreadPoolExecutor(
+                max_workers=min(
+                    context.max_tool_concurrency,
+                    len(concurrent_batch),
+                ),
+                thread_name_prefix="knowflow-agent-tool",
+            ) as executor:
+                batch_executions = list(
+                    executor.map(
+                        context.registry.invoke,
+                        concurrent_batch,
+                    )
+                )
+            ends_run = False
+            for batch_prepared, batch_execution in zip(
+                concurrent_batch,
+                batch_executions,
+                strict=True,
+            ):
+                current_skill_snapshot, batch_ends_run = (
+                    LangGraphAgentEngine._record_tool_execution(
+                        context,
+                        batch_prepared.definition,
+                        batch_prepared,
+                        batch_execution,
+                        current_skill_snapshot,
+                    )
+                )
+                ends_run = ends_run or batch_ends_run
+                executions.append(
+                    LangGraphAgentEngine._execution_to_state(
+                        batch_execution
+                    )
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": batch_execution.call_id,
+                        "name": batch_execution.tool_name,
+                        "content": batch_execution.model_content(),
+                    }
+                )
+            return LangGraphAgentEngine._tool_state_update(
+                state,
+                messages=messages,
+                executions=executions,
+                calls=calls,
+                next_index=call_index + len(concurrent_batch),
+                skill_snapshot=current_skill_snapshot,
+                ends_run=ends_run,
+            )
         definition = prepared.definition
         execution = prepared.error
-        if execution is None and definition is not None and not definition.read_only:
+        if (
+            execution is None
+            and definition is not None
+            and definition.requires_approval
+        ):
             decision_value = interrupt(
                 {
                     "type": "tool_approval",
@@ -497,12 +729,21 @@ class LangGraphAgentEngine:
                 else str(decision_value or "")
             )
             if decision != "allow_once":
+                timed_out = decision == "timeout"
                 execution = context.registry._failure(
                     prepared.call_id,
                     prepared.tool_name,
                     prepared.arguments,
-                    "permission_denied",
-                    "Tool execution was denied.",
+                    (
+                        "approval_timeout"
+                        if timed_out
+                        else "permission_denied"
+                    ),
+                    (
+                        "Tool approval timed out."
+                        if timed_out
+                        else "Tool execution was denied."
+                    ),
                     time.perf_counter(),
                 )
             else:
@@ -548,69 +789,14 @@ class LangGraphAgentEngine:
                     )
         if execution is None:
             execution = context.registry.invoke(prepared)
-        activation_succeeded = bool(
-            execution.status == "success"
-            and definition is not None
-            and definition.becomes_parent_on_success
-            and execution.skill_snapshot
-        )
-        if activation_succeeded:
-            current_skill_snapshot = dict(execution.skill_snapshot or {})
-        elif current_skill_snapshot:
-            execution.skill_snapshot = dict(current_skill_snapshot)
-        tool_step = (
-            trace.start_step(
-                kind=(
-                    definition.trace_kind
-                    if definition is not None
-                    else "tool"
-                ),
-                name=prepared.tool_name,
-                title=f"Running {prepared.tool_name}",
-                parent_id=context.parent_step_id,
-                input_summary=(
-                    None
-                    if definition is not None and definition.internal
-                    else prepared.arguments
-                ),
+        current_skill_snapshot, ends_run = (
+            LangGraphAgentEngine._record_tool_execution(
+                context,
+                definition,
+                prepared,
+                execution,
+                current_skill_snapshot,
             )
-            if trace
-            else None
-        )
-        if trace and tool_step:
-            trace.finish_step(
-                tool_step,
-                status=(
-                    "success" if execution.status == "success" else "failed"
-                ),
-                title=(
-                    f"{prepared.tool_name} completed"
-                    if execution.status == "success"
-                    else f"{prepared.tool_name} failed"
-                ),
-                output_summary=(
-                    execution.public_output()
-                    if execution.status == "success"
-                    else execution.error_message
-                ),
-                error_code=(
-                    None
-                    if execution.status == "success"
-                    else execution.error_code
-                ),
-            )
-        if context.execution_callback is not None:
-            context.execution_callback(execution, tool_step)
-        if (
-            execution.status == "success"
-            and definition is not None
-            and definition.remove_after_success
-        ):
-            context.registry.unregister(definition.name)
-        ends_run = bool(
-            execution.status == "success"
-            and definition is not None
-            and definition.ends_run_on_success
         )
         executions.append(LangGraphAgentEngine._execution_to_state(execution))
         messages.append(
@@ -621,23 +807,15 @@ class LangGraphAgentEngine:
                 "content": execution.model_content(),
             }
         )
-        return {
-            "messages": messages,
-            "executions": executions,
-            "tool_rounds": (
-                int(state.get("tool_rounds") or 0) + 1
-                if call_index + 1 >= len(calls)
-                else int(state.get("tool_rounds") or 0)
-            ),
-            "pending_tool_calls": calls,
-            "tool_call_index": call_index + 1,
-            "skill_snapshot": current_skill_snapshot,
-            "answer": (
-                "The task plan was created."
-                if ends_run
-                else str(state.get("answer") or "")
-            ),
-        }
+        return LangGraphAgentEngine._tool_state_update(
+            state,
+            messages=messages,
+            executions=executions,
+            calls=calls,
+            next_index=call_index + 1,
+            skill_snapshot=current_skill_snapshot,
+            ends_run=ends_run,
+        )
 
     @staticmethod
     def _execution_to_state(
@@ -727,6 +905,8 @@ class LangGraphAgentEngine:
             max_tool_rounds=self._max_tool_rounds,
             user_id=user_id,
             run_id=run_id,
+            max_tool_concurrency=self._max_tool_concurrency,
+            max_context_tokens=self._max_context_tokens,
             tool_operation_store=tool_operation_store,
             trace=trace,
             parent_step_id=parent_step_id,

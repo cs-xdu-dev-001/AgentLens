@@ -223,6 +223,8 @@ class SkillActivationSession:
             arguments_model=ReadSkillResourceArguments,
             handler=lambda args: self.read_resource(args.path),
             read_only=True,
+            concurrency_safe=True,
+            interrupt_behavior="cancel",
             engine_names={"langgraph"},
             trace_kind="skill",
             internal=True,

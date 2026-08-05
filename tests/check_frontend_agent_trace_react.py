@@ -390,6 +390,96 @@ console.log(JSON.stringify({{
     ]
 
 
+def check_workspace_sandbox_renderer_fixture() -> None:
+    module_path = (
+        ROOT
+        / "frontend"
+        / "react"
+        / "src"
+        / "components"
+        / "agentTracePresentation.js"
+    ).as_uri()
+    script = f"""
+import {{
+  traceKindLabel,
+  traceStepFields,
+  traceStepReason,
+  traceStepTitle,
+}} from {json.dumps(module_path)};
+const workspaceFields = traceStepFields({{
+  kind: "workspace",
+  name: "write_workspace_file",
+  status: "success",
+  details: {{
+    readOnly: false,
+    destructive: true,
+    secret: "must-not-render",
+  }},
+  inputSummary: {{ path: "src/main.py" }},
+  outputSummary: {{ path: "src/main.py", writtenBytes: 42 }},
+}});
+const sandboxFields = traceStepFields({{
+  kind: "sandbox",
+  name: "run_sandbox_command",
+  status: "success",
+  details: {{
+    readOnly: false,
+    destructive: true,
+    token: "must-not-render",
+  }},
+  inputSummary: {{ command: "pytest tests", timeout_seconds: 30 }},
+  outputSummary: {{
+    exit_code: 0,
+    timed_out: false,
+    stdout: "ok",
+    stderr: "",
+  }},
+}});
+const readable = {{
+  kindLabel: traceKindLabel("workspace"),
+  sandboxLabel: traceKindLabel("sandbox"),
+  title: traceStepTitle({{
+    kind: "workspace",
+    name: "read_workspace_file",
+    status: "success",
+  }}),
+  reason: traceStepReason({{ kind: "sandbox" }}),
+}};
+console.log(JSON.stringify({{ workspaceFields, sandboxFields, readable }}));
+"""
+    completed = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=ROOT / "frontend",
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["workspaceFields"] == [
+        {"label": "工具", "value": "写入工作区文件"},
+        {"label": "权限", "value": "需要确认 · 可写"},
+        {"label": "路径", "value": "src/main.py"},
+        {"label": "写入字节", "value": "42"},
+    ]
+    assert result["sandboxFields"] == [
+        {"label": "工具", "value": "沙箱命令"},
+        {"label": "权限", "value": "需要确认 · 沙箱执行"},
+        {"label": "命令", "value": "pytest tests"},
+        {"label": "超时", "value": "30s"},
+        {"label": "退出码", "value": "0"},
+        {"label": "是否超时", "value": "否"},
+        {"label": "标准输出", "value": "ok"},
+    ]
+    assert result["readable"] == {
+        "kindLabel": "WORKSPACE",
+        "sandboxLabel": "SANDBOX",
+        "title": "读取工作区文件已完成",
+        "reason": "在受限沙箱中执行命令，读写范围限定在当前用户工作区。",
+    }
+
+
 def main() -> None:
     require(
         "frontend/react/src/controller/chatFlow.js",
@@ -549,10 +639,26 @@ def main() -> None:
         "raw trace details rendering",
     )
     check_skill_renderer_fixture()
+    check_workspace_sandbox_renderer_fixture()
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
         "AgentTraceView",
         "drawer trace view",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "timeline-item-expandable",
+        "compact expandable tool timeline",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "公开输入",
+        "tool input summary label",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "结果摘要",
+        "tool output summary label",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",

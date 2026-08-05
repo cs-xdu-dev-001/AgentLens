@@ -178,6 +178,21 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 | --- | --- | --- |
 | `KNOWFLOW_DB_URL` | SQLAlchemy database URL | `sqlite:///./data/knowflow.db` |
 | `KNOWFLOW_UPLOAD_DIR` | Uploaded document storage directory | `./data/uploads` |
+| `KNOWFLOW_TOOL_RESULT_DIR` | Per-user, per-run storage for oversized tool results | `./data/tool-results` |
+| `KNOWFLOW_TOOL_RESULT_CONTEXT_CHARS` | Maximum tool-result characters sent directly back to the model | `12000` |
+| `KNOWFLOW_TOOL_RESULT_STORAGE_CHARS` | Maximum characters retained for one oversized tool result | `2000000` |
+| `KNOWFLOW_TOOL_RESULT_RETENTION_SECONDS` | Retention period for per-run oversized tool results | `604800` |
+| `KNOWFLOW_AGENT_MAX_TOOL_CONCURRENCY` | Maximum concurrent explicitly safe read-only tool calls | `4` |
+| `KNOWFLOW_AGENT_TOOL_SEARCH_THRESHOLD` | Deferred MCP tool count that enables contextual ToolSearch | `8` |
+| `KNOWFLOW_AGENT_CONTEXT_MAX_TOKENS` | Approximate per-model-call context budget; durable checkpoint history is retained | `96000` |
+| `KNOWFLOW_WORKSPACE_ENABLED` | Expose per-user isolated workspace file tools | `0` |
+| `KNOWFLOW_WORKSPACE_DIR` | Parent directory for isolated user workspaces | `./data/workspaces` |
+| `KNOWFLOW_WORKSPACE_MAX_FILE_BYTES` | Maximum UTF-8 file size accepted by workspace tools | `1000000` |
+| `KNOWFLOW_SANDBOX_ENABLED` | Expose shell execution only through Anthropic Sandbox Runtime | `0` |
+| `KNOWFLOW_SANDBOX_COMMAND` | Sandbox Runtime CLI executable | `srt` |
+| `KNOWFLOW_SANDBOX_SHELL` | Non-interactive shell launched inside the sandbox | `pwsh` |
+| `KNOWFLOW_SANDBOX_TIMEOUT` | Maximum sandbox command runtime in seconds | `60` |
+| `KNOWFLOW_SANDBOX_MAX_OUTPUT_BYTES` | Maximum stdout/stderr retained per sandbox command | `1000000` |
 | `KNOWFLOW_SECRET_KEY` | Key used to encrypt stored model API keys | `change-this-dev-secret` |
 | `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` | Separate SQLite file for LangGraph execution checkpoints | `./data/langgraph/checkpoints.sqlite3` |
 | `KNOWFLOW_WEB_SEARCH_TIMEOUT` | Tavily request timeout in seconds | `15` |
@@ -215,7 +230,7 @@ The completed Trace snapshot is stored with the assistant message. Reopening a s
 
 Longer Agent tasks also persist a public plan and step state in the database. The model may answer simple requests directly; when it creates a plan, the current step lights in the run drawer and tool or MCP traces stay nested under that step. Prefix a request with `/plan` to create the plan without executing it, then choose 开始执行 or 重新规划.
 
-Execution and live SSE subscriptions are process-local, while run, plan, trace, approval, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart safely marks unfinished work as 已中断; it never silently replays side effects, and the user must choose 继续执行. Cancelling a run also invalidates its pending approvals. Keep this deployment on one backend worker until the run coordinator moves to shared infrastructure.
+Execution and live SSE subscriptions are process-local, while run, plan, trace, approval, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart marks in-progress model or tool work as 已中断, but preserves a LangGraph run that is safely paused at an approval checkpoint. A backend approval runner expires overdue approvals and resumes the current checkpoint with its durable decision, including after a restart or when the browser is closed; a timeout never calls the write handler. The UI uses the same server-issued expiry time for immediate feedback. Cancelling a run also invalidates its pending approvals. Keep this deployment on one backend worker until the run coordinator moves to shared infrastructure.
 
 The backend routes every Agent request through LangGraph. The former handwritten `current` engine and its process-local approval broker have been removed. Historical `current` runs are never resumed because doing so could repeat an unrecorded side effect; users restart them as a new LangGraph run instead. LangGraph runs RAG retrieval, memory recall, the model/tool loop, Skills, and task planning with durable checkpoints while preserving the selected Chat Completions or Responses API transport, streaming events, audits, and run records. A Skill activation is saved as an immutable version snapshot; checkpoint resume revalidates ownership, dependencies, version, and content hash before restoring resource access. Read-only calls run directly, while write, destructive, or unknown-risk calls use LangGraph `interrupt()` and a durable user/run/tool-call approval record. Each approved write is atomically claimed and its result is persisted; an indeterminate remote side effect is never automatically repeated. Tool schemas and execution use the same dynamic engine allow-list. Checkpoints are keyed by user and run ID in the separate SQLite file. RAG and Mem0 snapshots are reused across approval resumes and later plan steps; either context source can fail closed to an empty snapshot without failing the answer. Post-answer memory extraction remains in the existing durable background queue so it never delays the response.
 
@@ -244,7 +259,20 @@ Skill packages are isolated per-user. Each signed-in user gets builtin Skills di
 
 A Skill cannot register or enable a tool or MCP connection. Existing tool configuration, MCP connections, and write approval remain authoritative; instructions inside a Skill to skip approval have no effect. Package `scripts/` files are stored for inspection only; the current version不会执行这些脚本. Files under `references/` become available only after activation as bounded, read-only UTF-8 text.
 
-For deployment, each backup must include the application database, `data/skills`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched checkpoints. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages or checkpoint data to Git.
+For deployment, each backup must include the application database, `data/skills`, `data/tool-results`, `data/workspaces`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database, workspace, tool-result, and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched data. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill, workspace, tool-result, and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages, workspace contents, stored tool results, or checkpoint data to Git.
+
+### Windows sandbox setup
+
+Workspace file tools are disabled by default and each user receives a separate directory under `KNOWFLOW_WORKSPACE_DIR`. Shell execution has an additional hard gate: `run_sandbox_command` is registered only when both workspace and sandbox support are enabled and the `srt` executable is available. Commands always require approval, receive a scrubbed environment, cannot access the network, and may write only inside that user's workspace.
+
+Install Anthropic Sandbox Runtime and provision its dedicated Windows sandbox account once from an elevated prompt:
+
+```powershell
+npm install -g @anthropic-ai/sandbox-runtime
+npx @anthropic-ai/sandbox-runtime windows-install
+```
+
+Then set `KNOWFLOW_WORKSPACE_ENABLED=1` and `KNOWFLOW_SANDBOX_ENABLED=1`. Windows support in Sandbox Runtime is currently alpha, so production deployments should keep the feature disabled until their host security policy has been tested.
 
 ### 长期记忆（Mem0）
 

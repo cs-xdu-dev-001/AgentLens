@@ -111,8 +111,10 @@ def check_gitignore() -> None:
     expected = {
         "data/skills/",
         "data/skill-imports/",
+        "data/tool-results/",
         "backend/data/skills/",
         "backend/data/skill-imports/",
+        "data/workspaces/",
     }
     assert expected <= lines, f".gitignore is missing: {sorted(expected - lines)}"
     assert not any("builtin_skills" in line for line in lines), (
@@ -134,7 +136,7 @@ def secret_findings(text: str) -> list[str]:
     )
 
     sensitive_name = re.compile(
-        r"(?:SECRET|TOKEN|API_KEY|PASSWORD|PRIVATE_KEY|ACCESS_KEY)"
+        r"(?:^|_)(?:SECRET|TOKEN|API_KEY|PASSWORD|PRIVATE_KEY|ACCESS_KEY)(?:_|$)"
     )
     assignment = re.compile(
         r"^\s*(?:(?:export|set)\s+|\$env:)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$",

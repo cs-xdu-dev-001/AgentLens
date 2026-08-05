@@ -62,6 +62,8 @@ def build_agent_engine(
     *,
     gateway,
     max_tool_rounds: int = 3,
+    max_tool_concurrency: int = 4,
+    max_context_tokens: int = 96_000,
     checkpoint_db_path: Path | None = None,
 ) -> AgentEngine:
     normalized = str(engine_name or "").strip().lower()
@@ -78,6 +80,8 @@ def build_agent_engine(
         return module.LangGraphAgentEngine(
             gateway=gateway,
             max_tool_rounds=max_tool_rounds,
+            max_tool_concurrency=max_tool_concurrency,
+            max_context_tokens=max_context_tokens,
             checkpoint_db_path=checkpoint_db_path,
         )
     raise AgentEngineSelectionError(normalized or "unknown")

@@ -129,6 +129,7 @@ def runtime_info() -> dict[str, Any]:
 
 
 from .routers import routers
+from .routers.approvals import approval_runner
 
 for api_router in routers:
     app.include_router(api_router)
@@ -144,9 +145,11 @@ def interrupt_stale_agent_runs() -> None:
         before=datetime.now() - timedelta(days=30),
     )
     memory_operation_runner.start()
+    approval_runner.start()
 
 
 @app.on_event("shutdown")
 def close_memory_runtime() -> None:
+    approval_runner.stop()
     memory_operation_runner.stop()
     memory_manager.close()

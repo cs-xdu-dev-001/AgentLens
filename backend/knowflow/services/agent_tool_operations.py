@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from sqlalchemy import text
+
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -25,6 +30,13 @@ def _json_value(raw: Any, fallback: Any) -> Any:
         return json.loads(str(raw))
     except (TypeError, ValueError):
         return fallback
+
+
+def _public_timestamp(raw: Any) -> str:
+    value = str(raw or "").strip().replace(" ", "T")
+    if value and not value.endswith("Z") and "+" not in value[10:]:
+        value = f"{value}Z"
+    return value
 
 
 class AgentToolOperationStore:
@@ -66,19 +78,19 @@ class AgentToolOperationStore:
                 row.get("execution_json"),
                 None,
             ),
-            "expiresAt": str(row["expires_at"]),
+            "expiresAt": _public_timestamp(row["expires_at"]),
             "resolvedAt": (
-                str(row["resolved_at"])
+                _public_timestamp(row["resolved_at"])
                 if row.get("resolved_at") is not None
                 else None
             ),
             "startedAt": (
-                str(row["started_at"])
+                _public_timestamp(row["started_at"])
                 if row.get("started_at") is not None
                 else None
             ),
             "finishedAt": (
-                str(row["finished_at"])
+                _public_timestamp(row["finished_at"])
                 if row.get("finished_at") is not None
                 else None
             ),
@@ -197,15 +209,19 @@ class AgentToolOperationStore:
         approval_id: str,
         decision: str,
     ) -> dict[str, Any] | None:
-        if decision not in {"allow_once", "deny"}:
+        if decision not in {"allow_once", "deny", "timeout"}:
             return None
         now = self.clock()
         with self.database.engine.begin() as conn:
             row = self._row(conn, user_id, approval_id)
-            if row is None or row["status"] != "waiting":
+            if row is None:
+                return None
+            if row["status"] != "waiting":
+                if decision == "timeout" and row["status"] == "expired":
+                    return self._normalize(row)
                 return None
             expires_at = datetime.fromisoformat(str(row["expires_at"]))
-            if now >= expires_at:
+            if decision == "timeout" or now >= expires_at:
                 conn.execute(
                     text(
                         """
@@ -222,7 +238,8 @@ class AgentToolOperationStore:
                         "user_id": user_id,
                     },
                 )
-                return None
+                updated = self._row(conn, user_id, approval_id)
+                return self._normalize(updated) if updated else None
             status = "approved" if decision == "allow_once" else "denied"
             result = conn.execute(
                 text(
@@ -246,6 +263,92 @@ class AgentToolOperationStore:
                 return None
             updated = self._row(conn, user_id, approval_id)
         return self._normalize(updated) if updated else None
+
+    def expire_due(self, *, limit: int = 100) -> int:
+        now = self.clock()
+        current = _timestamp(now)
+        expired = 0
+        with self.database.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, user_id
+                    FROM agent_tool_operation
+                    WHERE status='waiting' AND expires_at<=:current
+                    ORDER BY expires_at, id
+                    LIMIT :limit
+                    """
+                ),
+                {
+                    "current": current,
+                    "limit": max(1, int(limit)),
+                },
+            ).mappings().all()
+            for row in rows:
+                result = conn.execute(
+                    text(
+                        """
+                        UPDATE agent_tool_operation
+                        SET status='expired', decision='timeout',
+                            resolved_at=:now, updated_at=:now
+                        WHERE id=:approval_id AND user_id=:user_id
+                          AND status='waiting'
+                        """
+                    ),
+                    {
+                        "now": current,
+                        "approval_id": row["id"],
+                        "user_id": row["user_id"],
+                    },
+                )
+                expired += max(0, int(result.rowcount or 0))
+        return expired
+
+    def resumable_resolutions(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self.database.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT operation.*
+                    FROM agent_tool_operation AS operation
+                    JOIN agent_run AS run
+                      ON run.id=operation.run_id
+                     AND run.user_id=operation.user_id
+                    WHERE operation.status IN (
+                      'approved', 'denied', 'expired'
+                    )
+                      AND operation.decision IS NOT NULL
+                      AND run.status='waiting_approval'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM agent_tool_operation AS waiting
+                        WHERE waiting.run_id=operation.run_id
+                          AND waiting.user_id=operation.user_id
+                          AND waiting.status='waiting'
+                      )
+                      AND operation.id=(
+                        SELECT latest.id
+                        FROM agent_tool_operation AS latest
+                        WHERE latest.run_id=operation.run_id
+                          AND latest.user_id=operation.user_id
+                          AND latest.status IN (
+                            'approved', 'denied', 'expired'
+                          )
+                        ORDER BY latest.resolved_at DESC,
+                          latest.created_at DESC, latest.id DESC
+                        LIMIT 1
+                      )
+                    ORDER BY operation.resolved_at, operation.id
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": max(1, int(limit))},
+            ).mappings().all()
+        return [self._normalize(dict(row)) for row in rows]
 
     def get_for_run(
         self,
@@ -383,3 +486,68 @@ class AgentToolOperationStore:
                 return None
             row = self._row(conn, user_id, approval_id)
         return self._normalize(row) if row else None
+
+
+class AgentApprovalRunner:
+    def __init__(
+        self,
+        *,
+        store: AgentToolOperationStore,
+        resume: Callable[[dict[str, Any]], bool],
+        poll_interval: float = 1.0,
+    ):
+        self.store = store
+        self.resume = resume
+        self.poll_interval = max(0.05, float(poll_interval))
+        self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def run_once(self) -> bool:
+        expired = self.store.expire_due()
+        resumed = False
+        for operation in self.store.resumable_resolutions():
+            try:
+                resumed = bool(self.resume(operation)) or resumed
+            except Exception as exc:
+                logger.warning(
+                    "Agent approval resume failed for %s: %s",
+                    operation.get("approvalId"),
+                    type(exc).__name__,
+                )
+        return bool(expired or resumed)
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            processed = self.run_once()
+            if processed:
+                continue
+            self._wake_event.wait(self.poll_interval)
+            self._wake_event.clear()
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self._stop_event.clear()
+        self._wake_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="knowflow-agent-approvals",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def wake(self) -> None:
+        self._wake_event.set()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._wake_event.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join()
+        self._thread = None

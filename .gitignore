@@ -32,6 +32,9 @@ data/skills/
 data/skill-imports/
 data/mem0/
 data/langgraph/
+data/tool-results/
+data/workspaces/
+.codegraph/
 backend/data/skills/
 backend/data/skill-imports/
 data/test-uploads/

@@ -290,7 +290,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         checkpoint_path = root / "checkpoints.sqlite3"
-        secret = "sk-checkpoint-must-not-store-this"
+        secret = "test-secret-value"
         config = {
             "model_name": "gpt-test",
             "api_mode": "responses",
@@ -1201,6 +1201,74 @@ def main() -> None:
         assert denied_result.answer == "The note was not created."
         assert denied_result.executions[0].error_code == "permission_denied"
         assert denied_calls == []
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-timeout",
+            user_message_id=4,
+            goal_summary="Time out a note write",
+            trigger_mode="auto",
+            run_id="run_write_timeout",
+        )
+        timeout_calls: list[dict] = []
+        timeout_registry = ToolRegistry()
+        register_write_mcp(timeout_registry, timeout_calls)
+        timeout_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"timed out"}',
+                        "call_write_timeout",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "The approval timed out.",
+                "tool_calls": [],
+            },
+        )
+        timeout_engine = LangGraphAgentEngine(
+            gateway=timeout_gateway,
+            checkpoint_db_path=root / "write-timeout.sqlite3",
+        )
+        timeout_pause = run_engine(
+            timeout_engine,
+            timeout_registry,
+            run_id="run_write_timeout",
+            messages=[{"role": "user", "content": "Create a note"}],
+            tool_operation_store=operation_store,
+        )
+        timeout_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_timeout",
+            tool_call_id=timeout_pause.interrupt["toolCallId"],
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "timed out"},
+        )
+        expired_operation = operation_store.resolve(
+            17,
+            timeout_operation["approvalId"],
+            "timeout",
+        )
+        assert expired_operation is not None
+        assert expired_operation["status"] == "expired"
+        timeout_result = run_engine(
+            timeout_engine,
+            timeout_registry,
+            run_id="run_write_timeout",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="timeout",
+        )
+        assert timeout_result.answer == "The approval timed out."
+        assert timeout_result.executions[0].error_code == "approval_timeout"
+        assert timeout_calls == []
 
         approval_runs.create_run(
             user_id=17,

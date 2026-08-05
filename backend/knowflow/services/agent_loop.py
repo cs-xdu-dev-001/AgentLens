@@ -2,10 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
+import threading
 import time
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .tool_result_store import (
+    ReadToolResultArguments,
+    ToolResultStore,
+)
+
+
+DEFAULT_MAX_TOOL_RESULT_CHARS = 12_000
+
+
+class ToolSearchArguments(BaseModel):
+    query: str = Field(default="", max_length=240)
+    tool_names: list[str] = Field(default_factory=list, max_length=12)
+    top_k: int = Field(default=6, ge=1, le=12)
 
 
 @dataclass
@@ -24,6 +40,13 @@ class ToolDefinition:
     becomes_parent_on_success: bool = False
     remove_after_success: bool = False
     ends_run_on_success: bool = False
+    destructive: bool = False
+    concurrency_safe: bool | Callable[[dict[str, Any]], bool] = False
+    interrupt_behavior: str = "block"
+    max_result_size_chars: int = DEFAULT_MAX_TOOL_RESULT_CHARS
+    search_hint: str | None = None
+    should_defer: bool = False
+    always_load: bool = False
 
     def __post_init__(self) -> None:
         if (self.arguments_model is None) == (self.input_schema is None):
@@ -37,6 +60,33 @@ class ToolDefinition:
                 Draft202012Validator.check_schema(self.input_schema)
             except Exception as exc:
                 raise ValueError("invalid input schema") from exc
+        if self.destructive and self.read_only:
+            raise ValueError("destructive tools cannot be read-only")
+        if self.interrupt_behavior not in {"block", "cancel"}:
+            raise ValueError("invalid tool interrupt behavior")
+        if self.max_result_size_chars < 1:
+            raise ValueError("max_result_size_chars must be positive")
+        if self.should_defer and self.always_load:
+            raise ValueError("deferred tools cannot always load")
+
+    def can_run_concurrently(self, arguments: dict[str, Any]) -> bool:
+        if (
+            self.requires_approval
+            or self.becomes_parent_on_success
+            or self.remove_after_success
+            or self.ends_run_on_success
+        ):
+            return False
+        if callable(self.concurrency_safe):
+            try:
+                return bool(self.concurrency_safe(arguments))
+            except Exception:
+                return False
+        return bool(self.concurrency_safe)
+
+    @property
+    def requires_approval(self) -> bool:
+        return bool(not self.read_only or self.destructive)
 
 
 @dataclass
@@ -115,8 +165,23 @@ class AgentLoopLimitError(RuntimeError):
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        result_store: ToolResultStore | None = None,
+        default_max_result_size_chars: int = (
+            DEFAULT_MAX_TOOL_RESULT_CHARS
+        ),
+    ) -> None:
         self._definitions: dict[str, ToolDefinition] = {}
+        self._result_store = result_store
+        self._default_max_result_size_chars = max(
+            1,
+            int(default_max_result_size_chars),
+        )
+        self._result_reader_lock = threading.Lock()
+        self._tool_search_enabled = False
+        self._activated_deferred_tools: set[str] = set()
 
     def register(
         self,
@@ -137,6 +202,15 @@ class ToolRegistry:
         becomes_parent_on_success: bool = False,
         remove_after_success: bool = False,
         ends_run_on_success: bool = False,
+        destructive: bool = False,
+        concurrency_safe: (
+            bool | Callable[[dict[str, Any]], bool]
+        ) = False,
+        interrupt_behavior: str = "block",
+        max_result_size_chars: int | None = None,
+        search_hint: str | None = None,
+        should_defer: bool = False,
+        always_load: bool = False,
     ) -> None:
         self._definitions[name] = ToolDefinition(
             name=name,
@@ -153,7 +227,21 @@ class ToolRegistry:
             becomes_parent_on_success=becomes_parent_on_success,
             remove_after_success=remove_after_success,
             ends_run_on_success=ends_run_on_success,
+            destructive=destructive,
+            concurrency_safe=concurrency_safe,
+            interrupt_behavior=interrupt_behavior,
+            max_result_size_chars=(
+                self._default_max_result_size_chars
+                if max_result_size_chars is None
+                else int(max_result_size_chars)
+            ),
+            search_hint=search_hint,
+            should_defer=should_defer,
+            always_load=always_load,
         )
+
+    def definition(self, name: str) -> ToolDefinition | None:
+        return self._definitions.get(name)
 
     def names(self) -> tuple[str, ...]:
         return tuple(self._definitions)
@@ -163,6 +251,15 @@ class ToolRegistry:
             definition.name
             for definition in self._definitions.values()
             if engine_name in definition.engine_names
+            and self._is_exposed(definition)
+        )
+
+    def _is_exposed(self, definition: ToolDefinition) -> bool:
+        return bool(
+            not self._tool_search_enabled
+            or not definition.should_defer
+            or definition.always_load
+            or definition.name in self._activated_deferred_tools
         )
 
     def unregister(self, name: str) -> bool:
@@ -182,7 +279,7 @@ class ToolRegistry:
             ) or (
                 engine_name is not None
                 and engine_name not in definition.engine_names
-            ):
+            ) or not self._is_exposed(definition):
                 continue
             parameters = (
                 definition.arguments_model.model_json_schema()
@@ -200,6 +297,115 @@ class ToolRegistry:
                 }
             )
         return schemas
+
+    def enable_tool_search(self, *, threshold: int = 8) -> bool:
+        deferred = [
+            definition
+            for definition in self._definitions.values()
+            if definition.should_defer and not definition.always_load
+        ]
+        if len(deferred) < max(1, int(threshold)):
+            return False
+        self._tool_search_enabled = True
+
+        def search(args: ToolSearchArguments) -> dict[str, Any]:
+            return self.search_tools(
+                query=args.query,
+                tool_names=args.tool_names,
+                top_k=args.top_k,
+            )
+
+        self.register(
+            name="tool_search",
+            description=(
+                "Find and load relevant deferred tools before calling them. "
+                "Use tool_names for exact selection when names are known."
+            ),
+            handler=search,
+            arguments_model=ToolSearchArguments,
+            read_only=True,
+            internal=True,
+            concurrency_safe=False,
+            interrupt_behavior="cancel",
+            search_hint="find available tools by capability",
+            always_load=True,
+        )
+        return True
+
+    def search_tools(
+        self,
+        *,
+        query: str = "",
+        tool_names: list[str] | None = None,
+        top_k: int = 6,
+    ) -> dict[str, Any]:
+        if not self._tool_search_enabled:
+            return {"loaded": [], "message": "Tool search is not enabled."}
+        requested = {
+            str(name or "").strip()
+            for name in (tool_names or [])
+            if str(name or "").strip()
+        }
+        terms = [
+            term
+            for term in re.findall(r"[\w-]+", query.lower(), flags=re.UNICODE)
+            if len(term) > 1
+        ]
+        ranked: list[tuple[int, str, ToolDefinition]] = []
+        for definition in self._definitions.values():
+            if not definition.should_defer or definition.always_load:
+                continue
+            if requested:
+                score = 10_000 if definition.name in requested else 0
+            else:
+                haystack = " ".join(
+                    filter(
+                        None,
+                        (
+                            definition.name,
+                            definition.description,
+                            definition.search_hint,
+                            definition.server_name,
+                        ),
+                    )
+                ).lower()
+                score = sum(
+                    4 if term in definition.name.lower() else 1
+                    for term in terms
+                    if term in haystack
+                )
+            if score > 0:
+                ranked.append((score, definition.name, definition))
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        selected = [
+            definition
+            for _score, _name, definition in ranked[: max(1, top_k)]
+        ]
+        self._activated_deferred_tools.update(
+            definition.name for definition in selected
+        )
+        return {
+            "loaded": [
+                {
+                    "name": definition.name,
+                    "description": definition.description,
+                    "serverName": definition.server_name,
+                    "readOnly": definition.read_only,
+                    "risk": definition.risk,
+                }
+                for definition in selected
+            ],
+            "remainingDeferred": max(
+                0,
+                sum(
+                    1
+                    for definition in self._definitions.values()
+                    if definition.should_defer
+                    and definition.name
+                    not in self._activated_deferred_tools
+                ),
+            ),
+        }
 
     def prepare(
         self,
@@ -296,11 +502,16 @@ class ToolRegistry:
                 )
             )
             if isinstance(raw, ToolHandlerResult):
+                output = self._compact_output(
+                    definition,
+                    prepared,
+                    raw.output,
+                )
                 return ToolExecution(
                     prepared.call_id,
                     prepared.tool_name,
                     prepared.arguments,
-                    raw.output,
+                    output,
                     "success",
                     None,
                     None,
@@ -308,11 +519,12 @@ class ToolRegistry:
                     raw.audit_output,
                     raw.skill_snapshot,
                 )
+            output = raw if isinstance(raw, dict) else {"value": raw}
             return ToolExecution(
                 prepared.call_id,
                 prepared.tool_name,
                 prepared.arguments,
-                raw if isinstance(raw, dict) else {"value": raw},
+                self._compact_output(definition, prepared, output),
                 "success",
                 None,
                 None,
@@ -326,6 +538,61 @@ class ToolRegistry:
                 str(getattr(exc, "code", "") or "tool_execution_failed"),
                 str(exc) or "Tool execution failed.",
                 started,
+            )
+
+    def _compact_output(
+        self,
+        definition: ToolDefinition,
+        prepared: PreparedToolCall,
+        output: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._result_store is None:
+            return output
+        compacted = self._result_store.compact(
+            call_id=prepared.call_id,
+            tool_name=prepared.tool_name,
+            output=output,
+            max_result_size_chars=definition.max_result_size_chars,
+        )
+        if compacted is not output:
+            self._ensure_result_reader()
+        return compacted
+
+    def _ensure_result_reader(self) -> None:
+        if (
+            self._result_store is None
+            or "read_tool_result" in self._definitions
+        ):
+            return
+
+        with self._result_reader_lock:
+            if "read_tool_result" in self._definitions:
+                return
+
+            def read_result(
+                args: ReadToolResultArguments,
+            ) -> dict[str, Any]:
+                return self._result_store.read(
+                    args.result_id,
+                    offset=args.offset,
+                    limit=args.limit,
+                )
+
+            self.register(
+                name="read_tool_result",
+                description=(
+                    "Read one bounded chunk from a large result previously "
+                    "stored during this Agent run."
+                ),
+                handler=read_result,
+                arguments_model=ReadToolResultArguments,
+                read_only=True,
+                internal=True,
+                concurrency_safe=True,
+                interrupt_behavior="cancel",
+                max_result_size_chars=24_000,
+                search_hint="read remaining large tool output",
+                always_load=True,
             )
 
     def execute(self, tool_call: dict[str, Any]) -> ToolExecution:

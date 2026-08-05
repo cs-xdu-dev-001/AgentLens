@@ -28,7 +28,6 @@ function KnowledgeSettingsPanel({ active, onTabChange, onOpenKnowledgeBaseModal 
   return (
     <section className={active ? "knowledge-tab-panel knowledge-settings-panel active" : "knowledge-tab-panel knowledge-settings-panel"} id={"knowledge-settings-panel"} data-kb-tab-panel={"settings"}>
       <div className={"settings-panel-card"}>
-        <span className={"eyebrow"}>{"空间设置"}</span>
         <h2>{"知识库设置"}</h2>
         <div className={"knowledge-settings-actions"}>
           <button type={"button"} onClick={onOpenKnowledgeBaseModal}>{"新建知识库"}</button>
