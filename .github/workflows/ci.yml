@@ -55,3 +55,58 @@ jobs:
             exit 1
           }
           Write-Host 'ALL CHECKS PASSED'
+
+      - name: Validate fast deployment script
+        shell: bash
+        run: bash -n deploy/fast-deploy.sh
+
+      - name: Build Linux deployment bundle
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="${RUNNER_TEMP}/knowflow-ai-linux"
+          archive="knowflow-ai-linux-${GITHUB_SHA}.tar.gz"
+          mkdir -p "${bundle}/frontend"
+          git archive --format=tar "${GITHUB_SHA}" backend deploy README.md \
+            | tar -xf - -C "${bundle}"
+          cp -a frontend/dist "${bundle}/frontend/dist"
+          python - "${bundle}/DEPLOYMENT-MANIFEST.json" <<'PY'
+          import json
+          import os
+          import sys
+          from datetime import datetime, timezone
+
+          path = sys.argv[1]
+          payload = {
+              "commit": os.environ["GITHUB_SHA"],
+              "generatedAt": datetime.now(timezone.utc).isoformat(),
+              "platform": "linux",
+              "workflowRunId": os.environ["GITHUB_RUN_ID"],
+          }
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+          tar -C "${bundle}" -czf "${archive}" .
+          tar -tzf "${archive}" > bundle-contents.txt
+          grep -q '^./backend/knowflow/' bundle-contents.txt
+          grep -q '^./frontend/dist/index.html$' bundle-contents.txt
+          if grep -E '(^|/)\.env$|(^|/)data/|(^|/)node_modules/' bundle-contents.txt; then
+            echo 'Deployment bundle contains forbidden runtime or secret paths.' >&2
+            exit 1
+          fi
+          sha256sum "${archive}" > "${archive}.sha256"
+
+      - name: Upload Linux deployment bundle
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: knowflow-ai-linux-${{ github.sha }}
+          path: |
+            knowflow-ai-linux-${{ github.sha }}.tar.gz
+            knowflow-ai-linux-${{ github.sha }}.tar.gz.sha256
+            bundle-contents.txt
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error

@@ -268,6 +268,25 @@ A Skill cannot register or enable a tool or MCP connection. Existing tool config
 
 For deployment, each backup must include the application database, `data/skills`, `data/tool-results`, `data/workspaces`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database, workspace, tool-result, and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched data. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill, workspace, tool-result, and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages, workspace contents, stored tool results, or checkpoint data to Git.
 
+Pushes to`main`先在Ubuntu CI中安装依赖、构建前端并运行全部检查。通过后，CI生成按commit命名的Linux部署包、SHA-256校验文件和内容清单，保留14天；部署包只包含后端源码、已构建前端、部署脚本和README，不包含`.env`、运行数据或依赖缓存。
+
+服务器可使用CI门禁后的快速同步脚本，避免重复运行全量检查。脚本拒绝脏工作树和不属于`origin/main`的提交，确认目标commit的push CI成功后才切换代码；仅当依赖文件哈希变化时执行`pip install`或`npm ci`，仅当前端源码变化时重新构建，最后只重启一次并检查本地健康端点：
+
+```bash
+sudo bash /opt/knowflow-ai/app/deploy/fast-deploy.sh <目标commit>
+```
+
+首次使用新脚本时，可从目标commit读取到临时文件再执行，避免先手工切换代码：
+
+```bash
+cd /opt/knowflow-ai/app
+git fetch origin main
+git show <目标commit>:deploy/fast-deploy.sh > /tmp/knowflow-fast-deploy.sh
+sudo bash /tmp/knowflow-fast-deploy.sh <目标commit>
+```
+
+快速同步信任同一commit已经成功的GitHub Actions完整门禁，因此服务器不再重复运行`tests/check_*.py`。数据库和运行数据备份仍是部署前的独立操作，脚本不会读取、复制或修改`.env`和`data`内容。
+
 ### Linux Agent运行环境
 
 Workspace file tools are disabled by default and each user receives a separate directory under `KNOWFLOW_WORKSPACE_DIR`. Shell execution has an additional hard gate: `run_sandbox_command` is registered only when both workspace and sandbox support are enabled and the `srt` executable is available. Commands always require approval, receive a scrubbed environment, cannot access the network, and may write only inside that user's workspace.
