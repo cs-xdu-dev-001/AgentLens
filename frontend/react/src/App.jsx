@@ -7,11 +7,12 @@ import { SkillsPage } from "./components/SkillsPage.jsx";
 import { MemoryPage } from "./components/MemoryPage.jsx";
 import { ToolsPage } from "./components/ToolsPage.jsx";
 import { SettingsPage } from "./components/SettingsPage.jsx";
+import { WorkbenchPage } from "./components/WorkbenchPage.jsx";
 import { Toast } from "./components/Toast.jsx";
 import { KnowFlowController } from "./components/KnowFlowController.jsx";
 import { useAuth } from "./auth/AuthProvider.jsx";
 
-const pageKeys = new Set(["chat", "knowledge", "skills", "memory", "tools", "settings"]);
+const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings"]);
 const SIDEBAR_LAYOUT_VERSION = "20260522-chatgpt-sidebar";
 
 function readStoredBoolean(key, defaultValue) {
@@ -131,6 +132,7 @@ function WorkbenchShell() {
             <ChatPage active={activePage === "chat"} />
             <KnowledgePage active={activePage === "knowledge"} />
             <SkillsPage active={activePage === "skills"} />
+            <WorkbenchPage active={activePage === "workspace"} />
             <MemoryPage active={activePage === "memory"} />
             <ToolsPage active={activePage === "tools"} />
             <SettingsPage active={activePage === "settings"} />

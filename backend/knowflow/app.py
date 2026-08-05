@@ -137,6 +137,25 @@ for api_router in routers:
 
 @app.on_event("startup")
 def interrupt_stale_agent_runs() -> None:
+    runtime_directories = [
+        ("data", DATA_DIR),
+        ("uploads", UPLOAD_DIR),
+        ("skills", SKILL_DIR),
+        ("skill_imports", SKILL_IMPORT_DIR),
+        ("tool_results", TOOL_RESULT_DIR),
+    ]
+    if WORKSPACE_ENABLED:
+        runtime_directories.append(("workspaces", WORKSPACE_DIR))
+    require_runtime_paths(
+        directories=runtime_directories,
+        files=(("langgraph_checkpoint", LANGGRAPH_CHECKPOINT_DB),),
+    )
+    if SANDBOX_ENABLED:
+        require_linux_sandbox(
+            SANDBOX_COMMAND,
+            SANDBOX_SHELL,
+            SANDBOX_LIMIT_COMMAND,
+        )
     agent_runs.interrupt_stale_runs()
     memory_operation_store.recover_interrupted(
         stale_before=datetime.now(),

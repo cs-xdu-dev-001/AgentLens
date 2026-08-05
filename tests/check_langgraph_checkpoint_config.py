@@ -31,7 +31,7 @@ def main() -> None:
             encoding="utf-8"
         )
         assert "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB" in source
-        assert "LANGGRAPH_CHECKPOINT_DB.is_absolute()" in source
+        assert "runtime_path(" in source
         assert not absolute.exists()
 
     requirements = (BACKEND / "requirements.txt").read_text(

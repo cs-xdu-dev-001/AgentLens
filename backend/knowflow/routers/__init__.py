@@ -11,6 +11,7 @@ from .approvals import router as approval_router
 from .skills import router as skill_router
 from .agent_runs import router as agent_run_router
 from .memories import router as memory_router
+from .workspaces import router as workspace_router
 from .agent_runs import configure_agent_run_executor
 from .approvals import configure_approval_run_executor
 from .extensions import execute_persisted_agent_run
@@ -30,4 +31,5 @@ routers = [
     agent_run_router,
     skill_router,
     memory_router,
+    workspace_router,
 ]

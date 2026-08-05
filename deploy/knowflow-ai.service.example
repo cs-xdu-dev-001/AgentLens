@@ -1,0 +1,25 @@
+[Unit]
+Description=KnowFlow AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=knowflow
+Group=knowflow
+WorkingDirectory=/opt/knowflow-ai/app
+EnvironmentFile=/etc/knowflow-ai/knowflow.env
+StateDirectory=knowflow-ai
+StateDirectoryMode=0750
+UMask=0027
+ExecStart=/usr/bin/env KNOWFLOW_DATA_DIR=/var/lib/knowflow-ai /opt/knowflow-ai/venv/bin/uvicorn knowflow.app:app --app-dir backend --host 127.0.0.1 --port 8010 --workers 1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/knowflow-ai
+
+[Install]
+WantedBy=multi-user.target

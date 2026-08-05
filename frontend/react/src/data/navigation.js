@@ -12,6 +12,12 @@ export const sidebarTools = [
     page: "skills",
   },
   {
+    key: "workspace",
+    label: "工作区",
+    icon: "code",
+    page: "workspace",
+  },
+  {
     key: "memory",
     label: "记忆",
     icon: "memory",

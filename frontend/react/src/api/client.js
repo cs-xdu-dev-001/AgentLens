@@ -166,6 +166,32 @@ export const runtimeApi = {
   get: () => apiRequest("/api/runtime"),
 };
 
+function workspacePath(path) {
+  return String(path || "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+export const workspaceApi = {
+  status: () => apiRequest("/api/workspace"),
+  list: (path = "") =>
+    apiRequest(`/api/workspace/files?${new URLSearchParams({ path })}`),
+  upload: (path, file, overwrite = false) => {
+    const body = new FormData();
+    body.append("path", path);
+    body.append("overwrite", overwrite ? "true" : "false");
+    body.append("file", file);
+    return apiRequest("/api/workspace/files", { method: "POST", body });
+  },
+  downloadUrl: (path) => `/api/workspace/files/${workspacePath(path)}`,
+  delete: (path) =>
+    apiRequest(`/api/workspace/files/${workspacePath(path)}`, {
+      method: "DELETE",
+    }),
+};
+
 export const memoryApi = {
   settings: () => apiRequest("/api/memory/settings"),
   setEnabled: (enabled) =>

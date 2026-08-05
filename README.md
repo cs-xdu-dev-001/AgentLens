@@ -176,8 +176,11 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 
 | Variable | Description | Default |
 | --- | --- | --- |
+| `KNOWFLOW_DATA_DIR` | Root directory for mutable runtime state | `./data` |
 | `KNOWFLOW_DB_URL` | SQLAlchemy database URL | `sqlite:///./data/knowflow.db` |
 | `KNOWFLOW_UPLOAD_DIR` | Uploaded document storage directory | `./data/uploads` |
+| `KNOWFLOW_SKILL_DIR` | Installed Skill storage directory | `./data/skills` |
+| `KNOWFLOW_SKILL_IMPORT_DIR` | Temporary Skill import directory | `./data/skill-imports` |
 | `KNOWFLOW_TOOL_RESULT_DIR` | Per-user, per-run storage for oversized tool results | `./data/tool-results` |
 | `KNOWFLOW_TOOL_RESULT_CONTEXT_CHARS` | Maximum tool-result characters sent directly back to the model | `12000` |
 | `KNOWFLOW_TOOL_RESULT_STORAGE_CHARS` | Maximum characters retained for one oversized tool result | `2000000` |
@@ -190,9 +193,13 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 | `KNOWFLOW_WORKSPACE_MAX_FILE_BYTES` | Maximum UTF-8 file size accepted by workspace tools | `1000000` |
 | `KNOWFLOW_SANDBOX_ENABLED` | Expose shell execution only through Anthropic Sandbox Runtime | `0` |
 | `KNOWFLOW_SANDBOX_COMMAND` | Sandbox Runtime CLI executable | `srt` |
-| `KNOWFLOW_SANDBOX_SHELL` | Non-interactive shell launched inside the sandbox | `pwsh` |
+| `KNOWFLOW_SANDBOX_SHELL` | Non-interactive Linux shell launched inside the sandbox | `bash` |
+| `KNOWFLOW_SANDBOX_LIMIT_COMMAND` | Linux util-linux resource limiter | `prlimit` |
 | `KNOWFLOW_SANDBOX_TIMEOUT` | Maximum sandbox command runtime in seconds | `60` |
 | `KNOWFLOW_SANDBOX_MAX_OUTPUT_BYTES` | Maximum stdout/stderr retained per sandbox command | `1000000` |
+| `KNOWFLOW_SANDBOX_MEMORY_MB` | Maximum virtual memory for one sandbox command | `1024` |
+| `KNOWFLOW_SANDBOX_MAX_PROCESSES` | Maximum processes for one sandbox command | `128` |
+| `KNOWFLOW_SANDBOX_MAX_FILE_BYTES` | Maximum file size created by one sandbox command | `104857600` |
 | `KNOWFLOW_SECRET_KEY` | Key used to encrypt stored model API keys | `change-this-dev-secret` |
 | `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` | Separate SQLite file for LangGraph execution checkpoints | `./data/langgraph/checkpoints.sqlite3` |
 | `KNOWFLOW_WEB_SEARCH_TIMEOUT` | Tavily request timeout in seconds | `15` |
@@ -261,18 +268,24 @@ A Skill cannot register or enable a tool or MCP connection. Existing tool config
 
 For deployment, each backup must include the application database, `data/skills`, `data/tool-results`, `data/workspaces`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database, workspace, tool-result, and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched data. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill, workspace, tool-result, and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages, workspace contents, stored tool results, or checkpoint data to Git.
 
-### Windows sandbox setup
+### Linux Agent运行环境
 
 Workspace file tools are disabled by default and each user receives a separate directory under `KNOWFLOW_WORKSPACE_DIR`. Shell execution has an additional hard gate: `run_sandbox_command` is registered only when both workspace and sandbox support are enabled and the `srt` executable is available. Commands always require approval, receive a scrubbed environment, cannot access the network, and may write only inside that user's workspace.
 
-Install Anthropic Sandbox Runtime and provision its dedicated Windows sandbox account once from an elevated prompt:
+Agent运行时仅支持Linux。Windows和macOS可以作为浏览器客户端访问部署后的KnowFlow，但不会在本机执行Agent命令。生产环境建议Ubuntu 24.04、非root服务用户、单worker和systemd状态目录。
 
-```powershell
+安装Anthropic Sandbox Runtime及其Linux依赖：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y bubblewrap util-linux
 npm install -g @anthropic-ai/sandbox-runtime
-npx @anthropic-ai/sandbox-runtime windows-install
+srt --version
 ```
 
-Then set `KNOWFLOW_WORKSPACE_ENABLED=1` and `KNOWFLOW_SANDBOX_ENABLED=1`. Windows support in Sandbox Runtime is currently alpha, so production deployments should keep the feature disabled until their host security policy has been tested.
+生产环境将`KNOWFLOW_DATA_DIR`设为`/var/lib/knowflow-ai`，并让systemd通过`StateDirectory=knowflow-ai`创建该目录。`KNOWFLOW_DB_URL`需明确改为`sqlite:////var/lib/knowflow-ai/knowflow.db`或外部数据库地址；若环境文件还显式配置了上传、Skill、工具结果、Workspace或checkpoint路径，这些值会覆盖数据根目录的派生默认值，也必须同步迁移或删除覆盖项。不要在部署脚本中以root身份预先运行应用或创建其子目录；应用启动时会以服务用户创建并检查运行路径。任一路径不可读写时启动直接失败，避免运行到一半才出现`PermissionError`。
+
+启用执行工具时设置`KNOWFLOW_WORKSPACE_ENABLED=1`和`KNOWFLOW_SANDBOX_ENABLED=1`。启用后，启动门禁还会要求当前主机为Linux，且`srt`与`bash`均可执行；不会静默退化为无沙箱命令。
 
 ### 长期记忆（Mem0）
 

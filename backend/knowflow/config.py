@@ -15,31 +15,24 @@ FRONTEND_BUILD_DIR = FRONTEND_DIR / "dist"
 FRONTEND_STATIC_DIR = FRONTEND_BUILD_DIR if FRONTEND_BUILD_DIR.exists() else FRONTEND_DIR
 FRONTEND_ASSETS_DIR = FRONTEND_STATIC_DIR / "assets" if FRONTEND_BUILD_DIR.exists() else FRONTEND_DIR
 FRONTEND_VENDOR_DIR = FRONTEND_STATIC_DIR / "vendor" if FRONTEND_BUILD_DIR.exists() else FRONTEND_DIR / "react" / "public" / "vendor"
-DATA_DIR = PROJECT_DIR / "data"
-
 load_dotenv(BACKEND_DIR / ".env")
 
-UPLOAD_DIR = Path(os.getenv("KNOWFLOW_UPLOAD_DIR", str(DATA_DIR / "uploads"))).expanduser()
-if not UPLOAD_DIR.is_absolute():
-    UPLOAD_DIR = (PROJECT_DIR / UPLOAD_DIR).resolve()
-TOOL_RESULT_DIR = Path(
-    os.getenv(
-        "KNOWFLOW_TOOL_RESULT_DIR",
-        str(DATA_DIR / "tool-results"),
-    )
-).expanduser()
-if not TOOL_RESULT_DIR.is_absolute():
-    TOOL_RESULT_DIR = (PROJECT_DIR / TOOL_RESULT_DIR).resolve()
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-TOOL_RESULT_DIR.mkdir(parents=True, exist_ok=True)
-WORKSPACE_DIR = Path(
-    os.getenv("KNOWFLOW_WORKSPACE_DIR", str(DATA_DIR / "workspaces"))
-).expanduser()
-if not WORKSPACE_DIR.is_absolute():
-    WORKSPACE_DIR = (PROJECT_DIR / WORKSPACE_DIR).resolve()
-WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+def runtime_path(name: str, default: Path) -> Path:
+    path = Path(os.getenv(name, str(default))).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_DIR / path
+    return path.resolve()
+
+
+DATA_DIR = runtime_path("KNOWFLOW_DATA_DIR", PROJECT_DIR / "data")
+
+UPLOAD_DIR = runtime_path("KNOWFLOW_UPLOAD_DIR", DATA_DIR / "uploads")
+TOOL_RESULT_DIR = runtime_path(
+    "KNOWFLOW_TOOL_RESULT_DIR",
+    DATA_DIR / "tool-results",
+)
+WORKSPACE_DIR = runtime_path("KNOWFLOW_WORKSPACE_DIR", DATA_DIR / "workspaces")
 
 
 def env_int(name: str, default: int) -> int:
@@ -80,10 +73,11 @@ def now_str() -> str:
 
 
 DB_URL = normalize_sqlite_db_url(os.getenv("KNOWFLOW_DB_URL", f"sqlite:///{(DATA_DIR / 'knowflow.db').as_posix()}"))
-SKILL_DIR = Path(os.getenv("KNOWFLOW_SKILL_DIR", str(DATA_DIR / "skills"))).expanduser()
-if not SKILL_DIR.is_absolute():
-    SKILL_DIR = (PROJECT_DIR / SKILL_DIR).resolve()
-SKILL_IMPORT_DIR = DATA_DIR / "skill-imports"
+SKILL_DIR = runtime_path("KNOWFLOW_SKILL_DIR", DATA_DIR / "skills")
+SKILL_IMPORT_DIR = runtime_path(
+    "KNOWFLOW_SKILL_IMPORT_DIR",
+    DATA_DIR / "skill-imports",
+)
 SKILL_MAX_ARCHIVE_BYTES = bounded_env_int(
     "KNOWFLOW_SKILL_MAX_ARCHIVE_BYTES",
     5 * 1024 * 1024,
@@ -117,8 +111,6 @@ SKILL_GITHUB_TIMEOUT = bounded_env_int(
     1,
     60,
 )
-SKILL_DIR.mkdir(parents=True, exist_ok=True)
-SKILL_IMPORT_DIR.mkdir(parents=True, exist_ok=True)
 VECTOR_BACKEND = os.getenv("KNOWFLOW_VECTOR_BACKEND", "local").lower()
 CHROMA_DIR = Path(os.getenv("KNOWFLOW_CHROMA_DIR", str(DATA_DIR / "chroma")))
 SECRET_KEY = os.getenv("KNOWFLOW_SECRET_KEY", "change-this-dev-secret")
@@ -182,7 +174,8 @@ WORKSPACE_MAX_FILE_BYTES = bounded_env_int(
 )
 SANDBOX_ENABLED = os.getenv("KNOWFLOW_SANDBOX_ENABLED", "0") == "1"
 SANDBOX_COMMAND = os.getenv("KNOWFLOW_SANDBOX_COMMAND", "srt")
-SANDBOX_SHELL = os.getenv("KNOWFLOW_SANDBOX_SHELL", "pwsh")
+SANDBOX_SHELL = os.getenv("KNOWFLOW_SANDBOX_SHELL", "bash")
+SANDBOX_LIMIT_COMMAND = os.getenv("KNOWFLOW_SANDBOX_LIMIT_COMMAND", "prlimit")
 SANDBOX_TIMEOUT = bounded_env_int(
     "KNOWFLOW_SANDBOX_TIMEOUT",
     60,
@@ -195,16 +188,22 @@ SANDBOX_MAX_OUTPUT_BYTES = bounded_env_int(
     1_024,
     10_000_000,
 )
-LANGGRAPH_CHECKPOINT_DB = Path(
-    os.getenv(
-        "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB",
-        str(DATA_DIR / "langgraph" / "checkpoints.sqlite3"),
-    )
-).expanduser()
-if not LANGGRAPH_CHECKPOINT_DB.is_absolute():
-    LANGGRAPH_CHECKPOINT_DB = (
-        PROJECT_DIR / LANGGRAPH_CHECKPOINT_DB
-    ).resolve()
+SANDBOX_MEMORY_MB = bounded_env_int(
+    "KNOWFLOW_SANDBOX_MEMORY_MB", 1024, 128, 8192
+)
+SANDBOX_MAX_PROCESSES = bounded_env_int(
+    "KNOWFLOW_SANDBOX_MAX_PROCESSES", 128, 16, 512
+)
+SANDBOX_MAX_FILE_BYTES = bounded_env_int(
+    "KNOWFLOW_SANDBOX_MAX_FILE_BYTES",
+    100 * 1024 * 1024,
+    1024 * 1024,
+    1024 * 1024 * 1024,
+)
+LANGGRAPH_CHECKPOINT_DB = runtime_path(
+    "KNOWFLOW_LANGGRAPH_CHECKPOINT_DB",
+    DATA_DIR / "langgraph" / "checkpoints.sqlite3",
+)
 WEB_SEARCH_TIMEOUT = max(1, env_int("KNOWFLOW_WEB_SEARCH_TIMEOUT", 15))
 WEB_SEARCH_MAX_RESULTS = max(
     1,

@@ -44,6 +44,15 @@ def main() -> None:
         assert workspace.list_entries("src")["entries"] == [
             {"path": "src/main.py", "kind": "file"}
         ]
+        uploaded = workspace.write_bytes(
+            "artifacts/result.bin",
+            b"\x00\x01result",
+            overwrite=False,
+        )
+        assert uploaded["writtenBytes"] == 8
+        assert workspace.file_path("artifacts/result.bin").read_bytes() == b"\x00\x01result"
+        workspace.delete_file("artifacts/result.bin")
+        assert not (workspace.root / "artifacts" / "result.bin").exists()
 
         expect_error(
             "workspace_path_invalid",
@@ -91,17 +100,29 @@ def main() -> None:
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
             assert settings["network"]["allowedDomains"] == []
             assert str(workspace.root) in settings["filesystem"]["allowWrite"]
+            assert "/proc" in settings["filesystem"]["denyRead"]
             return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
         runner = SrtSandboxRunner(
             workspace,
             command=sys.executable,
+            shell="bash",
+            platform="linux",
             run_factory=fake_run,
         )
-        result = runner.run("Get-ChildItem", timeout_seconds=10)
+        result = runner.run("ls -la", timeout_seconds=10)
         assert result.exit_code == 0 and result.stdout == "ok"
         assert captured["kwargs"]["cwd"] == workspace.root
         assert "KNOWFLOW_SECRET_KEY" not in captured["kwargs"]["env"]
+        assert captured["kwargs"]["env"]["HOME"] == str(workspace.root)
+        assert captured["kwargs"]["env"]["TMPDIR"].startswith(str(workspace.root))
+        assert "prlimit" in captured["argv"]
+        assert captured["argv"][-4:] == [
+            "--noprofile",
+            "--norc",
+            "-c",
+            "ls -la",
+        ]
 
         registry = ToolRegistry()
         names = register_workspace_tools(registry, workspace, sandbox=runner)
@@ -118,12 +139,20 @@ def main() -> None:
         timeout_runner = SrtSandboxRunner(
             workspace,
             command=sys.executable,
+            platform="linux",
             run_factory=lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 subprocess.TimeoutExpired("srt", 1, output="partial")
             ),
         )
         timeout = timeout_runner.run("slow", timeout_seconds=1)
         assert timeout.timed_out is True and timeout.exit_code == 124
+
+        unsupported = SrtSandboxRunner(
+            workspace,
+            command=sys.executable,
+            platform="win32",
+        )
+        assert unsupported.available() is False
 
     print("workspace tools enforce user isolation and sandbox-only shell execution")
 

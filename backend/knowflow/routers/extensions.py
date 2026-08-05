@@ -263,8 +263,12 @@ def build_tool_registry(
                 workspace,
                 command=SANDBOX_COMMAND,
                 shell=SANDBOX_SHELL,
+                limit_command=SANDBOX_LIMIT_COMMAND,
                 timeout_seconds=SANDBOX_TIMEOUT,
                 max_output_bytes=SANDBOX_MAX_OUTPUT_BYTES,
+                memory_mb=SANDBOX_MEMORY_MB,
+                max_processes=SANDBOX_MAX_PROCESSES,
+                max_file_bytes=SANDBOX_MAX_FILE_BYTES,
             )
             if SANDBOX_ENABLED
             else None

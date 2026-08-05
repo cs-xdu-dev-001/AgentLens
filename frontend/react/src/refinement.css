@@ -2108,6 +2108,96 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 }
 
+/* Isolated workbench browser */
+.workspace-browser {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 34px 36px 64px;
+}
+
+.workspace-browser-header,
+.workspace-browser-actions,
+.workspace-runtime-strip,
+.workspace-breadcrumb,
+.workspace-file-row,
+.workspace-file-open {
+  display: flex;
+  align-items: center;
+}
+
+.workspace-browser-header {
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-browser-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.workspace-browser-actions { gap: 8px; }
+.workspace-browser-actions button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  background: var(--panel-bg);
+}
+.workspace-browser-actions .primary { color: white; background: var(--text); }
+
+.workspace-runtime-strip {
+  gap: 10px;
+  padding: 18px 0 12px;
+}
+.workspace-runtime-strip span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--control-bg);
+  font-size: 13px;
+}
+.workspace-runtime-strip span.ready { color: var(--success); }
+
+.workspace-breadcrumb {
+  min-height: 44px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-breadcrumb button {
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+}
+.workspace-breadcrumb button + button::before { content: "/"; margin-right: 8px; color: var(--border-strong); }
+
+.workspace-file-list { padding-top: 10px; }
+.workspace-file-row {
+  min-height: 54px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-file-open {
+  flex: 1;
+  min-width: 0;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.workspace-file-open strong { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.workspace-file-open span:last-child { color: var(--muted); }
+.workspace-file-icon { width: 22px; color: var(--muted); text-align: center; }
+.workspace-file-delete { border: 0; color: var(--danger); background: transparent; }
+.workspace-empty { padding: 64px 12px; color: var(--muted); text-align: center; }
+
+@media (max-width: 720px) {
+  .workspace-browser { padding: 24px 18px 48px; }
+  .workspace-browser-header { align-items: flex-start; }
+  .workspace-runtime-strip { flex-wrap: wrap; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

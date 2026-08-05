@@ -48,6 +48,10 @@ from .services.langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
+from .services.runtime_preflight import (
+    require_linux_sandbox,
+    require_runtime_paths,
+)
 from .services.skill_archive import SkillArchiveLimits
 from .services.skill_store import SkillStore
 from .services.memory import (
@@ -469,9 +473,7 @@ skills = SkillStore(
     is_mysql=db.is_mysql,
     clock=datetime.now,
     skill_dir=SKILL_DIR,
-    import_dir=Path(
-        os.getenv("KNOWFLOW_SKILL_IMPORT_DIR", str(SKILL_IMPORT_DIR))
-    ).expanduser(),
+    import_dir=SKILL_IMPORT_DIR,
     builtin_dir=PACKAGE_DIR / "builtin_skills",
     archive_limits=SkillArchiveLimits(
         max_archive_bytes=SKILL_MAX_ARCHIVE_BYTES,

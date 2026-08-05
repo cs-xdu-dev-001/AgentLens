@@ -355,6 +355,7 @@ async def upload_document(knowledge_base_id: int, background_tasks: BackgroundTa
             "Document already exists.",
         )
     storage_path = UPLOAD_DIR / f"{knowledge_base_id}_{file_md5}_{filename}"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     storage_path.write_bytes(data)
     document_id = execute(
         """

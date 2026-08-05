@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Any, Callable
 
@@ -136,7 +137,7 @@ class WorkspaceRuntime:
     def _is_sensitive(parts: tuple[str, ...]) -> bool:
         lowered = [part.lower() for part in parts]
         return any(
-            part in {".git", ".ssh", "id_rsa", "id_ed25519"}
+            part in {".git", ".ssh", ".tmp", "id_rsa", "id_ed25519"}
             or part == ".env"
             or part.startswith(".env.")
             for part in lowered
@@ -240,6 +241,57 @@ class WorkspaceRuntime:
             "eof": end >= len(content),
         }
 
+    def file_path(self, path: str) -> Path:
+        target = self._resolve(path, write=False)
+        if not target.is_file():
+            raise WorkspaceRuntimeError(
+                "workspace_file_missing",
+                "Workspace file was not found.",
+            )
+        return target
+
+    def write_bytes(
+        self,
+        path: str,
+        content: bytes,
+        *,
+        overwrite: bool,
+    ) -> dict[str, Any]:
+        payload = bytes(content)
+        if len(payload) > self.max_file_bytes:
+            raise WorkspaceRuntimeError(
+                "workspace_file_too_large",
+                "Workspace file exceeds the configured size limit.",
+            )
+        target = self._resolve(path, write=True)
+        if target.exists() and not overwrite:
+            raise WorkspaceRuntimeError(
+                "workspace_file_exists",
+                "Workspace file already exists; explicitly allow overwrite.",
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self._restrict_directory(target.parent)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".knowflow-upload-",
+            dir=target.parent,
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._restrict_file(temporary)
+            temporary.replace(target)
+            self._restrict_file(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {"path": path, "writtenBytes": len(payload)}
+
+    def delete_file(self, path: str) -> None:
+        target = self.file_path(path)
+        target.unlink()
+
     def write_text(
         self,
         path: str,
@@ -289,48 +341,71 @@ class SrtSandboxRunner:
         workspace: WorkspaceRuntime,
         *,
         command: str = "srt",
-        shell: str = "pwsh",
+        shell: str = "bash",
+        limit_command: str = "prlimit",
         timeout_seconds: int = 60,
         max_output_bytes: int = 1_000_000,
+        memory_mb: int = 1024,
+        max_processes: int = 128,
+        max_file_bytes: int = 100 * 1024 * 1024,
+        platform: str = sys.platform,
         run_factory: Callable[..., Any] = subprocess.run,
     ) -> None:
         self.workspace = workspace
         self.command = str(command or "srt")
-        self.shell = str(shell or "pwsh")
+        self.shell = str(shell or "bash")
+        self.limit_command = str(limit_command or "prlimit")
         self.timeout_seconds = max(1, int(timeout_seconds))
         self.max_output_bytes = max(1_024, int(max_output_bytes))
+        self.memory_bytes = max(128, int(memory_mb)) * 1024 * 1024
+        self.max_processes = max(16, int(max_processes))
+        self.max_file_bytes = max(1024 * 1024, int(max_file_bytes))
+        self.platform = str(platform)
         self._run_factory = run_factory
 
     def available(self) -> bool:
-        return bool(shutil.which(self.command) or Path(self.command).is_file())
+        return self.platform.startswith("linux") and bool(
+            shutil.which(self.command) or Path(self.command).is_file()
+        )
 
-    @staticmethod
-    def _safe_environment() -> dict[str, str]:
+    def _safe_environment(self) -> dict[str, str]:
         allowed = {
             "PATH",
-            "PATHEXT",
-            "SYSTEMROOT",
-            "WINDIR",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
             "TEMP",
             "TMP",
-            "USERPROFILE",
-            "LOCALAPPDATA",
+            "TMPDIR",
         }
-        return {
+        environment = {
             key: value
             for key, value in os.environ.items()
             if key.upper() in allowed
         }
+        temporary = self.workspace.root / ".tmp"
+        temporary.mkdir(parents=True, exist_ok=True)
+        self.workspace._restrict_directory(temporary)
+        environment["HOME"] = str(self.workspace.root)
+        environment["TMPDIR"] = str(temporary)
+        environment["TMP"] = str(temporary)
+        environment["TEMP"] = str(temporary)
+        return environment
 
     def run(self, command: str, *, timeout_seconds: int) -> SandboxCommandResult:
         if not self.available():
             raise WorkspaceRuntimeError(
                 "sandbox_runtime_unavailable",
-                "Anthropic Sandbox Runtime is not installed.",
+                "Linux Anthropic Sandbox Runtime is not available.",
             )
         settings = {
             "filesystem": {
-                "denyRead": [str(Path.home())],
+                "denyRead": [
+                    str(Path.home()),
+                    str(Path.cwd()),
+                    "/etc/knowflow-ai",
+                    "/proc",
+                ],
                 "allowRead": [str(self.workspace.root)],
                 "allowWrite": [str(self.workspace.root)],
                 "denyWrite": [
@@ -359,11 +434,16 @@ class SrtSandboxRunner:
                     self.command,
                     "--settings",
                     settings_path,
+                    self.limit_command,
+                    f"--cpu={timeout}",
+                    f"--as={self.memory_bytes}",
+                    f"--nproc={self.max_processes}",
+                    f"--fsize={self.max_file_bytes}",
+                    "--",
                     self.shell,
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
+                    "--noprofile",
+                    "--norc",
+                    "-c",
                     str(command),
                 ],
                 cwd=self.workspace.root,
@@ -457,7 +537,7 @@ def register_workspace_tools(
         registry.register(
             name="run_sandbox_command",
             description=(
-                "Run a PowerShell command inside Anthropic Sandbox Runtime "
+                "Run a Bash command inside Anthropic Sandbox Runtime on Linux "
                 "with workspace-only writes and no network access."
             ),
             arguments_model=RunSandboxCommandArguments,
@@ -471,7 +551,7 @@ def register_workspace_tools(
             interrupt_behavior="block",
             engine_names={"langgraph"},
             trace_kind="sandbox",
-            search_hint="run tests builds and PowerShell commands safely",
+            search_hint="run tests builds and Bash commands safely",
         )
         registered.append("run_sandbox_command")
     return tuple(registered)
