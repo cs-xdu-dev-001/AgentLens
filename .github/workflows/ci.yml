@@ -30,12 +30,32 @@ jobs:
       - name: Install backend dependencies
         shell: pwsh
         run: |
+          python -m pip install build
           python -m pip install -r backend/requirements.txt
           python -m pip install --no-deps -e backend
 
       - name: Check CLI entry point
         shell: pwsh
         run: knowflow --help
+
+      - name: Build and smoke-test CLI package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m build backend
+          cli_venv="${RUNNER_TEMP}/knowflow-cli-smoke"
+          python -m venv "${cli_venv}"
+          "${cli_venv}/bin/python" -m pip install --disable-pip-version-check backend/dist/*.whl
+          "${cli_venv}/bin/knowflow" --help >/dev/null
+          test "$("${cli_venv}/bin/knowflow" --version)" = "0.4.0"
+          "${cli_venv}/bin/python" - <<'PY'
+          import sys
+          import knowflow.cli
+
+          heavy = {"fastapi", "langgraph", "mem0", "chromadb"}
+          imported = heavy.intersection(sys.modules)
+          assert not imported, f"remote CLI imported local runtime dependencies: {sorted(imported)}"
+          PY
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -64,7 +84,9 @@ jobs:
 
       - name: Validate fast deployment script
         shell: bash
-        run: bash -n deploy/fast-deploy.sh
+        run: |
+          bash -n deploy/fast-deploy.sh
+          sh -n install.sh
 
       - name: Build Linux deployment bundle
         if: github.event_name == 'push'

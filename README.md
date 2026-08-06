@@ -295,6 +295,47 @@ sudo bash /tmp/knowflow-fast-deploy.sh <目标commit>
 
 KnowFlow提供与Web端共用同一套LangGraph、工具、MCP、Skill、记忆、审批和checkpoint的Linux CLI。CLI不会启动另一套Agent loop，也不会解析网页接口的人类文本。在项目后端目录运行：
 
+普通Linux用户推荐安装轻量远程CLI，不需要克隆仓库，也不会安装Mem0、ChromaDB或服务端运行时：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
+knowflow auth login https://ai.example.com
+knowflow chat
+```
+
+需要先审阅安装器时，下载后再执行：
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh
+less install.sh
+sh install.sh
+rm install.sh
+```
+
+已有`pipx`时可直接安装GitHub当前版本：
+
+```bash
+pipx install "git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+```
+
+首个PyPI版本发布后，正式安装、升级和卸载命令为：
+
+```bash
+pipx install knowflow-ai
+pipx upgrade knowflow-ai
+pipx uninstall knowflow-ai
+```
+
+一键安装器只使用用户目录，不执行`sudo`，会在缺少`pipx`时创建独立引导环境。默认从GitHub安装；可用`KNOWFLOW_CLI_SPEC`指定经过审核的版本或wheel。安装器当前仅支持Python 3.10及以上的Linux。
+
+只有需要在独立虚拟机上直接打开本地数据库和运行时存储时，才安装完整依赖：
+
+```bash
+pipx install "knowflow-ai[local]"
+```
+
+服务端部署目录内已有完整依赖，仍可直接运行：
+
 ```bash
 cd /opt/knowflow-ai/app/backend
 /opt/knowflow-ai/venv/bin/knowflow doctor --prepare
@@ -319,6 +360,8 @@ knowflow auth logout
 浏览器配对支持本地账号和GitHub OAuth账号。需要密码备用模式时使用`knowflow auth login https://ai.example.com --account your-name`，密码只用于本次登录且不会保存；不要把浏览器Cookie或GitHub Token复制到终端。
 
 本地直连模式适合停服维护或独立虚拟机。只有一个用户时自动选择；存在多个用户时传入`--user-id`或配置`KNOWFLOW_CLI_USER_ID`。它会直接打开与Web服务相同的数据库、LangGraph checkpoint和Mem0存储，不能与`knowflow-ai.service`并发执行Agent任务。该模式以Linux系统账户作为安全边界，`--user-id`只选择已有用户命名空间，不是身份认证机制。
+
+维护者发布CLI时先在PyPI项目`knowflow-ai`中配置GitHub Actions Trusted Publishing，并绑定仓库环境`pypi`。随后将`backend/pyproject.toml`版本更新为目标版本，推送同名标签（例如`v0.4.0`）；发布工作流会校验标签、构建wheel和sdist、隔离安装自检、创建GitHub Release并通过OIDC发布到PyPI，全程不使用长期PyPI Token。
 
 `run --events`输出逐行JSON事件，适合脚本、CI或后续客户端消费；默认输出使用Rich渲染。`--no-tools`禁用本轮工具，`--model-id`和`--skill-id`选择已有用户配置。风险工具仍会在终端要求一次性确认，`--yes`仅适合受控自动化环境。
 

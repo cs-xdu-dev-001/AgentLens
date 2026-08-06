@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .agent_application import AgentExecution
+from .agent_execution import AgentExecution
 
 
 SESSION_COOKIE = "knowflow_session"

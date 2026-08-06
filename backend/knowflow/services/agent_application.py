@@ -1,29 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from threading import Event
 from typing import Any, Callable
 
-
-AgentEventSink = Callable[[dict[str, Any]], None]
-
-
-@dataclass
-class AgentExecution:
-    result: dict[str, Any]
-    events: list[dict[str, Any]] = field(default_factory=list)
-
-    @property
-    def paused(self) -> bool:
-        return bool(self.result.get("paused"))
-
-    @property
-    def approval_id(self) -> str | None:
-        for event in reversed(self.events):
-            if event.get("type") == "approval_required":
-                value = str(event.get("approvalId") or "").strip()
-                return value or None
-        return None
+from .agent_execution import AgentEventSink, AgentExecution
 
 
 class AgentApplicationService:

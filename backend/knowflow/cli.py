@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
 import platform
 import shutil
 import time
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 import webbrowser
 
 from prompt_toolkit import PromptSession
@@ -17,18 +18,16 @@ from rich.markdown import Markdown
 from rich.table import Table
 import typer
 
-from .services.agent_application import (
-    AgentApplicationService,
-    AgentExecution,
-)
-from .services.agent_failure import classify_agent_failure
-from .services.runtime_preflight import inspect_runtime_paths
+from .services.agent_execution import AgentExecution
 from .services.remote_agent import (
     RemoteAgentClient,
     RemoteAgentError,
     RemoteProfileStore,
     normalize_server_url,
 )
+
+if TYPE_CHECKING:
+    from .services.agent_application import AgentApplicationService
 
 
 app = typer.Typer(
@@ -52,6 +51,30 @@ app.add_typer(models_app, name="models")
 console = Console()
 error_console = Console(stderr=True)
 profile_store = RemoteProfileStore()
+
+
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    try:
+        package_version = version("knowflow-ai")
+    except PackageNotFoundError:
+        package_version = "development"
+    typer.echo(package_version)
+    raise typer.Exit()
+
+
+@app.callback()
+def root_options(
+    show_version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed KnowFlow CLI version.",
+    ),
+) -> None:
+    """KnowFlow AI Linux Agent CLI."""
 
 
 def _remote_client(
@@ -122,6 +145,7 @@ def _runtime():
 
 
 def _application() -> AgentApplicationService:
+    from .services.agent_application import AgentApplicationService
     from .routers.extensions import (
         execute_agent_chat,
         execute_persisted_agent_run,
@@ -143,6 +167,8 @@ def _emit_json(payload: dict[str, Any]) -> None:
 def _failure_payload(exc: Exception) -> dict[str, str]:
     if isinstance(exc, RemoteAgentError):
         return {"error": exc.code, "message": str(exc)}
+    from .services.agent_failure import classify_agent_failure
+
     failure = classify_agent_failure(exc)
     return {
         "error": str(failure["code"]),
@@ -402,6 +428,8 @@ def doctor(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Check whether the local Linux Agent runtime is ready."""
+    from .services.runtime_preflight import inspect_runtime_paths
+
     runtime = _runtime()
     config = runtime
     directories = [
