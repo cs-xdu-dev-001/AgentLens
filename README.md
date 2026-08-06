@@ -1,373 +1,65 @@
+<div align="center">
+
 # KnowFlow AI
 
-KnowFlow AI is a local-first knowledge base assistant for document ingestion, retrieval-augmented generation, model configuration, and chat history management.
+**可自行部署、过程可见的AI Agent与知识库**
 
-The project is built with a FastAPI backend and a React + Vite frontend. It is designed for personal knowledge workflows: upload documents, organize them into knowledge bases, retrieve relevant passages, and ask questions with visible citation evidence.
+把对话、RAG、工具、MCP、Skills、长期记忆和任务执行放在同一个界面中。
 
-## Features
+<p>
+  <a href="./README.md"><img alt="简体中文" src="https://img.shields.io/badge/简体中文-111111?style=flat-square"></a>
+  <a href="./README_EN.md"><img alt="English" src="https://img.shields.io/badge/English-E5E7EB?style=flat-square"></a>
+</p>
 
-- Local account authentication with HttpOnly cookie sessions.
-- Optional GitHub OAuth login.
-- Model configuration for chat and embedding providers.
-- OpenAI-compatible chat and embedding gateway.
-- Knowledge base management with per-user data isolation.
-- Document upload, deduplication, parsing, chunking, and ingestion status tracking.
-- Support for common document formats including `txt`, `md`, `pdf`, `docx`, `xlsx`, `pptx`, `html`, `json`, `csv`, `tsv`, `rtf`, `yaml`, `xml`, and `log`.
-- RAG debugging with retrieved chunks, scores, matched terms, and retrieval quality metadata.
-- Retrieval run tracking through the `retrieval_run` table and detail API.
-- Chat interface with references, evidence drawer, and session history.
-- Native model-controlled `web_search` with a per-user Tavily key.
-- Live, replayable Agent execution traces with sanitized public inputs and results.
-- FastAPI Swagger UI, ReDoc, and OpenAPI JSON documentation.
+<p>
+  <a href="#选择你的使用方式">快速开始</a> ·
+  <a href="#linux-cli">Linux CLI</a> ·
+  <a href="#linux部署">部署</a> ·
+  <a href="#进一步阅读">文档</a>
+</p>
 
-## Tech Stack
+<p>
+  <a href="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square"></a>
+</p>
 
-- Backend: FastAPI, SQLAlchemy, Pydantic
-- Frontend: React, Vite
-- Database: SQLite by default, MySQL supported
-- Vector backend: local retrieval by default, Chroma supported
-- Document parsing: pypdf, python-docx, openpyxl, python-pptx, BeautifulSoup
+</div>
 
-## Project Structure
+> 当前版本适合个人使用、学习Agent工程和在受控环境中测试。Agent运行时与CLI优先支持Linux；Windows可用于本地开发和浏览器访问。
 
-```text
-KnowFlow AI/
-  backend/
-    main.py
-    knowflow/
-      app.py              FastAPI app, auth middleware, static hosting
-      config.py           environment variables and runtime paths
-      database.py         database wrapper and schema initialization
-      db_schema.py        SQLite / MySQL DDL
-      responses.py        API response helpers
-      runtime.py          RAG, document ingestion, model gateway wiring
-      schemas.py          Pydantic request models
-      routers/            API routers
-      services/           document parsing, model gateway, vector store
-    requirements.txt
-    .env.example
-  frontend/
-    package.json
-    vite.config.js
-    react/
-      index.html
-      src/
-        App.jsx
-        main.jsx
-        components/
-        controller/
-        styles.css
-    styles.css            canonical stylesheet, synced into React source
-  docs/
-    api-debug.md
-    schema.sql
-  tests/
-    check_*.py
-```
+## 核心能力
 
-## Requirements
+- **可观察的Agent执行**：基于LangGraph运行，展示模型、工具、MCP、记忆和审批步骤，支持持久化checkpoint与失败恢复。
+- **带引用的知识库问答**：上传常见办公文档，查看命中文本、相关度和引用来源。
+- **模型与协议可切换**：支持OpenAI兼容端点，可为模型选择Chat Completions或Responses API。
+- **工具、MCP与Skills**：模型可自主联网搜索、调用已授权的MCP服务，并按任务启用Skill。
+- **用户隔离**：知识库、模型配置、工具密钥、MCP连接、Skills和长期记忆均按用户隔离。
+- **Web与Linux CLI**：浏览器和终端共用同一套Agent、审批、记忆与运行记录。
 
-- Python 3.10+
-- Node.js 18+
-- npm
+## 选择你的使用方式
 
-SQLite works out of the box. MySQL and Chroma are optional.
-
-## Quick Start
-
-Clone the repository and enter the project directory:
-
-```powershell
-git clone <your-repo-url>
-cd "KnowFlow AI"
-```
-
-Create the backend environment:
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install --no-deps -e .
-copy .env.example .env
-```
-
-Install frontend dependencies once:
-
-```powershell
-cd ..\frontend
-npm install
-```
-
-On Windows, start both development servers from the repository root:
-
-```cmd
-cd /d "C:\path\to\KnowFlow AI"
-start-dev.cmd
-```
-
-The helper opens two terminal windows and uses these defaults:
-
-```text
-Backend:  http://127.0.0.1:8010
-Frontend: http://127.0.0.1:5173
-```
-
-Check the resolved paths and commands without starting the servers:
-
-```cmd
-start-dev.cmd --check
-```
-
-Open `http://127.0.0.1:5173/`. The helper uses Vite `--strictPort` so OAuth return URLs stay predictable. If `5173` is busy, close the old frontend terminal or set `KNOWFLOW_FRONTEND_PORT` before running `start-dev.cmd`.
-
-Manual startup is also supported. Start the backend first:
-
-```powershell
-cd backend
-$env:KNOWFLOW_BASE_URL="http://127.0.0.1:8010"
-$env:KNOWFLOW_OAUTH_RETURN_ORIGINS="http://127.0.0.1:5173"
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8010
-```
-
-Then start the frontend in another terminal with the matching backend URL:
-
-```powershell
-cd frontend
-$env:VITE_BACKEND_URL="http://127.0.0.1:8010"
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-```
-
-In `cmd.exe`, use:
-
-```cmd
-cd /d "C:\path\to\KnowFlow AI\backend"
-set KNOWFLOW_BASE_URL=http://127.0.0.1:8010
-set KNOWFLOW_OAUTH_RETURN_ORIGINS=http://127.0.0.1:5173
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8010
-```
-
-Then in another `cmd.exe` terminal:
-
-```cmd
-cd /d "C:\path\to\KnowFlow AI\frontend"
-set VITE_BACKEND_URL=http://127.0.0.1:8010
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-```
-
-The Vite dev server proxies `/api`, `/docs`, `/redoc`, and `/openapi.json` to the backend configured by `VITE_BACKEND_URL`.
-
-If Windows reports `WinError 10013` on port `8000`, use port `8010` as shown above. If login shows `Backend unavailable. Please start the API server.`, keep the backend terminal open and make sure `VITE_BACKEND_URL` points to the same port.
-
-## Production Build
-
-Build the React frontend:
-
-```powershell
-cd frontend
-npm run build
-```
-
-The build output is written to `frontend/dist`. When `frontend/dist` exists, the FastAPI backend serves it from `/`. If `dist` is missing, the backend serves a small fallback page that tells you to build the frontend first.
-
-## Configuration
-
-Copy `backend/.env.example` to `backend/.env` and update values as needed.
-
-| Variable | Description | Default |
+| 目标 | 推荐入口 | 需要什么 |
 | --- | --- | --- |
-| `KNOWFLOW_DATA_DIR` | Root directory for mutable runtime state | `./data` |
-| `KNOWFLOW_DB_URL` | SQLAlchemy database URL | `sqlite:///./data/knowflow.db` |
-| `KNOWFLOW_UPLOAD_DIR` | Uploaded document storage directory | `./data/uploads` |
-| `KNOWFLOW_SKILL_DIR` | Installed Skill storage directory | `./data/skills` |
-| `KNOWFLOW_SKILL_IMPORT_DIR` | Temporary Skill import directory | `./data/skill-imports` |
-| `KNOWFLOW_TOOL_RESULT_DIR` | Per-user, per-run storage for oversized tool results | `./data/tool-results` |
-| `KNOWFLOW_TOOL_RESULT_CONTEXT_CHARS` | Maximum tool-result characters sent directly back to the model | `12000` |
-| `KNOWFLOW_TOOL_RESULT_STORAGE_CHARS` | Maximum characters retained for one oversized tool result | `2000000` |
-| `KNOWFLOW_TOOL_RESULT_RETENTION_SECONDS` | Retention period for per-run oversized tool results | `604800` |
-| `KNOWFLOW_AGENT_MAX_TOOL_CONCURRENCY` | Maximum concurrent explicitly safe read-only tool calls | `4` |
-| `KNOWFLOW_AGENT_TOOL_SEARCH_THRESHOLD` | Deferred MCP tool count that enables contextual ToolSearch | `8` |
-| `KNOWFLOW_AGENT_CONTEXT_MAX_TOKENS` | Approximate per-model-call context budget; durable checkpoint history is retained | `96000` |
-| `KNOWFLOW_WORKSPACE_ENABLED` | Expose per-user isolated workspace file tools | `0` |
-| `KNOWFLOW_WORKSPACE_DIR` | Parent directory for isolated user workspaces | `./data/workspaces` |
-| `KNOWFLOW_WORKSPACE_MAX_FILE_BYTES` | Maximum UTF-8 file size accepted by workspace tools | `1000000` |
-| `KNOWFLOW_SANDBOX_ENABLED` | Expose shell execution only through Anthropic Sandbox Runtime | `0` |
-| `KNOWFLOW_SANDBOX_COMMAND` | Sandbox Runtime CLI executable | `srt` |
-| `KNOWFLOW_SANDBOX_SHELL` | Non-interactive Linux shell launched inside the sandbox | `bash` |
-| `KNOWFLOW_SANDBOX_LIMIT_COMMAND` | Linux util-linux resource limiter | `prlimit` |
-| `KNOWFLOW_SANDBOX_TIMEOUT` | Maximum sandbox command runtime in seconds | `60` |
-| `KNOWFLOW_SANDBOX_MAX_OUTPUT_BYTES` | Maximum stdout/stderr retained per sandbox command | `1000000` |
-| `KNOWFLOW_SANDBOX_MEMORY_MB` | Maximum virtual memory for one sandbox command | `1024` |
-| `KNOWFLOW_SANDBOX_MAX_PROCESSES` | Maximum processes for one sandbox command | `128` |
-| `KNOWFLOW_SANDBOX_MAX_FILE_BYTES` | Maximum file size created by one sandbox command | `104857600` |
-| `KNOWFLOW_SECRET_KEY` | Key used to encrypt stored model API keys | `change-this-dev-secret` |
-| `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` | Separate SQLite file for LangGraph execution checkpoints | `./data/langgraph/checkpoints.sqlite3` |
-| `KNOWFLOW_WEB_SEARCH_TIMEOUT` | Tavily request timeout in seconds | `15` |
-| `KNOWFLOW_WEB_SEARCH_MAX_RESULTS` | Maximum normalized results returned to the model | `5` |
-| `KNOWFLOW_BASE_URL` | Public backend URL, used by OAuth callbacks | `http://127.0.0.1:8010` |
-| `KNOWFLOW_OAUTH_RETURN_ORIGINS` | Exact frontend origins allowed after OAuth login | `http://127.0.0.1:5173,http://localhost:5173` |
-| `KNOWFLOW_MCP_CONNECT_TIMEOUT` | MCP connection timeout in seconds | `10` |
-| `KNOWFLOW_MCP_REQUEST_TIMEOUT` | MCP request timeout in seconds | `30` |
-| `KNOWFLOW_MCP_APPROVAL_TIMEOUT` | Time allowed for one risky tool approval | `300` |
-| `KNOWFLOW_MCP_MAX_RESPONSE_BYTES` | Maximum MCP response size | `1048576` |
-| `KNOWFLOW_MCP_MAX_EXPOSED_TOOLS` | Maximum MCP tools exposed to one Agent run | `32` |
-| `KNOWFLOW_MCP_ALLOW_PRIVATE_NETWORKS` | Allow private-network MCP endpoints only for controlled development | `0` |
-| `KNOWFLOW_VECTOR_BACKEND` | `local` or `chroma` | `local` |
-| `KNOWFLOW_CHROMA_DIR` | Chroma persistence directory | `./data/chroma` |
-| `KNOWFLOW_GITHUB_CLIENT_ID` | GitHub OAuth client ID | empty |
-| `KNOWFLOW_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
-| `KNOWFLOW_COOKIE_SECURE` | Set to `1` when serving over HTTPS | `0` |
-| `KNOWFLOW_ADOPT_LEGACY_DATA` | Set to `1` only to let the first signed-in user adopt legacy rows with `NULL` `user_id` | `0` |
-| `KNOWFLOW_CLI_USER_ID` | Local Linux CLI user ID; required only when multiple users exist | empty |
-| `KNOWFLOW_CLI_SERVER` | Remote CLI server; HTTPS required except localhost | empty |
-| `KNOWFLOW_CLI_BROWSER_AUTH_ENABLED` | Enable one-time browser pairing for remote CLI login | `1` |
-| `KNOWFLOW_TOP_K` | Default retrieval result count | `5` |
-| `KNOWFLOW_RAG_SCORE_THRESHOLD` | Retrieval quality threshold | `0.25` |
+| 使用已经部署的KnowFlow | [Linux CLI](#linux-cli)或浏览器 | Linux、Python 3.10+或现代浏览器 |
+| 在Windows上修改和调试项目 | [本地开发](#windows本地开发) | Python 3.10+、Node.js 18+、npm |
+| 部署自己的服务 | [Linux部署](#linux部署) | Ubuntu 24.04、域名与HTTPS |
 
-Do not commit `backend/.env`. The repository `.gitignore` excludes local environment files, runtime databases, uploads, logs, browser test profiles, and build output.
+## Linux CLI
 
-Each chat model configuration can select either Chat Completions or the Responses API. Chat Completions is intended for traditional OpenAI-compatible endpoints. Responses sends `stream: true` to `POST /v1/responses`, expects standard SSE events, and requires a final `response.completed` event. Text deltas are forwarded to the browser as they arrive; tool arguments are aggregated before execution. KnowFlow does not auto-detect protocol support or downgrade after a failure, preventing duplicate requests or tool execution. If a compatible gateway returns HTTP 400, check that the selected model route supports Responses SSE rather than only Chat Completions. The OpenAI chat preset defaults to Responses, while existing configurations and configurations with the protocol field omitted default to Chat Completions. Mem0's separate LLM configuration is independent of the protocol selection in the settings page.
-
-## Agent Tools and Traces
-
-Each signed-in user configures their own Tavily key in the 设置页. The backend encrypts it in `tool_config`, never returns the plaintext key, and does not load a global Tavily key from the environment or startup script. The connection check uses one Tavily credit.
-
-`web_search` is a native OpenAI-compatible function tool. KnowFlow sends its schema through `tools` only when the current user has enabled a valid configuration, then uses `tool_choice: auto` so the model decides whether the question needs current or external information. Ordinary questions are not forced to search. Tavily is the first search provider and is called through its HTTP API, without a provider SDK.
-
-Agent progress is emitted as sanitized SSE events. The chat message shows the current step, while the right-side Agent运行图 displays the full nested `model`, `tool`, `mcp`, `skill`, `agent`, `system`, and `approval` protocol. It exposes only bounded public input and result summaries, never hidden chain-of-thought, system prompts, credentials, or raw request logs.
-
-The completed Trace snapshot is stored with the assistant message. Reopening a session restores the same execution view, including completed and failed states.
-
-Longer Agent tasks also persist a public plan and step state in the database. The model may answer simple requests directly; when it creates a plan, the current step lights in the run drawer and tool or MCP traces stay nested under that step. Prefix a request with `/plan` to create the plan without executing it, then choose 开始执行 or 重新规划.
-
-Execution and live SSE subscriptions are process-local, while run, plan, trace, approval, and message state are durable. Refreshing the page reconnects to an active run in the same backend process. A backend restart marks in-progress model or tool work as 已中断, but preserves a LangGraph run that is safely paused at an approval checkpoint. A backend approval runner expires overdue approvals and resumes the current checkpoint with its durable decision, including after a restart or when the browser is closed; a timeout never calls the write handler. The UI uses the same server-issued expiry time for immediate feedback. Cancelling a run also invalidates its pending approvals. Keep this deployment on one backend worker until the run coordinator moves to shared infrastructure.
-
-The backend routes every Agent request through LangGraph. The former handwritten `current` engine and its process-local approval broker have been removed. Historical `current` runs are never resumed because doing so could repeat an unrecorded side effect; users restart them as a new LangGraph run instead. LangGraph runs RAG retrieval, memory recall, the model/tool loop, Skills, and task planning with durable checkpoints while preserving the selected Chat Completions or Responses API transport, streaming events, audits, and run records. A Skill activation is saved as an immutable version snapshot; checkpoint resume revalidates ownership, dependencies, version, and content hash before restoring resource access. Read-only calls run directly, while write, destructive, or unknown-risk calls use LangGraph `interrupt()` and a durable user/run/tool-call approval record. Each approved write is atomically claimed and its result is persisted; an indeterminate remote side effect is never automatically repeated. Tool schemas and execution use the same dynamic engine allow-list. Checkpoints are keyed by user and run ID in the separate SQLite file. RAG and Mem0 snapshots are reused across approval resumes and later plan steps; either context source can fail closed to an empty snapshot without failing the answer. Post-answer memory extraction remains in the existing durable background queue so it never delays the response.
-
-### Skills
-
-A Skill is a reusable instruction package centered on `SKILL.md`. Its minimum YAML front matter contains `name` and `description`; optional `metadata.knowflow` fields describe the UI label, version, and dependencies without storing credentials:
-
-```yaml
----
-name: research-brief
-description: Prepare a cited research brief from available sources.
-metadata:
-  knowflow:
-    display_name: Research Brief
-    version: "1.0.0"
-    required_tools:
-      - web_search
-    required_mcp:
-      - notion
----
-```
-
-GitHub and ZIP imports use two stages: preview the package and validation result, then explicitly install it. GitHub sources must use HTTPS on `github.com`. Import limits cover archive and extracted bytes, file count, per-file size, path depth, `SKILL.md` body length, preview TTL, and GitHub timeout. `KNOWFLOW_SKILL_DIR` selects the persistent package root; the `KNOWFLOW_SKILL_MAX_*`, `KNOWFLOW_SKILL_IMPORT_TTL`, and `KNOWFLOW_SKILL_GITHUB_TIMEOUT` limits and safe defaults are documented in `backend/.env.example`.
-
-Skill packages are isolated per-user. Each signed-in user gets builtin Skills disabled by default and cannot see another user's personal installations. One Agent run uses at most one Skill. Enter `/` in the chat input to select one explicitly; without an explicit selection, the model may auto-activate one available, enabled Skill.
-
-A Skill cannot register or enable a tool or MCP connection. Existing tool configuration, MCP connections, and write approval remain authoritative; instructions inside a Skill to skip approval have no effect. Package `scripts/` files are stored for inspection only; the current version不会执行这些脚本. Files under `references/` become available only after activation as bounded, read-only UTF-8 text.
-
-For deployment, each backup must include the application database, `data/skills`, `data/tool-results`, `data/workspaces`, and the file configured by `KNOWFLOW_LANGGRAPH_CHECKPOINT_DB` together. Take the database, workspace, tool-result, and LangGraph checkpoint copies from the same stopped-service snapshot so interrupted runs never point at missing or mismatched data. `data/skill-imports` contains temporary previews and may be cleared. The service user needs write permission on the Skill, workspace, tool-result, and checkpoint directories; deployments with multiple workers must share the same persistent volume. Before an upgrade, run the repository checks and frontend build. Never commit user-installed packages, workspace contents, stored tool results, or checkpoint data to Git.
-
-Pushes to`main`先在Ubuntu CI中安装依赖、构建前端并运行全部检查。通过后，CI生成按commit命名的Linux部署包、SHA-256校验文件和内容清单，保留14天；部署包只包含后端源码、已构建前端、部署脚本和README，不包含`.env`、运行数据或依赖缓存。
-
-服务器可使用CI门禁后的快速同步脚本，避免重复运行全量检查。脚本拒绝脏工作树和不属于`origin/main`的提交，确认目标commit的push CI成功后才切换代码；仅当依赖文件哈希变化时执行`pip install`或`npm ci`，仅当前端源码变化时重新构建，最后只重启一次并检查本地健康端点：
-
-```bash
-sudo bash /opt/knowflow-ai/app/deploy/fast-deploy.sh <目标commit>
-```
-
-首次使用新脚本时，可从目标commit读取到临时文件再执行，避免先手工切换代码：
-
-```bash
-cd /opt/knowflow-ai/app
-git fetch origin main
-git show <目标commit>:deploy/fast-deploy.sh > /tmp/knowflow-fast-deploy.sh
-sudo bash /tmp/knowflow-fast-deploy.sh <目标commit>
-```
-
-快速同步信任同一commit已经成功的GitHub Actions完整门禁，因此服务器不再重复运行`tests/check_*.py`。数据库和运行数据备份仍是部署前的独立操作，脚本不会读取、复制或修改`.env`和`data`内容。
-
-### Linux Agent运行环境
-
-KnowFlow提供与Web端共用同一套LangGraph、工具、MCP、Skill、记忆、审批和checkpoint的Linux CLI。CLI不会启动另一套Agent loop，也不会解析网页接口的人类文本。在项目后端目录运行：
-
-普通Linux用户推荐安装轻量远程CLI，不需要克隆仓库，也不会安装Mem0、ChromaDB或服务端运行时：
+远程CLI很轻量，不会在本机安装Mem0、ChromaDB或服务端运行时。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
-knowflow auth login https://ai.example.com
+knowflow auth login https://你的KnowFlow服务器
 knowflow chat
 ```
 
-需要先审阅安装器时，下载后再执行：
+无桌面的服务器会输出验证地址和一次性验证码，可在另一台设备上完成登录。
+
+常用命令：
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh
-less install.sh
-sh install.sh
-rm install.sh
-```
-
-已有`pipx`时可直接安装GitHub当前版本：
-
-```bash
-pipx install "git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
-```
-
-首个PyPI版本发布后，正式安装、升级和卸载命令为：
-
-```bash
-pipx install knowflow-ai
-pipx upgrade knowflow-ai
-pipx uninstall knowflow-ai
-```
-
-一键安装器只使用用户目录，不执行`sudo`，会在缺少`pipx`时创建独立引导环境。默认从GitHub安装；可用`KNOWFLOW_CLI_SPEC`指定经过审核的版本或wheel。安装器当前仅支持Python 3.10及以上的Linux。
-
-只有需要在独立虚拟机上直接打开本地数据库和运行时存储时，才安装完整依赖：
-
-```bash
-pipx install "knowflow-ai[local]"
-```
-
-服务端部署目录内已有完整依赖，仍可直接运行：
-
-```bash
-cd /opt/knowflow-ai/app/backend
-/opt/knowflow-ai/venv/bin/knowflow doctor --prepare
-/opt/knowflow-ai/venv/bin/knowflow run "检查当前工作区并说明项目结构"
-/opt/knowflow-ai/venv/bin/knowflow chat
-/opt/knowflow-ai/venv/bin/knowflow resume <run-id>
-```
-
-生产环境优先使用远程模式。CLI通过现有FastAPI、SSE和LangGraph运行，不打开服务端数据库或checkpoint，因此可以与Web端同时使用：
-
-```bash
-knowflow auth login https://ai.example.com
-knowflow auth status
-knowflow run "检查工作区并总结项目" --events
-knowflow chat
-knowflow runs
-knowflow auth logout
-```
-
-默认登录会打开浏览器，由已登录的KnowFlow账号明确确认；无桌面的Linux终端会打印验证地址和一次性验证码，可在另一台设备上完成。设备码仅能兑换一次，session token不会出现在URL中。CLI仅保存服务端会话令牌到`~/.knowflow/remote.json`，Linux权限为`600`；远程地址除localhost外必须使用HTTPS。已保存远程登录后，各命令默认走远程模式；传入`--local`可显式使用本地直连模式，`--server`可校验目标服务器，`KNOWFLOW_CLI_SERVER`可设置默认地址。
-
-浏览器配对支持本地账号和GitHub OAuth账号。需要密码备用模式时使用`knowflow auth login https://ai.example.com --account your-name`，密码只用于本次登录且不会保存；不要把浏览器Cookie或GitHub Token复制到终端。
-
-本地直连模式适合停服维护或独立虚拟机。只有一个用户时自动选择；存在多个用户时传入`--user-id`或配置`KNOWFLOW_CLI_USER_ID`。它会直接打开与Web服务相同的数据库、LangGraph checkpoint和Mem0存储，不能与`knowflow-ai.service`并发执行Agent任务。该模式以Linux系统账户作为安全边界，`--user-id`只选择已有用户命名空间，不是身份认证机制。
-
-维护者发布CLI时先在PyPI项目`knowflow-ai`中配置GitHub Actions Trusted Publishing，并绑定仓库环境`pypi`。随后将`backend/pyproject.toml`版本更新为目标版本，推送同名标签（例如`v0.4.0`）；发布工作流会校验标签、构建wheel和sdist、隔离安装自检、创建GitHub Release并通过OIDC发布到PyPI，全程不使用长期PyPI Token。
-
-`run --events`输出逐行JSON事件，适合脚本、CI或后续客户端消费；默认输出使用Rich渲染。`--no-tools`禁用本轮工具，`--model-id`和`--skill-id`选择已有用户配置。风险工具仍会在终端要求一次性确认，`--yes`仅适合受控自动化环境。
-
-常用检查命令：
-
-```bash
+knowflow run "总结当前项目" --events
 knowflow runs
 knowflow models list
 knowflow tools list
@@ -376,11 +68,155 @@ knowflow mcp list
 knowflow memory list
 ```
 
-Workspace file tools are disabled by default and each user receives a separate directory under `KNOWFLOW_WORKSPACE_DIR`. Shell execution has an additional hard gate: `run_sandbox_command` is registered only when both workspace and sandbox support are enabled and the `srt` executable is available. Commands always require approval, receive a scrubbed environment, cannot access the network, and may write only inside that user's workspace.
+CLI默认连接远程KnowFlow服务。`--local`会直接打开本机数据库和运行时存储，只适合独立测试机或停服维护，不能与同一数据目录上的Web服务并发运行。
 
-Agent运行时仅支持Linux。Windows和macOS可以作为浏览器客户端访问部署后的KnowFlow，但不会在本机执行Agent命令。生产环境建议Ubuntu 24.04、非root服务用户、单worker和systemd状态目录。
+## Windows本地开发
 
-安装Anthropic Sandbox Runtime及其Linux依赖：
+### 1. 获取代码
+
+```powershell
+git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
+Set-Location "KnowFlow-AI"
+```
+
+### 2. 安装依赖
+
+`start-dev.cmd`使用Windows的`py -3`启动后端，因此后端依赖也安装到该Python环境：
+
+```powershell
+py -3 -m pip install -r backend\requirements.txt
+py -3 -m pip install --no-deps -e backend
+Copy-Item backend\.env.example backend\.env
+
+Set-Location frontend
+npm install
+Set-Location ..
+```
+
+### 3. 启动
+
+```powershell
+.\start-dev.cmd
+```
+
+打开<http://127.0.0.1:5173/>。默认地址：
+
+```text
+前端：http://127.0.0.1:5173
+后端：http://127.0.0.1:8010
+API文档：http://127.0.0.1:8010/docs
+```
+
+只检查端口和启动命令，不启动服务：
+
+```powershell
+.\start-dev.cmd --check
+```
+
+## 首次使用
+
+1. 注册本地账号并登录。
+2. 在“设置”中添加聊天模型；知识库需要语义检索时，再添加Embedding模型。
+3. 创建知识库并上传文档，或直接开始对话。
+4. 按需配置联网搜索、MCP、Skills和长期记忆。
+
+模型配置保存在当前用户空间。联网搜索的Tavily Key也由每个用户在前端单独配置，后端不会从启动脚本读取全局Key。
+
+## 配置
+
+本地开发无需逐项填写环境变量：复制`backend/.env.example`后即可启动，大多数能力默认关闭或使用安全默认值。
+
+### 生产环境必查
+
+| 变量 | 用途 |
+| --- | --- |
+| `KNOWFLOW_SECRET_KEY` | 加密用户保存的模型和工具密钥，必须更换默认值 |
+| `KNOWFLOW_BASE_URL` | 对外可访问的后端地址，用于OAuth回调 |
+| `KNOWFLOW_OAUTH_RETURN_ORIGINS` | OAuth完成后允许返回的前端origin白名单 |
+| `KNOWFLOW_COOKIE_SECURE=1` | 使用HTTPS部署时启用安全Cookie |
+| `KNOWFLOW_DB_URL` | 默认使用SQLite；需要MySQL时再修改 |
+
+### 按需启用
+
+| 功能 | 配置入口 |
+| --- | --- |
+| 聊天与Embedding模型 | 前端“设置” |
+| Tavily联网搜索 | 前端“工具与MCP” |
+| GitHub登录 | `KNOWFLOW_GITHUB_CLIENT_ID`、`KNOWFLOW_GITHUB_CLIENT_SECRET` |
+| Mem0长期记忆 | `KNOWFLOW_MEMORY_*` |
+| 工作区文件工具 | `KNOWFLOW_WORKSPACE_ENABLED=1` |
+| 沙箱Shell | `KNOWFLOW_SANDBOX_ENABLED=1`，并安装Anthropic Sandbox Runtime |
+| 私有网络MCP | 仅受控开发环境可设置`KNOWFLOW_MCP_ALLOW_PRIVATE_NETWORKS=1` |
+
+所有变量、默认值和限制以[`backend/.env.example`](backend/.env.example)为准。不要提交`backend/.env`。
+
+### 模型协议
+
+- **Chat Completions**适合传统OpenAI兼容端点。
+- **Responses API**要求上游支持`POST /v1/responses`、SSE流式事件和最终的`response.completed`事件。
+- KnowFlow不会在失败后自动降级协议，避免重复请求或重复执行工具。
+- Mem0使用独立的服务端LLM与Embedding配置，不受前端聊天模型协议影响。
+
+<details>
+<summary>展开高级配置与运行约束</summary>
+
+#### Windows开发排错
+
+Vite固定使用`--strictPort`，并通过以下地址连接后端：
+
+```text
+VITE_BACKEND_URL=http://127.0.0.1:8010
+```
+
+如果端口8000出现`WinError 10013`，继续使用项目默认的8010端口。修改前端端口时，必须同步更新`KNOWFLOW_OAUTH_RETURN_ORIGINS`。旧数据认领由`KNOWFLOW_ADOPT_LEGACY_DATA`控制，默认关闭。可运行`start-dev.cmd --check`核对实际命令。
+
+#### Auth Mode与GitHub OAuth
+
+本地账号默认启用，密码保存为PBKDF2哈希，登录后使用HttpOnly会话Cookie。GitHub OAuth为可选功能，需要配置`KNOWFLOW_GITHUB_CLIENT_ID`和`KNOWFLOW_GITHUB_CLIENT_SECRET`。本地回调地址为：
+
+```text
+http://127.0.0.1:8010/api/auth/oauth/github/callback
+```
+
+#### 联网搜索与运行轨迹
+
+`web_search`通过`tool_choice: auto`交给模型自主判断是否搜索。每位用户在设置页保存自己的Tavily Key。后端通过SSE推送脱敏事件，聊天消息显示当前步骤，右侧Agent运行图显示完整过程。
+
+#### 远程MCP
+
+Notion预设使用官方`https://mcp.notion.com/mcp`端点和user OAuth。自定义公共HTTPS服务器使用Streamable HTTP，可选择No authentication、Static headers或标准OAuth。只读操作可automatically执行；写入、删除和未知风险操作必须等待approval。
+
+运行协调器目前要求one backend worker。真实Notion验收请使用非生产工作区和专用test page：先拒绝写入并确认没有变化，再批准一次并确认只发生一次写入。
+
+#### Skills
+
+Skill是以`SKILL.md`为核心的指令包，至少包含`name:`和`description:`；可在`metadata:`下使用`knowflow:`、`display_name:`、`version:`、`required_tools:`和`required_mcp:`声明界面信息与依赖。
+
+GitHub和ZIP安装采用preview后再install的两阶段流程，只接受`https`的`github.com`来源。导入限制覆盖archive大小、extracted大小、files数量、单个file size、路径depth、正文body、preview TTL和下载timeout，具体值见`backend/.env.example`。
+
+Skill以per-user方式隔离，builtin Skill默认为default关闭状态。一次Agent run最多使用one Skill；在输入框键入`/`可显式选择，也可由模型从当前enabled Skill中auto-activate一个。Skill不能启用tool、MCP或跳过approval。`scripts/`只会stored和inspected，当前版本不会执行；`references/`只会在激活后作为有界UTF-8只读文本提供。
+
+backup必须包含database、`data/skills`和`data/skill-imports`策略涉及的数据；服务用户需要write permission。多实例部署必须使用shared persistent volume。升级前运行全部checks和前端build，不要把用户Skill数据提交到Git。
+
+#### 长期记忆（Mem0）
+
+Mem0只负责长期记忆，不会接管Agent循环、工具或计划。召回结果进入LangGraph checkpoint，回答保存后再以ADD-only方式异步提取记忆。进入Mem0前会移除常见Token、Key、密码和Bearer值。
+
+默认存储位于`data/mem0`。使用本地Qdrant时保持单worker；主数据库和整个Mem0目录必须一起备份。
+
+</details>
+
+## Linux部署
+
+推荐Ubuntu 24.04、非root服务用户、单worker、systemd与HTTPS反向代理。Agent运行时暂不支持在Windows或macOS本机执行。
+
+仓库提供：
+
+- [`deploy/knowflow-ai.service.example`](deploy/knowflow-ai.service.example)：systemd服务模板。
+- [`deploy/fast-deploy.sh`](deploy/fast-deploy.sh)：CI通过后的服务器快速同步脚本。
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：依赖安装、前端构建和全量检查门禁。
+
+启用Shell执行前安装沙箱运行时：
 
 ```bash
 sudo apt-get update
@@ -389,123 +225,29 @@ npm install -g @anthropic-ai/sandbox-runtime
 srt --version
 ```
 
-生产环境将`KNOWFLOW_DATA_DIR`设为`/var/lib/knowflow-ai`，并让systemd通过`StateDirectory=knowflow-ai`创建该目录。`KNOWFLOW_DB_URL`需明确改为`sqlite:////var/lib/knowflow-ai/knowflow.db`或外部数据库地址；若环境文件还显式配置了上传、Skill、工具结果、Workspace或checkpoint路径，这些值会覆盖数据根目录的派生默认值，也必须同步迁移或删除覆盖项。不要在部署脚本中以root身份预先运行应用或创建其子目录；应用启动时会以服务用户创建并检查运行路径。任一路径不可读写时启动直接失败，避免运行到一半才出现`PermissionError`。
+生产数据建议放在`/var/lib/knowflow-ai`，并确保服务用户可写。备份时应在同一停服快照中保存主数据库、LangGraph checkpoint、`skills`、`workspaces`、`tool-results`和`mem0`数据。
 
-启用执行工具时设置`KNOWFLOW_WORKSPACE_ENABLED=1`和`KNOWFLOW_SANDBOX_ENABLED=1`。启用后，启动门禁还会要求当前主机为Linux，且`srt`与`bash`均可执行；不会静默退化为无沙箱命令。
-
-### 长期记忆（Mem0）
-
-KnowFlow通过`MemoryProvider`接入开源`mem0ai==2.0.14`。Mem0只负责长期记忆，不会接管Agent循环、任务计划、Skills、工具或MCP。LangGraph执行器把每轮召回作为首个节点，最多读取`KNOWFLOW_MEMORY_TOP_K`条相关记忆并保存到checkpoint；审批恢复和同一计划的后续步骤复用该快照，不重复请求Mem0。召回异常会在Trace中标记为降级，但不会阻断模型回答。assistant消息成功写入数据库后，再由现有持久队列异步运行ADD-only记忆提取。
-
-记忆使用服务端专用LLM和Embedding配置。复制`backend/.env.example`中的`KNOWFLOW_MEMORY_*`变量，填写两个模型Key后，将`KNOWFLOW_MEMORY_ENABLED`设为`1`。如果LLM和Embedding使用同一个兼容OpenAI的服务，`KNOWFLOW_MEMORY_EMBEDDER_API_KEY`可以留空复用LLM Key。未完成服务端配置时，聊天仍然正常运行，记忆页会显示“未配置”。
-
-登录用户在“记忆”页单独启用或停用，查看、纠正、删除自己的记忆。所有Mem0读写都强制使用认证用户ID作为`filters.user_id`，客户端不能指定其他用户。进入Mem0前会移除常见Token、Key、密码和Authorization Bearer值；工具原始输出不会直接写入长期记忆。
-
-默认数据位于`data/mem0/qdrant`和`data/mem0/history.db`。这些目录不进入Git，生产备份必须将主数据库与整个`data/mem0`一起保存。使用本地Qdrant路径时后端保持单worker；多worker部署应改用独立Qdrant服务。升级Mem0前先固定新版本并运行`tests/check_memory_*.py`及全量检查，避免上游API变化破坏隔离规则。
-
-### Remote MCP servers
-
-The 工具与MCP page manages remote MCP connections for the current signed-in user. The built-in Notion preset uses the official `https://mcp.notion.com/mcp` endpoint with user OAuth; it does not ask for a Notion integration token. Select 连接Notion, finish authorization in Notion, return to the settings page, and use 刷新工具 when the remote tool catalog changes. 停用 immediately removes that server's tools from later Agent runs and clears its local authorization.
-
-Custom public HTTPS servers use the Streamable HTTP transport. The add-server dialog supports three authentication modes:
-
-- No authentication.
-- Static headers, encrypted with `KNOWFLOW_SECRET_KEY` and never returned in plaintext.
-- Standard OAuth with dynamic client registration or an administrator-provided client ID and optional secret.
-
-The model can autonomously choose enabled native or MCP tools. A tool explicitly marked read-only runs automatically. Write, delete, destructive, or unknown-risk operations pause the Agent and require an approval in both the chat message and the run drawer. “允许本次” authorizes only that invocation; enabling a tool is not permanent approval for writes.
-
-Remote URLs are revalidated against SSRF rules before discovery and connection. Private and loopback networks are rejected by default. `KNOWFLOW_MCP_ALLOW_PRIVATE_NETWORKS=1` is only for a controlled local development server; do not enable it in an internet-facing deployment.
-
-Tool approvals are stored durably in the database and resumed through LangGraph checkpoints. Approval records are isolated by user and Agent run, expire after `KNOWFLOW_MCP_APPROVAL_TIMEOUT`, and use an atomic one-time execution claim so an approved write is not replayed after a retry or restart. Keep the LangGraph checkpoint database protected and backed up with the main database because it can contain conversation and tool context.
-
-For a real Notion smoke test, connect a non-production workspace and use a dedicated test page. First reject a create-page request and verify that nothing changed; then request it again, allow it once, and verify that exactly one page was created. Disconnect Notion afterward and confirm its tools no longer appear in a new Agent run.
-
-## Auth Mode / Authentication
-
-Local username and password login is enabled by default. Passwords are stored as PBKDF2 hashes, and successful login creates a `knowflow_session` HttpOnly cookie.
-
-GitHub OAuth is optional. To enable it, create a GitHub OAuth App and set:
+## 关键设计
 
 ```text
-KNOWFLOW_GITHUB_CLIENT_ID=your_client_id
-KNOWFLOW_GITHUB_CLIENT_SECRET=your_client_secret
+React Web / Linux CLI
+          │
+       FastAPI + SSE
+          │
+       LangGraph
+   ┌──────┼──────────┐
+  RAG   Tools/MCP   Skills
+   │        │          │
+引用证据  审批与审计  指令与资源
+          │
+     Mem0长期记忆
 ```
 
-For local development, use this callback URL:
+写入、删除和未知风险工具会暂停Agent并等待一次性批准；只读工具可自动执行。运行轨迹只展示脱敏后的公开输入和结果摘要，不暴露系统提示词、凭据或隐藏推理。
 
-```text
-http://127.0.0.1:8010/api/auth/oauth/github/callback
-```
+## 开发检查
 
-The GitHub OAuth App callback should always point to the backend URL above. During frontend development, KnowFlow carries the current Vite page as `returnTo`, but the backend only accepts exact origins listed in `KNOWFLOW_OAUTH_RETURN_ORIGINS`. If you change the frontend port, update that variable before starting the backend.
-
-## Model Providers
-
-KnowFlow AI calls chat and embedding models through OpenAI-compatible endpoints:
-
-```text
-POST {baseUrl}/chat/completions
-POST {baseUrl}/responses
-POST {baseUrl}/embeddings
-```
-
-You can configure providers such as OpenAI, DeepSeek, DashScope-compatible services, Gemini-compatible gateways, MiniMax, and MiMo by setting `baseUrl`, `apiKey`, and `modelName` in the model configuration screen.
-
-For development, the backend includes fallback behavior:
-
-- If no chat API key is configured, chat responses use a local fallback answer.
-- If no embedding API key is configured, embedding uses a deterministic local hash vector.
-- If Chroma is disabled, retrieval uses the local retrieval backend.
-
-For demos or production-like usage, configure real chat and embedding models.
-
-## Database Options
-
-SQLite is the default and needs no setup.
-
-To use MySQL, create a database:
-
-```sql
-CREATE DATABASE knowflow_ai DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-```
-
-Then set:
-
-```text
-KNOWFLOW_DB_URL=mysql+pymysql://user:password@127.0.0.1:3306/knowflow_ai?charset=utf8mb4
-```
-
-The backend initializes missing tables at startup and records applied schema versions in `schema_version`.
-
-KnowFlow currently uses a lightweight migration model:
-
-- `db_schema.py` defines the current SQLite and MySQL schema.
-- `database.py` creates missing tables, applies compatible column additions, and records `CURRENT_SCHEMA_VERSION`.
-- New schema changes should update `CURRENT_SCHEMA_VERSION`, add safe migration logic in `migrate_schema`, and add or update a `tests/check_*.py` contract.
-
-This keeps local development simple while avoiding invisible schema drift. For larger production deployments, replace this with Alembic migrations before running multi-operator database upgrades.
-
-## API Documentation
-
-After starting the backend:
-
-```text
-http://127.0.0.1:8010/docs
-http://127.0.0.1:8010/redoc
-http://127.0.0.1:8010/openapi.json
-```
-
-The RAG debugging endpoint is available at:
-
-```text
-POST /api/retrieval/debug
-GET  /api/retrieval/runs/{run_id}
-```
-
-## Quality Checks
-
-Run all project checks from the repository root:
+在仓库根目录运行全部检查：
 
 ```powershell
 Get-ChildItem tests -Filter "check_*.py" |
@@ -516,43 +258,33 @@ Get-ChildItem tests -Filter "check_*.py" |
   }
 ```
 
-Build the frontend:
+构建前端：
 
 ```powershell
-cd frontend
+Set-Location frontend
 npm run build
 ```
 
-GitHub Actions runs the same release gate on `push` and `pull_request` to `main`:
+## 安全边界
 
-- install backend dependencies
-- install frontend dependencies with `npm ci`
-- build the React frontend
-- run every `tests/check_*.py` script
+- 不要提交`.env`、数据库、上传文件、用户Skills、Workspace、工具结果、Mem0或checkpoint数据。
+- 生产环境必须使用HTTPS并更换`KNOWFLOW_SECRET_KEY`。
+- 外部工具密钥虽然加密保存，仍应按生产凭据管理。
+- 公网部署不要允许私有网络MCP。
+- Shell只能通过沙箱运行，且始终需要用户批准。
 
-Before pushing to GitHub, verify the working tree intentionally excludes secrets and runtime data:
+## 进一步阅读
 
-```powershell
-git status --short
-git ls-files | Select-String -Pattern "(^|/)(\\.env$|.*\\.db$|.*\\.sqlite$|frontend/dist/|frontend/node_modules/)"
-git ls-files | Select-String -Pattern "^data/"
-```
+- [Web搜索Agent循环](docs/langgraph-web-search-loop.md)
+- [MCP写操作审批](docs/langgraph-mcp-write-approval.md)
+- [Skills与任务计划](docs/langgraph-skills-and-planning.md)
+- [长期记忆生命周期](docs/langgraph-memory-lifecycle.md)
+- [API调试](docs/api-debug.md)
 
-The second command should not show tracked local secrets, databases, dependency folders, or build output.
+## 技术栈
 
-## Security Notes
-
-- Change `KNOWFLOW_SECRET_KEY` before storing real API keys.
-- Treat stored model and tool keys as production credentials even though they are encrypted at rest.
-- Keep `backend/.env` local.
-- Use HTTPS and set `KNOWFLOW_COOKIE_SECURE=1` when deploying behind a real domain.
-- Review OAuth callback URLs before publishing a deployment.
-- Keep private-network MCP access disabled outside an isolated development environment.
+FastAPI、SQLAlchemy、React、Vite、LangGraph、Mem0；默认SQLite与本地检索，可选MySQL和Chroma。
 
 ## License
 
-KnowFlow AI is released under the MIT License.
-
-## Current Status
-
-KnowFlow AI is usable as a local knowledge base assistant and development prototype. The current engineering baseline includes React UI ownership checks, backend integration checks, release hygiene checks, CI, lightweight schema version tracking, and RAG quality tracking. The main remaining work is to broaden browser-level end-to-end coverage and replace the lightweight schema version system with full migrations if the project moves toward production deployment.
+[MIT](LICENSE)

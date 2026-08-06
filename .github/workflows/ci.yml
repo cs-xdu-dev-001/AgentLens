@@ -96,7 +96,7 @@ jobs:
           bundle="${RUNNER_TEMP}/knowflow-ai-linux"
           archive="knowflow-ai-linux-${GITHUB_SHA}.tar.gz"
           mkdir -p "${bundle}/frontend"
-          git archive --format=tar "${GITHUB_SHA}" backend deploy README.md \
+          git archive --format=tar "${GITHUB_SHA}" backend deploy README.md README_EN.md \
             | tar -xf - -C "${bundle}"
           cp -a frontend/dist "${bundle}/frontend/dist"
           python - "${bundle}/DEPLOYMENT-MANIFEST.json" <<'PY'
