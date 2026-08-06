@@ -136,7 +136,10 @@ class RemoteAgentClient:
 
     @property
     def headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "KnowFlow-CLI",
+        }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
@@ -147,7 +150,7 @@ class RemoteAgentClient:
     @staticmethod
     def _error(response: requests.Response) -> RemoteAgentError:
         code = f"http_{response.status_code}"
-        message = "远程请求失败。"
+        message = f"远程请求失败（HTTP {response.status_code}）。"
         try:
             payload = response.json()
             detail = payload.get("detail") if isinstance(payload, dict) else None

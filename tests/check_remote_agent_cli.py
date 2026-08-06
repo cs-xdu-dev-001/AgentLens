@@ -15,6 +15,7 @@ from knowflow import cli  # noqa: E402
 from knowflow.services.agent_application import AgentExecution  # noqa: E402
 from knowflow.services.remote_agent import (  # noqa: E402
     RemoteAgentClient,
+    RemoteAgentError,
     RemoteProfileStore,
     iter_sse,
     normalize_server_url,
@@ -82,6 +83,34 @@ def main() -> None:
     else:
         raise AssertionError("server URL path accepted")
 
+    generic_error = RemoteAgentClient._error(FakeResponse({}, status=503))
+    assert isinstance(generic_error, RemoteAgentError)
+    assert generic_error.code == "http_503"
+    assert "HTTP 503" in str(generic_error)
+
+    with patch.object(cli.profile_store, "load", return_value=None):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("KNOWFLOW_CLI_SERVER", None)
+            try:
+                cli._remote_client(None, local=False)
+            except Exception as exc:
+                assert isinstance(exc, cli.typer.BadParameter)
+                assert "auth login" in str(exc)
+            else:
+                raise AssertionError(
+                    "missing remote profile silently fell back to local mode"
+                )
+            assert cli._remote_client(None, local=True) is None
+            with patch.object(
+                cli,
+                "_runtime",
+                side_effect=AssertionError("local runtime must stay lazy"),
+            ):
+                response = CliRunner().invoke(cli.app, ["chat"])
+            assert response.exit_code == 2, response.output
+            assert "auth login" in response.output
+            assert "ModuleNotFoundError" not in response.output
+
     events = list(
         iter_sse(
             [
@@ -119,6 +148,7 @@ def main() -> None:
     assert login["user"]["username"] == "alice"
     assert client.token == "session-secret"
     assert "Authorization" not in fake.calls[0][2]["headers"]
+    assert fake.calls[0][2]["headers"]["User-Agent"] == "KnowFlow-CLI"
 
     fake.responses.append(
         FakeResponse(

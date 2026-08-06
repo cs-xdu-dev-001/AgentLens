@@ -97,7 +97,10 @@ def _remote_client(
     elif profile:
         requested = str(profile["server"])
     if not requested:
-        return None
+        raise typer.BadParameter(
+            "尚未登录远程服务器，请先执行knowflow auth login <服务器地址>；"
+            "本地直连请显式使用--local。"
+        )
     if not profile or not profile.get("token"):
         raise typer.BadParameter("远程登录已失效，请重新登录。")
     return RemoteAgentClient(

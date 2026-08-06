@@ -47,7 +47,7 @@ jobs:
           python -m venv "${cli_venv}"
           "${cli_venv}/bin/python" -m pip install --disable-pip-version-check backend/dist/*.whl
           "${cli_venv}/bin/knowflow" --help >/dev/null
-          test "$("${cli_venv}/bin/knowflow" --version)" = "0.4.0"
+          test "$("${cli_venv}/bin/knowflow" --version)" = "0.4.1"
           "${cli_venv}/bin/python" - <<'PY'
           import sys
           import knowflow.cli
