@@ -89,6 +89,7 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install --no-deps -e .
 copy .env.example .env
 ```
 
@@ -218,6 +219,9 @@ Copy `backend/.env.example` to `backend/.env` and update values as needed.
 | `KNOWFLOW_GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | empty |
 | `KNOWFLOW_COOKIE_SECURE` | Set to `1` when serving over HTTPS | `0` |
 | `KNOWFLOW_ADOPT_LEGACY_DATA` | Set to `1` only to let the first signed-in user adopt legacy rows with `NULL` `user_id` | `0` |
+| `KNOWFLOW_CLI_USER_ID` | Local Linux CLI user ID; required only when multiple users exist | empty |
+| `KNOWFLOW_CLI_SERVER` | Remote CLI server; HTTPS required except localhost | empty |
+| `KNOWFLOW_CLI_BROWSER_AUTH_ENABLED` | Enable one-time browser pairing for remote CLI login | `1` |
 | `KNOWFLOW_TOP_K` | Default retrieval result count | `5` |
 | `KNOWFLOW_RAG_SCORE_THRESHOLD` | Retrieval quality threshold | `0.25` |
 
@@ -288,6 +292,46 @@ sudo bash /tmp/knowflow-fast-deploy.sh <目标commit>
 快速同步信任同一commit已经成功的GitHub Actions完整门禁，因此服务器不再重复运行`tests/check_*.py`。数据库和运行数据备份仍是部署前的独立操作，脚本不会读取、复制或修改`.env`和`data`内容。
 
 ### Linux Agent运行环境
+
+KnowFlow提供与Web端共用同一套LangGraph、工具、MCP、Skill、记忆、审批和checkpoint的Linux CLI。CLI不会启动另一套Agent loop，也不会解析网页接口的人类文本。在项目后端目录运行：
+
+```bash
+cd /opt/knowflow-ai/app/backend
+/opt/knowflow-ai/venv/bin/knowflow doctor --prepare
+/opt/knowflow-ai/venv/bin/knowflow run "检查当前工作区并说明项目结构"
+/opt/knowflow-ai/venv/bin/knowflow chat
+/opt/knowflow-ai/venv/bin/knowflow resume <run-id>
+```
+
+生产环境优先使用远程模式。CLI通过现有FastAPI、SSE和LangGraph运行，不打开服务端数据库或checkpoint，因此可以与Web端同时使用：
+
+```bash
+knowflow auth login https://ai.example.com
+knowflow auth status
+knowflow run "检查工作区并总结项目" --events
+knowflow chat
+knowflow runs
+knowflow auth logout
+```
+
+默认登录会打开浏览器，由已登录的KnowFlow账号明确确认；无桌面的Linux终端会打印验证地址和一次性验证码，可在另一台设备上完成。设备码仅能兑换一次，session token不会出现在URL中。CLI仅保存服务端会话令牌到`~/.knowflow/remote.json`，Linux权限为`600`；远程地址除localhost外必须使用HTTPS。已保存远程登录后，各命令默认走远程模式；传入`--local`可显式使用本地直连模式，`--server`可校验目标服务器，`KNOWFLOW_CLI_SERVER`可设置默认地址。
+
+浏览器配对支持本地账号和GitHub OAuth账号。需要密码备用模式时使用`knowflow auth login https://ai.example.com --account your-name`，密码只用于本次登录且不会保存；不要把浏览器Cookie或GitHub Token复制到终端。
+
+本地直连模式适合停服维护或独立虚拟机。只有一个用户时自动选择；存在多个用户时传入`--user-id`或配置`KNOWFLOW_CLI_USER_ID`。它会直接打开与Web服务相同的数据库、LangGraph checkpoint和Mem0存储，不能与`knowflow-ai.service`并发执行Agent任务。该模式以Linux系统账户作为安全边界，`--user-id`只选择已有用户命名空间，不是身份认证机制。
+
+`run --events`输出逐行JSON事件，适合脚本、CI或后续客户端消费；默认输出使用Rich渲染。`--no-tools`禁用本轮工具，`--model-id`和`--skill-id`选择已有用户配置。风险工具仍会在终端要求一次性确认，`--yes`仅适合受控自动化环境。
+
+常用检查命令：
+
+```bash
+knowflow runs
+knowflow models list
+knowflow tools list
+knowflow skills list
+knowflow mcp list
+knowflow memory list
+```
 
 Workspace file tools are disabled by default and each user receives a separate directory under `KNOWFLOW_WORKSPACE_DIR`. Shell execution has an additional hard gate: `run_sandbox_command` is registered only when both workspace and sandbox support are enabled and the `srt` executable is available. Commands always require approval, receive a scrubbed environment, cannot access the network, and may write only inside that user's workspace.
 

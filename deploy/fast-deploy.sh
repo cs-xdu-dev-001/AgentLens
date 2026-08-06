@@ -81,7 +81,12 @@ STATE_DIR="${APP_DIR}/.git/knowflow-deploy-state"
 mkdir -p "${STATE_DIR}"
 chmod 700 "${STATE_DIR}"
 
-requirements_hash="$(git show "${TARGET_SHA}:backend/requirements.txt" | sha256sum | cut -d' ' -f1)"
+requirements_hash="$(
+  {
+    git show "${TARGET_SHA}:backend/requirements.txt"
+    git show "${TARGET_SHA}:backend/pyproject.toml"
+  } | sha256sum | cut -d' ' -f1
+)"
 lock_hash="$(git show "${TARGET_SHA}:frontend/package-lock.json" | sha256sum | cut -d' ' -f1)"
 frontend_hash="$(git ls-tree -r "${TARGET_SHA}" -- frontend | sha256sum | cut -d' ' -f1)"
 previous_sha="$(git rev-parse HEAD)"
@@ -91,6 +96,7 @@ git checkout --detach "${TARGET_SHA}"
 if [[ ! -f "${STATE_DIR}/requirements.sha256" ]] \
   || [[ "$(<"${STATE_DIR}/requirements.sha256")" != "${requirements_hash}" ]]; then
   "${VENV_DIR}/bin/python" -m pip install -r backend/requirements.txt
+  "${VENV_DIR}/bin/python" -m pip install --no-deps -e backend
   printf '%s\n' "${requirements_hash}" > "${STATE_DIR}/requirements.sha256"
   dependencies_backend="installed"
 else

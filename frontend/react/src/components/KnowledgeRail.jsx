@@ -66,8 +66,26 @@ export function KnowledgeRail({ onOpenRetrievalDrawer = () => {} }) {
   }, [authenticated]);
 
   useEffect(() => {
-    loadKnowledgeBases();
-  }, [loadKnowledgeBases]);
+    const handleKnowledgeOptionsUpdated = (event) => {
+      const nextKnowledgeBases = Array.isArray(event.detail?.knowledgeBases)
+        ? event.detail.knowledgeBases
+        : [];
+      const nextSelectedKnowledgeBaseId = pickSelectedKnowledgeBaseId(
+        nextKnowledgeBases,
+        event.detail?.selectedKnowledgeBaseId,
+      );
+      setKnowledgeBases(nextKnowledgeBases);
+      setSelectedKnowledgeBaseId(nextSelectedKnowledgeBaseId);
+    };
+    window.addEventListener(
+      "knowflow:react-knowledge-options-updated",
+      handleKnowledgeOptionsUpdated,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-knowledge-options-updated",
+      handleKnowledgeOptionsUpdated,
+    );
+  }, []);
 
   useEffect(() => {
     window.addEventListener("knowflow:react-knowledge-bases-refresh-request", loadKnowledgeBases);

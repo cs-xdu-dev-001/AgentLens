@@ -45,11 +45,12 @@ export function MemoryPage({ active = false }) {
   const [settings, setSettings] = useState(null);
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [memoriesLoading, setMemoriesLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [editingId, setEditingId] = useState("");
   const [draft, setDraft] = useState("");
   const mountedRef = useRef(false);
-  const interactionLocked = loading || Boolean(busy);
+  const interactionLocked = loading || memoriesLoading || Boolean(busy);
 
   const load = useCallback(async () => {
     if (!active) return;
@@ -58,15 +59,22 @@ export function MemoryPage({ active = false }) {
       const nextSettings = await memoryApi.settings();
       if (!mountedRef.current) return;
       setSettings(nextSettings);
-      const nextMemories = nextSettings?.configured
-        ? await memoryApi.list()
-        : [];
+      setLoading(false);
+      if (!nextSettings?.configured) {
+        setMemories([]);
+        return;
+      }
+      setMemoriesLoading(true);
+      const nextMemories = await memoryApi.list();
       if (!mountedRef.current) return;
       setMemories(Array.isArray(nextMemories) ? nextMemories : []);
     } catch (error) {
       if (mountedRef.current) notifyError(error, "无法加载长期记忆");
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setMemoriesLoading(false);
+      }
     }
   }, [active]);
 
@@ -203,7 +211,11 @@ export function MemoryPage({ active = false }) {
 
         <div className={"memory-toolbar"}>
           <strong>
-            {loading ? "正在读取..." : `${memories.length}条长期记忆`}
+            {loading
+              ? "正在读取配置..."
+              : memoriesLoading
+                ? "正在读取记忆..."
+                : `${memories.length}条长期记忆`}
           </strong>
           <div>
             <button

@@ -93,8 +93,10 @@ export function createCatalogSync({
   }
 
   async function refresh() {
-    await refreshModels();
-    await refreshKnowledgeBases();
+    await Promise.all([
+      refreshModels(),
+      refreshKnowledgeBases(),
+    ]);
   }
 
   return {

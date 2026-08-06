@@ -25,6 +25,19 @@ router = APIRouter()
 _run_executor: Callable[..., None] | None = None
 
 
+@router.get("/api/agent/runs")
+def list_agent_runs(
+    request: Request,
+    limit: int = 20,
+) -> dict[str, Any]:
+    return api_success(
+        agent_runs.list_recent(
+            current_user_id(request),
+            limit=limit,
+        )
+    )
+
+
 def configure_agent_run_executor(executor: Callable[..., None]) -> None:
     global _run_executor
     _run_executor = executor

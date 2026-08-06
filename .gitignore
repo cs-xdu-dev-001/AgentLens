@@ -21,6 +21,7 @@ frontend/.codex-edge*/
 
 # Python and test caches
 __pycache__/
+*.egg-info/
 *.py[cod]
 .pytest_cache/
 

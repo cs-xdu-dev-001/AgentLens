@@ -58,6 +58,50 @@ def main() -> None:
     assert "knowflow_session" in registered.headers.get("set-cookie", "")
     assert registered.json()["data"]["user"]["username"] == "tester"
 
+    device_client = TestClient(main_module.app)
+    device_started = device_client.post(
+        "/api/auth/cli/device",
+        json={"clientName": "KnowFlow CLI test"},
+    )
+    assert device_started.status_code == 200, device_started.text
+    device_data = device_started.json()["data"]
+    assert device_data["verificationUri"].startswith(
+        "http://127.0.0.1:8010/?page=cli-auth&userCode="
+    )
+    unauthenticated_decision = device_client.post(
+        "/api/auth/cli/device/decision",
+        json={"userCode": device_data["userCode"], "decision": "approve"},
+    )
+    assert unauthenticated_decision.status_code == 401
+    pending = device_client.post(
+        "/api/auth/cli/device/token",
+        json={"deviceCode": device_data["deviceCode"]},
+    )
+    assert pending.json()["data"]["status"] == "pending"
+    approved = client.post(
+        "/api/auth/cli/device/decision",
+        json={"userCode": device_data["userCode"], "decision": "approve"},
+    )
+    assert approved.status_code == 200, approved.text
+    authorized = device_client.post(
+        "/api/auth/cli/device/token",
+        json={"deviceCode": device_data["deviceCode"]},
+    )
+    assert authorized.status_code == 200, authorized.text
+    authorized_data = authorized.json()["data"]
+    assert authorized_data["status"] == "authorized"
+    assert authorized_data["sessionToken"]
+    cli_me = device_client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {authorized_data['sessionToken']}"},
+    )
+    assert cli_me.json()["data"]["user"]["username"] == "tester"
+    replayed = device_client.post(
+        "/api/auth/cli/device/token",
+        json={"deviceCode": device_data["deviceCode"]},
+    )
+    assert replayed.json()["data"]["status"] == "consumed"
+
     wrong_password = client.post("/api/auth/login", json={"account": "tester", "password": "bad-password"})
     assert wrong_password.status_code == 401, wrong_password.text
     wrong_body = wrong_password.json()
@@ -70,6 +114,28 @@ def main() -> None:
 
     unlocked = client.get("/api/model-configs")
     assert unlocked.status_code == 200, unlocked.text
+
+    session_token = client.cookies.get("knowflow_session")
+    bearer_client = TestClient(main_module.app)
+    bearer_me = bearer_client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {session_token}"},
+    )
+    assert bearer_me.status_code == 200, bearer_me.text
+    assert bearer_me.json()["data"]["authenticated"] is True
+    bearer_logout = bearer_client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {session_token}"},
+    )
+    assert bearer_logout.status_code == 200, bearer_logout.text
+    revoked = client.get("/api/model-configs")
+    assert revoked.status_code == 401, revoked.text
+
+    logged_in_again = client.post(
+        "/api/auth/login",
+        json={"account": "tester", "password": "123456"},
+    )
+    assert logged_in_again.status_code == 200, logged_in_again.text
 
     logout = client.post("/api/auth/logout")
     assert logout.status_code == 200, logout.text

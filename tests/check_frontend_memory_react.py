@@ -72,6 +72,15 @@ def main() -> None:
     sidebar = (SRC / "components" / "Sidebar.jsx").read_text(
         encoding="utf-8"
     )
+    settings_page = (SRC / "components" / "SettingsPage.jsx").read_text(
+        encoding="utf-8"
+    )
+    knowledge_rail = (SRC / "components" / "KnowledgeRail.jsx").read_text(
+        encoding="utf-8"
+    )
+    catalog = (SRC / "controller" / "catalogSync.js").read_text(
+        encoding="utf-8"
+    )
     styles = (SRC / "styles.css").read_text(encoding="utf-8")
     source_styles = (ROOT / "frontend" / "styles.css").read_text(
         encoding="utf-8"
@@ -98,7 +107,12 @@ def main() -> None:
     assert delete_handler.index(delete_guard) < delete_handler.index(
         "await memoryApi.delete(memoryId)"
     )
-    assert "const interactionLocked = loading || Boolean(busy);" in page
+    assert (
+        "const interactionLocked = loading || memoriesLoading || Boolean(busy);"
+        in page
+    )
+    assert "正在读取配置..." in page
+    assert "正在读取记忆..." in page
     assert "disabled={!settings?.configured || interactionLocked}" in page
     assert "disabled={!memories.length || interactionLocked}" in page
     assert "disabled={!draft.trim() || interactionLocked}" in page
@@ -124,6 +138,12 @@ def main() -> None:
     assert 'icon: "memory"' in navigation
     assert 'page: "memory"' in navigation
     assert 'type === "memory"' in sidebar
+
+    assert "await Promise.all([" in catalog
+    assert "knowflow:react-model-options-updated" in settings_page
+    assert "useEffect(() => {\n    loadModels();" not in settings_page
+    assert "knowflow:react-knowledge-options-updated" in knowledge_rail
+    assert "useEffect(() => {\n    loadKnowledgeBases();" not in knowledge_rail
 
     assert "export const memoryApi" in client
     for path in [

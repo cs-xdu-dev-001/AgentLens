@@ -64,6 +64,7 @@ from .services.memory_operations import (
     MemoryOperationRunner,
     MemoryOperationStore,
 )
+from .services.cli_device_auth import CliDeviceAuthorizationStore
 
 
 
@@ -97,6 +98,10 @@ langgraph_checkpoints = LangGraphCheckpointStore(
     LANGGRAPH_CHECKPOINT_DB
 )
 memory_operation_store = MemoryOperationStore(database=db)
+cli_device_authorizations = CliDeviceAuthorizationStore(
+    database=db,
+    secret_key=SECRET_KEY,
+)
 
 
 class Cipher:
@@ -584,7 +589,7 @@ def set_session_cookie(response: Response, session_id: str) -> None:
     )
 
 
-def create_auth_session(response: Response, user_id: int, request: Request | None = None) -> str:
+def create_auth_session_token(user_id: int, request: Request | None = None) -> str:
     session_id = secrets.token_urlsafe(36)
     execute(
         """
@@ -600,6 +605,11 @@ def create_auth_session(response: Response, user_id: int, request: Request | Non
             "last_seen_at": now_str(),
         },
     )
+    return session_id
+
+
+def create_auth_session(response: Response, user_id: int, request: Request | None = None) -> str:
+    session_id = create_auth_session_token(user_id, request)
     set_session_cookie(response, session_id)
     return session_id
 

@@ -50,6 +50,10 @@ def main() -> None:
         "chatModelConfigId": 9,
     }
     assert store.load_request(2, run["id"]) is None
+    recent = store.list_recent(1, limit=1)
+    assert len(recent) == 1
+    assert recent[0]["id"] == run["id"]
+    assert store.list_recent(2) == []
     expect_code(
         "active_agent_run_exists",
         lambda: store.create_run(

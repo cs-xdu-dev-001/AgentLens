@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "knowflow-ai"
+version = "0.4.0"
+description = "KnowFlow AI backend and Linux Agent CLI"
+requires-python = ">=3.10"
+
+[project.scripts]
+knowflow = "knowflow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["knowflow*"]

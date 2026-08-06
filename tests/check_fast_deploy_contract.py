@@ -25,6 +25,8 @@ def main() -> None:
     assert "rev-parse --verify --end-of-options" in script
     assert "actions/runs" in script and 'conclusion") != "success"' in script
     assert "requirements.sha256" in script
+    assert "backend/pyproject.toml" in script
+    assert "pip install --no-deps -e backend" in script
     assert "package-lock.sha256" in script
     assert "frontend.sha256" in script
     assert "tests/check_" not in script

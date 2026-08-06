@@ -1946,6 +1946,16 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@router.get(
+    "/api/agent/tools",
+    tags=EXTENSION_TAGS,
+    summary="List tools available to the current Agent user",
+)
+def list_agent_tools(request: Request) -> dict[str, Any]:
+    registry = build_tool_registry(current_user_id(request), True)
+    return api_success({"tools": list(registry.names())})
+
+
 @router.get("/api/sessions/{session_id}/tool-calls", tags=EXTENSION_TAGS, summary="Read session tool calls")
 def read_session_tool_calls(session_id: str, request: Request) -> dict[str, Any]:
     get_session_for_user(session_id, current_user_id(request))

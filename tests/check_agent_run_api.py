@@ -79,6 +79,14 @@ def main() -> None:
     assert snapshot["status"] == "waiting_start"
     assert len(snapshot["steps"]) == 2
     assert bob.get(f"/api/agent/runs/{run['id']}").status_code == 404
+    listed = alice.get("/api/agent/runs?limit=1")
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["data"]] == [
+        "run_api_test"
+    ]
+    bob_listed = bob.get("/api/agent/runs")
+    assert bob_listed.status_code == 200, bob_listed.text
+    assert bob_listed.json()["data"] == []
 
     with alice.stream(
         "GET",

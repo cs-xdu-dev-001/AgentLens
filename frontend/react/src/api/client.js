@@ -96,6 +96,8 @@ export const authApi = {
   register: ({ username, email, password, displayName }) =>
     apiRequest("/api/auth/register", { method: "POST", body: { username, email, password, displayName } }),
   logout: () => apiRequest("/api/auth/logout", { method: "POST" }),
+  decideCliDevice: (userCode, decision) =>
+    apiRequest("/api/auth/cli/device/decision", { method: "POST", body: { userCode, decision } }),
 };
 
 export const modelConfigApi = {

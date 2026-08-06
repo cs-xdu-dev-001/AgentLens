@@ -409,6 +409,39 @@ class AgentRunStore:
             ]
         return self._normalize_run(row, steps)
 
+    def list_recent(
+        self,
+        user_id: int,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 100))
+        with self.database.engine.connect() as conn:
+            rows = self._mappings(
+                conn.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM agent_run
+                        WHERE user_id=:user_id
+                        ORDER BY created_at DESC
+                        LIMIT :limit
+                        """
+                    ),
+                    {"user_id": user_id, "limit": safe_limit},
+                )
+            )
+            return [
+                self._normalize_run(
+                    row,
+                    [
+                        self._normalize_step(item)
+                        for item in self._step_rows(conn, str(row["id"]))
+                    ],
+                )
+                for row in rows
+            ]
+
     def replace_plan(
         self,
         user_id: int,

@@ -116,6 +116,19 @@ class LoginIn(BaseModel):
     account: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=128)
 
+
+class CliDeviceStartIn(BaseModel):
+    clientName: str = Field(default="KnowFlow CLI", max_length=100)
+
+
+class CliDeviceDecisionIn(BaseModel):
+    userCode: str = Field(min_length=10, max_length=16)
+    decision: Literal["approve", "deny"]
+
+
+class CliDeviceTokenIn(BaseModel):
+    deviceCode: str = Field(min_length=32, max_length=200)
+
 class McpServerCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     preset: str | None = None

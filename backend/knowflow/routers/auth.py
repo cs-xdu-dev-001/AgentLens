@@ -7,6 +7,62 @@ router = APIRouter()
 AUTH_TAGS = ["Authentication"]
 
 
+def require_cli_browser_auth() -> None:
+    if not CLI_BROWSER_AUTH_ENABLED:
+        raise_api_error(404, 40430, "CLI browser authorization is disabled.")
+
+
+@router.post("/api/auth/cli/device", tags=AUTH_TAGS, summary="Start CLI browser authorization")
+def start_cli_device_authorization(payload: CliDeviceStartIn) -> dict[str, Any]:
+    require_cli_browser_auth()
+    authorization = cli_device_authorizations.create(client_name=payload.clientName)
+    authorization["verificationUri"] = (
+        f"{BASE_URL}/?{urlencode({'page': 'cli-auth', 'userCode': authorization['userCode']})}"
+    )
+    return api_success(authorization)
+
+
+@router.post("/api/auth/cli/device/decision", tags=AUTH_TAGS, summary="Approve or deny CLI browser authorization")
+def decide_cli_device_authorization(payload: CliDeviceDecisionIn, request: Request) -> dict[str, Any]:
+    require_cli_browser_auth()
+    result = cli_device_authorizations.decide(
+        user_code=payload.userCode,
+        user_id=current_user_id(request),
+        decision=payload.decision,
+    )
+    if result["status"] == "invalid":
+        raise_api_error(404, 40431, "CLI authorization request was not found.")
+    if result["status"] == "expired":
+        raise_api_error(410, 41030, "CLI authorization request has expired.")
+    if result["status"] not in {"approved", "denied"}:
+        raise_api_error(409, 40930, "CLI authorization request was already handled.")
+    return api_success(result)
+
+
+@router.post("/api/auth/cli/device/token", tags=AUTH_TAGS, summary="Poll CLI browser authorization")
+def poll_cli_device_authorization(payload: CliDeviceTokenIn, request: Request) -> dict[str, Any]:
+    require_cli_browser_auth()
+    result = cli_device_authorizations.consume_with_session(
+        device_code=payload.deviceCode,
+        session_expires_at=session_expires_at(),
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    if result["status"] == "authorized":
+        user = fetch_one("SELECT * FROM app_user WHERE id=:id", {"id": result["userId"]})
+        if not user:
+            raise_api_error(401, 40130, "The authorizing user no longer exists.")
+        return api_success(
+            {
+                "status": "authorized",
+                "sessionToken": result["sessionToken"],
+                "user": normalize_user(user),
+            }
+        )
+    if result["status"] == "invalid":
+        raise_api_error(400, 40030, "Invalid CLI device code.")
+    return api_success({"status": result["status"]})
+
+
 @router.get("/api/auth/me", tags=AUTH_TAGS, summary="Read the current signed-in user")
 def auth_me(request: Request) -> dict[str, Any]:
     user = get_current_user(request)
@@ -61,7 +117,16 @@ def login(payload: LoginIn, request: Request, response: Response) -> dict[str, A
 
 @router.post("/api/auth/logout", tags=AUTH_TAGS, summary="Sign out")
 def logout(request: Request, response: Response) -> dict[str, Any]:
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    authorization = request.headers.get("authorization", "")
+    bearer_token = (
+        authorization[7:].strip()
+        if authorization.lower().startswith("bearer ")
+        else ""
+    )
+    session_id = (
+        request.cookies.get(SESSION_COOKIE_NAME)
+        or bearer_token
+    )
     if session_id:
         execute("DELETE FROM auth_session WHERE id=:session_id", {"session_id": session_id})
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")

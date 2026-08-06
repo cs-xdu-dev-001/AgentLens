@@ -8,11 +8,12 @@ import { MemoryPage } from "./components/MemoryPage.jsx";
 import { ToolsPage } from "./components/ToolsPage.jsx";
 import { SettingsPage } from "./components/SettingsPage.jsx";
 import { WorkbenchPage } from "./components/WorkbenchPage.jsx";
+import { CliDeviceAuthPage } from "./components/CliDeviceAuthPage.jsx";
 import { Toast } from "./components/Toast.jsx";
 import { KnowFlowController } from "./components/KnowFlowController.jsx";
 import { useAuth } from "./auth/AuthProvider.jsx";
 
-const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings"]);
+const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings", "cli-auth"]);
 const SIDEBAR_LAYOUT_VERSION = "20260522-chatgpt-sidebar";
 
 function readStoredBoolean(key, defaultValue) {
@@ -136,6 +137,7 @@ function WorkbenchShell() {
             <MemoryPage active={activePage === "memory"} />
             <ToolsPage active={activePage === "tools"} />
             <SettingsPage active={activePage === "settings"} />
+            <CliDeviceAuthPage active={activePage === "cli-auth"} />
           </main>
         </div>
       ) : null}

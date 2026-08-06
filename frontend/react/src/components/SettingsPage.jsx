@@ -160,8 +160,28 @@ export function SettingsPage({ active = false }) {
   }, []);
 
   useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+    const handleModelOptionsUpdated = (event) => {
+      const nextModels = Array.isArray(event.detail?.models)
+        ? event.detail.models
+        : [];
+      setModels(nextModels);
+      setSelectedModelId((currentId) => (
+        preferredModel(
+          nextModels,
+          event.detail?.selectedModelId,
+          currentId,
+        )?.id ?? null
+      ));
+    };
+    window.addEventListener(
+      "knowflow:react-model-options-updated",
+      handleModelOptionsUpdated,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-model-options-updated",
+      handleModelOptionsUpdated,
+    );
+  }, []);
 
   const normalizedProvider = useMemo(
     () => normalizeProvider(selectedProvider),
