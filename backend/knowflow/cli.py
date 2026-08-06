@@ -81,10 +81,15 @@ def _remote_client(
     server: str | None,
     *,
     local: bool,
+    remote: bool | None = None,
 ) -> RemoteAgentClient | None:
     if local:
-        if server:
-            raise typer.BadParameter("--local不能与--server同时使用。")
+        if server or remote:
+            raise typer.BadParameter(
+                "--local不能与--remote或--server同时使用。"
+            )
+        return None
+    if remote is False and not server:
         return None
     profile = profile_store.load()
     requested = server or os.getenv("KNOWFLOW_CLI_SERVER", "").strip()
@@ -107,6 +112,35 @@ def _remote_client(
         requested,
         token=str(profile["token"]),
     )
+
+
+def _local_agent():
+    from .services.local_cli_runtime import LocalAgentRuntime
+
+    return LocalAgentRuntime()
+
+
+def _local_approval_loop(
+    execution: AgentExecution,
+    *,
+    agent,
+    renderer: "EventRenderer",
+    assume_yes: bool,
+) -> AgentExecution:
+    current = execution
+    while current.paused:
+        run_id = str(current.result.get("runId") or "")
+        if not run_id:
+            raise RuntimeError("Agent暂停，但运行信息不完整。")
+        allowed = assume_yes or typer.confirm("允许本次工具调用？")
+        current = agent.run(
+            "",
+            history=list(current.result.get("messages") or []),
+            run_id=run_id,
+            approval_decision="allow_once" if allowed else "deny",
+            event_sink=renderer,
+        )
+    return current
 
 
 def _remote_payload(value: Any) -> dict[str, Any]:
@@ -170,6 +204,11 @@ def _emit_json(payload: dict[str, Any]) -> None:
 def _failure_payload(exc: Exception) -> dict[str, str]:
     if isinstance(exc, RemoteAgentError):
         return {"error": exc.code, "message": str(exc)}
+    if type(exc).__name__ == "LocalCliConfigError":
+        return {
+            "error": "local_cli_configuration_invalid",
+            "message": str(exc),
+        }
     from .services.agent_failure import classify_agent_failure
 
     failure = classify_agent_failure(exc)
@@ -182,12 +221,18 @@ def _failure_payload(exc: Exception) -> dict[str, str]:
 class EventRenderer:
     def __init__(self, *, json_events: bool):
         self.json_events = json_events
+        self.streamed_text = False
 
     def __call__(self, event: dict[str, Any]) -> None:
         if self.json_events:
             _emit_json(event)
             return
-        if event.get("type") == "approval_required":
+        if event.get("type") == "text_delta":
+            text_value = str(event.get("text") or "")
+            if text_value:
+                console.print(text_value, end="", markup=False)
+                self.streamed_text = True
+        elif event.get("type") == "approval_required":
             console.print(
                 "[yellow]需要确认：[/yellow]"
                 f"{event.get('toolName') or '工具调用'}"
@@ -238,16 +283,14 @@ def _request(
     tools: bool,
     skill_id: int | None,
 ) -> Any:
-    from .schemas import ChatRequest
-
-    return ChatRequest(
-        question=question,
-        sessionId=session_id,
-        chatModelConfigId=model_id,
-        autoAgent=True,
-        enableTools=tools,
-        skillId=skill_id,
-    )
+    return {
+        "question": question,
+        "sessionId": session_id,
+        "chatModelConfigId": model_id,
+        "autoAgent": True,
+        "enableTools": tools,
+        "skillId": skill_id,
+    }
 
 
 @contextmanager
@@ -286,13 +329,91 @@ def _approval_loop(
     return current
 
 
-def _print_answer(execution: AgentExecution, *, json_events: bool) -> None:
+def _print_answer(
+    execution: AgentExecution,
+    *,
+    json_events: bool,
+    renderer: EventRenderer | None = None,
+) -> None:
     if json_events:
+        return
+    if renderer is not None and renderer.streamed_text:
+        console.print()
         return
     answer = str(execution.result.get("answer") or "").strip()
     if answer:
         console.print()
         console.print(Markdown(answer))
+
+
+@app.command()
+def configure(
+    base_url: str | None = typer.Option(None, "--base-url"),
+    model: str | None = typer.Option(None, "--model"),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help="Provider identifier. Most OpenAI-compatible APIs use custom.",
+    ),
+    api_mode: str | None = typer.Option(None, "--api-mode"),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key. Omit this option to enter it securely.",
+    ),
+    skip_test: bool = typer.Option(False, "--skip-test"),
+) -> None:
+    """Configure the default local BYOK model."""
+    from .services.local_cli_runtime import (
+        LocalCliConfigError,
+        LocalCliConfigStore,
+        test_local_connection,
+        validate_local_config,
+    )
+
+    store = LocalCliConfigStore()
+    current = store.load()
+    resolved_base = base_url or typer.prompt(
+        "API地址",
+        default=current.get("base_url") or "https://api.openai.com/v1",
+    )
+    resolved_model = model or typer.prompt(
+        "模型名称",
+        default=current.get("model_name") or "gpt-5-mini",
+    )
+    resolved_provider = (
+        provider or current.get("provider") or "custom"
+    )
+    resolved_mode = api_mode or typer.prompt(
+        "接口协议",
+        default=current.get("api_mode") or "responses",
+    )
+    resolved_key = api_key or typer.prompt(
+        "API Key",
+        hide_input=True,
+        confirmation_prompt=False,
+    )
+    candidate = {
+        "base_url": resolved_base,
+        "model_name": resolved_model,
+        "provider": resolved_provider,
+        "api_mode": resolved_mode,
+        "api_key": resolved_key,
+    }
+    try:
+        validated = validate_local_config(candidate)
+        if not skip_test:
+            with console.status("正在检查模型连接..."):
+                detail = test_local_connection(validated)
+            console.print(f"[green]{detail}[/green]")
+        store.save(**validated)
+    except LocalCliConfigError as exc:
+        error_console.print(f"[red]配置失败：{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"配置已保存：[bold]{validated['model_name']}[/bold] · "
+        f"{validated['api_mode']}"
+    )
 
 
 @auth_app.command("login")
@@ -536,23 +657,28 @@ def run_task(
     assume_yes: bool = typer.Option(False, "--yes"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
     """Execute one Agent task."""
     renderer = EventRenderer(json_events=json_events)
     try:
-        remote = _remote_client(server, local=local)
-        request_payload = _request(
-            task,
-            session_id=None,
-            model_id=model_id,
-            tools=tools,
-            skill_id=skill_id,
+        remote = _remote_client(
+            server,
+            local=local,
+            remote=remote_mode,
         )
         if remote is not None:
             if user_id is not None:
                 raise typer.BadParameter(
                     "远程模式使用登录用户，不能传入--user-id。"
                 )
+            request_payload = _request(
+                task,
+                session_id=None,
+                model_id=model_id,
+                tools=tools,
+                skill_id=skill_id,
+            )
             execution = remote.run(
                 _remote_payload(request_payload),
                 renderer,
@@ -565,22 +691,23 @@ def run_task(
             )
             _print_answer(execution, json_events=json_events)
             return
-        resolved_user = _resolve_user_id(user_id)
-        service = _application()
-        with _background_runtime():
-            execution = service.run(
-                request_payload,
-                resolved_user,
-                event_sink=renderer,
+        if any(value is not None for value in (user_id, model_id, skill_id)):
+            raise typer.BadParameter(
+                "--user-id、--model-id和--skill-id仅适用于--remote模式。"
             )
-            execution = _approval_loop(
-                execution,
-                service=service,
-                user_id=resolved_user,
-                renderer=renderer,
-                assume_yes=assume_yes,
-            )
-        _print_answer(execution, json_events=json_events)
+        agent = _local_agent()
+        execution = agent.run(task, tools=tools, event_sink=renderer)
+        execution = _local_approval_loop(
+            execution,
+            agent=agent,
+            renderer=renderer,
+            assume_yes=assume_yes,
+        )
+        _print_answer(
+            execution,
+            json_events=json_events,
+            renderer=renderer,
+        )
     except (KeyboardInterrupt, EOFError):
         raise typer.Exit(130) from None
     except Exception as exc:
@@ -749,14 +876,24 @@ def chat(
     assume_yes: bool = typer.Option(False, "--yes"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
     """Start an interactive Agent conversation."""
-    remote = _remote_client(server, local=local)
+    remote = _remote_client(
+        server,
+        local=local,
+        remote=remote_mode,
+    )
     if remote is not None and user_id is not None:
         raise typer.BadParameter(
             "远程模式使用登录用户，不能传入--user-id。"
         )
-    resolved_user = None if remote is not None else _resolve_user_id(user_id)
+    if remote is None and any(
+        value is not None for value in (user_id, model_id, skill_id)
+    ):
+        raise typer.BadParameter(
+            "--user-id、--model-id和--skill-id仅适用于--remote模式。"
+        )
     history_path = Path.home() / ".knowflow" / "cli-history"
     history_path.parent.mkdir(parents=True, exist_ok=True)
     history_path.touch(exist_ok=True)
@@ -764,15 +901,15 @@ def chat(
         history_path.parent.chmod(0o700)
         history_path.chmod(0o600)
     session = PromptSession(history=FileHistory(str(history_path)))
-    service = None if remote is not None else _application()
+    agent = None if remote is not None else _local_agent()
     renderer = EventRenderer(json_events=False)
     session_id: str | None = None
     current_model_id = model_id
+    conversation: list[dict[str, Any]] = []
     console.print(
-        "[dim]输入/exit退出，/new开始新会话，/model <id>切换模型。[/dim]"
+        "[dim]输入/exit退出，/new开始新会话。模型配置使用knowflow configure。[/dim]"
     )
-    runtime_context = nullcontext() if remote is not None else _background_runtime()
-    with runtime_context:
+    with nullcontext():
         while True:
             try:
                 question = session.prompt("knowflow> ").strip()
@@ -784,9 +921,15 @@ def chat(
                 break
             if question == "/new":
                 session_id = None
+                conversation = []
                 console.print("[dim]已开始新会话。[/dim]")
                 continue
             if question.startswith("/model"):
+                if remote is None:
+                    console.print(
+                        "[dim]本地模型由knowflow configure管理。[/dim]"
+                    )
+                    continue
                 parts = question.split(maxsplit=1)
                 if len(parts) == 1:
                     console.print(
@@ -803,15 +946,16 @@ def chat(
                     f"[dim]已切换到模型ID {current_model_id}，并开始新会话。[/dim]"
                 )
                 continue
+            renderer.streamed_text = False
             try:
-                request_payload = _request(
-                    question,
-                    session_id=session_id,
-                    model_id=current_model_id,
-                    tools=tools,
-                    skill_id=skill_id,
-                )
                 if remote is not None:
+                    request_payload = _request(
+                        question,
+                        session_id=session_id,
+                        model_id=current_model_id,
+                        tools=tools,
+                        skill_id=skill_id,
+                    )
                     execution = remote.run(
                         _remote_payload(request_payload),
                         renderer,
@@ -823,23 +967,35 @@ def chat(
                         assume_yes=assume_yes,
                     )
                 else:
-                    assert service is not None and resolved_user is not None
-                    execution = service.run(
-                        request_payload,
-                        resolved_user,
+                    assert agent is not None
+                    execution = agent.run(
+                        question,
+                        history=conversation,
+                        tools=tools,
                         event_sink=renderer,
                     )
-                    execution = _approval_loop(
+                    execution = _local_approval_loop(
                         execution,
-                        service=service,
-                        user_id=resolved_user,
+                        agent=agent,
                         renderer=renderer,
                         assume_yes=assume_yes,
                     )
+                    conversation = list(
+                        execution.result.get("messages") or conversation
+                    )
+                    answer = str(execution.result.get("answer") or "")
+                    if answer:
+                        conversation.append(
+                            {"role": "assistant", "content": answer}
+                        )
                 session_id = str(
                     execution.result.get("sessionId") or session_id or ""
                 ) or None
-                _print_answer(execution, json_events=False)
+                _print_answer(
+                    execution,
+                    json_events=False,
+                    renderer=renderer,
+                )
             except Exception as exc:
                 failure = _failure_payload(exc)
                 error_console.print(

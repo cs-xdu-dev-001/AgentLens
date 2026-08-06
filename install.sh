@@ -31,7 +31,10 @@ elif "$PYTHON" -m pipx --version >/dev/null 2>&1; then
   PIPX_AS_MODULE=1
 else
   BOOTSTRAP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/knowflow-ai/pipx"
-  "$PYTHON" -m venv "$BOOTSTRAP_DIR" || fail "无法创建pipx隔离环境，请安装python3-venv。"
+  if ! "$PYTHON" -m venv "$BOOTSTRAP_DIR"; then
+    rm -rf "$BOOTSTRAP_DIR"
+    fail "无法创建隔离环境。Ubuntu/Debian请先安装python3-venv，再重新运行安装命令。"
+  fi
   "$BOOTSTRAP_DIR/bin/python" -m pip install --disable-pip-version-check --quiet "pipx==1.16.1" \
     || fail "无法安装pipx。"
   PIPX_EXECUTABLE="$BOOTSTRAP_DIR/bin/pipx"
@@ -66,5 +69,8 @@ else
 fi
 
 printf '\nKnowFlow CLI安装完成。重新打开终端后运行：\n'
-printf '  knowflow auth login https://你的KnowFlow服务器\n'
+printf '  knowflow configure\n'
 printf '  knowflow chat\n'
+printf '\n连接已有KnowFlow服务器（可选）：\n'
+printf '  knowflow auth login https://你的KnowFlow服务器\n'
+printf '  knowflow chat --remote\n'

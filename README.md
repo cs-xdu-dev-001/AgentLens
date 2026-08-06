@@ -34,41 +34,48 @@
 - **模型与协议可切换**：支持OpenAI兼容端点，可为模型选择Chat Completions或Responses API。
 - **工具、MCP与Skills**：模型可自主联网搜索、调用已授权的MCP服务，并按任务启用Skill。
 - **用户隔离**：知识库、模型配置、工具密钥、MCP连接、Skills和长期记忆均按用户隔离。
-- **Web与Linux CLI**：浏览器和终端共用同一套Agent、审批、记忆与运行记录。
+- **Web与Linux CLI**：终端默认使用本地BYOK Agent；也可显式连接KnowFlow服务，共用服务端的审批、记忆与运行记录。
 
 ## 选择你的使用方式
 
 | 目标 | 推荐入口 | 需要什么 |
 | --- | --- | --- |
-| 使用已经部署的KnowFlow | [Linux CLI](#linux-cli)或浏览器 | Linux、Python 3.10+或现代浏览器 |
+| 在Linux终端运行本地Agent | [Linux CLI](#linux-cli) | Linux、Python 3.10+、自己的模型API Key |
+| 使用已经部署的KnowFlow | 浏览器或CLI的`--remote`模式 | 现代浏览器，或Linux CLI |
 | 在Windows上修改和调试项目 | [本地开发](#windows本地开发) | Python 3.10+、Node.js 18+、npm |
 | 部署自己的服务 | [Linux部署](#linux部署) | Ubuntu 24.04、域名与HTTPS |
 
 ## Linux CLI
 
-远程CLI很轻量，不会在本机安装Mem0、ChromaDB或服务端运行时。
+CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
 ```bash
+sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
-knowflow auth login https://你的KnowFlow服务器
+knowflow configure
 knowflow chat
 ```
 
-无桌面的服务器会输出验证地址和一次性验证码，可在另一台设备上完成登录。
+安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。
+
+`knowflow configure`会安全输入API Key，并分别保存公开配置与凭据。也可通过`KNOWFLOW_API_BASE`、`KNOWFLOW_API_KEY`、`KNOWFLOW_MODEL`、`KNOWFLOW_API_MODE`临时覆盖配置。
 
 常用命令：
 
 ```bash
 knowflow run "总结当前项目" --events
-knowflow runs
-knowflow models list
-knowflow tools list
-knowflow skills list
-knowflow mcp list
-knowflow memory list
+knowflow run "检查测试并修复失败" --yes
 ```
 
-CLI默认连接远程KnowFlow服务。`--local`会直接打开本机数据库和运行时存储，只适合独立测试机或停服维护，不能与同一数据目录上的Web服务并发运行。
+本地配置位于`~/.config/knowflow`，LangGraph checkpoint位于`~/.local/share/knowflow`。默认工作区是启动命令时的当前目录。
+
+连接已有KnowFlow Web服务是可选模式：
+
+```bash
+knowflow auth login https://你的KnowFlow服务器
+knowflow chat --remote
+knowflow run "总结知识库" --remote
+```
 
 ## Windows本地开发
 
@@ -230,11 +237,9 @@ srt --version
 ## 关键设计
 
 ```text
-React Web / Linux CLI
-          │
-       FastAPI + SSE
-          │
-       LangGraph
+React Web ── FastAPI + SSE ──┐
+                            ├── LangGraph
+Linux CLI ── 本地BYOK ──────┘
    ┌──────┼──────────┐
   RAG   Tools/MCP   Skills
    │        │          │

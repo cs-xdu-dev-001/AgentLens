@@ -4,8 +4,6 @@ import json
 import re
 from typing import Any, Callable
 
-from fastapi import HTTPException
-
 from .responses_protocol import (
     ResponsesProtocolError,
     ResponsesStreamAccumulator,
@@ -45,6 +43,8 @@ class ModelGateway:
             if row:
                 return row
             if user_id is not None:
+                from fastapi import HTTPException
+
                 raise HTTPException(status_code=404, detail="Model configuration not found.")
         if user_id is not None:
             return self.fetch_one(

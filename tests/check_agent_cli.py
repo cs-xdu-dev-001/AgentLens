@@ -118,10 +118,10 @@ def main() -> None:
         }
     )
 
-    class FakeApplication:
-        def run(self, payload, user_id, *, event_sink):
-            assert payload == {"question": "hello"}
-            assert user_id == 7
+    class FakeLocalAgent:
+        def run(self, task, *, tools, event_sink):
+            assert task == "hello"
+            assert tools
             event_sink(
                 {
                     "type": "done",
@@ -131,14 +131,7 @@ def main() -> None:
             return completed
 
     with (
-        patch.object(cli, "_resolve_user_id", return_value=7),
-        patch.object(cli, "_application", return_value=FakeApplication()),
-        patch.object(
-            cli,
-            "_request",
-            return_value={"question": "hello"},
-        ),
-        patch.object(cli, "_background_runtime", return_value=nullcontext()),
+        patch.object(cli, "_local_agent", return_value=FakeLocalAgent()),
         patch.object(cli, "_remote_client", return_value=None),
     ):
         response = CliRunner().invoke(

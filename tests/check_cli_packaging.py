@@ -20,7 +20,11 @@ assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
 
 dependencies = set(project["dependencies"])
 for required in {
+    "jsonschema==4.23.0",
+    "langgraph==1.2.10",
+    "langgraph-checkpoint-sqlite==3.1.0",
     "prompt-toolkit==3.0.53",
+    "pydantic==2.13.4",
     "requests==2.32.3",
     "rich==15.0.0",
     "typer==0.27.1",
@@ -41,7 +45,7 @@ probe = subprocess.run(
         "-c",
         (
             "import sys; import knowflow.cli; "
-            "heavy={'fastapi','langgraph','mem0','chromadb'}; "
+            "heavy={'fastapi','mem0','chromadb'}; "
             "found=heavy.intersection(sys.modules); "
             "assert not found, sorted(found)"
         ),

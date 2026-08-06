@@ -70,17 +70,24 @@ class WorkspaceRuntime:
         *,
         user_id: int,
         max_file_bytes: int = 1_000_000,
+        isolated_namespace: bool = True,
+        manage_root_permissions: bool = True,
     ) -> None:
         base = Path(root).expanduser().resolve()
         base.mkdir(parents=True, exist_ok=True)
         namespace = hashlib.sha256(
             f"workspace\0{int(user_id)}".encode("utf-8")
         ).hexdigest()[:32]
-        self.root = (base / namespace).resolve()
+        self.root = (
+            (base / namespace).resolve()
+            if isolated_namespace
+            else base
+        )
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_file_bytes = max(1_024, int(max_file_bytes))
-        self._restrict_directory(base)
-        self._restrict_directory(self.root)
+        if manage_root_permissions:
+            self._restrict_directory(base)
+            self._restrict_directory(self.root)
 
     @staticmethod
     def _restrict_directory(path: Path) -> None:
@@ -398,13 +405,17 @@ class SrtSandboxRunner:
                 "sandbox_runtime_unavailable",
                 "Linux Anthropic Sandbox Runtime is not available.",
             )
+        workspace_root = self.workspace.root.resolve()
+        denied_read = [
+            str(path)
+            for path in (Path.home().resolve(), Path.cwd().resolve())
+            if path != workspace_root
+        ]
+        denied_read.extend(["/etc/knowflow-ai", "/proc"])
         settings = {
             "filesystem": {
                 "denyRead": [
-                    str(Path.home()),
-                    str(Path.cwd()),
-                    "/etc/knowflow-ai",
-                    "/proc",
+                    str(path) for path in denied_read
                 ],
                 "allowRead": [str(self.workspace.root)],
                 "allowWrite": [str(self.workspace.root)],

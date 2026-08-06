@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knowflow-ai"
-version = "0.4.1"
+version = "0.5.0"
 description = "KnowFlow AI backend and Linux Agent CLI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+  "jsonschema==4.23.0",
+  "langgraph==1.2.10",
+  "langgraph-checkpoint-sqlite==3.1.0",
   "prompt-toolkit==3.0.53",
+  "pydantic==2.13.4",
   "requests==2.32.3",
   "rich==15.0.0",
   "typer==0.27.1",

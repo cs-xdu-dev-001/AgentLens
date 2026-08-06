@@ -92,7 +92,7 @@ def main() -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("KNOWFLOW_CLI_SERVER", None)
             try:
-                cli._remote_client(None, local=False)
+                cli._remote_client(None, local=False, remote=True)
             except Exception as exc:
                 assert isinstance(exc, cli.typer.BadParameter)
                 assert "auth login" in str(exc)
@@ -101,15 +101,37 @@ def main() -> None:
                     "missing remote profile silently fell back to local mode"
                 )
             assert cli._remote_client(None, local=True) is None
+            assert cli._remote_client(
+                None,
+                local=False,
+                remote=False,
+            ) is None
+            class FakeLocal:
+                def run(self, task, *, tools, event_sink):
+                    assert task == "local task"
+                    return AgentExecution(
+                        result={
+                            "paused": False,
+                            "answer": "local done",
+                            "runId": "run_local",
+                        }
+                    )
+
             with patch.object(
                 cli,
                 "_runtime",
                 side_effect=AssertionError("local runtime must stay lazy"),
-            ):
-                response = CliRunner().invoke(cli.app, ["chat"])
-            assert response.exit_code == 2, response.output
-            assert "auth login" in response.output
-            assert "ModuleNotFoundError" not in response.output
+            ), patch.object(
+                cli,
+                "_local_agent",
+                return_value=FakeLocal(),
+            ) as local_agent:
+                response = CliRunner().invoke(
+                    cli.app,
+                    ["run", "local task"],
+                )
+            assert response.exit_code == 0, response.output
+            local_agent.assert_called_once()
 
     events = list(
         iter_sse(
@@ -233,7 +255,7 @@ def main() -> None:
     with patch.object(cli, "_remote_client", return_value=FakeRemote()):
         response = CliRunner().invoke(
             cli.app,
-            ["run", "remote task", "--events"],
+            ["run", "remote task", "--events", "--remote"],
         )
     assert response.exit_code == 0, response.output
     assert '"runId": "run_remote"' in response.output

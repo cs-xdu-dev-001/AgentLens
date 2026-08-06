@@ -748,6 +748,8 @@ class LangGraphAgentEngine:
                 )
             else:
                 store = context.tool_operation_store
+                if store is None:
+                    execution = context.registry.invoke(prepared)
                 operation = (
                     store.get_for_call(
                         context.user_id,

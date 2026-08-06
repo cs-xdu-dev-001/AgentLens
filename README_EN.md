@@ -34,41 +34,48 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 - **Switchable models and protocols**: connect OpenAI-compatible endpoints through Chat Completions or the Responses API.
 - **Tools, MCP, and Skills**: let the model search the web, call authorized MCP servers, and activate a Skill for the current task.
 - **Per-user isolation**: separate knowledge bases, model settings, tool keys, MCP connections, Skills, and memories.
-- **Web and Linux CLI**: use the same agent, approvals, memory, and run history from a browser or terminal.
+- **Web and Linux CLI**: the terminal runs a local BYOK agent by default, or can explicitly connect to a KnowFlow server for shared approvals, memory, and run history.
 
 ## Choose a starting point
 
 | Goal | Recommended entry point | Requirements |
 | --- | --- | --- |
-| Use an existing KnowFlow deployment | [Linux CLI](#linux-cli) or browser | Linux with Python 3.10+, or a modern browser |
+| Run a local agent in a Linux terminal | [Linux CLI](#linux-cli) | Linux, Python 3.10+, and your own model API key |
+| Use an existing KnowFlow deployment | Browser or CLI `--remote` mode | A modern browser, or the Linux CLI |
 | Modify and debug the project on Windows | [Local development](#local-development-on-windows) | Python 3.10+, Node.js 18+, npm |
 | Host your own service | [Linux deployment](#linux-deployment) | Ubuntu 24.04, a domain, and HTTPS |
 
 ## Linux CLI
 
-The remote CLI is lightweight. It does not install Mem0, ChromaDB, or the server runtime locally.
+The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
 ```bash
+sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
-knowflow auth login https://your-knowflow-server.example
+knowflow configure
 knowflow chat
 ```
 
-On a headless server, the CLI prints a verification URL and a one-time code so authorization can be completed on another device.
+The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first.
+
+`knowflow configure` accepts the API key through a hidden prompt and stores public settings separately from credentials. `KNOWFLOW_API_BASE`, `KNOWFLOW_API_KEY`, `KNOWFLOW_MODEL`, and `KNOWFLOW_API_MODE` can temporarily override saved values.
 
 Useful commands:
 
 ```bash
 knowflow run "Summarize the current project" --events
-knowflow runs
-knowflow models list
-knowflow tools list
-knowflow skills list
-knowflow mcp list
-knowflow memory list
+knowflow run "Run the tests and fix failures" --yes
 ```
 
-The CLI connects to a remote KnowFlow server by default. `--local` opens local databases and runtime storage directly; use it only on a dedicated test machine or during offline maintenance. Do not run it alongside the web service against the same data directory.
+Local configuration lives under `~/.config/knowflow`; LangGraph checkpoints live under `~/.local/share/knowflow`. The current directory is the default workspace.
+
+Connecting to an existing KnowFlow Web deployment is optional:
+
+```bash
+knowflow auth login https://your-knowflow-server.example
+knowflow chat --remote
+knowflow run "Summarize the knowledge base" --remote
+```
 
 ## Local development on Windows
 
@@ -198,11 +205,9 @@ Store production data under `/var/lib/knowflow-ai` and grant write access to the
 ## Design at a glance
 
 ```text
-React Web / Linux CLI
-          │
-       FastAPI + SSE
-          │
-       LangGraph
+React Web -- FastAPI + SSE --┐
+                             ├-- LangGraph
+Linux CLI -- local BYOK -----┘
    ┌──────┼──────────┐
   RAG   Tools/MCP   Skills
    │        │          │
