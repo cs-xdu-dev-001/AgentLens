@@ -69,6 +69,17 @@ else
 fi
 
 printf '\nKnowFlow CLI安装完成。重新打开终端后运行：\n'
+if command -v node >/dev/null 2>&1; then
+  NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+else
+  NODE_MAJOR=0
+fi
+case "$NODE_MAJOR" in
+  ''|*[!0-9]*) NODE_MAJOR=0 ;;
+esac
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  printf '  提示：安装Node.js 22+后启用新版Ink界面；当前会回退Textual。\n'
+fi
 printf '  knowflow configure\n'
 printf '  knowflow doctor --cli\n'
 printf '  knowflow chat\n'

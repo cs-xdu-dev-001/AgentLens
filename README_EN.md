@@ -40,7 +40,7 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 | Goal | Recommended entry point | Requirements |
 | --- | --- | --- |
-| Run a local agent in a Linux terminal | [Linux CLI](#linux-cli) | Linux, Python 3.10+, and your own model API key |
+| Run a local agent in a Linux terminal | [Linux CLI](#linux-cli) | Linux, Python 3.10+, Node.js 22+, and your own model API key |
 | Use an existing KnowFlow deployment | Browser or CLI `--remote` mode | A modern browser, or the Linux CLI |
 | Modify and debug the project on Windows | [Local development](#local-development-on-windows) | Python 3.10+, Node.js 18+, npm |
 | Host your own service | [Linux deployment](#linux-deployment) | Ubuntu 24.04, a domain, and HTTPS |
@@ -49,12 +49,13 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
-In an interactive terminal, `knowflow chat` opens the full-screen TUI by default with streaming answers, tool progress, run status, and approval dialogs. Use `knowflow chat --plain` for native terminal scrollback or script-friendly compatibility.
+With Node.js 22+ installed on Linux, `knowflow chat` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `knowflow chat --plain` for native scrollback and scripts.
 
-The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` for a flat command palette with aliases, source tags, and fuzzy search; `/help` separates default and custom commands. Press `Shift+Tab` to cycle the current session through Ask, Confirm risky operations only, and Full access. Use `/permissions` to manage per-tool Allow, Ask, and Deny rules. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, and `Ctrl+O` for run details. Like Claude Code, shell tools continuously show the latest five lines, elapsed time, total lines, and output size. `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary.
+The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, prompt history, queued tasks, streaming answers, approvals, and in-place tool progress. Type `/`, navigate with the arrow keys, accept with Tab or →, and dismiss with Esc. `Shift+Tab` cycles Ask, Auto edit, and Full access; `/permissions` opens the inline picker, `Ctrl+R` recalls history, and `Ctrl+O` expands tool details. Shell progress shows recent output, elapsed time, lines, and bytes. `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary. The advanced Allow/Ask/Deny rule editor remains available through the Textual fallback during migration.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
+node --version  # The Ink interface requires v22+
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
 knowflow doctor --cli
@@ -62,7 +63,7 @@ knowflow chat
 knowflow update
 ```
 
-The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first.
+The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first. The CLI remains usable without Node.js 22, but falls back to Textual.
 
 Install SRT and its Linux dependencies only when shell tools are needed:
 
@@ -224,9 +225,9 @@ Store production data under `/var/lib/knowflow-ai` and grant write access to the
 ## Design at a glance
 
 ```text
-React Web -- FastAPI + SSE --┐
-                             ├-- LangGraph
-Linux CLI -- local BYOK -----┘
+React Web -- FastAPI + SSE ---------┐
+                                    ├-- LangGraph
+Ink TUI -- JSONL -- Python BYOK ----┘
    ┌──────┼──────────┐
   RAG   Tools/MCP   Skills
    │        │          │

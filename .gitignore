@@ -1,5 +1,7 @@
 # Dependencies and local package caches
 frontend/node_modules/
+cli-tui/node_modules/
+cli-tui/dist/
 frontend/.npm-cache/
 frontend/dist/
 dist/

@@ -14,14 +14,18 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 
 
-project = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))[
-    "project"
-]
+configuration = tomllib.loads(
+    (BACKEND / "pyproject.toml").read_text(encoding="utf-8")
+)
+project = configuration["project"]
 assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.9.0"
+assert project["version"] == "0.10.0"
+package_data = configuration["tool"]["setuptools"]["package-data"]["knowflow"]
+assert "ink_tui/*.mjs" in package_data
+assert "ink_tui/*.txt" in package_data
 
 dependencies = set(project["dependencies"])
 for required in {
@@ -72,6 +76,7 @@ assert 'run_pipx install --force "$PACKAGE_SPEC"' in installer
 assert "KNOWFLOW_CLI_SPEC" in installer
 assert '"pipx==1.16.1"' in installer
 assert "sudo" not in installer
+assert "Node.js 22+" in installer
 
 cli_source = (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
 assert 'def update() -> None:' in cli_source
@@ -88,6 +93,7 @@ assert "build==1.4.0" in workflow
 assert "twine==6.2.0" in workflow
 assert "id-token: write" in workflow
 assert "gh release create" in workflow
+assert "Build and test Ink CLI" in workflow
 
 ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 assert "package_version=" in ci_workflow

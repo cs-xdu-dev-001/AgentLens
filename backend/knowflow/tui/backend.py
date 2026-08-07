@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from ..services.agent_execution import AgentEventSink, AgentExecution
+from ..services.agent_trace import sanitize_trace_value
 
 
 class TuiBackend:
@@ -47,6 +48,11 @@ class TuiBackend:
         normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value or "").strip())
         return normalized.strip("-").lower()
 
+    @staticmethod
+    def _command_description(value: Any, fallback: str) -> str:
+        safe = str(sanitize_trace_value(value or fallback, max_chars=160) or fallback)
+        return " ".join(safe.split())
+
     def command_catalog(self) -> list[dict[str, str]]:
         catalog: list[dict[str, str]] = []
         if self.remote_client is None:
@@ -59,7 +65,9 @@ class TuiBackend:
                     catalog.append(
                         {
                             "value": f"/tool:{name}",
-                            "description": str(function.get("description") or "调用Agent工具"),
+                            "description": self._command_description(
+                                function.get("description"), "调用Agent工具"
+                            ),
                             "source": "tool",
                         }
                     )
@@ -84,11 +92,10 @@ class TuiBackend:
                 name = self._command_name(raw_name)
                 if not name:
                     continue
-                description = str(
-                    item.get("description")
-                    or item.get("summary")
-                    or f"使用{fallback} {raw_name}"
-                )[:160]
+                description = self._command_description(
+                    item.get("description") or item.get("summary"),
+                    f"使用{fallback} {raw_name}",
+                )
                 catalog.append(
                     {
                         "value": f"/{source}:{name}",

@@ -23,6 +23,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: cli-tui/package-lock.json
+
+      - name: Build and test Ink CLI
+        working-directory: cli-tui
+        run: |
+          npm ci
+          npm test
+          npm run build
+          git diff --exit-code ../backend/knowflow/ink_tui/index.mjs ../backend/knowflow/ink_tui/THIRD_PARTY_LICENSES.txt
+
       - name: Validate release version
         shell: bash
         run: |

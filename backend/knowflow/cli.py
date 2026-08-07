@@ -623,7 +623,12 @@ def doctor(
 ) -> None:
     """Check whether the local Linux Agent runtime is ready."""
     if cli_only:
-        checks = _local_agent().sandbox_diagnostics(smoke=True)
+        from .tui.ink_launcher import ink_diagnostics
+
+        checks = [
+            *ink_diagnostics(smoke=True),
+            *_local_agent().sandbox_diagnostics(smoke=True),
+        ]
         ready = bool(checks) and all(bool(item["ready"]) for item in checks)
         if json_output:
             _emit_json({"ready": ready, "checks": checks})

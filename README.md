@@ -40,7 +40,7 @@
 
 | 目标 | 推荐入口 | 需要什么 |
 | --- | --- | --- |
-| 在Linux终端运行本地Agent | [Linux CLI](#linux-cli) | Linux、Python 3.10+、自己的模型API Key |
+| 在Linux终端运行本地Agent | [Linux CLI](#linux-cli) | Linux、Python 3.10+、Node.js 22+、自己的模型API Key |
 | 使用已经部署的KnowFlow | 浏览器或CLI的`--remote`模式 | 现代浏览器，或Linux CLI |
 | 在Windows上修改和调试项目 | [本地开发](#windows本地开发) | Python 3.10+、Node.js 18+、npm |
 | 部署自己的服务 | [Linux部署](#linux部署) | Ubuntu 24.04、域名与HTTPS |
@@ -49,12 +49,13 @@
 
 CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
-交互式终端中的`knowflow chat`默认打开全屏TUI，展示流式回答、工具步骤、运行状态和审批弹层。需要终端原生滚屏或兼容脚本时使用`knowflow chat --plain`。
+Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。需要原生滚屏或脚本兼容时使用`knowflow chat --plain`。
 
-TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队，以及工具/Skill/MCP动态命令。输入`/`会打开扁平命令补全，支持别名、来源标签和模糊搜索；`/help`按默认命令与自定义命令分类浏览。按`Shift+Tab`在“请求批准、仅危险操作确认、完全访问”三种本会话模式间循环；`/permissions`管理工具级Allow、Ask、Deny规则。`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情。Shell工具会像Claude Code一样持续显示最近5行、耗时、总行数和输出大小；`Ctrl+C`会终止SRT命令进程组，并在安全边界停止本轮Agent。
+Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史，`Ctrl+O`展开工具详情。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
+node --version  # 新版Ink界面需要v22+
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
 knowflow doctor --cli
@@ -62,7 +63,7 @@ knowflow chat
 knowflow update
 ```
 
-安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。
+安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。Node.js不满足22时CLI仍可用，但会回退旧Textual界面。
 
 需要Shell工具时，再安装SRT及其Linux依赖：
 
@@ -256,9 +257,9 @@ knowflow doctor --cli
 ## 关键设计
 
 ```text
-React Web ── FastAPI + SSE ──┐
-                            ├── LangGraph
-Linux CLI ── 本地BYOK ──────┘
+React Web ── FastAPI + SSE ─────────┐
+                                   ├── LangGraph
+Ink TUI ── JSONL ── Python BYOK ───┘
    ┌──────┼──────────┐
   RAG   Tools/MCP   Skills
    │        │          │
