@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,9 +32,13 @@ for required in {
     "requests==2.32.3",
     "rich==15.0.0",
     "textual==8.2.8",
+    "tomli==2.2.1; python_version < '3.11'",
     "typer==0.27.1",
 }:
     assert required in dependencies
+
+requirements = (BACKEND / "requirements.txt").read_text(encoding="utf-8")
+assert 'tomli==2.2.1; python_version < "3.11"' in requirements
 
 local_dependencies = set(project["optional-dependencies"]["local"])
 for required in {
