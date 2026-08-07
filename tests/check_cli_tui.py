@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import sys
-import time
+from threading import Event
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,6 +114,11 @@ class RemoteStreamingBackend(FakeBackend):
 
 
 class SlowBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self.started = Event()
+        self.release = Event()
+
     def run(self, question, event_sink):
         self.questions.append(question)
         event_sink(
@@ -125,7 +130,9 @@ class SlowBackend(FakeBackend):
                 "status": "running",
             }
         )
-        time.sleep(0.35)
+        self.started.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("live status test did not release the backend")
         return AgentExecution(
             result={
                 "paused": False,
@@ -211,12 +218,17 @@ async def exercise_live_status() -> None:
     async with app.run_test(size=(100, 30)) as pilot:
         app.query_one(Composer).load_text("slow")
         await pilot.press("enter")
-        await pilot.pause(0.15)
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        assert backend.started.is_set()
         assert app.running
         assert "理解任务" in str(app.query_one("#run-status").render())
         assert "Agent运行" in str(
             app.query_one(".activity-header").render()
         )
+        backend.release.set()
         for _ in range(20):
             await pilot.pause(0.05)
             if not app.running:
