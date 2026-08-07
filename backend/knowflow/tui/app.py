@@ -144,13 +144,20 @@ class KnowFlowTui(App[None]):
         self.workspace = str(Path.cwd())
         self.command_handlers: dict[str, Any] = {
             "/help": self._cmd_help,
+            "/about": self._cmd_about,
+            "/version": self._cmd_version,
             "/new": self._cmd_new,
             "/clear": self._cmd_clear,
             "/model": self._cmd_model,
+            "/tools": self._cmd_tools,
+            "/skills": self._cmd_skills,
+            "/mcp": self._cmd_mcp,
+            "/memory": self._cmd_memory,
             "/status": self._cmd_status,
             "/permissions": self._cmd_permissions,
             "/tasks": self._cmd_tasks,
             "/continue": self._cmd_continue,
+            "/update": self._cmd_update,
             "/exit": self._cmd_exit,
         }
         super().__init__()
@@ -264,15 +271,25 @@ class KnowFlowTui(App[None]):
             return True
         handler = self.command_handlers.get(command_key)
         if handler is None:
-            # 兜底处理，未注册 handler 的命令按文本提交
-            return False
+            await self.query_one(TranscriptView).add_notice(
+                f"{command_key} 当前无处理入口，请使用子命令版本。"
+            )
+            return True
         return bool(await handler(list(args)))
 
     async def _cmd_help(self, args: list[str]) -> bool:
         if not args:
             await self.query_one(TranscriptView).add_notice(
-                "/help 查看命令分级，/new新会话，/clear清屏，/model模型，"
-                "/status状态，/permissions权限，/tasks队列，/exit退出。"
+                "会话：/new, /clear, /status, /tasks, /continue, /exit。"
+            )
+            await self.query_one(TranscriptView).add_notice(
+                "模型：/model, /model list, /model use, /model config。"
+            )
+            await self.query_one(TranscriptView).add_notice(
+                "能力：/tools list, /skills list, /mcp list, /memory list。"
+            )
+            await self.query_one(TranscriptView).add_notice(
+                "系统：/permissions, /version, /about, /help, /update。"
             )
             return True
         part = args[0].lower().strip()
@@ -301,6 +318,30 @@ class KnowFlowTui(App[None]):
         )
         return True
 
+    async def _cmd_about(self, args: list[str]) -> bool:
+        runtime = "本地" if self.backend.remote_client is None else "远程"
+        await self.query_one(TranscriptView).add_notice(
+            f"KnowFlow TUI · 模式：{runtime} · 模型：{self.backend.model_label} "
+            f"· 工作目录：{self.workspace}"
+        )
+        return True
+
+    async def _cmd_version(self, args: list[str]) -> bool:
+        try:
+            cli_version = version("knowflow-ai")
+        except PackageNotFoundError:
+            cli_version = "dev"
+        await self.query_one(TranscriptView).add_notice(
+            f"KnowFlow CLI 当前版本 v{cli_version}"
+        )
+        return True
+
+    async def _cmd_update(self, args: list[str]) -> bool:
+        await self.query_one(TranscriptView).add_notice(
+            "更新CLI：执行 `knowflow update`（与主程序版本同步）。"
+        )
+        return True
+
     async def _cmd_new(self, args: list[str]) -> bool:
         await self.action_new()
         return True
@@ -322,13 +363,37 @@ class KnowFlowTui(App[None]):
             return True
         part = args[0].lower().strip()
         if part == "list":
+            if self.backend.remote_client is None:
+                await self.query_one(TranscriptView).add_notice(
+                    "本地模式请先执行 knowflow configure。"
+                )
+                return True
+            await self._cmd_model_list_remote()
+            return True
+        if part == "use":
+            if self.backend.remote_client is None:
+                await self.query_one(TranscriptView).add_notice(
+                    "本地模式不支持在会话内切换模型ID。请重新配置 knowflow configure。"
+                )
+                return True
+            if len(args) < 2:
+                await self.query_one(TranscriptView).add_notice(
+                    "使用示例：/model use <模型ID>"
+                )
+                return True
+            try:
+                self.backend.model_id = int(args[1])
+            except ValueError:
+                await self.query_one(TranscriptView).add_notice("模型ID必须是整数。")
+                return True
+            self.backend.session_id = None
             await self.query_one(TranscriptView).add_notice(
-                "模型列表请使用 /model（TUI显示当前）或在终端执行 knowflow models list。"
+                f"已切换会话模型到 #{self.backend.model_id}，新会话已开启。"
             )
             return True
         if part == "config":
             await self.query_one(TranscriptView).add_notice(
-                "模型配置请使用 knowflow configure，或在 /tools /models 面板里维护。"
+                "模型配置请使用 knowflow configure，或在 /model list 后在网页调整。"
             )
             return True
         await self.query_one(TranscriptView).add_notice(
@@ -351,6 +416,152 @@ class KnowFlowTui(App[None]):
             + ("、".join(tools) if tools else "无，所有写操作按需确认。")
         )
         return True
+
+    async def _cmd_tools(self, args: list[str]) -> bool:
+        if self.backend.remote_client is None:
+            await self.query_one(TranscriptView).add_notice(
+                "本地模式不支持工具列表查询。"
+            )
+            return True
+        items = await self._fetch_remote_list("/api/agent/tools")
+        if items is None:
+            return True
+        tools = [str(item.get("name") if isinstance(item, dict) else item) for item in items]
+        await self.query_one(TranscriptView).add_notice(
+            "可用工具："
+            + ("、".join(tools[:20]) if tools else "无可用工具。")
+        )
+        if len(tools) > 20:
+            await self.query_one(TranscriptView).add_notice(
+                f"... 仅展示前20条，剩余{len(tools)-20}条。"
+            )
+        return True
+
+    async def _cmd_skills(self, args: list[str]) -> bool:
+        if self.backend.remote_client is None:
+            await self.query_one(TranscriptView).add_notice(
+                "本地模式不支持技能列表查询。"
+            )
+            return True
+        items = await self._fetch_remote_list("/api/skills/")
+        if items is None:
+            return True
+        names = [
+            str(item.get("name") if isinstance(item, dict) else item)
+            for item in items
+        ]
+        await self.query_one(TranscriptView).add_notice(
+            "Skills："
+            + ("、".join(names[:20]) if names else "无可用技能。")
+        )
+        if len(names) > 20:
+            await self.query_one(TranscriptView).add_notice(
+                f"... 仅展示前20条，剩余{len(names)-20}条。"
+            )
+        return True
+
+    async def _cmd_mcp(self, args: list[str]) -> bool:
+        if self.backend.remote_client is None:
+            await self.query_one(TranscriptView).add_notice(
+                "本地模式不支持MCP列表查询。"
+            )
+            return True
+        items = await self._fetch_remote_list("/api/mcp/servers")
+        if items is None:
+            return True
+        records = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            records.append(
+                f"{item.get('name') or item.get('slug') or ''} "
+                f"· {item.get('status') or 'unknown'}"
+            )
+        await self.query_one(TranscriptView).add_notice(
+            "MCP："
+            + ("、".join(records[:20]) if records else "无MCP服务。")
+        )
+        if len(records) > 20:
+            await self.query_one(TranscriptView).add_notice(
+                f"... 仅展示前20条，剩余{len(records)-20}条。"
+            )
+        return True
+
+    async def _cmd_memory(self, args: list[str]) -> bool:
+        if self.backend.remote_client is None:
+            await self.query_one(TranscriptView).add_notice(
+                "本地模式暂不支持记忆列表查询。"
+            )
+            return True
+        items = await self._fetch_remote_list(
+            "/api/memories",
+            params={"limit": 20},
+        )
+        if items is None:
+            return True
+        if not items:
+            await self.query_one(TranscriptView).add_notice("暂无记忆记录。")
+            return True
+        await self.query_one(TranscriptView).add_notice("最近记忆：")
+        for index, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                continue
+            content = str(
+                item.get("memory")
+                or item.get("content")
+                or item.get("summary")
+                or ""
+            )
+            await self.query_one(TranscriptView).add_notice(
+                f"{index}. {content[:64]}{'...' if len(content) > 64 else ''}"
+            )
+        return True
+
+    async def _cmd_model_list_remote(self) -> None:
+        items = await self._fetch_remote_list(
+            "/api/model-configs",
+            params={"modelType": "chat"},
+        )
+        if items is None:
+            return
+        if not items:
+            await self.query_one(TranscriptView).add_notice("未查询到聊天模型。")
+            return
+        entries = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            entries.append(
+                f"#{item.get('id')} "
+                f"{item.get('name') or item.get('configName') or ''} "
+                f"{item.get('model') or item.get('modelName') or item.get('model_name')}"
+                f" · {item.get('apiMode') or item.get('api_mode') or item.get('protocol')}"
+            )
+        if not entries:
+            await self.query_one(TranscriptView).add_notice("当前无可用模型。")
+            return
+        await self.query_one(TranscriptView).add_notice("模型清单：")
+        for entry in entries[:20]:
+            await self.query_one(TranscriptView).add_notice(entry)
+        if len(entries) > 20:
+            await self.query_one(TranscriptView).add_notice(
+                f"... 仅展示前20条，剩余{len(entries)-20}条。"
+            )
+
+    async def _fetch_remote_list(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]] | list[str] | None:
+        try:
+            payload = self.backend.remote_client.request("GET", path, params=params or {})
+        except Exception as exc:
+            await self.query_one(TranscriptView).add_notice(f"查询失败：{exc}")
+            return None
+        if isinstance(payload, list):
+            return payload
+        return []
 
     async def _cmd_tasks(self, args: list[str]) -> bool:
         queued = self.session.queued_questions

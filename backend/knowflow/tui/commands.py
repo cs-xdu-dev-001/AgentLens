@@ -15,6 +15,7 @@ class SlashCommand:
     description: str
     aliases: tuple[str, ...] = ()
     is_group: bool = False
+    hidden: bool = False
 
     def score(self, query: str, parent: tuple[str, ...], prefix: str) -> int | None:
         if not query.startswith("/"):
@@ -69,11 +70,23 @@ COMMANDS = (
     SlashCommand("/model", "查看当前模型", is_group=True),
     SlashCommand("/model list", "查看模型配置"),
     SlashCommand("/model config", "打开模型配置说明"),
+    SlashCommand("/model use", "切换会话模型（远程模式）"),
     SlashCommand("/status", "查看会话与运行状态"),
     SlashCommand("/permissions", "查看本次会话权限"),
     SlashCommand("/tasks", "查看等待执行的任务"),
     SlashCommand("/continue", "继续执行等待队列"),
     SlashCommand("/exit", "退出KnowFlow", ("/quit",)),
+    SlashCommand("/about", "显示版本、执行环境与会话上下文"),
+    SlashCommand("/version", "显示当前CLI与协议版本"),
+    SlashCommand("/update", "更新KnowFlow CLI到最新版"),
+    SlashCommand("/tools", "查看工具清单", is_group=True),
+    SlashCommand("/tools list", "列出可用工具"),
+    SlashCommand("/skills", "查看Skill清单", is_group=True),
+    SlashCommand("/skills list", "列出当前会话可用技能"),
+    SlashCommand("/mcp", "查看MCP接入", is_group=True),
+    SlashCommand("/mcp list", "列出MCP服务器"),
+    SlashCommand("/memory", "查看长期记忆", is_group=True),
+    SlashCommand("/memory list", "查看最近记忆摘要"),
 )
 
 

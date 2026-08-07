@@ -75,9 +75,21 @@ class CommandMenu(Vertical):
         await self.remove_children()
         self.set_class(bool(self.matches), "visible")
         for index, command in enumerate(self.matches):
+            if command.hidden:
+                continue
             row = Text()
-            row.append(f"{command.value:<18}", style="bold cyan")
-            row.append(command.description, style="dim")
+            if command.is_group:
+                row.append(f"{command.value} ", style="bold cyan")
+                row.append("· ", style="dim")
+                row.append("组命令", style="yellow")
+                row.append("  ", style="dim")
+                row.append(command.description, style="dim")
+            else:
+                row.append(f"{command.value:<18}", style="bold cyan")
+                row.append(command.description, style="dim")
+            if command.aliases:
+                row.append("  ", style="dim")
+                row.append(f"别名:{', '.join(command.aliases)}", style="dim")
             item = Static(row, classes="command-option")
             item.set_class(index == self.selected, "selected")
             await self.mount(item)
