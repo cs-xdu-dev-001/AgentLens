@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from textual import on, work
@@ -13,7 +14,7 @@ from textual.widgets import Button, Static
 
 from ..services.agent_execution import AgentExecution
 from .backend import TuiBackend
-from .widgets import Composer, TranscriptView
+from .widgets import CommandMenu, Composer, TranscriptView
 
 
 class AgentEventMessage(Message):
@@ -99,6 +100,8 @@ class KnowFlowTui(App[None]):
         self.running = False
         self.streamed = False
         self.pending_execution: AgentExecution | None = None
+        self.started_at: float | None = None
+        self.current_phase = "就绪"
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -110,6 +113,7 @@ class KnowFlowTui(App[None]):
         yield TranscriptView(id="transcript")
         with Vertical(id="bottom-pane"):
             yield Static("就绪", id="run-status")
+            yield CommandMenu()
             yield Composer()
             yield Static(
                 "Enter提交  Shift+Enter换行  Ctrl+P命令  Ctrl+C退出",
@@ -118,6 +122,34 @@ class KnowFlowTui(App[None]):
 
     def on_mount(self) -> None:
         self.query_one(Composer).focus()
+        self.set_interval(0.25, self._tick_elapsed)
+
+    @on(Composer.CommandQuery)
+    async def handle_command_query(self, message: Composer.CommandQuery) -> None:
+        menu = self.query_one(CommandMenu)
+        await menu.update_query(message.value)
+        self.query_one(Composer).command_menu_open = bool(menu.matches)
+
+    @on(Composer.CommandMove)
+    async def handle_command_move(self, message: Composer.CommandMove) -> None:
+        await self.query_one(CommandMenu).move(message.delta)
+
+    @on(Composer.CommandAccepted)
+    async def handle_command_accepted(self) -> None:
+        menu = self.query_one(CommandMenu)
+        value = menu.selected_value
+        if value is None:
+            return
+        composer = self.query_one(Composer)
+        composer.load_text(value)
+        await menu.hide()
+        composer.command_menu_open = False
+        await self._submit()
+
+    @on(Composer.CommandDismissed)
+    async def handle_command_dismissed(self) -> None:
+        await self.query_one(CommandMenu).hide()
+        self.query_one(Composer).command_menu_open = False
 
     @on(Composer.Submitted)
     async def handle_composer_submitted(self) -> None:
@@ -136,9 +168,11 @@ class KnowFlowTui(App[None]):
             return
         transcript = self.query_one(TranscriptView)
         await transcript.add_user(question)
+        await transcript.begin_run()
         self.streamed = False
         self.running = True
-        self._set_status("正在思考…")
+        self.started_at = monotonic()
+        self._set_status("分析任务")
         self.execute_turn(question)
 
     async def _handle_command(self, value: str) -> bool:
@@ -153,7 +187,7 @@ class KnowFlowTui(App[None]):
             return True
         if value == "/help":
             await self.query_one(TranscriptView).add_notice(
-                "/new新会话  /clear清屏  /quit退出  Ctrl+P打开命令面板"
+                "/new新会话  /clear清屏  /exit退出  Ctrl+P打开命令面板"
             )
             return True
         if value == "/model":
@@ -196,33 +230,48 @@ class KnowFlowTui(App[None]):
         event = message.event
         event_type = str(event.get("type") or "")
         transcript = self.query_one(TranscriptView)
+        await transcript.update_activity(event)
         if event_type == "text_delta":
             text = str(event.get("text") or "")
             if text:
                 self.streamed = True
                 await transcript.append_assistant(text)
-        elif event_type == "answer" and not self.streamed:
+        elif event_type in {"answer", "message"}:
             content = str(event.get("content") or "")
             if content:
                 self.streamed = True
                 await transcript.append_assistant(content)
+            self._set_status("生成回答")
+        elif event_type == "model_event":
+            self._set_status("生成回答")
         elif event_type == "tool_result":
-            latency = event.get("latencyMs")
-            await transcript.add_tool(
-                str(event.get("toolName") or "工具调用"),
-                str(event.get("status") or "completed"),
-                int(latency) if isinstance(latency, (int, float)) else None,
+            self._set_status("处理工具结果")
+        elif event_type == "agent_step":
+            step = event.get("step") if isinstance(event.get("step"), dict) else event
+            self._set_status(
+                str(step.get("title") or step.get("name") or "执行Agent步骤")
             )
-            self._set_status("工具执行完成，继续处理…")
+        elif event_type in {"plan_created", "step_updated", "run_updated"}:
+            self._set_status("更新任务进度")
         elif event_type == "approval_required":
             self._set_status("等待确认")
 
     async def on_turn_completed(self, message: TurnCompleted) -> None:
+        transcript = self.query_one(TranscriptView)
+        trace = message.execution.result.get("trace")
+        if isinstance(trace, list):
+            for step in trace:
+                if isinstance(step, dict):
+                    await transcript.update_activity(
+                        {"type": "agent_step", **step}
+                    )
         answer = str(message.execution.result.get("answer") or "")
         if answer and not self.streamed:
-            await self.query_one(TranscriptView).append_assistant(answer)
+            await transcript.append_assistant(answer)
+        await transcript.finish_run()
         self.pending_execution = None
         self.running = False
+        self.started_at = None
         self._set_status("已完成")
         self.query_one(Composer).focus()
 
@@ -250,7 +299,9 @@ class KnowFlowTui(App[None]):
     async def on_turn_failed(self, message: TurnFailed) -> None:
         self.running = False
         self.pending_execution = None
+        self.started_at = None
         self._set_status("执行失败")
+        await self.query_one(TranscriptView).finish_run(failed=True)
         await self.query_one(TranscriptView).add_notice(
             f"执行失败：{message.error}",
             error=True,
@@ -265,7 +316,17 @@ class KnowFlowTui(App[None]):
         self.resume_turn(execution, decision or "deny")
 
     def _set_status(self, value: str) -> None:
+        self.current_phase = value
         self.query_one("#run-status", Static).update(value)
+
+    def _tick_elapsed(self) -> None:
+        if not self.running or self.started_at is None:
+            return
+        elapsed = monotonic() - self.started_at
+        self.query_one("#run-status", Static).update(
+            f"{self.current_phase} · {elapsed:.1f}s"
+        )
+        self.query_one(TranscriptView).tick_run(elapsed)
 
     async def action_clear(self) -> None:
         await self.query_one(TranscriptView).clear_transcript()
