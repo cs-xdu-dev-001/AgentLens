@@ -609,6 +609,11 @@ def auth_logout() -> None:
 @app.command()
 def doctor(
     user_id: int | None = typer.Option(None, "--user-id"),
+    cli_only: bool = typer.Option(
+        False,
+        "--cli",
+        help="Check the standalone CLI and Anthropic SRT sandbox only.",
+    ),
     prepare: bool = typer.Option(
         False,
         "--prepare",
@@ -617,6 +622,26 @@ def doctor(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Check whether the local Linux Agent runtime is ready."""
+    if cli_only:
+        checks = _local_agent().sandbox_diagnostics(smoke=True)
+        ready = bool(checks) and all(bool(item["ready"]) for item in checks)
+        if json_output:
+            _emit_json({"ready": ready, "checks": checks})
+        else:
+            table = Table(title="KnowFlow CLI诊断")
+            table.add_column("检查")
+            table.add_column("状态")
+            table.add_column("详情")
+            for item in checks:
+                table.add_row(
+                    str(item["name"]),
+                    "[green]通过[/green]" if item["ready"] else "[red]失败[/red]",
+                    str(item.get("detail") or ""),
+                )
+            console.print(table)
+        if not ready:
+            raise typer.Exit(1)
+        return
     from .services.runtime_preflight import inspect_runtime_paths
 
     runtime = _runtime()

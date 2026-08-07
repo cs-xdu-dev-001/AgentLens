@@ -110,6 +110,26 @@ class TuiBackend:
         )
         return True
 
+    def sandbox_diagnostics(self) -> list[dict[str, Any]]:
+        if self.remote_client is not None:
+            return [
+                {
+                    "name": "mode",
+                    "ready": False,
+                    "detail": "远程模式请在服务器运行knowflow doctor。",
+                }
+            ]
+        diagnostic = getattr(self.local_agent, "sandbox_diagnostics", None)
+        if not callable(diagnostic):
+            return [
+                {
+                    "name": "sandbox",
+                    "ready": False,
+                    "detail": "当前CLI不支持SRT诊断。",
+                }
+            ]
+        return list(diagnostic(smoke=True))
+
     def run(
         self,
         question: str,

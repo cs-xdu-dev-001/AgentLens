@@ -51,17 +51,29 @@ The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses you
 
 In an interactive terminal, `knowflow chat` opens the full-screen TUI by default with streaming answers, tool progress, run status, and approval dialogs. Use `knowflow chat --plain` for native terminal scrollback or script-friendly compatibility.
 
-The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` for a flat command palette with aliases, source tags, and fuzzy search; `/help` separates default and custom commands. Press `Shift+Tab` to cycle the current session through Ask, Confirm risky operations only, and Full access. Use `/permissions` to manage per-tool Allow, Ask, and Deny rules. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, `Ctrl+O` for run details, and `Ctrl+C` to request cancellation.
+The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` for a flat command palette with aliases, source tags, and fuzzy search; `/help` separates default and custom commands. Press `Shift+Tab` to cycle the current session through Ask, Confirm risky operations only, and Full access. Use `/permissions` to manage per-tool Allow, Ask, and Deny rules. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, and `Ctrl+O` for run details. Like Claude Code, shell tools continuously show the latest five lines, elapsed time, total lines, and output size. `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
+knowflow doctor --cli
 knowflow chat
 knowflow update
 ```
 
 The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first.
+
+Install SRT and its Linux dependencies only when shell tools are needed:
+
+```bash
+sudo apt-get install -y bubblewrap util-linux ripgrep socat
+npm install -g @anthropic-ai/sandbox-runtime
+srt echo sandbox-ok
+knowflow doctor --cli
+```
+
+Use `/doctor` for the same checks inside the TUI. Some Ubuntu 24.04 cloud images restrict unprivileged user namespaces with AppArmor; prefer a minimal `bwrap` policy and do not globally disable AppArmor restrictions on production hosts.
 
 `knowflow configure` accepts the API key through a hidden prompt and stores public settings separately from credentials. `KNOWFLOW_API_BASE`, `KNOWFLOW_API_KEY`, `KNOWFLOW_MODEL`, and `KNOWFLOW_API_MODE` can temporarily override saved values.
 
@@ -201,9 +213,10 @@ Install the sandbox runtime before enabling shell execution:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y bubblewrap util-linux
+sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
-srt --version
+srt echo sandbox-ok
+knowflow doctor --cli
 ```
 
 Store production data under `/var/lib/knowflow-ai` and grant write access to the service user. A consistent stopped-service backup must include the main database, LangGraph checkpoint, `skills`, `workspaces`, `tool-results`, and `mem0` data.

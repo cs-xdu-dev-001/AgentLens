@@ -143,10 +143,39 @@ def tool_error_presentation(code: Any, message: Any) -> tuple[str, str]:
             "执行状态不确定",
             "为避免重复写入，先检查目标状态再决定是否重试。",
         ),
+        "tool_cancelled": ("已由用户中断", "检查已有输出后再决定是否重试。"),
+        "tool_timeout": ("命令执行超时", "缩小任务或提高命令超时时间后重试。"),
+        "sandbox_runtime_unavailable": (
+            "SRT不可用",
+            "运行knowflow doctor --cli检查SRT及Linux沙箱依赖。",
+        ),
     }
     if normalized in known:
         return known[normalized]
     return error_recovery_message(message or code)
+
+
+def _format_bytes(value: Any) -> str:
+    try:
+        size = max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return ""
+    if size <= 0:
+        return ""
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+def _safe_shell_output(value: Any, *, lines: int = 5, limit: int = 2_000) -> str:
+    raw_lines = str(value or "").splitlines()[-max(1, int(lines)) :]
+    rendered = "\n".join(
+        redact_public_detail(line, limit=max(80, limit // max(1, lines)))
+        for line in raw_lines
+    )
+    return rendered if len(rendered) <= limit else rendered[-limit:]
 
 
 class CommandMenu(Vertical):
@@ -504,7 +533,39 @@ class RunActivity(Vertical):
                 detail,
             )
             return
-        if event_type in {"tool_started", "tool", "tool_result"}:
+        if event_type in {"tool_started", "tool_progress", "tool", "tool_result"}:
+            call_id = str(
+                event.get("toolCallId")
+                or event.get("callId")
+                or event.get("id")
+                or ""
+            )
+            if not call_id:
+                self._tool_sequence += 1
+                call_id = str(self._tool_sequence)
+            key = f"tool:{call_id}"
+            title = self._titles.get(key) or tool_activity_title(event)
+            if event_type == "tool_progress":
+                output = _safe_shell_output(event.get("output"), lines=5)
+                elapsed = event.get("elapsedSeconds")
+                summary = []
+                if isinstance(elapsed, (int, float)):
+                    summary.append(f"{float(elapsed):.1f}s")
+                lines = event.get("totalLines")
+                if isinstance(lines, (int, float)) and int(lines) > 0:
+                    summary.append(f"{int(lines)}行")
+                size = _format_bytes(event.get("totalBytes"))
+                if size:
+                    summary.append(size)
+                detail = output or "运行中…"
+                if summary:
+                    detail += "\n" + " · ".join(summary)
+                self._tool_keys.add(key)
+                self._active_tool_keys.add(key)
+                await self.upsert(key, title, "running", detail)
+                if key in self._rows:
+                    self._rows[key].collapsed = False
+                return
             latency = event.get("latencyMs")
             fragments = []
             if isinstance(latency, (int, float)):
@@ -517,7 +578,27 @@ class RunActivity(Vertical):
             if safe_arguments:
                 fragments.append(f"输入 {safe_arguments}")
             output = event.get("output") or event.get("result")
-            safe_output = self._safe_detail(output, limit=600)
+            output_dict = output if isinstance(output, dict) else {}
+            is_shell = str(event.get("toolName") or "") in {
+                "run_sandbox_command",
+                "sandbox_command",
+            }
+            shell_parts = []
+            if is_shell:
+                stdout = _safe_shell_output(output_dict.get("stdout"), lines=8)
+                stderr = _safe_shell_output(output_dict.get("stderr"), lines=8)
+                if stdout:
+                    shell_parts.append(stdout)
+                if stderr:
+                    shell_parts.append(f"stderr\n{stderr}")
+                exit_code = output_dict.get("exit_code")
+                if isinstance(exit_code, (int, float)):
+                    shell_parts.append(f"退出码 {int(exit_code)}")
+            safe_output = (
+                "\n".join(shell_parts)
+                if shell_parts
+                else self._safe_detail(output, limit=600)
+            )
             if safe_output:
                 fragments.append(f"结果 {safe_output}")
             error_message = self._safe_detail(
@@ -531,22 +612,18 @@ class RunActivity(Vertical):
                 )
                 fragments.append(f"{error_label}：{error_message}")
                 fragments.append(f"建议：{recovery}")
+            elif event.get("errorCode") or event.get("error_code"):
+                error_label, recovery = tool_error_presentation(
+                    event.get("errorCode") or event.get("error_code"),
+                    "",
+                )
+                fragments.append(error_label)
+                fragments.append(f"建议：{recovery}")
             detail = (
                 "\n".join(fragments)
                 if error_message
                 else " · ".join(fragments)
             )
-            name = tool_activity_title(event)
-            call_id = str(
-                event.get("toolCallId")
-                or event.get("callId")
-                or event.get("id")
-                or ""
-            )
-            if not call_id:
-                self._tool_sequence += 1
-                call_id = str(self._tool_sequence)
-            key = f"tool:{call_id}"
             status = str(event.get("status") or "completed")
             self._tool_keys.add(key)
             if status.lower() in {"failed", "error"}:
@@ -557,10 +634,12 @@ class RunActivity(Vertical):
                 self._active_tool_keys.discard(key)
             await self.upsert(
                 key,
-                name,
+                title,
                 status,
                 detail,
             )
+            if is_shell and detail and key in self._rows:
+                self._rows[key].collapsed = False
             return
         if event_type in {
             "run_snapshot",

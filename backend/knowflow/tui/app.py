@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version
 import json
@@ -656,6 +657,7 @@ class KnowFlowTui(App[None]):
             "/mcp": self._cmd_mcp,
             "/memory": self._cmd_memory,
             "/status": self._cmd_status,
+            "/doctor": self._cmd_doctor,
             "/permissions": self._cmd_permissions,
             "/tasks": self._cmd_tasks,
             "/history": self._cmd_history,
@@ -988,6 +990,25 @@ class KnowFlowTui(App[None]):
             f"{'已暂停' if self.session.queue_paused else '自动继续'}；"
             f"权限：{permission_label}。"
         )
+        return True
+
+    async def _cmd_doctor(self, args: list[str]) -> bool:
+        transcript = self.query_one(TranscriptView)
+        await transcript.add_notice("正在检查SRT沙箱与本地执行环境…")
+        checks = await asyncio.to_thread(self.backend.sandbox_diagnostics)
+        lines = []
+        for item in checks:
+            marker = "✓" if item.get("ready") else "×"
+            detail = redact_public_detail(item.get("detail"), limit=160)
+            lines.append(f"{marker} {item.get('name')}: {detail}")
+        ready = bool(checks) and all(bool(item.get("ready")) for item in checks)
+        lines.append(
+            "SRT已可执行shell工具。"
+            if ready
+            else "按失败项补齐依赖后重新输入/doctor。"
+        )
+        await transcript.add_notice("\n".join(lines))
+        self._set_status("SRT可用" if ready else "SRT诊断未通过")
         return True
 
     async def _cmd_permissions(self, args: list[str]) -> bool:
@@ -1426,7 +1447,7 @@ class KnowFlowTui(App[None]):
             self._set_status(
                 f"{reason}，{seconds}秒后重试（{attempt}/{maximum}）"
             )
-        elif event_type in {"tool_started", "tool", "tool_result"}:
+        elif event_type in {"tool_started", "tool_progress", "tool", "tool_result"}:
             self.session.record_tool(event)
             title = tool_activity_title(event)
             status = str(event.get("status") or "").lower()
@@ -1436,6 +1457,14 @@ class KnowFlowTui(App[None]):
                     if status == "waiting"
                     else f"正在{title}"
                 )
+            elif event_type == "tool_progress":
+                elapsed = event.get("elapsedSeconds")
+                suffix = (
+                    f"（{float(elapsed):.1f}s，Ctrl+C停止）"
+                    if isinstance(elapsed, (int, float))
+                    else "（Ctrl+C停止）"
+                )
+                self._set_status(f"正在{title}{suffix}")
             elif status in {"failed", "error"}:
                 self._set_status(f"{title}失败，正在调整")
             else:
@@ -1805,9 +1834,9 @@ class KnowFlowTui(App[None]):
                 self.notify("当前操作仍在收尾，请稍候。", severity="warning")
                 return
             self.session.cancel_requested = True
-            self._set_status("已请求停止，将在当前操作边界结束")
+            self._set_status("已请求停止，正在终止当前任务")
             self.notify(
-                "已请求停止；不会强制终止正在执行的工具。",
+                "已请求停止；可取消的命令会立即终止，其他工具将在安全边界结束。",
                 severity="warning",
             )
             self.cancel_turn(self.current_run_id)

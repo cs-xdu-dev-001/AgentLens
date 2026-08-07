@@ -79,6 +79,43 @@ class FakeBackend:
                 "output": {"bytes": 128},
             }
         )
+        event_sink(
+            {
+                "type": "tool_started",
+                "toolCallId": "call_shell",
+                "toolName": "run_sandbox_command",
+                "status": "running",
+                "arguments": {"command": "printf hello"},
+            }
+        )
+        event_sink(
+            {
+                "type": "tool_progress",
+                "toolCallId": "call_shell",
+                "toolName": "run_sandbox_command",
+                "status": "running",
+                "output": "hello",
+                "elapsedSeconds": 0.2,
+                "totalLines": 1,
+                "totalBytes": 5,
+            }
+        )
+        event_sink(
+            {
+                "type": "tool_result",
+                "toolCallId": "call_shell",
+                "toolName": "run_sandbox_command",
+                "status": "success",
+                "latencyMs": 220,
+                "arguments": {"command": "printf hello"},
+                "output": {
+                    "exit_code": 0,
+                    "stdout": "hello",
+                    "stderr": "",
+                    "timed_out": False,
+                },
+            }
+        )
         return AgentExecution(
             result={
                 "paused": False,
@@ -111,6 +148,16 @@ class FakeBackend:
                 "description": "读取工作区文件",
                 "source": "tool",
             }
+        ]
+
+    def sandbox_diagnostics(self):
+        return [
+            {"name": "srt", "ready": True, "detail": "/usr/bin/srt"},
+            {
+                "name": "sandbox_smoke",
+                "ready": True,
+                "detail": "SRT隔离执行成功",
+            },
         ]
 
 
@@ -405,6 +452,10 @@ async def exercise_tui() -> None:
             "README.md" in str(item.render())
             for item in activity.query(".activity-detail")
         )
+        assert any(
+            "hello" in str(item.render())
+            for item in activity.query(".activity-detail")
+        )
         assert "已完成" in str(app.query_one("#run-status").render())
         assert "test-model" in str(app.query_one("#status-bar").render())
 
@@ -412,6 +463,14 @@ async def exercise_tui() -> None:
         await pilot.pause(0.05)
         assert composer.text == "hello"
         composer.clear()
+
+        composer.load_text("/doctor")
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert any(
+            "SRT已可执行shell工具" in str(item.render())
+            for item in app.query(".notice")
+        )
 
         await pilot.press("ctrl+r")
         await pilot.pause(0.05)

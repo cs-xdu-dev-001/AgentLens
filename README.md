@@ -51,17 +51,29 @@ CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模�
 
 交互式终端中的`knowflow chat`默认打开全屏TUI，展示流式回答、工具步骤、运行状态和审批弹层。需要终端原生滚屏或兼容脚本时使用`knowflow chat --plain`。
 
-TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队，以及工具/Skill/MCP动态命令。输入`/`会打开扁平命令补全，支持别名、来源标签和模糊搜索；`/help`按默认命令与自定义命令分类浏览。按`Shift+Tab`在“请求批准、仅危险操作确认、完全访问”三种本会话模式间循环；`/permissions`管理工具级Allow、Ask、Deny规则。`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情，`Ctrl+C`请求停止当前任务。
+TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队，以及工具/Skill/MCP动态命令。输入`/`会打开扁平命令补全，支持别名、来源标签和模糊搜索；`/help`按默认命令与自定义命令分类浏览。按`Shift+Tab`在“请求批准、仅危险操作确认、完全访问”三种本会话模式间循环；`/permissions`管理工具级Allow、Ask、Deny规则。`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情。Shell工具会像Claude Code一样持续显示最近5行、耗时、总行数和输出大小；`Ctrl+C`会终止SRT命令进程组，并在安全边界停止本轮Agent。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
+knowflow doctor --cli
 knowflow chat
 knowflow update
 ```
 
 安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。
+
+需要Shell工具时，再安装SRT及其Linux依赖：
+
+```bash
+sudo apt-get install -y bubblewrap util-linux ripgrep socat
+npm install -g @anthropic-ai/sandbox-runtime
+srt echo sandbox-ok
+knowflow doctor --cli
+```
+
+`/doctor`可在TUI内执行同一组检查。部分Ubuntu 24.04云镜像会用AppArmor限制非特权user namespace；请优先为`bwrap`配置最小化策略，不要在生产机全局关闭AppArmor限制。
 
 `knowflow configure`会安全输入API Key，并分别保存公开配置与凭据。也可通过`KNOWFLOW_API_BASE`、`KNOWFLOW_API_KEY`、`KNOWFLOW_MODEL`、`KNOWFLOW_API_MODE`临时覆盖配置。
 
@@ -233,9 +245,10 @@ Mem0只负责长期记忆，不会接管Agent循环、工具或计划。召回�
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y bubblewrap util-linux
+sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
-srt --version
+srt echo sandbox-ok
+knowflow doctor --cli
 ```
 
 生产数据建议放在`/var/lib/knowflow-ai`，并确保服务用户可写。备份时应在同一停服快照中保存主数据库、LangGraph checkpoint、`skills`、`workspaces`、`tool-results`和`mem0`数据。

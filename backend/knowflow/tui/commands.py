@@ -60,6 +60,7 @@ COMMANDS = (
     SlashCommand("/clear", "清空当前显示", immediate=True),
     SlashCommand("/model", "查看或切换模型", argument_hint="[list | config | use <ID>]"),
     SlashCommand("/status", "查看会话与运行状态", immediate=True),
+    SlashCommand("/doctor", "检查SRT沙箱和本地执行环境", immediate=True),
     SlashCommand(
         "/permissions",
         "选择本次会话的执行权限",

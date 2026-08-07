@@ -5,10 +5,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+from threading import Thread
+import time
 from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -61,6 +65,10 @@ class SandboxCommandResult:
     stdout: str
     stderr: str
     timed_out: bool
+    cancelled: bool = False
+    elapsed_seconds: float = 0.0
+    total_lines: int = 0
+    total_bytes: int = 0
 
 
 class WorkspaceRuntime:
@@ -356,7 +364,8 @@ class SrtSandboxRunner:
         max_processes: int = 128,
         max_file_bytes: int = 100 * 1024 * 1024,
         platform: str = sys.platform,
-        run_factory: Callable[..., Any] = subprocess.run,
+        process_factory: Callable[..., Any] = subprocess.Popen,
+        progress_interval_seconds: float = 0.1,
     ) -> None:
         self.workspace = workspace
         self.command = str(command or "srt")
@@ -368,12 +377,70 @@ class SrtSandboxRunner:
         self.max_processes = max(16, int(max_processes))
         self.max_file_bytes = max(1024 * 1024, int(max_file_bytes))
         self.platform = str(platform)
-        self._run_factory = run_factory
+        self._process_factory = process_factory
+        self.progress_interval_seconds = max(
+            0.05,
+            float(progress_interval_seconds),
+        )
 
     def available(self) -> bool:
         return self.platform.startswith("linux") and bool(
             shutil.which(self.command) or Path(self.command).is_file()
         )
+
+    def diagnostics(self, *, smoke: bool = True) -> list[dict[str, Any]]:
+        checks: list[dict[str, Any]] = [
+            {
+                "name": "platform",
+                "ready": self.platform.startswith("linux"),
+                "detail": self.platform,
+            }
+        ]
+        commands = (
+            ("srt", self.command),
+            ("shell", self.shell),
+            ("limiter", self.limit_command),
+            ("bubblewrap", "bwrap"),
+            ("ripgrep", "rg"),
+            ("socat", "socat"),
+        )
+        for name, command in commands:
+            resolved = shutil.which(command) or (
+                str(Path(command)) if Path(command).is_file() else ""
+            )
+            checks.append(
+                {
+                    "name": name,
+                    "ready": bool(resolved),
+                    "detail": resolved or f"未找到{command}",
+                }
+            )
+        if not smoke or not all(bool(item["ready"]) for item in checks):
+            return checks
+        try:
+            result = self.run(
+                "printf knowflow-sandbox-ok",
+                timeout_seconds=10,
+            )
+            ready = (
+                result.exit_code == 0
+                and result.stdout == "knowflow-sandbox-ok"
+            )
+            detail = "SRT隔离执行成功" if ready else (
+                self._tail(result.stderr or result.stdout, lines=2, limit=200)
+                or f"退出码{result.exit_code}"
+            )
+        except Exception as exc:
+            ready = False
+            detail = str(exc).splitlines()[0][:200] or type(exc).__name__
+        checks.append(
+            {
+                "name": "sandbox_smoke",
+                "ready": ready,
+                "detail": detail,
+            }
+        )
+        return checks
 
     def _safe_environment(self) -> dict[str, str]:
         allowed = {
@@ -399,7 +466,79 @@ class SrtSandboxRunner:
         environment["TEMP"] = str(temporary)
         return environment
 
-    def run(self, command: str, *, timeout_seconds: int) -> SandboxCommandResult:
+    @staticmethod
+    def _tail(value: str, *, lines: int = 5, limit: int = 4_000) -> str:
+        selected = value.splitlines()[-max(1, int(lines)) :]
+        text = "\n".join(selected)
+        return text if len(text) <= limit else text[-limit:]
+
+    @staticmethod
+    def _append_bounded(current: str, chunk: str, limit: int) -> str:
+        value = current + chunk
+        return value if len(value) <= limit else value[-limit:]
+
+    def _terminate_process(self, process: Any) -> None:
+        if process.poll() is not None:
+            return
+        used_group = False
+        if os.name != "nt" and self.platform.startswith("linux"):
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                used_group = True
+            except (AttributeError, OSError, ProcessLookupError):
+                pass
+        if not used_group:
+            try:
+                process.terminate()
+            except (AttributeError, OSError):
+                pass
+        try:
+            process.wait(timeout=0.75)
+            return
+        except (subprocess.TimeoutExpired, AttributeError):
+            pass
+        if os.name != "nt" and self.platform.startswith("linux"):
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                return
+            except (AttributeError, OSError, ProcessLookupError):
+                pass
+        try:
+            process.kill()
+        except (AttributeError, OSError):
+            pass
+
+    def _progress_payload(
+        self,
+        *,
+        stdout: str,
+        stderr: str,
+        elapsed_seconds: float,
+        total_lines: int,
+        total_bytes: int,
+        timeout_seconds: int,
+    ) -> dict[str, Any]:
+        combined = "\n".join(
+            part for part in (stdout.rstrip(), stderr.rstrip()) if part
+        )
+        return {
+            "output": self._tail(combined),
+            "stdout": self._tail(stdout),
+            "stderr": self._tail(stderr),
+            "elapsedSeconds": round(max(0.0, elapsed_seconds), 1),
+            "totalLines": max(0, int(total_lines)),
+            "totalBytes": max(0, int(total_bytes)),
+            "timeoutSeconds": max(1, int(timeout_seconds)),
+        }
+
+    def run(
+        self,
+        command: str,
+        *,
+        timeout_seconds: int,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> SandboxCommandResult:
         if not self.available():
             raise WorkspaceRuntimeError(
                 "sandbox_runtime_unavailable",
@@ -430,58 +569,208 @@ class SrtSandboxRunner:
             },
         }
         settings_path = None
+        process = None
         try:
+            temporary_root = self.workspace.root / ".tmp"
+            temporary_root.mkdir(parents=True, exist_ok=True)
+            self.workspace._restrict_directory(temporary_root)
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 encoding="utf-8",
                 suffix=".json",
                 delete=False,
+                dir=temporary_root,
             ) as handle:
                 json.dump(settings, handle, ensure_ascii=False)
                 settings_path = handle.name
+            try:
+                Path(settings_path).chmod(0o600)
+            except OSError:
+                pass
             timeout = min(self.timeout_seconds, max(1, int(timeout_seconds)))
-            completed = self._run_factory(
-                [
-                    self.command,
-                    "--settings",
-                    settings_path,
-                    self.limit_command,
-                    f"--cpu={timeout}",
-                    f"--as={self.memory_bytes}",
-                    f"--nproc={self.max_processes}",
-                    f"--fsize={self.max_file_bytes}",
-                    "--",
-                    self.shell,
-                    "--noprofile",
-                    "--norc",
-                    "-c",
-                    str(command),
-                ],
+            argv = [
+                self.command,
+                "--settings",
+                settings_path,
+                self.limit_command,
+                f"--cpu={timeout}",
+                f"--as={self.memory_bytes}",
+                f"--nproc={self.max_processes}",
+                f"--fsize={self.max_file_bytes}",
+                "--",
+                self.shell,
+                "--noprofile",
+                "--norc",
+                "-c",
+                str(command),
+            ]
+            process = self._process_factory(
+                argv,
                 cwd=self.workspace.root,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 env=self._safe_environment(),
-                timeout=timeout,
-                check=False,
+                bufsize=1,
+                start_new_session=(
+                    os.name != "nt" and self.platform.startswith("linux")
+                ),
             )
-            stdout = str(completed.stdout or "")
-            stderr = str(completed.stderr or "")
-            return SandboxCommandResult(
-                exit_code=int(completed.returncode),
-                stdout=stdout[: self.max_output_bytes],
-                stderr=stderr[: self.max_output_bytes],
-                timed_out=False,
+            output_queue: Queue[tuple[str, str | None]] = Queue()
+
+            def read_stream(name: str, stream: Any) -> None:
+                try:
+                    while True:
+                        chunk = stream.readline(4_096)
+                        if not chunk:
+                            break
+                        output_queue.put((name, str(chunk)))
+                finally:
+                    output_queue.put((name, None))
+                    try:
+                        stream.close()
+                    except (AttributeError, OSError):
+                        pass
+
+            readers = [
+                Thread(
+                    target=read_stream,
+                    args=(name, stream),
+                    daemon=True,
+                    name=f"knowflow-srt-{name}",
+                )
+                for name, stream in (
+                    ("stdout", process.stdout),
+                    ("stderr", process.stderr),
+                )
+            ]
+            for reader in readers:
+                reader.start()
+
+            started = time.monotonic()
+            last_progress = 0.0
+            stdout = ""
+            stderr = ""
+            total_lines = 0
+            total_bytes = 0
+            closed_streams = 0
+            cancelled = False
+            timed_out = False
+            changed = False
+            while closed_streams < 2 or process.poll() is None:
+                try:
+                    name, chunk = output_queue.get(timeout=0.05)
+                except Empty:
+                    name, chunk = "", ""
+                if chunk is None:
+                    closed_streams += 1
+                elif chunk:
+                    total_lines += chunk.count("\n")
+                    total_bytes += len(chunk.encode("utf-8", errors="replace"))
+                    if name == "stdout":
+                        stdout = self._append_bounded(
+                            stdout,
+                            chunk,
+                            self.max_output_bytes,
+                        )
+                    else:
+                        stderr = self._append_bounded(
+                            stderr,
+                            chunk,
+                            self.max_output_bytes,
+                        )
+                    changed = True
+                elapsed = time.monotonic() - started
+                if cancel_check is not None and cancel_check():
+                    cancelled = True
+                    self._terminate_process(process)
+                elif elapsed >= timeout:
+                    timed_out = True
+                    self._terminate_process(process)
+                now = time.monotonic()
+                if progress_callback is not None and (
+                    changed
+                    and now - last_progress >= self.progress_interval_seconds
+                ):
+                    progress_callback(
+                        self._progress_payload(
+                            stdout=stdout,
+                            stderr=stderr,
+                            elapsed_seconds=elapsed,
+                            total_lines=(
+                                total_lines
+                                + int(bool(stdout) and not stdout.endswith("\n"))
+                                + int(bool(stderr) and not stderr.endswith("\n"))
+                            ),
+                            total_bytes=total_bytes,
+                            timeout_seconds=timeout,
+                        )
+                    )
+                    last_progress = now
+                    changed = False
+                if (cancelled or timed_out) and process.poll() is not None:
+                    break
+
+            for reader in readers:
+                reader.join(timeout=0.5)
+            while True:
+                try:
+                    name, chunk = output_queue.get_nowait()
+                except Empty:
+                    break
+                if not chunk:
+                    continue
+                total_lines += chunk.count("\n")
+                total_bytes += len(chunk.encode("utf-8", errors="replace"))
+                if name == "stdout":
+                    stdout = self._append_bounded(
+                        stdout,
+                        chunk,
+                        self.max_output_bytes,
+                    )
+                else:
+                    stderr = self._append_bounded(
+                        stderr,
+                        chunk,
+                        self.max_output_bytes,
+                    )
+            elapsed = time.monotonic() - started
+            reported_lines = (
+                total_lines
+                + int(bool(stdout) and not stdout.endswith("\n"))
+                + int(bool(stderr) and not stderr.endswith("\n"))
             )
-        except subprocess.TimeoutExpired as exc:
+            if progress_callback is not None:
+                progress_callback(
+                    self._progress_payload(
+                        stdout=stdout,
+                        stderr=stderr,
+                        elapsed_seconds=elapsed,
+                        total_lines=reported_lines,
+                        total_bytes=total_bytes,
+                        timeout_seconds=timeout,
+                    )
+                )
+            try:
+                return_code = int(process.wait(timeout=0.5))
+            except subprocess.TimeoutExpired:
+                self._terminate_process(process)
+                return_code = int(process.wait(timeout=0.5))
             return SandboxCommandResult(
-                exit_code=124,
-                stdout=str(exc.stdout or "")[: self.max_output_bytes],
-                stderr=str(exc.stderr or "")[: self.max_output_bytes],
-                timed_out=True,
+                exit_code=(130 if cancelled else 124 if timed_out else return_code),
+                stdout=stdout,
+                stderr=stderr,
+                timed_out=timed_out,
+                cancelled=cancelled,
+                elapsed_seconds=round(elapsed, 3),
+                total_lines=reported_lines,
+                total_bytes=total_bytes,
             )
         finally:
+            if process is not None and process.poll() is None:
+                self._terminate_process(process)
             if settings_path:
                 try:
                     Path(settings_path).unlink()
@@ -494,6 +783,8 @@ def register_workspace_tools(
     workspace: WorkspaceRuntime,
     *,
     sandbox: SrtSandboxRunner | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[str, ...]:
     registered = []
     registry.register(
@@ -556,12 +847,14 @@ def register_workspace_tools(
             handler=lambda args: sandbox.run(
                 args.command,
                 timeout_seconds=args.timeout_seconds,
+                progress_callback=progress_callback,
+                cancel_check=cancel_check,
             ).__dict__,
             read_only=False,
             risk="execute",
             destructive=True,
             concurrency_safe=False,
-            interrupt_behavior="block",
+            interrupt_behavior="cancel",
             engine_names={"langgraph"},
             trace_kind="sandbox",
             search_hint="run tests builds and Bash commands safely",

@@ -70,6 +70,7 @@ fi
 
 printf '\nKnowFlow CLI安装完成。重新打开终端后运行：\n'
 printf '  knowflow configure\n'
+printf '  knowflow doctor --cli\n'
 printf '  knowflow chat\n'
 printf '\n连接已有KnowFlow服务器（可选）：\n'
 printf '  knowflow auth login https://你的KnowFlow服务器\n'

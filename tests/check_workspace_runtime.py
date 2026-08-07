@@ -1,9 +1,9 @@
 from pathlib import Path
+from io import StringIO
 import json
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,7 +93,25 @@ def main() -> None:
 
         captured = {}
 
-        def fake_run(argv, **kwargs):
+        class FakeProcess:
+            def __init__(self, stdout: str, stderr: str, returncode: int = 0):
+                self.stdout = StringIO(stdout)
+                self.stderr = StringIO(stderr)
+                self.returncode = returncode
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+        def fake_process(argv, **kwargs):
             captured["argv"] = argv
             captured["kwargs"] = kwargs
             settings_path = Path(argv[2])
@@ -101,17 +119,24 @@ def main() -> None:
             assert settings["network"]["allowedDomains"] == []
             assert str(workspace.root) in settings["filesystem"]["allowWrite"]
             assert "/proc" in settings["filesystem"]["denyRead"]
-            return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+            return FakeProcess("ok", "")
 
         runner = SrtSandboxRunner(
             workspace,
             command=sys.executable,
             shell="bash",
             platform="linux",
-            run_factory=fake_run,
+            process_factory=fake_process,
         )
-        result = runner.run("ls -la", timeout_seconds=10)
+        progress = []
+        result = runner.run(
+            "ls -la",
+            timeout_seconds=10,
+            progress_callback=progress.append,
+        )
         assert result.exit_code == 0 and result.stdout == "ok"
+        assert result.total_bytes == 2
+        assert progress[-1]["output"] == "ok"
         assert captured["kwargs"]["cwd"] == workspace.root
         assert "KNOWFLOW_SECRET_KEY" not in captured["kwargs"]["env"]
         assert captured["kwargs"]["env"]["HOME"] == str(workspace.root)
@@ -139,17 +164,42 @@ def main() -> None:
         assert registry.definition("run_sandbox_command").risk == "execute"
         assert registry.definition("write_workspace_file").destructive is False
         assert registry.definition("run_sandbox_command").destructive is True
+        assert registry.definition("run_sandbox_command").interrupt_behavior == "cancel"
+
+        class SlowProcess(FakeProcess):
+            def __init__(self):
+                super().__init__("partial", "", 0)
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                if self.returncode is None:
+                    raise subprocess.TimeoutExpired("srt", timeout or 0)
+                return self.returncode
 
         timeout_runner = SrtSandboxRunner(
             workspace,
             command=sys.executable,
             platform="linux",
-            run_factory=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                subprocess.TimeoutExpired("srt", 1, output="partial")
-            ),
+            process_factory=lambda *_args, **_kwargs: SlowProcess(),
         )
         timeout = timeout_runner.run("slow", timeout_seconds=1)
         assert timeout.timed_out is True and timeout.exit_code == 124
+
+        cancelled_runner = SrtSandboxRunner(
+            workspace,
+            command=sys.executable,
+            platform="linux",
+            process_factory=lambda *_args, **_kwargs: SlowProcess(),
+        )
+        cancelled = cancelled_runner.run(
+            "slow",
+            timeout_seconds=10,
+            cancel_check=lambda: True,
+        )
+        assert cancelled.cancelled is True and cancelled.exit_code == 130
 
         unsupported = SrtSandboxRunner(
             workspace,
@@ -157,6 +207,7 @@ def main() -> None:
             platform="win32",
         )
         assert unsupported.available() is False
+        assert unsupported.diagnostics(smoke=False)[0]["ready"] is False
 
     print("workspace tools enforce user isolation and sandbox-only shell execution")
 

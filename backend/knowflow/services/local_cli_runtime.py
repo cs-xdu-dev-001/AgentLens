@@ -29,6 +29,19 @@ LOCAL_USER_ID = 1
 DEFAULT_MAX_FILE_BYTES = 2_000_000
 
 
+def _public_event_value(value: Any, *, max_chars: int) -> Any:
+    safe = sanitize_trace_value(value, max_chars=max_chars)
+    if safe is None:
+        return None
+    try:
+        parsed = json.loads(safe)
+    except json.JSONDecodeError:
+        return safe
+    if isinstance(parsed, (dict, list)):
+        return parsed
+    return safe
+
+
 def _xdg_path(environment_name: str, fallback: Path) -> Path:
     configured = os.getenv(environment_name, "").strip()
     return Path(configured).expanduser() if configured else fallback
@@ -254,7 +267,7 @@ class LocalAgentRuntime:
         self._cancel_events: dict[str, Event] = {}
 
     def cancel(self, run_id: str | None = None) -> bool:
-        """Request cooperative cancellation at the next safe graph boundary."""
+        """Cancel interruptible tools now and stop at the next graph boundary."""
         with self._cancel_lock:
             targets = (
                 [self._cancel_events[run_id]]
@@ -269,20 +282,38 @@ class LocalAgentRuntime:
             target.set()
         return bool(targets)
 
-    def _registry(self, *, tools: bool) -> ToolRegistry:
-        registry = ToolRegistry()
-        if not tools:
-            return registry
-        workspace = WorkspaceRuntime(
+    def _workspace(self) -> WorkspaceRuntime:
+        return WorkspaceRuntime(
             self.workspace_root,
             user_id=LOCAL_USER_ID,
             max_file_bytes=DEFAULT_MAX_FILE_BYTES,
             isolated_namespace=False,
             manage_root_permissions=False,
         )
+
+    def _registry(
+        self,
+        *,
+        tools: bool,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> ToolRegistry:
+        registry = ToolRegistry()
+        if not tools:
+            return registry
+        workspace = self._workspace()
         sandbox = SrtSandboxRunner(workspace)
-        register_workspace_tools(registry, workspace, sandbox=sandbox)
+        register_workspace_tools(
+            registry,
+            workspace,
+            sandbox=sandbox,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+        )
         return registry
+
+    def sandbox_diagnostics(self, *, smoke: bool = True) -> list[dict[str, Any]]:
+        return SrtSandboxRunner(self._workspace()).diagnostics(smoke=smoke)
 
     def tool_schemas(self) -> list[dict[str, Any]]:
         """Return the public tool catalog used by local interactive clients."""
@@ -322,42 +353,104 @@ class LocalAgentRuntime:
             self._cancel_events[identifier] = cancel_event
 
         def emit(event: dict[str, Any]) -> None:
-            events.append(event)
+            if (
+                event.get("type") == "tool_progress"
+                and events
+                and events[-1].get("type") == "tool_progress"
+                and events[-1].get("toolCallId") == event.get("toolCallId")
+            ):
+                events[-1] = event
+            else:
+                events.append(event)
             if event_sink is not None:
                 event_sink(event)
 
         def model_event(event: dict[str, Any]) -> None:
             emit({"type": "model_event", **event})
 
+        active_tool: dict[str, str] = {}
+
         def tool_lifecycle_event(event: dict[str, Any]) -> None:
+            if (
+                event.get("type") == "tool_started"
+                and event.get("status") == "running"
+            ):
+                active_tool["call_id"] = str(event.get("toolCallId") or "")
+                active_tool["name"] = str(event.get("toolName") or "")
             emit(
                 {
                     **event,
-                    "arguments": sanitize_trace_value(
+                    "arguments": _public_event_value(
                         event.get("arguments"),
                         max_chars=500,
                     ),
                 }
             )
 
+        def tool_progress_event(progress: dict[str, Any]) -> None:
+            public_progress = {
+                "output": _public_event_value(
+                    progress.get("output"),
+                    max_chars=4_000,
+                ),
+                "stdout": _public_event_value(
+                    progress.get("stdout"),
+                    max_chars=2_000,
+                ),
+                "stderr": _public_event_value(
+                    progress.get("stderr"),
+                    max_chars=2_000,
+                ),
+                "elapsedSeconds": progress.get("elapsedSeconds"),
+                "totalLines": progress.get("totalLines"),
+                "totalBytes": progress.get("totalBytes"),
+                "timeoutSeconds": progress.get("timeoutSeconds"),
+            }
+            emit(
+                {
+                    "type": "tool_progress",
+                    "runId": identifier,
+                    "toolCallId": active_tool.get("call_id") or "",
+                    "toolName": active_tool.get("name") or "run_sandbox_command",
+                    "status": "running",
+                    **public_progress,
+                }
+            )
+
         def tool_event(execution: ToolExecution, _parent: str | None) -> None:
+            output = execution.public_output()
+            cancelled = bool(
+                isinstance(output, dict) and output.get("cancelled")
+            )
+            timed_out = bool(
+                isinstance(output, dict) and output.get("timed_out")
+            )
+            public_status = (
+                "cancelled"
+                if cancelled
+                else "failed" if timed_out else execution.status
+            )
             emit(
                 {
                     "type": "tool_result",
                     "toolCallId": execution.call_id,
                     "toolName": execution.tool_name,
-                    "status": execution.status,
-                    "errorCode": execution.error_code,
+                    "status": public_status,
+                    "errorCode": (
+                        "tool_cancelled"
+                        if cancelled
+                        else "tool_timeout" if timed_out else execution.error_code
+                    ),
                     "latencyMs": execution.latency_ms,
-                    "arguments": sanitize_trace_value(
+                    "arguments": _public_event_value(
                         execution.arguments,
                         max_chars=500,
                     ),
-                    "output": sanitize_trace_value(
-                        execution.public_output(),
-                        max_chars=1000,
+                    "output": _public_event_value(
+                        output,
+                        max_chars=4_000,
                     ),
-                    "errorMessage": sanitize_trace_value(
+                    "errorMessage": _public_event_value(
                         execution.error_message,
                         max_chars=500,
                     ),
@@ -371,7 +464,11 @@ class LocalAgentRuntime:
                 run_id=identifier,
                 messages=messages,
                 config=config,
-                registry=self._registry(tools=tools),
+                registry=self._registry(
+                    tools=tools,
+                    progress_callback=tool_progress_event,
+                    cancel_check=cancel_event.is_set,
+                ),
                 execution_callback=tool_event,
                 model_event_callback=model_event,
                 tool_event_callback=tool_lifecycle_event,
