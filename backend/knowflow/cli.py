@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import subprocess
 import sys
 import time
 from typing import TYPE_CHECKING, Any, Iterator
@@ -53,6 +54,10 @@ console = Console()
 error_console = Console(stderr=True)
 profile_store = RemoteProfileStore()
 
+DEFAULT_CLI_PACKAGE_SPEC = (
+    "git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+)
+
 
 def _version_callback(value: bool) -> None:
     if not value:
@@ -63,6 +68,39 @@ def _version_callback(value: bool) -> None:
         package_version = "development"
     typer.echo(package_version)
     raise typer.Exit()
+
+
+def _installed_cli_version() -> str:
+    try:
+        return version("knowflow-ai")
+    except PackageNotFoundError:
+        return "development"
+
+
+def _pipx_command() -> list[str] | None:
+    executable = shutil.which("pipx")
+    if executable:
+        return [executable]
+    data_home = Path(
+        os.getenv("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
+    )
+    bundled = data_home / "knowflow-ai" / "pipx" / "bin" / "pipx"
+    if bundled.is_file():
+        return [str(bundled)]
+    return None
+
+
+def _cli_update_command() -> list[str]:
+    pipx = _pipx_command()
+    if pipx is None:
+        raise RuntimeError(
+            "未找到pipx。请重新运行官网安装命令完成升级。"
+        )
+    package_spec = (
+        os.getenv("KNOWFLOW_CLI_SPEC", "").strip()
+        or DEFAULT_CLI_PACKAGE_SPEC
+    )
+    return [*pipx, "install", "--force", package_spec]
 
 
 @app.callback()
@@ -415,6 +453,32 @@ def configure(
         f"配置已保存：[bold]{validated['model_name']}[/bold] · "
         f"{validated['api_mode']}"
     )
+
+
+@app.command()
+def update() -> None:
+    """更新KnowFlow CLI到最新版。"""
+    current = _installed_cli_version()
+    console.print(f"当前版本：[bold]{current}[/bold]")
+    try:
+        command = _cli_update_command()
+        with console.status("正在更新KnowFlow CLI..."):
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+    except (OSError, RuntimeError) as exc:
+        error_console.print(f"[red]更新失败：{exc}[/red]")
+        raise typer.Exit(1) from exc
+    if result.returncode != 0:
+        error_console.print(
+            "[red]更新失败：pipx未能完成安装。"
+            "请重新运行官网安装命令。[/red]"
+        )
+        raise typer.Exit(result.returncode or 1)
+    console.print("[green]更新完成。[/green]请重新运行knowflow。")
 
 
 @auth_app.command("login")

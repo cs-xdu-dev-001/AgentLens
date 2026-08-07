@@ -76,8 +76,8 @@ class CommandMenu(Vertical):
         self.set_class(bool(self.matches), "visible")
         for index, command in enumerate(self.matches):
             row = Text()
-            row.append(command.value, style="bold")
-            row.append(f"  {command.description}", style="dim")
+            row.append(f"{command.value:<18}", style="bold cyan")
+            row.append(command.description, style="dim")
             item = Static(row, classes="command-option")
             item.set_class(index == self.selected, "selected")
             await self.mount(item)
@@ -127,7 +127,7 @@ class RunActivity(Vertical):
         self._tool_sequence = 0
 
     def compose(self):
-        yield Static("Agent运行 · 0.0s", classes="activity-header")
+        yield Static("正在处理 · 0.0s", classes="activity-header")
         yield Vertical(classes="activity-steps")
 
     async def begin(self) -> None:
@@ -143,7 +143,11 @@ class RunActivity(Vertical):
         normalized = status.lower() or "running"
         label = self.STATUS_LABELS.get(normalized, normalized)
         value = Text()
-        value.append(title or "Agent步骤", style="bold")
+        marker = "×" if normalized in {"failed", "error"} else (
+            "•" if normalized in {"running", "waiting"} else "✓"
+        )
+        value.append(f"  {marker} ", style="red" if marker == "×" else "cyan")
+        value.append(title or "Agent步骤")
         value.append(f"  {label}", style="dim")
         if detail:
             self._details[key] = detail
@@ -274,7 +278,7 @@ class RunActivity(Vertical):
             return
         value = monotonic() - self.started_at if elapsed is None else elapsed
         self.query_one(".activity-header", Static).update(
-            f"Agent运行 · {value:.1f}s"
+            f"正在处理 · {value:.1f}s"
         )
 
     async def finish(self, *, failed: bool = False) -> None:
@@ -302,8 +306,37 @@ class TranscriptView(VerticalScroll):
         self._assistant_text = ""
         self._activity: RunActivity | None = None
 
+    async def show_welcome(
+        self,
+        *,
+        version: str,
+        model: str,
+        workspace: str,
+    ) -> None:
+        heading = Text()
+        heading.append(">_ ", style="dim")
+        heading.append("KnowFlow", style="bold")
+        heading.append(f"  (v{version})", style="dim")
+        summary = Text()
+        summary.append("model:      ", style="dim")
+        summary.append(model)
+        summary.append("    /model查看或修改\n", style="cyan")
+        summary.append("directory:  ", style="dim")
+        summary.append(workspace)
+        await self.mount(Static(heading, classes="welcome-heading"))
+        await self.mount(Static(summary, classes="welcome-summary"))
+        await self.mount(
+            Static(
+                "提示：输入 / 查看命令；Ctrl+O展开执行过程；Ctrl+C中断任务。",
+                classes="welcome-tip",
+            )
+        )
+
     async def add_user(self, content: str) -> None:
-        await self.mount(Static(content, classes="message user-message"))
+        value = Text()
+        value.append("› ", style="bold cyan")
+        value.append(content, style="bold")
+        await self.mount(Static(value, classes="message user-message"))
         self._assistant = None
         self._assistant_text = ""
         self.scroll_end(animate=False)

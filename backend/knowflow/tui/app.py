@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version
 import json
 from pathlib import Path
 from time import monotonic
@@ -141,18 +142,25 @@ class KnowFlowTui(App[None]):
         super().__init__()
 
     def compose(self) -> ComposeResult:
-        yield Static(
-            f"KnowFlow  ·  {self.backend.model_label}  ·  {self.workspace}",
-            id="topbar",
-        )
         yield TranscriptView(id="transcript")
         with Vertical(id="bottom-pane"):
             yield Static("就绪", id="run-status")
             yield CommandMenu()
-            yield Composer()
+            with Horizontal(id="composer-row"):
+                yield Static("›", id="composer-prefix")
+                yield Composer()
             yield StatusBar(id="status-bar")
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
+        try:
+            release = version("knowflow-ai")
+        except PackageNotFoundError:
+            release = "dev"
+        await self.query_one(TranscriptView).show_welcome(
+            version=release,
+            model=self.backend.model_label,
+            workspace=self.workspace,
+        )
         self.query_one(Composer).focus()
         self.set_interval(0.25, self._tick_elapsed)
         self._refresh_status_bar()

@@ -170,6 +170,9 @@ async def exercise_tui() -> None:
     app = KnowFlowTui(backend, assume_yes=False)
     async with app.run_test(size=(100, 30)) as pilot:
         composer = app.query_one(Composer)
+        assert "KnowFlow" in str(app.query_one(".welcome-heading").render())
+        assert "test-model" in str(app.query_one(".welcome-summary").render())
+        assert "输入 / 查看命令" in str(app.query_one(".welcome-tip").render())
         composer.load_text("line one")
         await pilot.press("shift+enter")
         await pilot.pause(0.05)
@@ -181,7 +184,15 @@ async def exercise_tui() -> None:
         menu = app.query_one(CommandMenu)
         assert menu.matches
         assert menu.has_class("visible")
+        assert [item.value for item in menu.matches[:3]] == [
+            "/help",
+            "/new",
+            "/clear",
+        ]
         assert any(item.value == "/status" for item in menu.matches)
+        assert "查看命令与快捷键" in str(
+            list(menu.query(".command-option"))[0].render()
+        )
         await pilot.press("down")
         assert menu.selected == 1
         await pilot.press("escape")
@@ -260,7 +271,7 @@ async def exercise_live_status() -> None:
         assert backend.started.is_set()
         assert app.running
         assert "理解任务" in str(app.query_one("#run-status").render())
-        assert "Agent运行" in str(
+        assert "正在处理" in str(
             app.query_one(".activity-header").render()
         )
         backend.release.set()

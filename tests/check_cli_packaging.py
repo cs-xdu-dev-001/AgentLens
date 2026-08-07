@@ -21,6 +21,7 @@ assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
+assert project["version"] == "0.6.1"
 
 dependencies = set(project["dependencies"])
 for required in {
@@ -71,6 +72,11 @@ assert 'run_pipx install --force "$PACKAGE_SPEC"' in installer
 assert "KNOWFLOW_CLI_SPEC" in installer
 assert '"pipx==1.16.1"' in installer
 assert "sudo" not in installer
+
+cli_source = (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
+assert 'def update() -> None:' in cli_source
+assert '[*pipx, "install", "--force", package_spec]' in cli_source
+assert 'os.getenv("KNOWFLOW_CLI_SPEC", "").strip()' in cli_source
 
 workflow = (ROOT / ".github/workflows/release-cli.yml").read_text(
     encoding="utf-8"

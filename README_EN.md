@@ -56,6 +56,7 @@ sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
 knowflow chat
+knowflow update
 ```
 
 The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first.
@@ -67,6 +68,7 @@ Useful commands:
 ```bash
 knowflow run "Summarize the current project" --events
 knowflow run "Run the tests and fix failures" --yes
+knowflow update
 ```
 
 Local configuration lives under `~/.config/knowflow`; LangGraph checkpoints live under `~/.local/share/knowflow`. The current directory is the default workspace.

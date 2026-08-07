@@ -56,6 +56,7 @@ sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
 knowflow configure
 knowflow chat
+knowflow update
 ```
 
 安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。
@@ -67,6 +68,7 @@ knowflow chat
 ```bash
 knowflow run "总结当前项目" --events
 knowflow run "检查测试并修复失败" --yes
+knowflow update
 ```
 
 本地配置位于`~/.config/knowflow`，LangGraph checkpoint位于`~/.local/share/knowflow`。默认工作区是启动命令时的当前目录。

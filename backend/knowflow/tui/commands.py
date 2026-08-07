@@ -13,6 +13,8 @@ class SlashCommand:
         needle = query.strip().lower()
         if not needle.startswith("/") or " " in needle:
             return None
+        if needle == "/":
+            return 0
         best: int | None = None
         for candidate in (self.value, *self.aliases):
             target = candidate.lower()
