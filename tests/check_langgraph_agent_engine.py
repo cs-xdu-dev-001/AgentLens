@@ -1076,6 +1076,8 @@ def main() -> None:
         )
         assert first_pause.paused is True
         assert first_pause.interrupt["toolCallId"] == "call_write_1"
+        assert first_pause.interrupt["readOnly"] is False
+        assert first_pause.interrupt["destructive"] is False
         assert write_calls == []
         first_operation = operation_store.ensure_waiting(
             user_id=17,

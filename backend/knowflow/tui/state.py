@@ -91,6 +91,14 @@ class TuiSessionState:
     queue_paused: bool = False
     stashed_prompt: str = ""
     last_prompt: QueuedPrompt | None = None
+    permission_mode: str = "ask"
+    permission_rules: dict[str, set[str]] = field(
+        default_factory=lambda: {
+            "allow": set(),
+            "ask": set(),
+            "deny": set(),
+        }
+    )
     _queue_sequence: int = 0
 
     @property
@@ -168,4 +176,35 @@ class TuiSessionState:
         self.queue_paused = False
         self.stashed_prompt = ""
         self.last_prompt = None
+        self.permission_mode = "ask"
+        for rules in self.permission_rules.values():
+            rules.clear()
         self.reset_run()
+
+    def permission_behavior(self, tool_name: str) -> str | None:
+        normalized = tool_name.strip().lower()
+        if not normalized:
+            return None
+        for behavior in ("deny", "ask", "allow"):
+            rules = self.permission_rules.get(behavior, set())
+            if "*" in rules or normalized in rules:
+                return behavior
+        return None
+
+    def set_permission_rule(self, behavior: str, tool_name: str) -> bool:
+        normalized = tool_name.strip().lower()
+        if behavior not in self.permission_rules or not normalized:
+            return False
+        for rules in self.permission_rules.values():
+            rules.discard(normalized)
+        self.permission_rules[behavior].add(normalized)
+        return True
+
+    def remove_permission_rule(self, behavior: str, tool_name: str) -> bool:
+        if behavior not in self.permission_rules:
+            return False
+        normalized = tool_name.strip().lower()
+        if normalized not in self.permission_rules[behavior]:
+            return False
+        self.permission_rules[behavior].remove(normalized)
+        return True

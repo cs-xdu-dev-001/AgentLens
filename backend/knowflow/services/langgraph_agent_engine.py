@@ -718,6 +718,8 @@ class LangGraphAgentEngine:
                     "toolName": prepared.tool_name,
                     "serverName": definition.server_name or "MCP",
                     "risk": definition.risk,
+                    "readOnly": definition.read_only,
+                    "destructive": definition.destructive,
                     "inputSummary": sanitize_trace_value(
                         prepared.arguments
                     ),

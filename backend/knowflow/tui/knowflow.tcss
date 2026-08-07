@@ -173,6 +173,12 @@ Screen {
     scrollbar-size: 1 1;
 }
 
+#command-options > .option-list--option-highlighted {
+    color: $background;
+    background: #d97757;
+    text-style: bold;
+}
+
 #composer-row {
     width: 100%;
     height: 5;
@@ -283,6 +289,88 @@ Screen.narrow #history-search-label {
 
 Screen.narrow #status-bar {
     display: none;
+}
+
+CommandBrowserScreen,
+PermissionRuleScreen {
+    align: center middle;
+    background: $background 65%;
+}
+
+#command-browser-dialog,
+#permission-rules-dialog {
+    width: 78;
+    max-width: 100%;
+    height: auto;
+    padding: 1 2;
+    border: round #d97757;
+    background: $surface;
+}
+
+#command-browser-tabs,
+#permission-rule-tabs,
+.permission-title {
+    height: 1;
+    text-style: bold;
+}
+
+#permission-rule-description {
+    height: auto;
+    margin: 1 0;
+    color: $text-muted;
+}
+
+#command-browser-options {
+    width: 100%;
+    height: 16;
+    border: none;
+    background: $surface;
+}
+
+#permission-rule-input {
+    display: block;
+    width: 100%;
+    height: 3;
+    margin-bottom: 1;
+    border: none;
+    border-bottom: solid #555555;
+    background: $surface;
+}
+
+#permission-rule-input:focus {
+    border-bottom: solid #d97757;
+}
+
+#permission-rule-options {
+    width: 100%;
+    height: 8;
+    border: none;
+    background: $surface;
+}
+
+#command-browser-options:focus > .option-list--option-highlighted,
+#permission-rule-options:focus > .option-list--option-highlighted {
+    color: $background;
+    background: #d97757;
+    text-style: bold;
+}
+
+.permission-footer,
+.command-browser-footer {
+    height: 1;
+    margin-top: 1;
+    color: $text-muted;
+}
+
+Screen.narrow #command-browser-dialog,
+Screen.narrow #permission-rules-dialog {
+    width: 100%;
+    padding: 1;
+}
+
+Screen.narrow #command-browser-options,
+Screen.narrow #permission-rule-options {
+    height: 8;
 }
 
 ApprovalScreen {

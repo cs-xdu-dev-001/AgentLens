@@ -80,21 +80,36 @@ class CommandMenu(Vertical):
         self.matches: list[SlashCommand] = []
         self.selected = 0
         self.commands: tuple[SlashCommand, ...] = COMMANDS
+        self.query = ""
+        self.usage: dict[str, int] = {}
+        self.window_size = 6
+        self._visible_start = 0
 
     def compose(self):
         yield Static("命令", classes="command-menu-title")
         yield OptionList(id="command-options", compact=True)
 
-    @staticmethod
-    def _render_option(command: SlashCommand) -> Text:
+    def _render_option(self, command: SlashCommand) -> Text:
         row = Text()
         row.append(command.value, style="bold")
+        needle = self.query.removeprefix("/").strip().lower()
+        matched_alias = next(
+            (
+                alias
+                for alias in command.aliases
+                if needle
+                and alias.removeprefix("/").lower().startswith(needle)
+                and not command.value.removeprefix("/").lower().startswith(needle)
+            ),
+            "",
+        )
+        if matched_alias:
+            row.append(f"  ({matched_alias})", style="dim")
         if command.argument_hint:
             row.append(f" {command.argument_hint}", style="dim")
+        row.append(f"  {command.description}", style="dim")
         if command.source != "builtin":
-            row.append(f"  [{command.source}]", style=ACCENT)
-        if command.is_group:
-            row.append("  ›", style=ACCENT)
+            row.append(f"  [{command.source_label}]", style=ACCENT)
         return row
 
     def set_commands(self, commands: tuple[SlashCommand, ...]) -> None:
@@ -102,53 +117,73 @@ class CommandMenu(Vertical):
 
     async def update_query(self, value: str) -> None:
         query = value.lstrip().lower()
+        self.query = query
         self.matches = [
-            item for item in match_commands(query, self.commands) if not item.hidden
+            item
+            for item in match_commands(query, self.commands, self.usage)
+            if not item.hidden
         ]
         self.selected = min(self.selected, max(0, len(self.matches) - 1))
         await self._render_matches()
+
+    def record_usage(self, command: SlashCommand) -> None:
+        self.usage[command.value] = self.usage.get(command.value, 0) + 1
+
+    def _window(self) -> tuple[int, list[SlashCommand]]:
+        if len(self.matches) <= self.window_size:
+            return 0, self.matches
+        half = self.window_size // 2
+        start = max(0, min(self.selected - half, len(self.matches) - self.window_size))
+        return start, self.matches[start : start + self.window_size]
 
     async def _render_matches(self) -> None:
         self.set_class(bool(self.matches), "visible")
         options = self.query_one("#command-options", OptionList)
         options.clear_options()
         if self.matches:
+            self._visible_start, visible = self._window()
             options.add_options(
                 [
                     Option(self._render_option(command), id=command.value)
-                    for command in self.matches
+                    for command in visible
                 ]
             )
-            options.highlighted = self.selected
+            options.highlighted = self.selected - self._visible_start
         self._update_title()
 
     def _update_title(self) -> None:
         title = self.query_one(".command-menu-title", Static)
-        parent = (
-            self.matches[0].value.rsplit(" ", 1)[0]
-            if self.matches and " " in self.matches[0].value
-            else ""
-        )
         selected = self.matches[self.selected] if self.matches else None
         description = selected.description if selected else ""
-        prefix = f"{parent}  子命令" if parent else "命令"
+        source = (
+            f" · {selected.source_label}"
+            if selected is not None and selected.source != "builtin"
+            else ""
+        )
+        position = (
+            f" · {self.selected + 1}/{len(self.matches)}"
+            if len(self.matches) > self.window_size
+            else ""
+        )
         if self.size.width and self.size.width < 70:
-            title.update(f"{prefix} · {description} · ↑↓更多")
+            title.update(f"{description}{source}{position}")
         else:
-            title.update(f"{prefix} · {description}  ↑↓选择  Enter确认  Esc关闭")
+            title.update(
+                f"{description}{source}{position}  ↑↓选择  Tab/→补全  Enter确认  Esc关闭"
+            )
 
     async def move(self, delta: int) -> None:
         if not self.matches:
             return
         self.selected = (self.selected + delta) % len(self.matches)
-        self.query_one("#command-options", OptionList).highlighted = self.selected
+        await self._render_matches()
 
     @on(OptionList.OptionHighlighted)
     def handle_option_highlighted(
         self,
         event: OptionList.OptionHighlighted,
     ) -> None:
-        self.selected = event.option_index
+        self.selected = self._visible_start + event.option_index
         self._update_title()
 
     @on(OptionList.OptionSelected)
@@ -156,12 +191,13 @@ class CommandMenu(Vertical):
         self,
         event: OptionList.OptionSelected,
     ) -> None:
-        self.selected = event.option_index
+        self.selected = self._visible_start + event.option_index
         self.post_message(Composer.CommandAccepted())
 
     async def hide(self) -> None:
         self.matches = []
         self.selected = 0
+        self._visible_start = 0
         await self._render_matches()
 
     @property
@@ -811,7 +847,7 @@ class Composer(TextArea):
                     self.CommandMove(-1 if event.key == "up" else 1)
                 )
                 return
-            if event.key in {"tab", "enter"}:
+            if event.key in {"tab", "right", "enter"}:
                 event.prevent_default()
                 event.stop()
                 self.post_message(self.CommandAccepted())
@@ -849,13 +885,14 @@ class StatusBar(Static):
         queue_size: int,
         tool_calls: int,
         permissions: int,
+        permission_mode: str,
     ) -> None:
         short_workspace = workspace.rstrip("/\\").split("/")[-1].split("\\")[-1]
-        parts = [model, short_workspace or workspace]
+        parts = [model, short_workspace or workspace, permission_mode]
         if tool_calls:
             parts.append(f"工具 {tool_calls}")
         if queue_size:
             parts.append(f"队列 {queue_size}")
         if permissions:
-            parts.append(f"授权 {permissions}")
+            parts.append(f"单项授权 {permissions}")
         self.update("  ·  ".join(parts))

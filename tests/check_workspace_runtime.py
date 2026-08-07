@@ -135,6 +135,10 @@ def main() -> None:
         assert registry.definition("read_workspace_file").read_only is True
         assert registry.definition("write_workspace_file").requires_approval is True
         assert registry.definition("run_sandbox_command").requires_approval is True
+        assert registry.definition("write_workspace_file").risk == "write"
+        assert registry.definition("run_sandbox_command").risk == "execute"
+        assert registry.definition("write_workspace_file").destructive is False
+        assert registry.definition("run_sandbox_command").destructive is True
 
         timeout_runner = SrtSandboxRunner(
             workspace,

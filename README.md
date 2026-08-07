@@ -51,7 +51,7 @@ CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模�
 
 交互式终端中的`knowflow chat`默认打开全屏TUI，展示流式回答、工具步骤、运行状态和审批弹层。需要终端原生滚屏或兼容脚本时使用`knowflow chat --plain`。
 
-TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队和动态工具/Skill/MCP命令。输入`/`查看命令；`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情，`Ctrl+C`请求停止当前任务。
+TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队，以及工具/Skill/MCP动态命令。输入`/`会打开扁平命令补全，支持别名、来源标签和模糊搜索；`/help`按默认命令与自定义命令分类浏览。按`Shift+Tab`在“请求批准、仅危险操作确认、完全访问”三种本会话模式间循环；`/permissions`管理工具级Allow、Ask、Deny规则。`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情，`Ctrl+C`请求停止当前任务。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git

@@ -2,7 +2,10 @@
 
 KnowFlow CLI runs a local BYOK LangGraph Agent in a Linux terminal. Interactive
 sessions use a full-screen TUI with streaming output, tool progress, and write
-approval. Connecting to an existing KnowFlow server remains optional.
+approval. Its slash-command palette discovers local tools and remote Skill/MCP
+commands, while `Shift+Tab` cycles permission modes and `/permissions` manages
+per-tool Allow, Ask, and Deny rules. Connecting to an existing KnowFlow server
+remains optional.
 
 ## Install
 

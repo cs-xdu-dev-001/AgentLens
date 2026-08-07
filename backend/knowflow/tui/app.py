@@ -4,9 +4,11 @@ from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version
 import json
 from pathlib import Path
+import re
 from time import monotonic
 from typing import Any
 
+from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -14,7 +16,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Static
+from textual.widgets import Button, Input, OptionList, Static
+from textual.widgets.option_list import Option
 
 from ..services.agent_execution import AgentExecution
 from ..services.local_cli_runtime import local_data_dir
@@ -23,7 +26,6 @@ from .commands import (
     COMMANDS,
     SlashCommand,
     canonical_command,
-    command_children,
     find_command,
     merge_commands,
     parse_command,
@@ -50,6 +52,32 @@ def _cli_release() -> str:
         return version("knowflow-ai")
     except PackageNotFoundError:
         return "dev"
+
+
+PERMISSION_MODE_OPTIONS = (
+    (
+        "ask",
+        "请求批准",
+        "写入、命令和外部操作都需要确认",
+        "按需确认",
+    ),
+    (
+        "auto_edit",
+        "仅危险操作确认",
+        "普通写入自动批准；删除、命令和未知风险仍询问",
+        "普通写入自动",
+    ),
+    (
+        "full_access",
+        "完全访问",
+        "本会话自动批准工具请求，不突破现有沙箱和系统权限",
+        "完全访问",
+    ),
+)
+PERMISSION_MODE_BY_ID = {
+    mode: (title, description, short_label)
+    for mode, title, description, short_label in PERMISSION_MODE_OPTIONS
+}
 
 
 class AgentEventMessage(Message):
@@ -87,6 +115,241 @@ class CommandCatalogLoaded(Message):
     def __init__(self, items: list[dict[str, str]]) -> None:
         self.items = items
         super().__init__()
+
+
+class CommandBrowserScreen(ModalScreen[None]):
+    BINDINGS = [
+        Binding("left", "previous_tab", "上一类", show=False),
+        Binding("right", "next_tab", "下一类", show=False),
+        Binding("escape", "close", "关闭", show=False),
+    ]
+
+    def __init__(self, commands: tuple[SlashCommand, ...]) -> None:
+        self.commands = commands
+        self.tab = 0
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Container(id="command-browser-dialog"):
+            yield Static(id="command-browser-tabs")
+            yield OptionList(id="command-browser-options", compact=True)
+            yield Static(
+                "←→切换分类 · ↑↓浏览 · Esc关闭",
+                classes="command-browser-footer",
+            )
+
+    def on_mount(self) -> None:
+        self._render_tab()
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    def _render_tab(self) -> None:
+        tabs = Text()
+        for index, label in enumerate(("默认命令", "自定义命令")):
+            tabs.append(f" {label} ", style="reverse bold" if index == self.tab else "dim")
+            if index == 0:
+                tabs.append("  ")
+        self.query_one("#command-browser-tabs", Static).update(tabs)
+        values = [
+            command
+            for command in self.commands
+            if (command.source == "builtin") == (self.tab == 0) and not command.hidden
+        ]
+        values.sort(key=lambda command: command.value)
+        options = self.query_one("#command-browser-options", OptionList)
+        options.clear_options()
+        if not values:
+            options.add_option(Option("当前没有自定义命令", disabled=True))
+        else:
+            options.add_options(
+                [
+                    Option(
+                        Text.assemble(
+                            (command.value, "bold"),
+                            (f" {command.argument_hint}" if command.argument_hint else "", "dim"),
+                            (f"  {command.description}", "dim"),
+                            (
+                                f"  [{command.source_label}]" if command.source != "builtin" else "",
+                                "#d97757",
+                            ),
+                        ),
+                        id=command.value,
+                    )
+                    for command in values
+                ]
+            )
+            options.highlighted = 0
+        options.focus()
+
+    def action_previous_tab(self) -> None:
+        self.tab = (self.tab - 1) % 2
+        self._render_tab()
+
+    def action_next_tab(self) -> None:
+        self.tab = (self.tab + 1) % 2
+        self._render_tab()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class PermissionRuleScreen(ModalScreen[dict[str, set[str]]]):
+    BINDINGS = [
+        Binding("left", "previous_tab", "上一类", show=False),
+        Binding("right", "next_tab", "下一类", show=False),
+        Binding("tab", "next_tab", "下一类", show=False),
+        Binding("a", "add_rule", "添加规则", show=False, priority=True),
+        Binding("slash", "search", "搜索", show=False, priority=True),
+        Binding("d", "delete_rule", "删除规则", show=False, priority=True),
+        Binding("escape", "close", "关闭", show=False),
+    ]
+    BEHAVIORS = ("allow", "ask", "deny")
+    LABELS = {"allow": "Allow", "ask": "Ask", "deny": "Deny"}
+    DESCRIPTIONS = {
+        "allow": "匹配的工具不再询问",
+        "ask": "匹配的工具始终询问",
+        "deny": "匹配的工具始终拒绝",
+    }
+
+    def __init__(self, rules: dict[str, set[str]]) -> None:
+        self.rules = {key: set(values) for key, values in rules.items()}
+        self.tab = 0
+        self.adding = False
+        super().__init__()
+
+    @property
+    def behavior(self) -> str:
+        return self.BEHAVIORS[self.tab]
+
+    def compose(self) -> ComposeResult:
+        with Container(id="permission-rules-dialog"):
+            yield Static("工具权限规则", classes="permission-title")
+            yield Static(id="permission-rule-tabs")
+            yield Static(id="permission-rule-description")
+            yield Input(
+                placeholder="输入关键词搜索；按A添加规则",
+                id="permission-rule-input",
+            )
+            yield OptionList(id="permission-rule-options", compact=True)
+            yield Static(
+                "←→切换分类 · /搜索 · A添加 · D删除 · Esc保存并关闭",
+                classes="permission-footer",
+            )
+
+    def on_mount(self) -> None:
+        self._render_tab()
+        self.query_one("#permission-rule-options", OptionList).focus()
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    def _render_tab(self) -> None:
+        tabs = Text()
+        for index, behavior in enumerate(self.BEHAVIORS):
+            tabs.append(
+                f" {self.LABELS[behavior]} ",
+                style="reverse bold" if index == self.tab else "dim",
+            )
+            if index < 2:
+                tabs.append("  ")
+        self.query_one("#permission-rule-tabs", Static).update(tabs)
+        self.query_one("#permission-rule-description", Static).update(
+            self.DESCRIPTIONS[self.behavior]
+        )
+        self._render_rules()
+
+    def _render_rules(self) -> None:
+        query = self.query_one("#permission-rule-input", Input).value.strip().lower()
+        values = sorted(
+            value for value in self.rules.get(self.behavior, set()) if not query or query in value
+        )
+        options = self.query_one("#permission-rule-options", OptionList)
+        options.clear_options()
+        options.add_option(Option("＋ 添加新规则", id="__add__"))
+        options.add_options([Option(value, id=value) for value in values])
+        options.highlighted = 0
+
+    @on(Input.Changed, "#permission-rule-input")
+    def handle_rule_query(self, event: Input.Changed) -> None:
+        if not self.adding:
+            self._render_rules()
+
+    @on(Input.Submitted, "#permission-rule-input")
+    def handle_rule_submitted(self, event: Input.Submitted) -> None:
+        value = event.value.strip().lower()
+        if self.adding:
+            if not re.fullmatch(r"[a-z0-9_.:*/-]+", value):
+                self.notify("规则只能包含工具名字符，*表示全部工具。", severity="warning")
+                return
+            for rules in self.rules.values():
+                rules.discard(value)
+            self.rules[self.behavior].add(value)
+            self.adding = False
+            event.input.value = ""
+            event.input.placeholder = "输入关键词搜索；按A添加规则"
+        self._render_rules()
+        self.query_one("#permission-rule-options", OptionList).focus()
+
+    @on(OptionList.OptionSelected, "#permission-rule-options")
+    def handle_rule_selected(self, event: OptionList.OptionSelected) -> None:
+        if str(event.option.id or "") == "__add__":
+            self.action_add_rule()
+
+    def action_previous_tab(self) -> None:
+        self.tab = (self.tab - 1) % len(self.BEHAVIORS)
+        self._render_tab()
+
+    def action_next_tab(self) -> None:
+        self.tab = (self.tab + 1) % len(self.BEHAVIORS)
+        self._render_tab()
+
+    def action_search(self) -> None:
+        field = self.query_one("#permission-rule-input", Input)
+        if self.focused is field:
+            field.insert("/")
+            return
+        self.adding = False
+        field.focus()
+
+    def action_add_rule(self) -> None:
+        field = self.query_one("#permission-rule-input", Input)
+        if self.focused is field:
+            field.insert("a")
+            return
+        self.adding = True
+        field.value = ""
+        field.placeholder = f"添加到{self.LABELS[self.behavior]}，输入工具名后回车"
+        field.focus()
+
+    def action_delete_rule(self) -> None:
+        field = self.query_one("#permission-rule-input", Input)
+        if self.focused is field:
+            field.insert("d")
+            return
+        options = self.query_one("#permission-rule-options", OptionList)
+        index = options.highlighted
+        if index is None or index <= 0:
+            return
+        option = options.get_option_at_index(index)
+        value = str(option.id or "")
+        if value and value in self.rules.get(self.behavior, set()):
+            self.rules[self.behavior].remove(value)
+            self._render_rules()
+            self.notify(f"已删除规则：{value}")
+
+    def action_close(self) -> None:
+        field = self.query_one("#permission-rule-input", Input)
+        if self.focused is field and (self.adding or field.value):
+            self.adding = False
+            field.value = ""
+            field.placeholder = "输入关键词搜索；按A添加规则"
+            self._render_rules()
+            self.query_one("#permission-rule-options", OptionList).focus()
+            return
+        self.dismiss({key: set(values) for key, values in self.rules.items()})
 
 
 class ApprovalScreen(ModalScreen[str]):
@@ -148,6 +411,20 @@ class KnowFlowTui(App[None]):
         Binding("ctrl+o", "toggle_details", "展开/收起过程", show=True),
         Binding("ctrl+s", "stash", "暂存/恢复输入", show=False),
         Binding("ctrl+t", "tasks", "任务队列", show=False),
+        Binding(
+            "ctrl+p",
+            "slash_commands",
+            "命令面板",
+            show=False,
+            priority=True,
+        ),
+        Binding(
+            "shift+tab",
+            "cycle_permission_mode",
+            "切换权限",
+            show=False,
+            priority=True,
+        ),
         Binding("shift+enter", "newline", "换行", show=False),
         Binding("escape", "focus_composer", "输入", show=False),
     ]
@@ -247,13 +524,12 @@ class KnowFlowTui(App[None]):
         command = menu.selected_command
         if command is None:
             return
+        menu.record_usage(command)
         composer = self.query_one(Composer)
-        if command.is_group or command.argument_hint or command.source != "builtin":
+        if command.requires_arguments:
             composer.load_text(f"{command.value} ")
-            await menu.update_query(f"{command.value} ")
-            composer.command_menu_open = bool(menu.matches)
-            if command.is_group and not menu.matches:
-                await self._handle_command(command.value)
+            await menu.hide()
+            composer.command_menu_open = False
             return
         composer.load_text(command.value)
         if composer.command_menu_open:
@@ -299,17 +575,12 @@ class KnowFlowTui(App[None]):
         dynamic = [
             SlashCommand(
                 str(item.get("value") or ""),
-                str(item.get("description") or "Agent扩展"),
-                source=(
-                    "builtin"
-                    if str(item.get("source") or "") == "builtin-model"
-                    else str(item.get("source") or "dynamic")
+                redact_public_detail(
+                    item.get("description") or "Agent扩展",
+                    limit=160,
                 ),
-                argument_hint=(
-                    ""
-                    if str(item.get("source") or "") == "builtin-model"
-                    else "<任务>"
-                ),
+                source=str(item.get("source") or "dynamic"),
+                argument_hint="<任务>",
             )
             for item in message.items
             if str(item.get("value") or "").startswith("/")
@@ -416,33 +687,17 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_help(self, args: list[str]) -> bool:
         if not args:
-            await self.query_one(TranscriptView).add_notice(
-                "命令\n"
-                "  /new          新会话        /model        模型\n"
-                "  /tools        工具          /skills       Skills\n"
-                "  /mcp          MCP           /memory       长期记忆\n"
-                "  /status       运行状态      /permissions  权限\n"
-                "  /tasks        任务队列      /history      输入历史\n"
-                "  /update       更新CLI       /continue     继续队列\n"
-                "  /help         帮助          /exit         退出\n"
-                "\n输入命令后按Enter进入子命令；↑↓选择，Esc关闭。"
-            )
+            self.push_screen(CommandBrowserScreen(self.commands))
             return True
         part = args[0].lower().strip()
         if part == "commands":
-            children = command_children("/help", self.commands)
-            if children:
-                await self.query_one(TranscriptView).add_notice(
-                    "help子命令：" + "、".join(children)
-                )
-            else:
-                await self.query_one(TranscriptView).add_notice("当前无help子命令。")
+            self.push_screen(CommandBrowserScreen(self.commands))
             return True
         if part == "shortcuts":
             await self.query_one(TranscriptView).add_notice(
                 "快捷键：Ctrl+P 命令面板, Ctrl+L清屏, Ctrl+N新会话, "
                 "Ctrl+O展开过程, Ctrl+R搜索历史, Ctrl+S暂存输入, "
-                "Ctrl+T任务队列, Shift+Enter换行, Esc聚焦输入。"
+                "Ctrl+T任务队列, Shift+Tab切换权限, Shift+Enter换行。"
             )
             return True
         if part == "tui":
@@ -451,7 +706,7 @@ class KnowFlowTui(App[None]):
             )
             return True
         await self.query_one(TranscriptView).add_notice(
-            f"未知help子命令：{part}。可用：{', '.join(command_children('/help', self.commands)) or '无'}。"
+            f"未知help参数：{part}。可用：commands、shortcuts、tui。"
         )
         return True
 
@@ -535,21 +790,81 @@ class KnowFlowTui(App[None]):
         return True
 
     async def _cmd_status(self, args: list[str]) -> bool:
+        permission_label = PERMISSION_MODE_BY_ID[
+            self.session.permission_mode
+        ][2]
         await self.query_one(TranscriptView).add_notice(
             f"模型：{self.backend.model_label}；目录：{self.workspace}；"
             f"状态：{self.current_phase}；等待任务："
             f"{len(self.session.queued_questions)}；队列："
-            f"{'已暂停' if self.session.queue_paused else '自动继续'}。"
+            f"{'已暂停' if self.session.queue_paused else '自动继续'}；"
+            f"权限：{permission_label}。"
         )
         return True
 
     async def _cmd_permissions(self, args: list[str]) -> bool:
-        tools = sorted(set(self.session.session_approvals.values()))
+        if not args:
+            self.push_screen(
+                PermissionRuleScreen(self.session.permission_rules),
+                self._on_permission_rules_result,
+            )
+            return True
+        behavior = str(args[0]).strip().lower()
+        if behavior in {"allow", "ask", "deny"} and len(args) >= 2:
+            tool_name = str(args[1]).strip().lower()
+            if self.session.set_permission_rule(behavior, tool_name):
+                await self.query_one(TranscriptView).add_notice(
+                    f"已将{tool_name}设为{behavior.upper()}。"
+                )
+            return True
+        if behavior == "mode" and len(args) >= 2:
+            mode = {
+                "ask": "ask",
+                "edits": "auto_edit",
+                "full": "full_access",
+            }.get(str(args[1]).strip().lower())
+            if mode is not None:
+                await self._apply_permission_mode(mode)
+                return True
         await self.query_one(TranscriptView).add_notice(
-            "本次会话已允许："
-            + ("、".join(tools) if tools else "无，所有写操作按需确认。")
+            "用法：/permissions，或/permissions allow|ask|deny <工具名>。"
         )
         return True
+
+    def _on_permission_rules_result(
+        self,
+        rules: dict[str, set[str]] | None,
+    ) -> None:
+        if not rules:
+            return
+        self.session.permission_rules = {
+            behavior: set(rules.get(behavior, set()))
+            for behavior in ("allow", "ask", "deny")
+        }
+        total = sum(len(values) for values in self.session.permission_rules.values())
+        self.notify(f"权限规则已保存，共{total}条。")
+
+    async def _apply_permission_mode(self, mode: str) -> None:
+        if mode not in PERMISSION_MODE_BY_ID:
+            return
+        self.session.permission_mode = mode
+        self.session.session_approvals.clear()
+        title, description, short_label = PERMISSION_MODE_BY_ID[mode]
+        self._set_status(f"权限：{short_label}")
+        await self.query_one(TranscriptView).add_notice(
+            f"权限模式已切换为“{title}”：{description}。"
+        )
+
+    def _permission_mode_allows(self, event: dict[str, Any]) -> bool:
+        mode = self.session.permission_mode
+        if mode == "full_access":
+            return True
+        if mode != "auto_edit":
+            return False
+        if event.get("destructive") is True:
+            return False
+        risk = str(event.get("risk") or "unknown").strip().lower()
+        return risk in {"write", "edit", "editing", "写入", "编辑"}
 
     async def _cmd_tools(self, args: list[str]) -> bool:
         if self.backend.remote_client is None:
@@ -945,11 +1260,24 @@ class KnowFlowTui(App[None]):
             or event.get("id")
             or ""
         )
+        rule_behavior = self.session.permission_behavior(
+            self.current_approval_tool
+        )
+        if rule_behavior == "deny":
+            self.current_approval_id = None
+            self._approval_decided("deny")
+            return
+        if rule_behavior == "allow":
+            self.current_approval_id = None
+            self._approval_decided("allow_once")
+            return
         if self.current_approval_policy in self.session.session_approvals:
             self.current_approval_id = None
             self._approval_decided("allow_once")
             return
-        if self.assume_yes:
+        if rule_behavior != "ask" and (
+            self.assume_yes or self._permission_mode_allows(event)
+        ):
             self.current_approval_id = None
             self._approval_decided("allow_once")
             return
@@ -1090,6 +1418,9 @@ class KnowFlowTui(App[None]):
             queue_size=len(self.session.queued_questions),
             tool_calls=self.session.tool_calls,
             permissions=len(self.session.session_approvals),
+            permission_mode=PERMISSION_MODE_BY_ID[
+                self.session.permission_mode
+            ][2],
         )
 
     def _run_next_queued(self) -> None:
@@ -1165,6 +1496,19 @@ class KnowFlowTui(App[None]):
 
     async def action_tasks(self) -> None:
         await self._cmd_tasks(["list"])
+
+    def action_slash_commands(self) -> None:
+        composer = self.query_one(Composer)
+        composer.load_text("/")
+        composer.focus()
+
+    async def action_cycle_permission_mode(self) -> None:
+        modes = [option[0] for option in PERMISSION_MODE_OPTIONS]
+        try:
+            current = modes.index(self.session.permission_mode)
+        except ValueError:
+            current = 0
+        await self._apply_permission_mode(modes[(current + 1) % len(modes)])
 
     def action_interrupt(self) -> None:
         if self.running:

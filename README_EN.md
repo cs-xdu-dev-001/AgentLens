@@ -51,7 +51,7 @@ The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses you
 
 In an interactive terminal, `knowflow chat` opens the full-screen TUI by default with streaming answers, tool progress, run status, and approval dialogs. Use `knowflow chat --plain` for native terminal scrollback or script-friendly compatibility.
 
-The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` to browse commands. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, `Ctrl+O` for run details, and `Ctrl+C` to request cancellation.
+The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` for a flat command palette with aliases, source tags, and fuzzy search; `/help` separates default and custom commands. Press `Shift+Tab` to cycle the current session through Ask, Confirm risky operations only, and Full access. Use `/permissions` to manage per-tool Allow, Ask, and Deny rules. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, `Ctrl+O` for run details, and `Ctrl+C` to request cancellation.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git

@@ -88,39 +88,12 @@ class TuiBackend:
                     item.get("description")
                     or item.get("summary")
                     or f"使用{fallback} {raw_name}"
-                )
+                )[:160]
                 catalog.append(
                     {
                         "value": f"/{source}:{name}",
                         "description": description,
                         "source": source,
-                    }
-                )
-        try:
-            models = self.remote_client.request(
-                "GET",
-                "/api/model-configs",
-                params={"modelType": "chat"},
-            )
-        except Exception:
-            models = []
-        if isinstance(models, list):
-            for item in models:
-                if not isinstance(item, dict) or item.get("id") is None:
-                    continue
-                model_id = str(item.get("id"))
-                label = str(
-                    item.get("name")
-                    or item.get("configName")
-                    or item.get("model")
-                    or item.get("modelName")
-                    or f"模型 {model_id}"
-                )
-                catalog.append(
-                    {
-                        "value": f"/model use {model_id}",
-                        "description": f"切换到{label}",
-                        "source": "builtin-model",
                     }
                 )
         return catalog

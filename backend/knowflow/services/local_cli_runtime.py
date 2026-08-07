@@ -344,7 +344,9 @@ class LocalAgentRuntime:
                     "runId": identifier,
                     "toolName": interrupt.get("toolName") or "工具调用",
                     "serverName": interrupt.get("serverName") or "本地工具",
-                    "risk": interrupt.get("risk") or "write",
+                    "risk": interrupt.get("risk") or "unknown",
+                    "readOnly": bool(interrupt.get("readOnly")),
+                    "destructive": bool(interrupt.get("destructive")),
                     "inputSummary": interrupt.get("inputSummary"),
                 }
             )

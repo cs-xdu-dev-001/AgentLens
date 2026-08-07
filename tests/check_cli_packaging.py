@@ -21,7 +21,7 @@ assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.8.0"
+assert project["version"] == "0.9.0"
 
 dependencies = set(project["dependencies"])
 for required in {
