@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
 from time import monotonic
+from typing import Any
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
@@ -10,20 +11,50 @@ from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Static, TextArea
 
-
-@dataclass(frozen=True)
-class SlashCommand:
-    value: str
-    description: str
+from .commands import SlashCommand, match_commands
 
 
-SLASH_COMMANDS = (
-    SlashCommand("/help", "查看命令与快捷键"),
-    SlashCommand("/new", "开始新会话"),
-    SlashCommand("/clear", "清空当前显示"),
-    SlashCommand("/model", "查看当前模型"),
-    SlashCommand("/exit", "退出KnowFlow"),
+SENSITIVE_KEY_PARTS = (
+    "authorization",
+    "credential",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+    "cookie",
+    "api_key",
+    "apikey",
 )
+SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)([\"']?(?:api[_-]?key|token|secret|password|authorization|cookie|"
+    r"private[_-]?key|key)[\"']?\s*[:=]\s*[\"']?)([^\"',;\s}]+)"
+)
+OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+
+
+def redact_public_detail(value: Any, *, limit: int = 180) -> str:
+    def render(item: Any, depth: int = 0) -> str:
+        if depth > 4:
+            return "…"
+        if isinstance(item, dict):
+            values = []
+            for key, child in item.items():
+                normalized = str(key).lower().replace("-", "_")
+                if normalized == "key" or any(
+                    part in normalized for part in SENSITIVE_KEY_PARTS
+                ):
+                    values.append(f"{key}=[已隐藏]")
+                else:
+                    values.append(f"{key}={render(child, depth + 1)}")
+            return ", ".join(values)
+        if isinstance(item, (list, tuple)):
+            return ", ".join(render(child, depth + 1) for child in item[:8])
+        text = str(item)
+        text = OPENAI_KEY_PATTERN.sub("[已隐藏]", text)
+        return SENSITIVE_VALUE_PATTERN.sub(r"\1[已隐藏]", text)
+
+    text = " ".join(render(value).split())
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
 
 
 class CommandMenu(Vertical):
@@ -36,11 +67,7 @@ class CommandMenu(Vertical):
 
     async def update_query(self, value: str) -> None:
         query = value.strip().lower()
-        self.matches = [
-            command
-            for command in SLASH_COMMANDS
-            if command.value.startswith(query)
-        ] if query.startswith("/") and " " not in query else []
+        self.matches = match_commands(query)
         self.selected = min(self.selected, max(0, len(self.matches) - 1))
         await self._render_matches()
 
@@ -95,6 +122,9 @@ class RunActivity(Vertical):
         self._rows: dict[str, Static] = {}
         self._statuses: dict[str, str] = {}
         self._titles: dict[str, str] = {}
+        self._details: dict[str, str] = {}
+        self.expanded = True
+        self._tool_sequence = 0
 
     def compose(self):
         yield Static("Agent运行 · 0.0s", classes="activity-header")
@@ -116,7 +146,9 @@ class RunActivity(Vertical):
         value.append(title or "Agent步骤", style="bold")
         value.append(f"  {label}", style="dim")
         if detail:
-            value.append(f"  {detail}", style="dim")
+            self._details[key] = detail
+            if self.expanded:
+                value.append(f"  {detail}", style="dim")
         row = self._rows.get(key)
         if row is None:
             row = Static(value, classes="activity-step")
@@ -128,6 +160,20 @@ class RunActivity(Vertical):
         self._titles[key] = title
         row.set_class(normalized in {"failed", "error"}, "failed")
         row.set_class(normalized in {"running", "waiting"}, "active")
+
+    @staticmethod
+    def _safe_detail(value: Any, *, limit: int = 180) -> str:
+        return redact_public_detail(value, limit=limit)
+
+    async def set_expanded(self, expanded: bool) -> None:
+        self.expanded = expanded
+        for key in tuple(self._rows):
+            await self.upsert(
+                key,
+                self._titles.get(key, "Agent步骤"),
+                self._statuses.get(key, "running"),
+                self._details.get(key, ""),
+            )
 
     async def update_event(self, event: dict) -> None:
         event_type = str(event.get("type") or "")
@@ -163,15 +209,34 @@ class RunActivity(Vertical):
             return
         if event_type in {"tool", "tool_result"}:
             latency = event.get("latencyMs")
-            detail = f"{int(latency)}ms" if isinstance(latency, (int, float)) else ""
+            fragments = []
+            if isinstance(latency, (int, float)):
+                fragments.append(f"{int(latency)}ms")
+            payload = (
+                event.get("arguments")
+                or event.get("input")
+            )
+            safe = self._safe_detail(payload)
+            if safe:
+                fragments.append(safe)
+            detail = " · ".join(fragments)
             name = str(
                 event.get("toolName")
                 or event.get("tool_name")
                 or event.get("name")
                 or "工具调用"
             )
+            call_id = str(
+                event.get("toolCallId")
+                or event.get("callId")
+                or event.get("id")
+                or ""
+            )
+            if not call_id:
+                self._tool_sequence += 1
+                call_id = str(self._tool_sequence)
             await self.upsert(
-                f"tool:{name}",
+                f"tool:{call_id}",
                 name,
                 str(event.get("status") or "completed"),
                 detail,
@@ -288,6 +353,10 @@ class TranscriptView(VerticalScroll):
         self._assistant_text = ""
         self._activity = None
 
+    async def set_activity_expanded(self, expanded: bool) -> None:
+        if self._activity is not None:
+            await self._activity.set_expanded(expanded)
+
 
 class Composer(TextArea):
     class Submitted(Message):
@@ -319,6 +388,39 @@ class Composer(TextArea):
             placeholder="输入任务，/help查看命令",
         )
         self.command_menu_open = False
+        self.prompt_history: list[str] = []
+        self.history_index: int | None = None
+        self.history_draft = ""
+
+    def remember(self, value: str) -> None:
+        text = value.strip()
+        if text and (
+            not self.prompt_history or self.prompt_history[-1] != text
+        ):
+            self.prompt_history.append(text)
+            self.prompt_history = self.prompt_history[-100:]
+        self.history_index = None
+        self.history_draft = ""
+
+    def _move_history(self, delta: int) -> bool:
+        if not self.prompt_history:
+            return False
+        if self.history_index is None:
+            if delta > 0:
+                return False
+            self.history_draft = self.text
+            self.history_index = len(self.prompt_history)
+        self.history_index = max(
+            0,
+            min(len(self.prompt_history), self.history_index + delta),
+        )
+        value = (
+            self.history_draft
+            if self.history_index == len(self.prompt_history)
+            else self.prompt_history[self.history_index]
+        )
+        self.load_text(value)
+        return True
 
     def on_text_area_changed(self) -> None:
         self.post_message(self.CommandQuery(self.text))
@@ -347,4 +449,45 @@ class Composer(TextArea):
             event.stop()
             self.post_message(self.Submitted())
             return
+        if event.key in {"up", "down"} and "\n" not in self.text:
+            if self._move_history(-1 if event.key == "up" else 1):
+                event.prevent_default()
+                event.stop()
+                return
+        if event.key == "ctrl+r" and self.prompt_history:
+            event.prevent_default()
+            event.stop()
+            query = self.text.strip().lower()
+            match = next(
+                (
+                    item
+                    for item in reversed(self.prompt_history)
+                    if not query or query in item.lower()
+                ),
+                self.prompt_history[-1],
+            )
+            self.load_text(match)
+            return
         await super()._on_key(event)
+
+
+class StatusBar(Static):
+    def update_status(
+        self,
+        *,
+        model: str,
+        workspace: str,
+        phase: str,
+        queue_size: int,
+        tool_calls: int,
+        permissions: int,
+    ) -> None:
+        parts = [model, workspace, phase]
+        if tool_calls:
+            parts.append(f"工具 {tool_calls}")
+        if queue_size:
+            parts.append(f"队列 {queue_size}")
+        parts.append(
+            f"会话授权 {permissions}" if permissions else "按需确认"
+        )
+        self.update("  ·  ".join(parts))

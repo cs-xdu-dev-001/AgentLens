@@ -41,6 +41,15 @@ class TuiBackend:
         self.session_id = None
         self.conversation = []
 
+    def cancel(self, run_id: str | None) -> bool:
+        if self.remote_client is None or not run_id:
+            return False
+        self.remote_client.request(
+            "POST",
+            f"/api/agent/runs/{run_id}/cancel",
+        )
+        return True
+
     def run(
         self,
         question: str,

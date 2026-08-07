@@ -11,7 +11,12 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_execution import AgentExecution  # noqa: E402
 from knowflow.tui.app import ApprovalScreen, KnowFlowTui  # noqa: E402
-from knowflow.tui.widgets import CommandMenu, Composer  # noqa: E402
+from knowflow.tui.backend import TuiBackend  # noqa: E402
+from knowflow.tui.widgets import (  # noqa: E402
+    CommandMenu,
+    Composer,
+    redact_public_detail,
+)
 
 
 class FakeBackend:
@@ -80,6 +85,7 @@ class ApprovalBackend(FakeBackend):
             "runId": "run_approval",
             "toolName": "write_workspace_file",
             "risk": "写入",
+            "inputSummary": {"path": "same.txt"},
         }
         event_sink(event)
         return AgentExecution(
@@ -98,6 +104,23 @@ class ApprovalBackend(FakeBackend):
             }
         )
 
+
+class ScopedApprovalBackend(ApprovalBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        event = {
+            "type": "approval_required",
+            "approvalId": f"approval_{len(self.questions)}",
+            "runId": "run_approval",
+            "toolName": "write_workspace_file",
+            "risk": "写入",
+            "inputSummary": {"path": f"{question}.txt"},
+        }
+        event_sink(event)
+        return AgentExecution(
+            result={"paused": True, "runId": "run_approval", "answer": ""},
+            events=[event],
+        )
 
 class RemoteStreamingBackend(FakeBackend):
     def run(self, question, event_sink):
@@ -158,6 +181,7 @@ async def exercise_tui() -> None:
         menu = app.query_one(CommandMenu)
         assert menu.matches
         assert menu.has_class("visible")
+        assert any(item.value == "/status" for item in menu.matches)
         await pilot.press("down")
         assert menu.selected == 1
         await pilot.press("escape")
@@ -190,6 +214,17 @@ async def exercise_tui() -> None:
             for item in activity.query(".activity-step")
         )
         assert "已完成" in str(app.query_one("#run-status").render())
+        assert "test-model" in str(app.query_one("#status-bar").render())
+
+        await pilot.press("up")
+        await pilot.pause(0.05)
+        assert composer.text == "hello"
+        composer.clear()
+
+        composer.load_text("/pm")
+        await pilot.pause(0.05)
+        assert [item.value for item in menu.matches] == ["/permissions"]
+        await pilot.press("escape")
 
         composer.load_text("/new")
         await pilot.press("enter")
@@ -267,12 +302,157 @@ async def exercise_approval() -> None:
         assert len(list(app.query(".assistant-message"))) == 1
 
 
+async def exercise_session_approval() -> None:
+    backend = ApprovalBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        composer.load_text("write one")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ApprovalScreen):
+                break
+        assert isinstance(app.screen, ApprovalScreen)
+        await pilot.press("s")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert "write_workspace_file" in app.session.session_approvals.values()
+
+        composer.load_text("write two")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if len(backend.decisions) == 2 and not app.running:
+                break
+        assert backend.decisions == ["allow_once", "allow_once"]
+        assert not isinstance(app.screen, ApprovalScreen)
+
+
+async def exercise_queue() -> None:
+    backend = SlowBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        composer.load_text("first")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        composer.load_text("second")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert app.session.queued_questions == ["second"]
+        assert "队列 1" in str(app.query_one("#status-bar").render())
+        backend.release.set()
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if backend.questions == ["first", "second"] and not app.running:
+                break
+        assert backend.questions == ["first", "second"]
+        assert app.session.queued_questions == []
+
+
+async def exercise_scoped_session_approval() -> None:
+    backend = ScopedApprovalBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        composer.load_text("alpha")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ApprovalScreen):
+                break
+        await pilot.press("s")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+
+        composer.load_text("beta")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ApprovalScreen):
+                break
+        assert isinstance(app.screen, ApprovalScreen)
+        assert backend.decisions == ["allow_once"]
+        await pilot.press("d")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+
+
+async def exercise_interrupt_feedback() -> None:
+    backend = SlowBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("slow")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        await pilot.press("ctrl+c")
+        await pilot.pause(0.05)
+        assert app.session.cancel_requested
+        assert "已请求停止" in str(app.query_one("#run-status").render())
+        backend.release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert not app.running
+
+
 def main() -> None:
+    redacted = redact_public_detail(
+        {
+            "config": {"api_key": "sk-nested-secret", "path": "safe.txt"},
+            "password": "hidden",
+        }
+    )
+    assert "sk-nested-secret" not in redacted
+    assert "hidden" not in redacted
+    assert "safe.txt" in redacted
+    assert "nested-secret" not in redact_public_detail(
+        '{"config":{"token":"nested-secret"}}'
+    )
+
+    class FakeRemoteClient:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, path):
+            self.calls.append((method, path))
+
+    remote_client = FakeRemoteClient()
+    tui_backend = TuiBackend(
+        local_agent=None,
+        remote_client=remote_client,
+        tools=True,
+        model_id=None,
+        skill_id=None,
+    )
+    assert tui_backend.cancel("run_cancel")
+    assert remote_client.calls == [
+        ("POST", "/api/agent/runs/run_cancel/cancel")
+    ]
+    assert not tui_backend.cancel(None)
     asyncio.run(exercise_tui())
     asyncio.run(exercise_remote_streaming())
     asyncio.run(exercise_live_status())
     asyncio.run(exercise_narrow_command_menu())
     asyncio.run(exercise_approval())
+    asyncio.run(exercise_session_approval())
+    asyncio.run(exercise_queue())
+    asyncio.run(exercise_scoped_session_approval())
+    asyncio.run(exercise_interrupt_feedback())
     print("cli tui checks passed")
 
 
