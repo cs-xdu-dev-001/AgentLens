@@ -62,7 +62,7 @@ COMMANDS = (
     SlashCommand("/status", "查看会话与运行状态", immediate=True),
     SlashCommand(
         "/permissions",
-        "管理工具的Allow、Ask和Deny规则",
+        "选择本次会话的执行权限",
         ("/allowed-tools",),
         immediate=True,
     ),

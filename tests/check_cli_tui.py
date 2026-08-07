@@ -19,6 +19,7 @@ from knowflow.tui.app import (  # noqa: E402
     ApprovalScreen,
     CommandBrowserScreen,
     KnowFlowTui,
+    PermissionModeScreen,
     PermissionRuleScreen,
     QueueManagerScreen,
 )
@@ -630,6 +631,23 @@ async def exercise_permission_modes() -> None:
 
         composer.load_text("/permissions")
         await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, PermissionModeScreen)
+        assert app.screen.query_one("#permission-mode-options").highlighted == 0
+        await pilot.press("down", "enter")
+        await pilot.pause(0.1)
+        assert app.session.permission_mode == "auto_edit"
+        assert not isinstance(app.screen, PermissionModeScreen)
+
+        composer.load_text("/permissions")
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, PermissionModeScreen)
+        await pilot.resize_terminal(48, 20)
+        await pilot.pause(0.1)
+        assert app.screen.has_class("narrow")
+        assert app.screen.query_one("#permission-mode-dialog").size.width < 48
+        await pilot.press("end", "enter")
         await pilot.pause(0.1)
         assert isinstance(app.screen, PermissionRuleScreen)
         assert "Allow" in str(app.screen.query_one("#permission-rule-tabs").render())

@@ -321,6 +321,69 @@ class QueueManagerScreen(ModalScreen[QueuedPrompt | None]):
         self.dismiss(None)
 
 
+class PermissionModeScreen(ModalScreen[str | None]):
+    BINDINGS = [Binding("escape", "close", "关闭", show=False)]
+    DESCRIPTIONS = {
+        "ask": "写入和命令前询问",
+        "auto_edit": "普通写入自动，危险操作询问",
+        "full_access": "本会话自动执行，仍受沙箱限制",
+    }
+
+    def __init__(self, current_mode: str) -> None:
+        self.current_mode = current_mode
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Container(id="permission-mode-dialog"):
+            yield Static("执行权限", classes="permission-title")
+            yield OptionList(id="permission-mode-options", compact=True)
+            yield Static(
+                "↑↓选择 · Enter确认 · Esc关闭",
+                classes="permission-footer",
+            )
+
+    def on_mount(self) -> None:
+        options = self.query_one("#permission-mode-options", OptionList)
+        selected = 0
+        for index, (mode, title, description, _) in enumerate(
+            PERMISSION_MODE_OPTIONS
+        ):
+            if mode == self.current_mode:
+                selected = index
+            marker = "✓ " if mode == self.current_mode else "  "
+            options.add_option(
+                Option(
+                    Text.assemble(
+                        (marker + title, "bold"),
+                        (f"  {self.DESCRIPTIONS.get(mode, description)}", "dim"),
+                    ),
+                    id=mode,
+                )
+            )
+        options.add_option(
+            Option(
+                Text.assemble(
+                    ("  高级规则", "bold"),
+                    ("  按工具设置允许、询问或拒绝", "dim"),
+                ),
+                id="rules",
+            )
+        )
+        options.highlighted = selected
+        options.focus()
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    @on(OptionList.OptionSelected, "#permission-mode-options")
+    def handle_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(str(event.option.id or "") or None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class PermissionRuleScreen(ModalScreen[dict[str, set[str]]]):
     BINDINGS = [
         Binding("left", "previous_tab", "上一类", show=False),
@@ -930,11 +993,17 @@ class KnowFlowTui(App[None]):
     async def _cmd_permissions(self, args: list[str]) -> bool:
         if not args:
             self.push_screen(
+                PermissionModeScreen(self.session.permission_mode),
+                self._on_permission_mode_result,
+            )
+            return True
+        behavior = str(args[0]).strip().lower()
+        if behavior == "rules":
+            self.push_screen(
                 PermissionRuleScreen(self.session.permission_rules),
                 self._on_permission_rules_result,
             )
             return True
-        behavior = str(args[0]).strip().lower()
         if behavior in {"allow", "ask", "deny"} and len(args) >= 2:
             tool_name = str(args[1]).strip().lower()
             if self.session.set_permission_rule(behavior, tool_name):
@@ -952,9 +1021,19 @@ class KnowFlowTui(App[None]):
                 await self._apply_permission_mode(mode)
                 return True
         await self.query_one(TranscriptView).add_notice(
-            "用法：/permissions，或/permissions allow|ask|deny <工具名>。"
+            "用法：/permissions；高级规则可用/permissions rules。"
         )
         return True
+
+    async def _on_permission_mode_result(self, result: str | None) -> None:
+        if result == "rules":
+            self.push_screen(
+                PermissionRuleScreen(self.session.permission_rules),
+                self._on_permission_rules_result,
+            )
+            return
+        if result in PERMISSION_MODE_BY_ID:
+            await self._apply_permission_mode(result)
 
     def _on_permission_rules_result(
         self,

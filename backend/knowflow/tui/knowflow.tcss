@@ -331,6 +331,7 @@ Screen.narrow #status-bar {
 
 CommandBrowserScreen,
 QueueManagerScreen,
+PermissionModeScreen,
 PermissionRuleScreen {
     align: center middle;
     background: $background 65%;
@@ -338,6 +339,7 @@ PermissionRuleScreen {
 
 #command-browser-dialog,
 #queue-manager-dialog,
+#permission-mode-dialog,
 #permission-rules-dialog {
     width: 78;
     max-width: 100%;
@@ -385,6 +387,18 @@ PermissionRuleScreen {
     background: $surface;
 }
 
+#permission-mode-dialog {
+    width: 72;
+}
+
+#permission-mode-options {
+    width: 100%;
+    height: 9;
+    margin-top: 1;
+    border: none;
+    background: $surface;
+}
+
 #permission-rule-input {
     display: block;
     width: 100%;
@@ -408,6 +422,7 @@ PermissionRuleScreen {
 
 #command-browser-options:focus > .option-list--option-highlighted,
 #queue-manager-options:focus > .option-list--option-highlighted,
+#permission-mode-options:focus > .option-list--option-highlighted,
 #permission-rule-options:focus > .option-list--option-highlighted {
     color: $background;
     background: #d97757;
@@ -424,6 +439,7 @@ PermissionRuleScreen {
 
 Screen.narrow #command-browser-dialog,
 Screen.narrow #queue-manager-dialog,
+Screen.narrow #permission-mode-dialog,
 Screen.narrow #permission-rules-dialog {
     width: 100%;
     padding: 1;
@@ -431,6 +447,7 @@ Screen.narrow #permission-rules-dialog {
 
 Screen.narrow #command-browser-options,
 Screen.narrow #queue-manager-options,
+Screen.narrow #permission-mode-options,
 Screen.narrow #permission-rule-options {
     height: 8;
 }
