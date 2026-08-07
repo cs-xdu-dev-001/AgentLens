@@ -148,6 +148,28 @@ class TuiSessionState:
         self.prompt_queue.remove(item)
         return item
 
+    def reprioritize_queued(
+        self,
+        index: int,
+        priority: str,
+    ) -> QueuedPrompt | None:
+        ordered = self.ordered_queue()
+        if (
+            index < 0
+            or index >= len(ordered)
+            or priority not in QUEUE_PRIORITIES
+        ):
+            return None
+        item = ordered[index]
+        updated = QueuedPrompt(
+            text=item.text,
+            display_text=item.display_text,
+            priority=priority,
+            sequence=item.sequence,
+        )
+        self.prompt_queue[self.prompt_queue.index(item)] = updated
+        return updated
+
     def reset_run(self) -> None:
         self.tool_calls = 0
         self.seen_tool_calls.clear()

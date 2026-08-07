@@ -19,6 +19,7 @@ from knowflow.services.local_cli_runtime import (  # noqa: E402
 from knowflow.services.agent_trace import sanitize_trace_value  # noqa: E402
 from knowflow.services.agent_loop import ToolRegistry  # noqa: E402
 from knowflow.services.langgraph_agent_engine import (  # noqa: E402
+    AgentRunCancelledError,
     LangGraphAgentEngine,
 )
 from knowflow.services.workspace_runtime import (  # noqa: E402
@@ -166,14 +167,31 @@ def main() -> None:
             gateway=FakeGateway(),
             checkpoint_db_path=root / "checkpoints.sqlite3",
         )
+        try:
+            engine.run(
+                user_id=1,
+                run_id="cancel_before_model",
+                messages=[{"role": "user", "content": "stop"}],
+                config={},
+                registry=registry,
+                cancel_check=lambda: True,
+            )
+        except AgentRunCancelledError:
+            pass
+        else:
+            raise AssertionError("cancel check did not stop the graph")
+        lifecycle_events = []
         first = engine.run(
             user_id=1,
             run_id="local_approval",
             messages=[{"role": "user", "content": "写入文件"}],
             config={},
             registry=registry,
+            tool_event_callback=lifecycle_events.append,
         )
         assert first.paused
+        assert lifecycle_events[-1]["status"] == "waiting"
+        assert lifecycle_events[-1]["toolCallId"] == "call_write"
         second = engine.run(
             user_id=1,
             run_id="local_approval",
@@ -182,12 +200,14 @@ def main() -> None:
             registry=registry,
             resume_from_checkpoint=True,
             approval_decision="allow_once",
+            tool_event_callback=lifecycle_events.append,
         )
         assert not second.paused
         assert second.answer == "写入完成。"
         assert (workspace.root / "result.txt").read_text(
             encoding="utf-8"
         ) == "done"
+        assert lifecycle_events[-1]["status"] == "running"
 
     print("local cli runtime checks passed")
 

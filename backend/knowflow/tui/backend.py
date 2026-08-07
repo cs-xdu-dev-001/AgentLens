@@ -99,7 +99,10 @@ class TuiBackend:
         return catalog
 
     def cancel(self, run_id: str | None) -> bool:
-        if self.remote_client is None or not run_id:
+        if self.remote_client is None:
+            cancel = getattr(self.local_agent, "cancel", None)
+            return bool(cancel(run_id)) if callable(cancel) else False
+        if not run_id:
             return False
         self.remote_client.request(
             "POST",

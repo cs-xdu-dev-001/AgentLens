@@ -35,9 +35,12 @@ from .widgets import (
     CommandMenu,
     Composer,
     HistorySearchBar,
+    QueuePreview,
     StatusBar,
     TranscriptView,
+    error_recovery_message,
     redact_public_detail,
+    tool_activity_title,
 )
 
 
@@ -190,6 +193,129 @@ class CommandBrowserScreen(ModalScreen[None]):
     def action_next_tab(self) -> None:
         self.tab = (self.tab + 1) % 2
         self._render_tab()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class QueueManagerScreen(ModalScreen[QueuedPrompt | None]):
+    BINDINGS = [
+        Binding("left", "priority_down", "降低优先级", show=False),
+        Binding("right", "priority_up", "提高优先级", show=False),
+        Binding("d", "delete", "移除", show=False, priority=True),
+        Binding("c", "clear", "清空", show=False, priority=True),
+        Binding("escape", "close", "关闭", show=False),
+    ]
+    PRIORITIES = ("later", "next", "now")
+    PRIORITY_LABELS = {
+        "now": "现在",
+        "next": "接下来",
+        "later": "稍后",
+    }
+
+    def __init__(self, session: TuiSessionState) -> None:
+        self.session = session
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Container(id="queue-manager-dialog"):
+            yield Static("任务队列", classes="queue-manager-title")
+            yield Static(id="queue-manager-summary")
+            yield OptionList(id="queue-manager-options", compact=True)
+            yield Static(
+                "Enter取回编辑 · D移除 · ←→调整优先级 · C清空 · Esc关闭",
+                classes="queue-manager-footer",
+            )
+
+    def on_mount(self) -> None:
+        self._render_queue()
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    def _selected_index(self) -> int | None:
+        value = self.query_one("#queue-manager-options", OptionList).highlighted
+        return value if value is not None and value >= 0 else None
+
+    def _render_queue(self, *, selected: int | None = None) -> None:
+        queued = self.session.ordered_queue()
+        summary = (
+            f"{len(queued)}项等待 · "
+            f"{'自动继续' if not self.session.queue_paused else '队列已暂停'}"
+        )
+        self.query_one("#queue-manager-summary", Static).update(summary)
+        options = self.query_one("#queue-manager-options", OptionList)
+        options.clear_options()
+        if not queued:
+            options.add_option(Option("队列为空", disabled=True))
+            return
+        for index, item in enumerate(queued):
+            label = self.PRIORITY_LABELS.get(item.priority, item.priority)
+            options.add_option(
+                Option(
+                    Text.assemble(
+                        (f"{index + 1}. ", "dim"),
+                        (f"[{label}] ", "#d97757"),
+                        (redact_public_detail(item.display_text, limit=120), ""),
+                    ),
+                    id=str(item.sequence),
+                )
+            )
+        options.highlighted = min(selected or 0, len(queued) - 1)
+        options.focus()
+
+    @on(OptionList.OptionSelected, "#queue-manager-options")
+    def handle_selected(self, event: OptionList.OptionSelected) -> None:
+        index = event.option_index
+        item = self.session.remove_queued(index)
+        if item is not None:
+            self.dismiss(item)
+
+    def _change_priority(self, delta: int) -> None:
+        index = self._selected_index()
+        if index is None:
+            return
+        queued = self.session.ordered_queue()
+        if index >= len(queued):
+            return
+        item = queued[index]
+        current = self.PRIORITIES.index(item.priority)
+        target = self.PRIORITIES[
+            max(0, min(len(self.PRIORITIES) - 1, current + delta))
+        ]
+        if target == item.priority:
+            return
+        updated = self.session.reprioritize_queued(index, target)
+        self._render_queue(selected=index)
+        if updated is not None:
+            self.notify(
+                f"已设为{self.PRIORITY_LABELS[updated.priority]}执行。"
+            )
+
+    def action_priority_down(self) -> None:
+        self._change_priority(-1)
+
+    def action_priority_up(self) -> None:
+        self._change_priority(1)
+
+    def action_delete(self) -> None:
+        index = self._selected_index()
+        if index is None:
+            return
+        removed = self.session.remove_queued(index)
+        if removed is not None:
+            self.notify(
+                "已移除："
+                + redact_public_detail(removed.display_text, limit=80)
+            )
+        self._render_queue(selected=index)
+
+    def action_clear(self) -> None:
+        count = len(self.session.prompt_queue)
+        self.session.prompt_queue.clear()
+        self._render_queue()
+        self.notify(f"已清空{count}个等待任务。")
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -453,6 +579,7 @@ class KnowFlowTui(App[None]):
         self.current_run_id: str | None = None
         self.current_approval_id: str | None = None
         self._approval_in_progress = False
+        self._queue_manager_previous_pause: bool | None = None
         self.workspace = str(Path.cwd())
         self.command_handlers: dict[str, Any] = {
             "/help": self._cmd_help,
@@ -483,6 +610,7 @@ class KnowFlowTui(App[None]):
                 yield Static("❯", id="composer-prefix")
                 yield Composer()
             yield HistorySearchBar()
+            yield QueuePreview()
             yield CommandMenu()
             with Horizontal(id="prompt-footer"):
                 yield Static("输入 / 查看命令", id="run-status")
@@ -633,9 +761,6 @@ class KnowFlowTui(App[None]):
                 question,
                 display_text=display_question,
                 priority="next",
-            )
-            await self.query_one(TranscriptView).add_notice(
-                f"已加入队列：{redact_public_detail(display_question, limit=120)}"
             )
             self._refresh_status_bar()
             return
@@ -1016,7 +1141,10 @@ class KnowFlowTui(App[None]):
         return []
 
     async def _cmd_tasks(self, args: list[str]) -> bool:
-        part = args[0].lower().strip() if args else "list"
+        part = args[0].lower().strip() if args else "open"
+        if part == "open":
+            self._open_queue_manager()
+            return True
         if part == "remove":
             if len(args) < 2 or not args[1].isdigit():
                 await self.query_one(TranscriptView).add_notice(
@@ -1199,9 +1327,40 @@ class KnowFlowTui(App[None]):
             self._set_status("生成回答")
         elif event_type == "model_event":
             self._set_status("生成回答")
-        elif event_type in {"tool", "tool_result"}:
+        elif event_type == "model_retry":
+            seconds = max(
+                0,
+                int((int(event.get("retryInMs") or 0) + 999) / 1000),
+            )
+            attempt = int(event.get("retryAttempt") or 1)
+            maximum = int(event.get("maxRetries") or 1)
+            error_type = str(event.get("errorType") or "").lower()
+            reason = (
+                "模型连接超时"
+                if "timeout" in error_type
+                else (
+                    "模型连接失败"
+                    if "connect" in error_type
+                    else "模型请求失败"
+                )
+            )
+            self._set_status(
+                f"{reason}，{seconds}秒后重试（{attempt}/{maximum}）"
+            )
+        elif event_type in {"tool_started", "tool", "tool_result"}:
             self.session.record_tool(event)
-            self._set_status("处理工具结果")
+            title = tool_activity_title(event)
+            status = str(event.get("status") or "").lower()
+            if event_type == "tool_started":
+                self._set_status(
+                    f"等待确认：{title}"
+                    if status == "waiting"
+                    else f"正在{title}"
+                )
+            elif status in {"failed", "error"}:
+                self._set_status(f"{title}失败，正在调整")
+            else:
+                self._set_status(f"{title}完成，继续分析")
         elif event_type == "agent_step":
             step = event.get("step") if isinstance(event.get("step"), dict) else event
             self._set_status(
@@ -1215,6 +1374,10 @@ class KnowFlowTui(App[None]):
 
     async def on_turn_completed(self, message: TurnCompleted) -> None:
         transcript = self.query_one(TranscriptView)
+        interrupted = bool(
+            self.session.cancel_requested
+            or message.execution.result.get("cancelled")
+        )
         trace = message.execution.result.get("trace")
         if isinstance(trace, list):
             for step in trace:
@@ -1226,19 +1389,30 @@ class KnowFlowTui(App[None]):
         if answer and not self.streamed:
             await transcript.append_assistant(answer)
         transcript.finalize_assistant()
-        await transcript.finish_run()
+        await transcript.finish_run(cancelled=interrupted)
         self.pending_execution = None
         self.current_run_id = None
         self.running = False
         self.started_at = None
-        interrupted = self.session.cancel_requested
         self._set_status("已停止" if interrupted else "已完成")
+        if interrupted:
+            await transcript.add_recovery(
+                "任务已中断",
+                "当前工具可能已完成部分操作，请先检查结果再重试。",
+                "输入新的要求调整方向，或输入/retry重新执行。",
+            )
         self.query_one(Composer).focus()
         if interrupted:
             self.session.queue_paused = bool(self.session.prompt_queue)
+            if isinstance(self.screen, QueueManagerScreen):
+                self._queue_manager_previous_pause = True
         else:
-            self.session.queue_paused = False
-            self._run_next_queued()
+            if isinstance(self.screen, QueueManagerScreen):
+                self.session.queue_paused = True
+                self._refresh_status_bar()
+            else:
+                self.session.queue_paused = False
+                self._run_next_queued()
 
     def on_turn_paused(self, message: TurnPaused) -> None:
         self.pending_execution = message.execution
@@ -1333,14 +1507,20 @@ class KnowFlowTui(App[None]):
         self._set_status("执行失败")
         self.query_one(TranscriptView).finalize_assistant()
         await self.query_one(TranscriptView).finish_run(failed=True)
-        await self.query_one(TranscriptView).add_notice(
-            f"执行失败：{redact_public_detail(message.error, limit=240)}",
+        failure_title, recovery = error_recovery_message(message.error)
+        await self.query_one(TranscriptView).add_recovery(
+            failure_title,
+            redact_public_detail(message.error, limit=300),
+            recovery,
             error=True,
         )
         self.query_one(Composer).focus()
         self._refresh_status_bar()
         if self.session.queued_questions:
             self.session.queue_paused = True
+            if isinstance(self.screen, QueueManagerScreen):
+                self._queue_manager_previous_pause = True
+            self._refresh_status_bar()
             await self.query_one(TranscriptView).add_notice(
                 f"队列已暂停，仍有{len(self.session.queued_questions)}项。"
                 "输入/continue继续，或/retry重试上一任务。"
@@ -1348,7 +1528,7 @@ class KnowFlowTui(App[None]):
 
     def on_cancel_requested(self, message: CancelRequested) -> None:
         if message.sent:
-            self._set_status("已向服务器请求停止")
+            self._set_status("正在停止，等待当前操作收尾")
         elif message.error is not None:
             self.notify(
                 "停止请求发送失败："
@@ -1421,6 +1601,10 @@ class KnowFlowTui(App[None]):
             permission_mode=PERMISSION_MODE_BY_ID[
                 self.session.permission_mode
             ][2],
+        )
+        self.query_one(QueuePreview).update_queue(
+            self.session.queued_questions,
+            paused=self.session.queue_paused,
         )
 
     def _run_next_queued(self) -> None:
@@ -1495,7 +1679,33 @@ class KnowFlowTui(App[None]):
             self.notify("没有暂存输入。", severity="warning")
 
     async def action_tasks(self) -> None:
-        await self._cmd_tasks(["list"])
+        self._open_queue_manager()
+
+    def _open_queue_manager(self) -> None:
+        if isinstance(self.screen, QueueManagerScreen):
+            return
+        self._queue_manager_previous_pause = self.session.queue_paused
+        self.session.queue_paused = True
+        self._refresh_status_bar()
+        self.push_screen(
+            QueueManagerScreen(self.session),
+            self._on_queue_manager_result,
+        )
+
+    def _on_queue_manager_result(
+        self,
+        prompt: QueuedPrompt | None,
+    ) -> None:
+        previous_pause = bool(self._queue_manager_previous_pause)
+        self._queue_manager_previous_pause = None
+        self.session.queue_paused = previous_pause or prompt is not None
+        self._refresh_status_bar()
+        composer = self.query_one(Composer)
+        if prompt is not None:
+            composer.load_text(prompt.text)
+        composer.focus()
+        if prompt is None and not self.running:
+            self._run_next_queued()
 
     def action_slash_commands(self) -> None:
         composer = self.query_one(Composer)

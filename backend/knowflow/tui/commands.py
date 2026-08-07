@@ -49,7 +49,9 @@ class SlashCommand:
 
     @property
     def requires_arguments(self) -> bool:
-        return bool(self.argument_hint) or self.source != "builtin"
+        return (
+            bool(self.argument_hint) and not self.immediate
+        ) or self.source != "builtin"
 
 
 COMMANDS = (
@@ -64,7 +66,12 @@ COMMANDS = (
         ("/allowed-tools",),
         immediate=True,
     ),
-    SlashCommand("/tasks", "查看或管理等待任务", argument_hint="[list | remove <序号> | clear]"),
+    SlashCommand(
+        "/tasks",
+        "查看或管理等待任务",
+        argument_hint="[list | remove <序号> | clear]",
+        immediate=True,
+    ),
     SlashCommand("/continue", "继续执行暂停的任务队列", immediate=True),
     SlashCommand("/retry", "重新执行上一项任务", immediate=True),
     SlashCommand("/tools", "查看可用工具", immediate=True),

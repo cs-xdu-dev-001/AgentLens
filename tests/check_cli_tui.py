@@ -20,6 +20,7 @@ from knowflow.tui.app import (  # noqa: E402
     CommandBrowserScreen,
     KnowFlowTui,
     PermissionRuleScreen,
+    QueueManagerScreen,
 )
 from knowflow.tui.backend import TuiBackend  # noqa: E402
 from knowflow.tui.commands import (  # noqa: E402
@@ -33,6 +34,7 @@ from knowflow.tui.widgets import (  # noqa: E402
     CommandMenu,
     Composer,
     HistorySearchBar,
+    QueuePreview,
     redact_public_detail,
 )
 
@@ -58,7 +60,17 @@ class FakeBackend:
         event_sink({"type": "text_delta", "text": "回答"})
         event_sink(
             {
+                "type": "tool_started",
+                "toolCallId": "call_read",
+                "toolName": "read_workspace_file",
+                "status": "running",
+                "arguments": {"path": "README.md"},
+            }
+        )
+        event_sink(
+            {
                 "type": "tool_result",
+                "toolCallId": "call_read",
                 "toolName": "read_workspace_file",
                 "status": "success",
                 "latencyMs": 12,
@@ -209,6 +221,63 @@ class FailThenBackend(SlowBackend):
                 "paused": False,
                 "runId": "run_after_failure",
                 "answer": "队列继续完成",
+            }
+        )
+
+
+class RetryBackend(SlowBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        event_sink(
+            {
+                "type": "model_retry",
+                "statusCode": 429,
+                "retryAttempt": 1,
+                "maxRetries": 2,
+                "retryInMs": 3000,
+            }
+        )
+        self.started.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("retry status test did not release")
+        event_sink({"type": "text_delta", "text": "恢复成功"})
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run_retry_tui",
+                "answer": "恢复成功",
+            }
+        )
+
+
+class ToolFailureBackend(FakeBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        event_sink(
+            {
+                "type": "tool_started",
+                "toolCallId": "call_fail",
+                "toolName": "read_workspace_file",
+                "status": "running",
+                "arguments": {"path": "missing.txt"},
+            }
+        )
+        event_sink(
+            {
+                "type": "tool_result",
+                "toolCallId": "call_fail",
+                "toolName": "read_workspace_file",
+                "status": "failed",
+                "errorCode": "invalid_arguments",
+                "errorMessage": "missing path",
+                "arguments": {"path": "missing.txt"},
+            }
+        )
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run_tool_failure",
+                "answer": "我会换一种方法。",
             }
         )
 
@@ -441,6 +510,58 @@ async def exercise_live_status() -> None:
         assert not app.running
 
 
+async def exercise_retry_status() -> None:
+    backend = RetryBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("retry")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        assert backend.started.is_set()
+        assert "模型请求失败" in str(app.query_one("#run-status").render())
+        activity = app.query_one(".run-activity")
+        model = activity._rows["model"]
+        assert not model.collapsed
+        assert "1/2" in str(
+            model.query_one(".activity-detail").render()
+        )
+        backend.release.set()
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert not app.running
+        assert app.query_one("#transcript")._assistant_text == "恢复成功"
+
+
+async def exercise_tool_failure_feedback() -> None:
+    app = KnowFlowTui(ToolFailureBackend(), assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("inspect missing file")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        activity = app.query_one(".run-activity")
+        tool_rows = [
+            row
+            for row in activity.query(".activity-step")
+            if "missing.txt" in str(row.title)
+        ]
+        assert len(tool_rows) == 1
+        assert not tool_rows[0].collapsed
+        detail = str(tool_rows[0].query_one(".activity-detail").render())
+        assert "参数不正确" in detail
+        assert "让Agent修正参数" in detail
+        assert "1次失败" in str(
+            activity.query_one(".activity-header").render()
+        )
+
+
 async def exercise_narrow_command_menu() -> None:
     app = KnowFlowTui(FakeBackend(), assume_yes=False)
     async with app.run_test(size=(48, 20)) as pilot:
@@ -602,7 +723,17 @@ async def exercise_queue() -> None:
         await pilot.pause(0.05)
         assert app.session.queued_questions == ["second"]
         assert "队列 1" in str(app.query_one("#status-bar").render())
+        await pilot.press("ctrl+t")
+        await pilot.pause(0.05)
+        assert isinstance(app.screen, QueueManagerScreen)
         backend.release.set()
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert backend.questions == ["first"]
+        assert app.session.queue_paused
+        await pilot.press("escape")
         for _ in range(40):
             await pilot.pause(0.05)
             if backend.questions == ["first", "second"] and not app.running:
@@ -615,6 +746,40 @@ async def exercise_queue() -> None:
             "now",
             "later",
         ]
+
+
+async def exercise_queue_manager() -> None:
+    app = KnowFlowTui(FakeBackend(), assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.session.enqueue("first queued", priority="next")
+        app.session.enqueue("second queued", priority="later")
+        app._refresh_status_bar()
+        await pilot.press("ctrl+t")
+        await pilot.pause(0.05)
+        assert isinstance(app.screen, QueueManagerScreen)
+        assert "2项等待" in str(
+            app.screen.query_one("#queue-manager-summary").render()
+        )
+        await pilot.press("right")
+        assert app.session.ordered_queue()[0].priority == "now"
+        await pilot.press("down", "d")
+        assert app.session.queued_questions == ["first queued"]
+        await pilot.resize_terminal(48, 20)
+        await pilot.pause(0.05)
+        assert app.screen.has_class("narrow")
+        assert app.screen.query_one("#queue-manager-dialog").size.width < 48
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert not isinstance(app.screen, QueueManagerScreen)
+        assert app.session.queued_questions == []
+        assert app.query_one(Composer).text == "first queued"
+
+        app.session.enqueue("slash queue", priority="next")
+        app.query_one(Composer).load_text("/tasks")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert isinstance(app.screen, QueueManagerScreen)
+        await pilot.press("escape")
 
 
 async def exercise_scoped_session_approval() -> None:
@@ -684,13 +849,22 @@ async def exercise_failed_queue_pause() -> None:
                 break
         composer.load_text("second waits")
         await pilot.press("enter")
+        await pilot.pause(0.05)
+        queue_preview = app.query_one(QueuePreview)
+        assert queue_preview.has_class("visible")
+        assert "second waits" in str(queue_preview.render())
         backend.release.set()
         for _ in range(30):
             await pilot.pause(0.05)
             if not app.running:
                 break
         assert app.session.queue_paused
+        assert "队列已暂停" in str(queue_preview.render())
         assert backend.questions == ["first fails"]
+        assert any(
+            "修改要求后重新发送" in str(item.render())
+            for item in app.query(".recovery-notice")
+        )
         composer.load_text("/continue")
         await pilot.press("enter")
         for _ in range(30):
@@ -699,6 +873,7 @@ async def exercise_failed_queue_pause() -> None:
                 break
         assert backend.questions == ["first fails", "second waits"]
         assert not app.session.queue_paused
+        assert not queue_preview.has_class("visible")
 
 
 async def exercise_render_caps() -> None:
@@ -778,17 +953,39 @@ def main() -> None:
         ("POST", "/api/agent/runs/run_cancel/cancel")
     ]
     assert not tui_backend.cancel(None)
+
+    class FakeLocalAgent:
+        def __init__(self):
+            self.cancelled = []
+
+        def cancel(self, run_id=None):
+            self.cancelled.append(run_id)
+            return True
+
+    local_agent = FakeLocalAgent()
+    local_backend = TuiBackend(
+        local_agent=local_agent,
+        remote_client=None,
+        tools=True,
+        model_id=None,
+        skill_id=None,
+    )
+    assert local_backend.cancel(None)
+    assert local_agent.cancelled == [None]
     original_data_home = os.environ.get("XDG_DATA_HOME")
     with TemporaryDirectory() as data_home:
         os.environ["XDG_DATA_HOME"] = data_home
         asyncio.run(exercise_tui())
         asyncio.run(exercise_remote_streaming())
         asyncio.run(exercise_live_status())
+        asyncio.run(exercise_retry_status())
+        asyncio.run(exercise_tool_failure_feedback())
         asyncio.run(exercise_narrow_command_menu())
         asyncio.run(exercise_approval())
         asyncio.run(exercise_permission_modes())
         asyncio.run(exercise_session_approval())
         asyncio.run(exercise_queue())
+        asyncio.run(exercise_queue_manager())
         asyncio.run(exercise_scoped_session_approval())
         asyncio.run(exercise_interrupt_feedback())
         asyncio.run(exercise_failed_queue_pause())

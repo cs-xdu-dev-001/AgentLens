@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from threading import Event, Lock
 from typing import Any, Callable
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -12,7 +13,10 @@ import requests
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
 from .agent_trace import sanitize_trace_value
-from .langgraph_agent_engine import LangGraphAgentEngine
+from .langgraph_agent_engine import (
+    AgentRunCancelledError,
+    LangGraphAgentEngine,
+)
 from .model_gateway import ModelGateway
 from .workspace_runtime import (
     SrtSandboxRunner,
@@ -178,7 +182,12 @@ class _PlaintextCipher:
 
 
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]):
-    return requests.post(url, headers=headers, json=payload, timeout=120)
+    return requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=(10, 120),
+    )
 
 
 def _stream_json(url: str, headers: dict[str, str], payload: dict[str, Any]):
@@ -186,7 +195,7 @@ def _stream_json(url: str, headers: dict[str, str], payload: dict[str, Any]):
         url,
         headers=headers,
         json=payload,
-        timeout=120,
+        timeout=(10, 120),
         stream=True,
     )
 
@@ -241,6 +250,24 @@ class LocalAgentRuntime:
                 self.data_root / "langgraph" / "checkpoints.sqlite3"
             ),
         )
+        self._cancel_lock = Lock()
+        self._cancel_events: dict[str, Event] = {}
+
+    def cancel(self, run_id: str | None = None) -> bool:
+        """Request cooperative cancellation at the next safe graph boundary."""
+        with self._cancel_lock:
+            targets = (
+                [self._cancel_events[run_id]]
+                if run_id and run_id in self._cancel_events
+                else (
+                    list(self._cancel_events.values())
+                    if not run_id
+                    else []
+                )
+            )
+        for target in targets:
+            target.set()
+        return bool(targets)
 
     def _registry(self, *, tools: bool) -> ToolRegistry:
         registry = ToolRegistry()
@@ -290,6 +317,9 @@ class LocalAgentRuntime:
         if task:
             messages.append({"role": "user", "content": task})
         events: list[dict[str, Any]] = []
+        cancel_event = Event()
+        with self._cancel_lock:
+            self._cancel_events[identifier] = cancel_event
 
         def emit(event: dict[str, Any]) -> None:
             events.append(event)
@@ -299,6 +329,17 @@ class LocalAgentRuntime:
         def model_event(event: dict[str, Any]) -> None:
             emit({"type": "model_event", **event})
 
+        def tool_lifecycle_event(event: dict[str, Any]) -> None:
+            emit(
+                {
+                    **event,
+                    "arguments": sanitize_trace_value(
+                        event.get("arguments"),
+                        max_chars=500,
+                    ),
+                }
+            )
+
         def tool_event(execution: ToolExecution, _parent: str | None) -> None:
             emit(
                 {
@@ -306,6 +347,7 @@ class LocalAgentRuntime:
                     "toolCallId": execution.call_id,
                     "toolName": execution.tool_name,
                     "status": execution.status,
+                    "errorCode": execution.error_code,
                     "latencyMs": execution.latency_ms,
                     "arguments": sanitize_trace_value(
                         execution.arguments,
@@ -322,25 +364,55 @@ class LocalAgentRuntime:
                 }
             )
 
-        result = self.engine.run(
-            user_id=LOCAL_USER_ID,
-            run_id=identifier,
-            messages=messages,
-            config=config,
-            registry=self._registry(tools=tools),
-            execution_callback=tool_event,
-            model_event_callback=model_event,
-            resume_from_checkpoint=approval_decision is not None,
-            approval_decision=approval_decision,
-        )
+        emit({"type": "run_started", "runId": identifier})
+        try:
+            result = self.engine.run(
+                user_id=LOCAL_USER_ID,
+                run_id=identifier,
+                messages=messages,
+                config=config,
+                registry=self._registry(tools=tools),
+                execution_callback=tool_event,
+                model_event_callback=model_event,
+                tool_event_callback=tool_lifecycle_event,
+                cancel_check=cancel_event.is_set,
+                resume_from_checkpoint=approval_decision is not None,
+                approval_decision=approval_decision,
+            )
+        except AgentRunCancelledError:
+            emit(
+                {
+                    "type": "done",
+                    "runId": identifier,
+                    "status": "cancelled",
+                }
+            )
+            return AgentExecution(
+                result={
+                    "paused": False,
+                    "cancelled": True,
+                    "runId": identifier,
+                    "answer": "",
+                    "trace": [],
+                    "messages": messages,
+                },
+                events=events,
+            )
+        finally:
+            with self._cancel_lock:
+                current = self._cancel_events.get(identifier)
+                if current is cancel_event:
+                    self._cancel_events.pop(identifier, None)
         if result.paused:
             interrupt = result.interrupt or {}
+            tool_call_id = str(
+                interrupt.get("toolCallId") or uuid4().hex
+            )
             emit(
                 {
                     "type": "approval_required",
-                    "approvalId": str(
-                        interrupt.get("toolCallId") or uuid4().hex
-                    ),
+                    "approvalId": tool_call_id,
+                    "toolCallId": tool_call_id,
                     "runId": identifier,
                     "toolName": interrupt.get("toolName") or "工具调用",
                     "serverName": interrupt.get("serverName") or "本地工具",

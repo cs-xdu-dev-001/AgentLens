@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from contextlib import contextmanager, ExitStack
 import json
 import re
+import requests
+from time import sleep
 from typing import Any, Callable
 
 from .responses_protocol import (
@@ -13,6 +16,79 @@ from .responses_protocol import (
 )
 
 MAX_UPSTREAM_ERROR_BYTES = 65_536
+RETRYABLE_MODEL_STATUSES = {408, 409, 429, 500, 502, 503, 504}
+MAX_MODEL_RETRIES = 2
+
+
+class ChatCompletionsStreamAccumulator:
+    """Build one assistant message from OpenAI-compatible chat SSE chunks."""
+
+    def __init__(self) -> None:
+        self.role = "assistant"
+        self.content: list[str] = []
+        self.tool_calls: dict[int, dict[str, Any]] = {}
+
+    def feed(self, event: dict[str, Any]) -> list[dict[str, str]]:
+        choices = event.get("choices")
+        if not isinstance(choices, list) or not choices:
+            return []
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise ResponsesProtocolError(
+                "Chat Completions SSE choice must be an object."
+            )
+        delta = choice.get("delta")
+        if not isinstance(delta, dict):
+            return []
+        if delta.get("role"):
+            self.role = str(delta["role"])
+        public_events: list[dict[str, str]] = []
+        content = delta.get("content")
+        if isinstance(content, str) and content:
+            self.content.append(content)
+            public_events.append({"type": "text_delta", "text": content})
+        calls = delta.get("tool_calls")
+        if isinstance(calls, list):
+            for fallback_index, value in enumerate(calls):
+                if not isinstance(value, dict):
+                    continue
+                raw_index = value.get("index", fallback_index)
+                try:
+                    index = int(raw_index)
+                except (TypeError, ValueError):
+                    index = fallback_index
+                call = self.tool_calls.setdefault(
+                    index,
+                    {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    },
+                )
+                if value.get("id"):
+                    call["id"] = str(value["id"])
+                if value.get("type"):
+                    call["type"] = str(value["type"])
+                function = value.get("function")
+                if isinstance(function, dict):
+                    if function.get("name"):
+                        call["function"]["name"] += str(function["name"])
+                    if function.get("arguments"):
+                        call["function"]["arguments"] += str(
+                            function["arguments"]
+                        )
+        return public_events
+
+    def finish(self) -> dict[str, Any]:
+        message: dict[str, Any] = {
+            "role": self.role,
+            "content": "".join(self.content) or None,
+        }
+        if self.tool_calls:
+            message["tool_calls"] = [
+                self.tool_calls[index] for index in sorted(self.tool_calls)
+            ]
+        return message
 
 
 class ModelGateway:
@@ -24,12 +100,139 @@ class ModelGateway:
         post_model_json,
         local_embedding,
         stream_model_json=None,
+        sleep_fn=sleep,
     ):
         self.fetch_one = fetch_one
         self.cipher = cipher
         self.post_model_json = post_model_json
         self.local_embedding = local_embedding
         self.stream_model_json = stream_model_json
+        self.sleep_fn = sleep_fn
+
+    @staticmethod
+    def _retry_delay(response: Any, attempt: int) -> float:
+        headers = getattr(response, "headers", None)
+        retry_after = (
+            headers.get("Retry-After")
+            if hasattr(headers, "get")
+            else None
+        )
+        try:
+            return max(0.0, min(8.0, float(retry_after)))
+        except (TypeError, ValueError):
+            return min(4.0, float(2 ** max(0, attempt - 1)))
+
+    @staticmethod
+    def _emit_retry(
+        event_callback: Callable[[dict[str, Any]], None] | None,
+        *,
+        status: int,
+        attempt: int,
+        delay: float,
+        error_type: str = "",
+    ) -> None:
+        if event_callback is None:
+            return
+        event: dict[str, Any] = {
+            "type": "model_retry",
+            "retryAttempt": attempt,
+            "maxRetries": MAX_MODEL_RETRIES,
+            "retryInMs": int(delay * 1000),
+        }
+        if status:
+            event["statusCode"] = status
+        if error_type:
+            event["errorType"] = error_type
+        event_callback(event)
+
+    def _model_request(
+        self,
+        transport: Callable[[], Any],
+        event_callback: Callable[[dict[str, Any]], None] | None,
+    ) -> Any:
+        for attempt in range(1, MAX_MODEL_RETRIES + 2):
+            try:
+                response = transport()
+            except requests.RequestException as exc:
+                if attempt > MAX_MODEL_RETRIES:
+                    raise
+                delay = self._retry_delay(None, attempt)
+                self._emit_retry(
+                    event_callback,
+                    status=0,
+                    attempt=attempt,
+                    delay=delay,
+                    error_type=type(exc).__name__,
+                )
+                self.sleep_fn(delay)
+                continue
+            try:
+                status = int(getattr(response, "status_code", 200))
+            except (TypeError, ValueError):
+                status = 200
+            if (
+                status not in RETRYABLE_MODEL_STATUSES
+                or attempt > MAX_MODEL_RETRIES
+            ):
+                return response
+            delay = self._retry_delay(response, attempt)
+            self._emit_retry(
+                event_callback,
+                status=status,
+                attempt=attempt,
+                delay=delay,
+            )
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            self.sleep_fn(delay)
+        raise RuntimeError("Model retry loop ended unexpectedly.")
+
+    @contextmanager
+    def _model_stream_request(
+        self,
+        transport: Callable[[], Any],
+        event_callback: Callable[[dict[str, Any]], None] | None,
+    ):
+        for attempt in range(1, MAX_MODEL_RETRIES + 2):
+            stack = ExitStack()
+            try:
+                response = stack.enter_context(transport())
+            except requests.RequestException as exc:
+                stack.close()
+                if attempt > MAX_MODEL_RETRIES:
+                    raise
+                delay = self._retry_delay(None, attempt)
+                self._emit_retry(
+                    event_callback,
+                    status=0,
+                    attempt=attempt,
+                    delay=delay,
+                    error_type=type(exc).__name__,
+                )
+                self.sleep_fn(delay)
+                continue
+            try:
+                status = int(getattr(response, "status_code", 200))
+            except (TypeError, ValueError):
+                status = 200
+            if (
+                status not in RETRYABLE_MODEL_STATUSES
+                or attempt > MAX_MODEL_RETRIES
+            ):
+                with stack:
+                    yield response
+                return
+            delay = self._retry_delay(response, attempt)
+            self._emit_retry(
+                event_callback,
+                status=status,
+                attempt=attempt,
+                delay=delay,
+            )
+            stack.close()
+            self.sleep_fn(delay)
+        raise RuntimeError("Model retry loop ended unexpectedly.")
 
     def get_config(self, config_id: int | None, model_type: str, user_id: int | None = None) -> dict[str, Any] | None:
         if config_id:
@@ -192,11 +395,15 @@ class ModelGateway:
             url = self.endpoint(config["base_url"], "/responses")
             payload = build_responses_payload(messages, config, tools=tools, tool_choice=tool_choice)
             accumulator = ResponsesStreamAccumulator()
-            with self.stream_model_json(
-                url,
-                self.headers(config),
-                payload,
-            ) as response:
+            response = self._model_stream_request(
+                lambda: self.stream_model_json(
+                    url,
+                    self.headers(config),
+                    payload,
+                ),
+                event_callback,
+            )
+            with response as response:
                 if int(getattr(response, "status_code", 200)) >= 400:
                     self._raise_responses_http_error(response)
                 response.raise_for_status()
@@ -223,7 +430,35 @@ class ModelGateway:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice or "auto"
-        response = self.post_model_json(url, self.headers(config), payload)
+        if event_callback is not None and self.stream_model_json is not None:
+            payload["stream"] = True
+            accumulator = ChatCompletionsStreamAccumulator()
+            response = self._model_stream_request(
+                lambda: self.stream_model_json(
+                    url,
+                    self.headers(config),
+                    payload,
+                ),
+                event_callback,
+            )
+            with response as response:
+                if int(getattr(response, "status_code", 200)) >= 400:
+                    self._raise_responses_http_error(response)
+                response.raise_for_status()
+                for upstream_event in iter_sse_json(
+                    response.iter_content(chunk_size=None)
+                ):
+                    for public_event in accumulator.feed(upstream_event):
+                        event_callback(public_event)
+            return accumulator.finish()
+        response = self._model_request(
+            lambda: self.post_model_json(
+                url,
+                self.headers(config),
+                payload,
+            ),
+            event_callback,
+        )
         response.raise_for_status()
         message = response.json()["choices"][0]["message"]
         if not isinstance(message, dict):

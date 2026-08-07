@@ -49,6 +49,10 @@ class LangGraphState(TypedDict):
     retrieval_completed: bool
 
 
+class AgentRunCancelledError(RuntimeError):
+    """Raised only at a safe graph boundary after cancellation was requested."""
+
+
 @dataclass(frozen=True)
 class LangGraphRunContext:
     gateway: Any
@@ -68,6 +72,10 @@ class LangGraphRunContext:
     model_event_callback: (
         Callable[[dict[str, Any]], None] | None
     ) = None
+    tool_event_callback: (
+        Callable[[dict[str, Any]], None] | None
+    ) = None
+    cancel_check: Callable[[], bool] | None = None
     skill_restore: Callable[[dict[str, Any]], None] | None = None
     memory_recall: (
         Callable[[], list[dict[str, Any]]] | None
@@ -319,6 +327,8 @@ class LangGraphAgentEngine:
         runtime: Runtime[LangGraphRunContext],
     ) -> dict[str, Any]:
         context = runtime.context
+        if context.cancel_check is not None and context.cancel_check():
+            raise AgentRunCancelledError("Agent run was cancelled by the user.")
         config = context.config or {}
         trace = context.trace
         LangGraphAgentEngine._restore_skill(state, context)
@@ -380,6 +390,9 @@ class LangGraphAgentEngine:
                     error_code="model_request_failed",
                 )
             raise
+
+        if context.cancel_check is not None and context.cancel_check():
+            raise AgentRunCancelledError("Agent run was cancelled by the user.")
 
         tool_calls = message.get("tool_calls") or []
         answer = str(message.get("content") or "").strip()
@@ -610,11 +623,46 @@ class LangGraphAgentEngine:
         }
 
     @staticmethod
+    def _emit_tool_lifecycle(
+        context: LangGraphRunContext,
+        prepared: PreparedToolCall,
+        status: str,
+    ) -> None:
+        callback = context.tool_event_callback
+        if callback is None:
+            return
+        definition = prepared.definition
+        callback(
+            {
+                "type": "tool_started",
+                "runId": context.run_id,
+                "toolCallId": prepared.call_id,
+                "toolName": prepared.tool_name,
+                "status": status,
+                "arguments": sanitize_trace_value(
+                    prepared.arguments,
+                    max_chars=500,
+                ),
+                "risk": (
+                    str(definition.risk or "unknown")
+                    if definition is not None
+                    else "unknown"
+                ),
+                "readOnly": bool(definition and definition.read_only),
+                "destructive": bool(
+                    definition and definition.destructive
+                ),
+            }
+        )
+
+    @staticmethod
     def _call_tools(
         state: LangGraphState,
         runtime: Runtime[LangGraphRunContext],
     ) -> dict[str, Any]:
         context = runtime.context
+        if context.cancel_check is not None and context.cancel_check():
+            raise AgentRunCancelledError("Agent run was cancelled by the user.")
         trace = context.trace
         messages = [dict(message) for message in state["messages"]]
         calls = list(state.get("pending_tool_calls") or [])
@@ -653,6 +701,12 @@ class LangGraphAgentEngine:
             allowed_names,
         )
         if len(concurrent_batch) > 1:
+            for batch_prepared in concurrent_batch:
+                LangGraphAgentEngine._emit_tool_lifecycle(
+                    context,
+                    batch_prepared,
+                    "running",
+                )
             with ThreadPoolExecutor(
                 max_workers=min(
                     context.max_tool_concurrency,
@@ -711,6 +765,11 @@ class LangGraphAgentEngine:
             and definition is not None
             and definition.requires_approval
         ):
+            LangGraphAgentEngine._emit_tool_lifecycle(
+                context,
+                prepared,
+                "waiting",
+            )
             decision_value = interrupt(
                 {
                     "type": "tool_approval",
@@ -751,6 +810,11 @@ class LangGraphAgentEngine:
             else:
                 store = context.tool_operation_store
                 if store is None:
+                    LangGraphAgentEngine._emit_tool_lifecycle(
+                        context,
+                        prepared,
+                        "running",
+                    )
                     execution = context.registry.invoke(prepared)
                 operation = (
                     store.get_for_call(
@@ -774,6 +838,11 @@ class LangGraphAgentEngine:
                         operation["approvalId"],
                     )
                     if claimed is not None:
+                        LangGraphAgentEngine._emit_tool_lifecycle(
+                            context,
+                            prepared,
+                            "running",
+                        )
                         execution = context.registry.invoke(prepared)
                         store.finish_execution(
                             context.user_id,
@@ -792,6 +861,11 @@ class LangGraphAgentEngine:
                         time.perf_counter(),
                     )
         if execution is None:
+            LangGraphAgentEngine._emit_tool_lifecycle(
+                context,
+                prepared,
+                "running",
+            )
             execution = context.registry.invoke(prepared)
         current_skill_snapshot, ends_run = (
             LangGraphAgentEngine._record_tool_execution(
@@ -884,6 +958,8 @@ class LangGraphAgentEngine:
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback=None,
         model_event_callback=None,
+        tool_event_callback=None,
+        cancel_check=None,
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
@@ -916,6 +992,8 @@ class LangGraphAgentEngine:
             parent_step_id=parent_step_id,
             execution_callback=execution_callback,
             model_event_callback=model_event_callback,
+            tool_event_callback=tool_event_callback,
+            cancel_check=cancel_check,
             skill_restore=skill_restore,
             memory_recall=memory_recall,
             retrieval_context=retrieval_context,

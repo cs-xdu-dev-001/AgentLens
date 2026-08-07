@@ -226,6 +226,24 @@ def main() -> None:
         "Bearer browser-session"
     )
 
+    cancelled_execution = RemoteAgentClient._collect(
+        iter(
+            [
+                {
+                    "type": "run_snapshot",
+                    "run": {"id": "run_cancelled", "status": "running"},
+                },
+                {
+                    "type": "cancelled",
+                    "run": {"id": "run_cancelled", "status": "cancelled"},
+                },
+            ]
+        ),
+        None,
+    )
+    assert cancelled_execution.result["cancelled"] is True
+    assert cancelled_execution.result["runId"] == "run_cancelled"
+
     with TemporaryDirectory() as folder:
         store = RemoteProfileStore(Path(folder) / "remote.json")
         store.save(

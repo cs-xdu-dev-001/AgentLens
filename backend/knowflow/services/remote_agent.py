@@ -379,6 +379,7 @@ class RemoteAgentClient:
         answer: list[str] = []
         result: dict[str, Any] = {}
         paused = False
+        cancelled = False
         for event in source:
             events.append(event)
             if event_sink is not None:
@@ -395,6 +396,7 @@ class RemoteAgentClient:
                 result["sessionId"] = snapshot.get("sessionId")
                 result["messageId"] = snapshot.get("assistantMessageId")
                 paused = snapshot.get("status") == "waiting_approval"
+                cancelled = snapshot.get("status") == "cancelled"
             for key in ("runId", "sessionId", "messageId", "memoryActivity"):
                 if event.get(key) is not None:
                     result[key] = event[key]
@@ -403,11 +405,14 @@ class RemoteAgentClient:
                     str(event.get("code") or "agent_run_failed"),
                     str(event.get("message") or "Agent运行失败。"),
                 )
+            if event_type == "cancelled":
+                cancelled = True
             if event_type in TERMINAL_EVENTS or paused:
                 break
         result.setdefault("runId", run_id)
         result["answer"] = "".join(answer)
         result["paused"] = paused
+        result["cancelled"] = cancelled
         result.setdefault("trace", [])
         result.setdefault("toolCalls", [])
         result.setdefault("references", [])

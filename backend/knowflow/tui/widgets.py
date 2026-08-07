@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from math import ceil
 from time import monotonic
 from typing import Any
 
@@ -45,6 +46,9 @@ CLI_SECRET_PATTERN = re.compile(
 
 
 def redact_public_detail(value: Any, *, limit: int = 180) -> str:
+    if value is None:
+        return ""
+
     def render(item: Any, depth: int = 0) -> str:
         if depth > 4:
             return "…"
@@ -70,6 +74,79 @@ def redact_public_detail(value: Any, *, limit: int = 180) -> str:
 
     text = " ".join(render(value).split())
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
+TOOL_VERBS = {
+    "list_workspace": "浏览",
+    "list_workspace_files": "浏览",
+    "read_workspace_file": "读取",
+    "write_workspace_file": "写入",
+    "sandbox_command": "运行",
+    "run_sandbox_command": "运行",
+    "read_tool_result": "读取工具结果",
+}
+
+
+def tool_activity_title(event: dict[str, Any]) -> str:
+    """Return a concise, public description for a tool invocation."""
+    name = str(
+        event.get("toolName")
+        or event.get("tool_name")
+        or event.get("name")
+        or "工具调用"
+    )
+    normalized = name.lower().replace("-", "_")
+    arguments = event.get("arguments") or event.get("input")
+    arguments = arguments if isinstance(arguments, dict) else {}
+    target = ""
+    for key in ("path", "file_path", "directory", "command", "result_id"):
+        if arguments.get(key):
+            target = redact_public_detail(arguments[key], limit=72)
+            break
+    verb = TOOL_VERBS.get(normalized)
+    if verb is None:
+        return name
+    return f"{verb} {target}".strip()
+
+
+def error_recovery_message(value: Any) -> tuple[str, str]:
+    """Classify a public error into a useful label and recovery action."""
+    text = redact_public_detail(value, limit=300)
+    normalized = text.lower()
+    if any(part in normalized for part in ("401", "unauthorized", "api key")):
+        return "认证失败", "检查API Key与模型权限后输入/retry。"
+    if "403" in normalized or "forbidden" in normalized:
+        return "请求被拒绝", "检查账号权限或调整权限规则后输入/retry。"
+    if "429" in normalized or "rate limit" in normalized:
+        return "请求过于频繁", "稍后输入/retry，或切换可用模型。"
+    if any(part in normalized for part in ("timeout", "timed out")):
+        return "请求超时", "检查网络与上游状态后输入/retry。"
+    if any(
+        part in normalized
+        for part in ("connection", "connecterror", "network", "dns")
+    ):
+        return "连接失败", "检查网络、Base URL与代理后输入/retry。"
+    if any(part in normalized for part in ("permission", "denied", "sandbox")):
+        return "权限不足", "调整权限或换一种做法；确认安全后可输入/retry。"
+    return "执行失败", "修改要求后重新发送，或输入/retry重试上一任务。"
+
+
+def tool_error_presentation(code: Any, message: Any) -> tuple[str, str]:
+    normalized = str(code or "").strip().lower()
+    known = {
+        "permission_denied": ("未获批准", "调整权限或让Agent换一种做法。"),
+        "approval_timeout": ("批准已超时", "重新执行后及时确认。"),
+        "unknown_tool": ("工具不可用", "检查工具配置或改用其他工具。"),
+        "invalid_arguments": ("参数不正确", "让Agent修正参数后再试。"),
+        "input_validation_failed": ("参数不正确", "让Agent修正参数后再试。"),
+        "tool_execution_indeterminate": (
+            "执行状态不确定",
+            "为避免重复写入，先检查目标状态再决定是否重试。",
+        ),
+    }
+    if normalized in known:
+        return known[normalized]
+    return error_recovery_message(message or code)
 
 
 class CommandMenu(Vertical):
@@ -219,6 +296,7 @@ class RunActivity(Vertical):
     STATUS_LABELS = {
         "running": "运行中",
         "waiting": "等待确认",
+        "retrying": "等待重试",
         "pending": "等待中",
         "success": "已完成",
         "succeeded": "已完成",
@@ -239,6 +317,14 @@ class RunActivity(Vertical):
         self.expanded = False
         self._tool_sequence = 0
         self._hidden_steps = 0
+        self._tool_keys: set[str] = set()
+        self._failed_tool_keys: set[str] = set()
+        self._active_tool_keys: set[str] = set()
+        self._tool_started_at: dict[str, float] = {}
+        self._retry_deadline: float | None = None
+        self._retry_attempt = 0
+        self._retry_max = 0
+        self._retry_status = 0
 
     def compose(self):
         yield Static("✻ 正在处理… (0.0s)", classes="activity-header")
@@ -246,6 +332,36 @@ class RunActivity(Vertical):
 
     async def begin(self) -> None:
         await self.upsert("model", "分析任务", "running")
+
+    @classmethod
+    def _row_title(
+        cls,
+        title: str,
+        status: str,
+        *,
+        elapsed: float | None = None,
+        frame: str | None = None,
+    ) -> Text:
+        label = cls.STATUS_LABELS.get(status, status)
+        marker = "×" if status in {"failed", "error"} else (
+            frame if frame is not None and status == "running" else (
+                "●" if status == "running" else (
+                    "?" if status in {"waiting", "retrying"} else (
+                        "■" if status == "cancelled" else "✓"
+                    )
+                )
+            )
+        )
+        value = Text()
+        value.append(
+            f"  {marker} ",
+            style="red" if marker == "×" else ACCENT,
+        )
+        value.append(title or "Agent步骤")
+        value.append(f"  {label}", style="dim")
+        if elapsed is not None:
+            value.append(f" · {elapsed:.1f}s", style="dim")
+        return value
 
     async def upsert(
         self,
@@ -255,14 +371,17 @@ class RunActivity(Vertical):
         detail: str = "",
     ) -> None:
         normalized = status.lower() or "running"
-        label = self.STATUS_LABELS.get(normalized, normalized)
-        value = Text()
-        marker = "×" if normalized in {"failed", "error"} else (
-            "·" if normalized in {"running", "waiting"} else "✓"
+        elapsed = None
+        if key.startswith("tool:"):
+            if normalized in {"running", "waiting", "retrying"}:
+                self._tool_started_at.setdefault(key, monotonic())
+            elif key in self._tool_started_at:
+                elapsed = monotonic() - self._tool_started_at.pop(key)
+        value = self._row_title(
+            title,
+            normalized,
+            elapsed=elapsed,
         )
-        value.append(f"  {marker} ", style="red" if marker == "×" else ACCENT)
-        value.append(title or "Agent步骤")
-        value.append(f"  {label}", style="dim")
         if detail:
             self._details[key] = detail
         row = self._rows.get(key)
@@ -300,7 +419,14 @@ class RunActivity(Vertical):
         self._statuses[key] = normalized
         self._titles[key] = title
         row.set_class(normalized in {"failed", "error"}, "failed")
-        row.set_class(normalized in {"running", "waiting"}, "active")
+        row.set_class(
+            normalized in {"running", "waiting", "retrying"},
+            "active",
+        )
+        if normalized in {"failed", "error"} and detail:
+            row.collapsed = False
+        if key == "model" and normalized == "retrying" and detail:
+            row.collapsed = False
 
     @staticmethod
     def _safe_detail(value: Any, *, limit: int = 180) -> str:
@@ -313,8 +439,43 @@ class RunActivity(Vertical):
 
     async def update_event(self, event: dict) -> None:
         event_type = str(event.get("type") or "")
+        if event_type == "model_retry":
+            delay_ms = event.get("retryInMs")
+            delay = (
+                max(0.0, float(delay_ms) / 1000)
+                if isinstance(delay_ms, (int, float))
+                else 0.0
+            )
+            self._retry_deadline = monotonic() + delay
+            self._retry_attempt = int(event.get("retryAttempt") or 1)
+            self._retry_max = int(event.get("maxRetries") or 1)
+            self._retry_status = int(event.get("statusCode") or 0)
+            error_type = str(event.get("errorType") or "").lower()
+            detail = (
+                f"{ceil(delay)}秒后重试 · "
+                f"第{self._retry_attempt}/{self._retry_max}次"
+            )
+            title = (
+                "模型连接超时"
+                if "timeout" in error_type
+                else (
+                    "模型连接失败"
+                    if "connect" in error_type
+                    else "模型请求失败"
+                )
+            )
+            if self._retry_status:
+                title += f"（HTTP {self._retry_status}）"
+            await self.upsert("model", title, "retrying", detail)
+            return
         if event_type in {"text_delta", "answer", "message", "model_event"}:
+            had_retry = self._retry_deadline is not None
+            self._retry_deadline = None
+            if had_retry:
+                self._details.pop("model", None)
             await self.upsert("model", "模型生成回答", "running")
+            if had_retry and "model" in self._rows:
+                self._rows["model"].collapsed = True
             return
         if event_type == "agent_step":
             step = event.get("step") if isinstance(event.get("step"), dict) else event
@@ -343,7 +504,7 @@ class RunActivity(Vertical):
                 detail,
             )
             return
-        if event_type in {"tool", "tool_result"}:
+        if event_type in {"tool_started", "tool", "tool_result"}:
             latency = event.get("latencyMs")
             fragments = []
             if isinstance(latency, (int, float)):
@@ -352,26 +513,30 @@ class RunActivity(Vertical):
                 event.get("arguments")
                 or event.get("input")
             )
-            safe_arguments = self._safe_detail(arguments, limit=96)
+            safe_arguments = self._safe_detail(arguments, limit=240)
             if safe_arguments:
                 fragments.append(f"输入 {safe_arguments}")
             output = event.get("output") or event.get("result")
-            safe_output = self._safe_detail(output, limit=120)
+            safe_output = self._safe_detail(output, limit=600)
             if safe_output:
                 fragments.append(f"结果 {safe_output}")
             error_message = self._safe_detail(
                 event.get("errorMessage") or event.get("error"),
-                limit=120,
+                limit=600,
             )
             if error_message:
-                fragments.append(f"错误 {error_message}")
-            detail = " · ".join(fragments)
-            name = str(
-                event.get("toolName")
-                or event.get("tool_name")
-                or event.get("name")
-                or "工具调用"
+                error_label, recovery = tool_error_presentation(
+                    event.get("errorCode") or event.get("error_code"),
+                    error_message,
+                )
+                fragments.append(f"{error_label}：{error_message}")
+                fragments.append(f"建议：{recovery}")
+            detail = (
+                "\n".join(fragments)
+                if error_message
+                else " · ".join(fragments)
             )
+            name = tool_activity_title(event)
             call_id = str(
                 event.get("toolCallId")
                 or event.get("callId")
@@ -381,10 +546,19 @@ class RunActivity(Vertical):
             if not call_id:
                 self._tool_sequence += 1
                 call_id = str(self._tool_sequence)
+            key = f"tool:{call_id}"
+            status = str(event.get("status") or "completed")
+            self._tool_keys.add(key)
+            if status.lower() in {"failed", "error"}:
+                self._failed_tool_keys.add(key)
+            if status.lower() in {"running", "waiting"}:
+                self._active_tool_keys.add(key)
+            else:
+                self._active_tool_keys.discard(key)
             await self.upsert(
-                f"tool:{call_id}",
+                key,
                 name,
-                str(event.get("status") or "completed"),
+                status,
                 detail,
             )
             return
@@ -409,10 +583,24 @@ class RunActivity(Vertical):
                     )
             return
         if event_type == "approval_required":
+            call_id = str(
+                event.get("toolCallId")
+                or event.get("approvalId")
+                or event.get("id")
+                or "approval"
+            )
+            activity_event = {
+                **event,
+                "arguments": event.get("inputSummary"),
+            }
+            key = f"tool:{call_id}"
+            self._tool_keys.add(key)
+            self._active_tool_keys.add(key)
             await self.upsert(
-                "approval",
-                str(event.get("toolName") or "工具调用"),
+                key,
+                tool_activity_title(activity_event),
                 "waiting",
+                "等待权限确认",
             )
 
     def tick(self, elapsed: float | None = None) -> None:
@@ -421,26 +609,87 @@ class RunActivity(Vertical):
         value = monotonic() - self.started_at if elapsed is None else elapsed
         frames = ("✻", "✽", "✶", "✢")
         frame = frames[int(value * 4) % len(frames)]
+        if self._retry_deadline is not None and "model" in self._rows:
+            remaining = max(0, ceil(self._retry_deadline - monotonic()))
+            detail = (
+                f"{remaining}秒后重试 · "
+                f"第{self._retry_attempt}/{self._retry_max}次"
+            )
+            self._details["model"] = detail
+            self._rows["model"].query_one(
+                ".activity-detail",
+                Static,
+            ).update(detail)
+        activity_frame = ("·", "●", "•", "●")[int(value * 4) % 4]
+        for key in tuple(self._active_tool_keys):
+            row = self._rows.get(key)
+            started = self._tool_started_at.get(key)
+            if row is None or started is None:
+                continue
+            row.title = self._row_title(
+                self._titles.get(key, "工具调用"),
+                self._statuses.get(key, "running"),
+                elapsed=monotonic() - started,
+                frame=activity_frame,
+            )
         self.query_one(".activity-header", Static).update(
-            f"{frame} 正在处理… ({value:.1f}s)"
+            (
+                f"{frame} 模型请求将在"
+                f"{max(0, ceil(self._retry_deadline - monotonic()))}秒后重试"
+                if self._retry_deadline is not None
+                else f"{frame} 正在处理… ({value:.1f}s)"
+            )
+            + (
+                f" · {len(self._active_tool_keys)}个工具运行中"
+                if self._active_tool_keys
+                else ""
+            )
             + (f" · +{self._hidden_steps}早期步骤" if self._hidden_steps else "")
+            + (" · Ctrl+O详情" if self._tool_keys else "")
         )
 
-    async def finish(self, *, failed: bool = False) -> None:
+    async def finish(
+        self,
+        *,
+        failed: bool = False,
+        cancelled: bool = False,
+    ) -> None:
         self.finished = True
         for key, status in tuple(self._statuses.items()):
-            if status == "running":
+            if status in {"running", "waiting", "retrying"}:
                 await self.upsert(
                     key,
                     self._titles[key],
-                    "failed" if failed else "completed",
+                    (
+                        "cancelled"
+                        if cancelled
+                        else ("failed" if failed else "completed")
+                    ),
                 )
+        self._active_tool_keys.clear()
         elapsed = monotonic() - self.started_at
+        state_label = (
+            "■ 已中断"
+            if cancelled
+            else ("× 执行失败" if failed else "✓ 执行完成")
+        )
+        tool_summary = (
+            f" · {len(self._tool_keys)}次工具调用"
+            if self._tool_keys
+            else ""
+        )
+        failure_summary = (
+            f" · {len(self._failed_tool_keys)}次失败"
+            if self._failed_tool_keys
+            else ""
+        )
         self.query_one(".activity-header", Static).update(
-            f"{'× 执行失败' if failed else '✓ 执行完成'} ({elapsed:.1f}s)"
+            f"{state_label} ({elapsed:.1f}s){tool_summary}{failure_summary}"
             + (f" · +{self._hidden_steps}早期步骤" if self._hidden_steps else "")
+            + (" · Ctrl+O详情" if self._tool_keys else "")
         )
         self.set_class(failed, "failed")
+        self.set_class(cancelled, "cancelled")
 
 
 class TranscriptView(VerticalScroll):
@@ -596,9 +845,17 @@ class TranscriptView(VerticalScroll):
             await self._activity.update_event(event)
             self.scroll_end(animate=False)
 
-    async def finish_run(self, *, failed: bool = False) -> None:
+    async def finish_run(
+        self,
+        *,
+        failed: bool = False,
+        cancelled: bool = False,
+    ) -> None:
         if self._activity is not None:
-            await self._activity.finish(failed=failed)
+            await self._activity.finish(
+                failed=failed,
+                cancelled=cancelled,
+            )
             self.scroll_end(animate=False)
 
     def tick_run(self, elapsed: float) -> None:
@@ -645,6 +902,36 @@ class TranscriptView(VerticalScroll):
         await self._register_block(widget, "notice", content, error)
         self.scroll_end(animate=False)
 
+    async def add_recovery(
+        self,
+        title: str,
+        detail: str,
+        action: str,
+        *,
+        error: bool = False,
+    ) -> None:
+        value = Text()
+        value.append(f"{'×' if error else '■'} {title}", style="bold red" if error else "bold")
+        if detail:
+            value.append(f"\n  {redact_public_detail(detail, limit=300)}", style="dim")
+        value.append(f"\n  {action}", style=ACCENT)
+        widget = Static(
+            value,
+            classes=(
+                "recovery-notice error-recovery"
+                if error
+                else "recovery-notice"
+            ),
+        )
+        await self.mount(widget)
+        await self._register_block(
+            widget,
+            "notice",
+            f"{title}\n{detail}\n{action}",
+            error,
+        )
+        self.scroll_end(animate=False)
+
     async def clear_transcript(self) -> None:
         await self.remove_children()
         self._assistant = None
@@ -662,6 +949,34 @@ class TranscriptView(VerticalScroll):
         if self._activity is not None:
             await self._activity.set_expanded(expanded)
         await self.set_archive_expanded(expanded)
+
+
+class QueuePreview(Static):
+    """Compact, Claude-style preview of input waiting behind the active turn."""
+
+    def __init__(self) -> None:
+        super().__init__(id="queue-preview")
+
+    def update_queue(self, items: list[str], *, paused: bool) -> None:
+        if not items:
+            self.remove_class("visible")
+            self.update("")
+            return
+        value = Text()
+        label = "队列已暂停" if paused else "接下来"
+        value.append(f"{label}  ", style="bold yellow" if paused else "dim")
+        for index, item in enumerate(items[:3]):
+            if index:
+                value.append("  ·  ", style="dim")
+            value.append(redact_public_detail(item, limit=64))
+        if len(items) > 3:
+            value.append(f"  ·  +{len(items) - 3}项", style="dim")
+        value.append(
+            "  /continue继续" if paused else "  Ctrl+T管理",
+            style=ACCENT,
+        )
+        self.update(value)
+        self.add_class("visible")
 
 
 class HistorySearchBar(Horizontal):

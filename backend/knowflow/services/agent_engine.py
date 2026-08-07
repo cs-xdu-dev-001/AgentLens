@@ -13,9 +13,11 @@ from .agent_loop import (
 
 ExecutionCallback = Callable[[ToolExecution, str | None], None]
 ModelEventCallback = Callable[[dict[str, Any]], None]
+ToolEventCallback = Callable[[dict[str, Any]], None]
 SkillRestoreCallback = Callable[[dict[str, Any]], None]
 MemoryRecallCallback = Callable[[], list[dict[str, Any]]]
 RetrievalContextCallback = Callable[[], dict[str, Any]]
+CancelCheck = Callable[[], bool]
 
 
 class AgentEngine(Protocol):
@@ -34,6 +36,8 @@ class AgentEngine(Protocol):
         skill_snapshot: dict[str, Any] | None = None,
         execution_callback: ExecutionCallback | None = None,
         model_event_callback: ModelEventCallback | None = None,
+        tool_event_callback: ToolEventCallback | None = None,
+        cancel_check: CancelCheck | None = None,
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
