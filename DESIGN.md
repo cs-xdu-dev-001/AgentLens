@@ -13,6 +13,7 @@ colors:
   border-strong: "#c8c8bf"
   inverse: "#151515"
   inverse-text: "#f7f7f2"
+  terminal-accent: "#d97757"
 typography:
   headline:
     fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif'
@@ -106,6 +107,8 @@ KnowFlow AI不是仪表盘陈列馆，也不是重新包装的聊天框。它是
 - **层级灰字**：仅用于辅助信息，核心信息不得依赖低对比小字。
 
 **The Monochrome-First Rule.** 默认操作和结构只使用中性色；语义色必须对应真实状态，不能作为装饰。
+
+CLI终端使用`#d97757`作为唯一品牌强调色，仅用于欢迎框标题、输入边界、当前命令和运行指示；正文、结果与辅助信息仍使用终端中性色。
 
 **The Contrast Before Color Rule.** 先用字号、字重、间距和明暗建立层级，再考虑颜色。
 

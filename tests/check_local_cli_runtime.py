@@ -16,6 +16,7 @@ from knowflow.services.local_cli_runtime import (  # noqa: E402
     LocalCliConfigStore,
     validate_local_config,
 )
+from knowflow.services.agent_trace import sanitize_trace_value  # noqa: E402
 from knowflow.services.agent_loop import ToolRegistry  # noqa: E402
 from knowflow.services.langgraph_agent_engine import (  # noqa: E402
     LangGraphAgentEngine,
@@ -27,6 +28,21 @@ from knowflow.services.workspace_runtime import (  # noqa: E402
 
 
 def main() -> None:
+    sanitized = sanitize_trace_value(
+        {
+            "command": "curl --token cli-secret https://example.test",
+            "authorization": "Bearer header-secret",
+            "jwt": "eyJheader.payload.signature",
+        }
+    )
+    assert sanitized is not None
+    for secret in (
+        "cli-secret",
+        "header-secret",
+        "eyJheader.payload.signature",
+    ):
+        assert secret not in sanitized
+
     with TemporaryDirectory() as folder:
         store = LocalCliConfigStore(Path(folder) / "config")
         store.save(

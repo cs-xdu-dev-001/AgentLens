@@ -7,7 +7,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -165,12 +165,13 @@ class KnowFlowTui(App[None]):
     def compose(self) -> ComposeResult:
         yield TranscriptView(id="transcript")
         with Vertical(id="bottom-pane"):
-            yield Static("就绪", id="run-status")
-            yield CommandMenu()
             with Horizontal(id="composer-row"):
-                yield Static("›", id="composer-prefix")
+                yield Static("❯", id="composer-prefix")
                 yield Composer()
-            yield StatusBar(id="status-bar")
+            yield CommandMenu()
+            with Horizontal(id="prompt-footer"):
+                yield Static("输入 / 查看命令", id="run-status")
+                yield StatusBar(id="status-bar")
 
     async def on_mount(self) -> None:
         try:
@@ -184,7 +185,14 @@ class KnowFlowTui(App[None]):
         )
         self.query_one(Composer).focus()
         self.set_interval(0.25, self._tick_elapsed)
+        self._apply_viewport_class(self.size.width)
         self._refresh_status_bar()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self._apply_viewport_class(event.size.width)
+
+    def _apply_viewport_class(self, width: int) -> None:
+        self.screen.set_class(width < 64, "narrow")
 
     @on(Composer.CommandQuery)
     async def handle_command_query(self, message: Composer.CommandQuery) -> None:
@@ -237,7 +245,7 @@ class KnowFlowTui(App[None]):
         if self.running:
             self.session.queued_questions.append(question)
             await self.query_one(TranscriptView).add_notice(
-                f"已加入队列：{question}"
+                f"已加入队列：{redact_public_detail(question, limit=120)}"
             )
             self._refresh_status_bar()
             return
@@ -280,16 +288,14 @@ class KnowFlowTui(App[None]):
     async def _cmd_help(self, args: list[str]) -> bool:
         if not args:
             await self.query_one(TranscriptView).add_notice(
-                "会话：/new, /clear, /status, /tasks, /continue, /exit。"
-            )
-            await self.query_one(TranscriptView).add_notice(
-                "模型：/model, /model list, /model use, /model config。"
-            )
-            await self.query_one(TranscriptView).add_notice(
-                "能力：/tools list, /skills list, /mcp list, /memory list。"
-            )
-            await self.query_one(TranscriptView).add_notice(
-                "系统：/permissions, /version, /about, /help, /update。"
+                "命令\n"
+                "  /new          新会话        /model        模型\n"
+                "  /tools        工具          /skills       Skills\n"
+                "  /mcp          MCP           /memory       长期记忆\n"
+                "  /status       运行状态      /permissions  权限\n"
+                "  /tasks        任务队列      /update       更新CLI\n"
+                "  /help         帮助          /exit         退出\n"
+                "\n输入命令后按Enter进入子命令；↑↓选择，Esc关闭。"
             )
             return True
         part = args[0].lower().strip()
@@ -557,7 +563,10 @@ class KnowFlowTui(App[None]):
         try:
             payload = self.backend.remote_client.request("GET", path, params=params or {})
         except Exception as exc:
-            await self.query_one(TranscriptView).add_notice(f"查询失败：{exc}")
+            await self.query_one(TranscriptView).add_notice(
+                f"查询失败：{redact_public_detail(exc, limit=220)}",
+                error=True,
+            )
             return None
         if isinstance(payload, list):
             return payload
@@ -678,6 +687,7 @@ class KnowFlowTui(App[None]):
         answer = str(message.execution.result.get("answer") or "")
         if answer and not self.streamed:
             await transcript.append_assistant(answer)
+        transcript.finalize_assistant()
         await transcript.finish_run()
         self.pending_execution = None
         self.current_run_id = None
@@ -767,9 +777,10 @@ class KnowFlowTui(App[None]):
         self.current_run_id = None
         self.started_at = None
         self._set_status("执行失败")
+        self.query_one(TranscriptView).finalize_assistant()
         await self.query_one(TranscriptView).finish_run(failed=True)
         await self.query_one(TranscriptView).add_notice(
-            f"执行失败：{message.error}",
+            f"执行失败：{redact_public_detail(message.error, limit=240)}",
             error=True,
         )
         self.query_one(Composer).focus()
@@ -829,7 +840,12 @@ class KnowFlowTui(App[None]):
 
     def _set_status(self, value: str) -> None:
         self.current_phase = value
-        self.query_one("#run-status", Static).update(value)
+        prefix = "✻ " if self.running else ""
+        queue = len(self.session.queued_questions)
+        suffix = f" · 队列 {queue}" if queue else ""
+        self.query_one("#run-status", Static).update(
+            f"{prefix}{value}{suffix}"
+        )
         self._refresh_status_bar()
 
     def _refresh_status_bar(self) -> None:
@@ -857,8 +873,12 @@ class KnowFlowTui(App[None]):
             return
         elapsed = monotonic() - self.started_at
         try:
+            frames = ("✻", "✽", "✶", "✢")
+            frame = frames[int(elapsed * 4) % len(frames)]
+            queue = len(self.session.queued_questions)
+            suffix = f" · 队列 {queue}" if queue else ""
             self.query_one("#run-status", Static).update(
-                f"{self.current_phase} · {elapsed:.1f}s"
+                f"{frame} {self.current_phase}… ({elapsed:.1f}s){suffix}"
             )
         except NoMatches:
             return

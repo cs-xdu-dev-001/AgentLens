@@ -11,6 +11,7 @@ import requests
 
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
+from .agent_trace import sanitize_trace_value
 from .langgraph_agent_engine import LangGraphAgentEngine
 from .model_gateway import ModelGateway
 from .workspace_runtime import (
@@ -298,9 +299,22 @@ class LocalAgentRuntime:
             emit(
                 {
                     "type": "tool_result",
+                    "toolCallId": execution.call_id,
                     "toolName": execution.tool_name,
                     "status": execution.status,
                     "latencyMs": execution.latency_ms,
+                    "arguments": sanitize_trace_value(
+                        execution.arguments,
+                        max_chars=500,
+                    ),
+                    "output": sanitize_trace_value(
+                        execution.public_output(),
+                        max_chars=1000,
+                    ),
+                    "errorMessage": sanitize_trace_value(
+                        execution.error_message,
+                        max_chars=500,
+                    ),
                 }
             )
 

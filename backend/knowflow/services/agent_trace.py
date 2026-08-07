@@ -41,7 +41,13 @@ SENSITIVE_KEYS = {
     "password",
 }
 SECRET_PATTERN = re.compile(
-    r"(?i)(tvly-[a-z0-9_-]+|ntn_[a-z0-9_-]+|bearer\s+[a-z0-9._~+/-]+)"
+    r"(?i)(tvly-[a-z0-9_-]+|ntn_[a-z0-9_-]+|sk-[a-z0-9_-]{8,}|"
+    r"bearer\s+[a-z0-9._~+/-]+|"
+    r"(?:api[_-]?key|token|secret|password|authorization|cookie)"
+    r"\s*[:=]\s*[^\s,;}&]+|"
+    r"--(?:api[-_]?key|token|secret|password|authorization|cookie)"
+    r"(?:=|\s+)[^\s,;]+|"
+    r"eyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+)"
 )
 
 

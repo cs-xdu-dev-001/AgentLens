@@ -14,6 +14,7 @@ from textual.widgets import Static, TextArea
 from .commands import SlashCommand, match_commands
 
 
+ACCENT = "#d97757"
 SENSITIVE_KEY_PARTS = (
     "authorization",
     "credential",
@@ -30,6 +31,16 @@ SENSITIVE_VALUE_PATTERN = re.compile(
     r"private[_-]?key|key)[\"']?\s*[:=]\s*[\"']?)([^\"',;\s}]+)"
 )
 OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+BEARER_PATTERN = re.compile(
+    r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+"
+)
+JWT_PATTERN = re.compile(
+    r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"
+)
+CLI_SECRET_PATTERN = re.compile(
+    r"(?i)(--(?:api[-_]?key|token|secret|password|authorization|cookie)"
+    r"(?:=|\s+)[\"']?)([^\"'\s,;]+)"
+)
 
 
 def redact_public_detail(value: Any, *, limit: int = 180) -> str:
@@ -51,6 +62,9 @@ def redact_public_detail(value: Any, *, limit: int = 180) -> str:
             return ", ".join(render(child, depth + 1) for child in item[:8])
         text = str(item)
         text = OPENAI_KEY_PATTERN.sub("[已隐藏]", text)
+        text = BEARER_PATTERN.sub("Bearer [已隐藏]", text)
+        text = JWT_PATTERN.sub("[已隐藏]", text)
+        text = CLI_SECRET_PATTERN.sub(r"\1[已隐藏]", text)
         return SENSITIVE_VALUE_PATTERN.sub(r"\1[已隐藏]", text)
 
     text = " ".join(render(value).split())
@@ -64,41 +78,84 @@ class CommandMenu(Vertical):
         super().__init__(id="command-menu")
         self.matches: list[SlashCommand] = []
         self.selected = 0
+        self._visible_matches: list[SlashCommand] = []
+        self._option_widgets: list[Static] = []
+        self._window_start = 0
+
+    def _render_option(self, command: SlashCommand, index: int) -> Text:
+        row = Text()
+        row.append(
+            "❯ " if index == self.selected else "  ",
+            style=f"bold {ACCENT}",
+        )
+        row.append(
+            f"{command.value:<19}",
+            style="bold" if index == self.selected else "",
+        )
+        row.append(
+            command.description,
+            style="" if index == self.selected else "dim",
+        )
+        if command.is_group:
+            row.append("  ›", style=ACCENT)
+        return row
+
+    def _window(self) -> tuple[int, int]:
+        limit = 5 if self.app.size.width < 64 else 8
+        start = max(
+            0,
+            min(
+                self.selected - 3,
+                max(0, len(self.matches) - limit),
+            ),
+        )
+        return start, limit
 
     async def update_query(self, value: str) -> None:
         query = value.lstrip().lower()
-        self.matches = match_commands(query)
+        self.matches = [item for item in match_commands(query) if not item.hidden]
         self.selected = min(self.selected, max(0, len(self.matches) - 1))
         await self._render_matches()
 
     async def _render_matches(self) -> None:
         await self.remove_children()
         self.set_class(bool(self.matches), "visible")
-        for index, command in enumerate(self.matches):
-            if command.hidden:
-                continue
-            row = Text()
-            if command.is_group:
-                row.append(f"{command.value} ", style="bold cyan")
-                row.append("· ", style="dim")
-                row.append("组命令", style="yellow")
-                row.append("  ", style="dim")
-                row.append(command.description, style="dim")
-            else:
-                row.append(f"{command.value:<18}", style="bold cyan")
-                row.append(command.description, style="dim")
-            if command.aliases:
-                row.append("  ", style="dim")
-                row.append(f"别名:{', '.join(command.aliases)}", style="dim")
-            item = Static(row, classes="command-option")
+        start, limit = self._window()
+        self._window_start = start
+        self._visible_matches = self.matches[start : start + limit]
+        self._option_widgets = []
+        if not self._visible_matches:
+            return
+        parent = self._visible_matches[0].value.rsplit(" ", 1)[0]
+        if all(" " in item.value and item.value.rsplit(" ", 1)[0] == parent for item in self._visible_matches):
+            title = Text()
+            title.append(parent, style="bold")
+            title.append("  子命令", style="dim")
+        else:
+            title = Text("命令", style="bold")
+            title.append("  ↑↓选择  Enter确认  Esc关闭", style="dim")
+        await self.mount(Static(title, classes="command-menu-title"))
+        for index, command in enumerate(self._visible_matches, start=start):
+            item = Static(
+                self._render_option(command, index),
+                classes="command-option",
+            )
             item.set_class(index == self.selected, "selected")
+            self._option_widgets.append(item)
             await self.mount(item)
 
     async def move(self, delta: int) -> None:
         if not self.matches:
             return
         self.selected = (self.selected + delta) % len(self.matches)
-        await self._render_matches()
+        start, _limit = self._window()
+        if start != self._window_start:
+            await self._render_matches()
+            return
+        for offset, item in enumerate(self._option_widgets):
+            index = self._window_start + offset
+            item.set_class(index == self.selected, "selected")
+            item.update(self._render_option(self.matches[index], index))
 
     async def hide(self) -> None:
         self.matches = []
@@ -145,7 +202,7 @@ class RunActivity(Vertical):
         self._tool_sequence = 0
 
     def compose(self):
-        yield Static("正在处理 · 0.0s", classes="activity-header")
+        yield Static("✻ 正在处理… (0.0s)", classes="activity-header")
         yield Vertical(classes="activity-steps")
 
     async def begin(self) -> None:
@@ -162,9 +219,9 @@ class RunActivity(Vertical):
         label = self.STATUS_LABELS.get(normalized, normalized)
         value = Text()
         marker = "×" if normalized in {"failed", "error"} else (
-            "•" if normalized in {"running", "waiting"} else "✓"
+            "·" if normalized in {"running", "waiting"} else "✓"
         )
-        value.append(f"  {marker} ", style="red" if marker == "×" else "cyan")
+        value.append(f"  {marker} ", style="red" if marker == "×" else ACCENT)
         value.append(title or "Agent步骤")
         value.append(f"  {label}", style="dim")
         if detail:
@@ -234,13 +291,23 @@ class RunActivity(Vertical):
             fragments = []
             if isinstance(latency, (int, float)):
                 fragments.append(f"{int(latency)}ms")
-            payload = (
+            arguments = (
                 event.get("arguments")
                 or event.get("input")
             )
-            safe = self._safe_detail(payload)
-            if safe:
-                fragments.append(safe)
+            safe_arguments = self._safe_detail(arguments, limit=96)
+            if safe_arguments:
+                fragments.append(f"输入 {safe_arguments}")
+            output = event.get("output") or event.get("result")
+            safe_output = self._safe_detail(output, limit=120)
+            if safe_output:
+                fragments.append(f"结果 {safe_output}")
+            error_message = self._safe_detail(
+                event.get("errorMessage") or event.get("error"),
+                limit=120,
+            )
+            if error_message:
+                fragments.append(f"错误 {error_message}")
             detail = " · ".join(fragments)
             name = str(
                 event.get("toolName")
@@ -295,8 +362,10 @@ class RunActivity(Vertical):
         if self.finished:
             return
         value = monotonic() - self.started_at if elapsed is None else elapsed
+        frames = ("✻", "✽", "✶", "✢")
+        frame = frames[int(value * 4) % len(frames)]
         self.query_one(".activity-header", Static).update(
-            f"正在处理 · {value:.1f}s"
+            f"{frame} 正在处理… ({value:.1f}s)"
         )
 
     async def finish(self, *, failed: bool = False) -> None:
@@ -310,7 +379,7 @@ class RunActivity(Vertical):
                 )
         elapsed = monotonic() - self.started_at
         self.query_one(".activity-header", Static).update(
-            f"{'执行失败' if failed else '执行完成'} · {elapsed:.1f}s"
+            f"{'× 执行失败' if failed else '✓ 执行完成'} ({elapsed:.1f}s)"
         )
         self.set_class(failed, "failed")
 
@@ -323,6 +392,7 @@ class TranscriptView(VerticalScroll):
         self._assistant: Static | None = None
         self._assistant_text = ""
         self._activity: RunActivity | None = None
+        self._assistant_render_scheduled = False
 
     async def show_welcome(
         self,
@@ -331,28 +401,42 @@ class TranscriptView(VerticalScroll):
         model: str,
         workspace: str,
     ) -> None:
-        heading = Text()
-        heading.append(">_ ", style="dim")
-        heading.append("KnowFlow", style="bold")
-        heading.append(f"  (v{version})", style="dim")
-        summary = Text()
-        summary.append("model:      ", style="dim")
-        summary.append(model)
-        summary.append("    /model查看或修改\n", style="cyan")
-        summary.append("directory:  ", style="dim")
-        summary.append(workspace)
-        await self.mount(Static(heading, classes="welcome-heading"))
-        await self.mount(Static(summary, classes="welcome-summary"))
-        await self.mount(
-            Static(
-                "提示：输入 / 查看命令；Ctrl+O展开执行过程；Ctrl+C中断任务。",
-                classes="welcome-tip",
-            )
+        panel = Vertical(classes="welcome-panel")
+        panel.border_title = f" KnowFlow v{version} "
+        await self.mount(panel)
+
+        brand = Text(justify="center")
+        brand.append("●──────●  ", style=ACCENT)
+        brand.append("KNOW", style=f"bold {ACCENT}")
+        brand.append("FLOW\n", style="bold")
+        brand.append("│╲    ╱   ", style=ACCENT)
+        brand.append("Agent CLI\n", style="dim")
+        brand.append("│ ╲  ╱\n", style=ACCENT)
+        brand.append("│  ╲╱\n", style=ACCENT)
+        brand.append("●   ●", style=ACCENT)
+        await panel.mount(Static(brand, classes="welcome-brand"))
+
+        context = Text(justify="center")
+        model_label = model if len(model) <= 22 else f"{model[:19]}…"
+        workspace_label = (
+            workspace
+            if len(workspace) <= 38
+            else f"{workspace[:10]}…{workspace[-27:]}"
         )
+        context.append(model_label, style=ACCENT)
+        context.append("  ·  ", style="dim")
+        context.append(workspace_label, style="dim")
+        await panel.mount(Static(context, classes="welcome-context"))
+
+        hint = Text(justify="center")
+        hint.append("输入 ", style="dim")
+        hint.append("/", style=f"bold {ACCENT}")
+        hint.append(" 查看命令", style="dim")
+        await panel.mount(Static(hint, classes="welcome-tip"))
 
     async def add_user(self, content: str) -> None:
         value = Text()
-        value.append("› ", style="bold cyan")
+        value.append("❯ ", style=f"bold {ACCENT}")
         value.append(content, style="bold")
         await self.mount(Static(value, classes="message user-message"))
         self._assistant = None
@@ -386,8 +470,23 @@ class TranscriptView(VerticalScroll):
             self._assistant = Static(classes="message assistant-message")
             await self.mount(self._assistant)
         self._assistant_text += content
-        self._assistant.update(RichMarkdown(self._assistant_text))
-        self.scroll_end(animate=False)
+        if not self._assistant_render_scheduled:
+            self._assistant_render_scheduled = True
+            self.set_timer(0.04, self._flush_streaming_assistant)
+
+    def _flush_streaming_assistant(self) -> None:
+        if not self._assistant_render_scheduled:
+            return
+        self._assistant_render_scheduled = False
+        if self._assistant is not None:
+            self._assistant.update(self._assistant_text)
+            self.scroll_end(animate=False)
+
+    def finalize_assistant(self) -> None:
+        self._assistant_render_scheduled = False
+        if self._assistant is not None and self._assistant_text:
+            self._assistant.update(RichMarkdown(self._assistant_text))
+            self.scroll_end(animate=False)
 
     async def add_notice(self, content: str, *, error: bool = False) -> None:
         await self.mount(
@@ -403,6 +502,7 @@ class TranscriptView(VerticalScroll):
         self._assistant = None
         self._assistant_text = ""
         self._activity = None
+        self._assistant_render_scheduled = False
 
     async def set_activity_expanded(self, expanded: bool) -> None:
         if self._activity is not None:
@@ -436,7 +536,7 @@ class Composer(TextArea):
             soft_wrap=True,
             show_line_numbers=False,
             highlight_cursor_line=False,
-            placeholder="输入任务，/help查看命令",
+            placeholder="输入任务，/查看命令",
         )
         self.command_menu_open = False
         self.prompt_history: list[str] = []
@@ -533,12 +633,12 @@ class StatusBar(Static):
         tool_calls: int,
         permissions: int,
     ) -> None:
-        parts = [model, workspace, phase]
+        short_workspace = workspace.rstrip("/\\").split("/")[-1].split("\\")[-1]
+        parts = [model, short_workspace or workspace]
         if tool_calls:
             parts.append(f"工具 {tool_calls}")
         if queue_size:
             parts.append(f"队列 {queue_size}")
-        parts.append(
-            f"会话授权 {permissions}" if permissions else "按需确认"
-        )
+        if permissions:
+            parts.append(f"授权 {permissions}")
         self.update("  ·  ".join(parts))

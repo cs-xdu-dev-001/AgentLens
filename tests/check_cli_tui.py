@@ -44,6 +44,8 @@ class FakeBackend:
                 "toolName": "read_workspace_file",
                 "status": "success",
                 "latencyMs": 12,
+                "arguments": {"path": "README.md"},
+                "output": {"bytes": 128},
             }
         )
         return AgentExecution(
@@ -170,8 +172,9 @@ async def exercise_tui() -> None:
     app = KnowFlowTui(backend, assume_yes=False)
     async with app.run_test(size=(100, 30)) as pilot:
         composer = app.query_one(Composer)
-        assert "KnowFlow" in str(app.query_one(".welcome-heading").render())
-        assert "test-model" in str(app.query_one(".welcome-summary").render())
+        assert "KnowFlow" in str(app.query_one(".welcome-panel").border_title)
+        assert "KNOWFLOW" in str(app.query_one(".welcome-brand").render())
+        assert "test-model" in str(app.query_one(".welcome-context").render())
         assert "输入 / 查看命令" in str(app.query_one(".welcome-tip").render())
         composer.load_text("line one")
         await pilot.press("shift+enter")
@@ -257,6 +260,10 @@ async def exercise_tui() -> None:
         assert "执行完成" in str(activity.query_one(".activity-header").render())
         assert any(
             "read_workspace_file" in str(item.render())
+            for item in activity.query(".activity-step")
+        )
+        assert any(
+            "README.md" in str(item.render())
             for item in activity.query(".activity-step")
         )
         assert "已完成" in str(app.query_one("#run-status").render())
@@ -481,6 +488,19 @@ def main() -> None:
     assert "nested-secret" not in redact_public_detail(
         '{"config":{"token":"nested-secret"}}'
     )
+    for secret_text in (
+        "Authorization: Bearer bearer-secret",
+        "curl --password command-secret https://example.test",
+        "eyJheader.payload.signature",
+    ):
+        assert not any(
+            secret in redact_public_detail(secret_text)
+            for secret in (
+                "bearer-secret",
+                "command-secret",
+                "eyJheader.payload.signature",
+            )
+        )
 
     class FakeRemoteClient:
         def __init__(self):
