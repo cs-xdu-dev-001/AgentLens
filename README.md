@@ -49,6 +49,8 @@
 
 CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
+交互式终端中的`knowflow chat`默认打开全屏TUI，展示流式回答、工具步骤、运行状态和审批弹层。需要终端原生滚屏或兼容脚本时使用`knowflow chat --plain`。
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh

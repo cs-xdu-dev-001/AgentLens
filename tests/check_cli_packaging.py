@@ -27,6 +27,7 @@ for required in {
     "pydantic==2.13.4",
     "requests==2.32.3",
     "rich==15.0.0",
+    "textual==8.2.8",
     "typer==0.27.1",
 }:
     assert required in dependencies

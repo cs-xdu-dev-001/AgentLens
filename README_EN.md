@@ -49,6 +49,8 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
+In an interactive terminal, `knowflow chat` opens the full-screen TUI by default with streaming answers, tool progress, run status, and approval dialogs. Use `knowflow chat --plain` for native terminal scrollback or script-friendly compatibility.
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh

@@ -162,7 +162,12 @@ def main() -> None:
         ROOT / "backend" / "knowflow" / "routers" / "extensions.py"
     ).read_text(encoding="utf-8")
     assert '"/api/agent/tools"' in extension_source
-    for dependency in ("typer==", "rich==", "prompt-toolkit=="):
+    for dependency in (
+        "typer==",
+        "rich==",
+        "prompt-toolkit==",
+        "textual==",
+    ):
         assert dependency in requirements
 
     print("agent cli checks passed")

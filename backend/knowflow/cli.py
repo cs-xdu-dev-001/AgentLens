@@ -877,6 +877,11 @@ def chat(
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
     remote_mode: bool = typer.Option(False, "--remote"),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Use the legacy line-oriented REPL instead of the full-screen TUI.",
+    ),
 ) -> None:
     """Start an interactive Agent conversation."""
     remote = _remote_client(
@@ -894,6 +899,22 @@ def chat(
         raise typer.BadParameter(
             "--user-id、--model-id和--skill-id仅适用于--remote模式。"
         )
+    agent = None if remote is not None else _local_agent()
+    if not plain and sys.stdin.isatty() and sys.stdout.isatty():
+        from .tui import run_tui
+        from .tui.backend import TuiBackend
+
+        run_tui(
+            TuiBackend(
+                local_agent=agent,
+                remote_client=remote,
+                tools=tools,
+                model_id=model_id,
+                skill_id=skill_id,
+            ),
+            assume_yes=assume_yes,
+        )
+        return
     history_path = Path.home() / ".knowflow" / "cli-history"
     history_path.parent.mkdir(parents=True, exist_ok=True)
     history_path.touch(exist_ok=True)
@@ -901,7 +922,6 @@ def chat(
         history_path.parent.chmod(0o700)
         history_path.chmod(0o600)
     session = PromptSession(history=FileHistory(str(history_path)))
-    agent = None if remote is not None else _local_agent()
     renderer = EventRenderer(json_events=False)
     session_id: str | None = None
     current_model_id = model_id

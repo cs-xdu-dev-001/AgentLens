@@ -1,0 +1,118 @@
+Screen {
+    background: $background;
+    color: $text;
+    layout: vertical;
+}
+
+#topbar {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+    background: $surface;
+}
+
+#transcript {
+    height: 1fr;
+    padding: 1 2;
+    scrollbar-size: 1 1;
+}
+
+.message {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+.user-message {
+    padding-left: 2;
+    color: $text;
+    text-style: bold;
+    border-left: tall $primary;
+}
+
+.assistant-message {
+    padding-left: 2;
+}
+
+.tool-card {
+    width: 100%;
+    height: auto;
+    padding: 0 2;
+    margin-bottom: 1;
+    color: $text-muted;
+}
+
+.notice {
+    width: 100%;
+    height: auto;
+    padding: 0 2;
+    margin-bottom: 1;
+    color: $warning;
+}
+
+.error-notice {
+    color: $error;
+}
+
+#bottom-pane {
+    height: auto;
+    padding: 0 2 1 2;
+    background: $background;
+}
+
+#run-status {
+    height: 1;
+    padding-left: 1;
+    color: $text-muted;
+}
+
+#composer {
+    height: 5;
+    min-height: 3;
+    max-height: 9;
+    border: round $primary;
+    padding: 0 1;
+    background: $surface;
+}
+
+#composer:focus {
+    border: round $accent;
+}
+
+#shortcut-hint {
+    height: 1;
+    padding-left: 1;
+    color: $text-disabled;
+}
+
+ApprovalScreen {
+    align: center middle;
+    background: $background 65%;
+}
+
+#approval-dialog {
+    width: 58;
+    height: auto;
+    padding: 1 2;
+    border: round $warning;
+    background: $surface;
+}
+
+.approval-title {
+    height: 1;
+    text-style: bold;
+}
+
+.approval-body {
+    height: auto;
+    margin: 1 0;
+}
+
+.approval-actions {
+    height: 3;
+    align-horizontal: right;
+}
+
+.approval-actions Button {
+    margin-left: 1;
+}

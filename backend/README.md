@@ -1,8 +1,8 @@
 # KnowFlow AI CLI
 
-KnowFlow CLI connects a Linux terminal to a KnowFlow AI server and exposes the
-same Agent, tools, MCP, Skills, memory, approvals, and run history as the web
-application.
+KnowFlow CLI runs a local BYOK LangGraph Agent in a Linux terminal. Interactive
+sessions use a full-screen TUI with streaming output, tool progress, and write
+approval. Connecting to an existing KnowFlow server remains optional.
 
 ## Install
 
@@ -19,23 +19,26 @@ Until the first PyPI release is available, install the current GitHub version:
 pipx install "git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
 ```
 
-Then connect to a server:
+Configure a model and start the local TUI:
 
 ```bash
-knowflow auth login https://ai.example.com
+knowflow configure
 knowflow chat
 ```
 
-The default package is the lightweight remote CLI. For local direct mode on a
-dedicated Linux machine, install the optional runtime dependencies:
+Use the legacy line-oriented interface when native terminal scrollback is more
+important than the full-screen UI:
 
 ```bash
-pipx install "knowflow-ai[local]"
-knowflow doctor
+knowflow chat --plain
 ```
 
-Local direct mode opens the server database and runtime storage. Do not run it
-concurrently with the KnowFlow web service against the same data directory.
+Connecting to a KnowFlow Web deployment is optional:
+
+```bash
+knowflow auth login https://ai.example.com
+knowflow chat --remote
+```
 
 ## Upgrade and uninstall
 
