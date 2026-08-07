@@ -11,13 +11,14 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from ..services.agent_execution import AgentExecution
 from .backend import TuiBackend
-from .commands import canonical_command, command_children
+from .commands import canonical_command, command_children, find_command, parse_command
 from .state import TuiSessionState
 from .widgets import (
     CommandMenu,
@@ -138,7 +139,20 @@ class KnowFlowTui(App[None]):
         self.current_approval_tool = ""
         self.current_approval_policy = ""
         self.current_run_id: str | None = None
+        self.current_approval_id: str | None = None
+        self._approval_in_progress = False
         self.workspace = str(Path.cwd())
+        self.command_handlers: dict[str, Any] = {
+            "/help": self._cmd_help,
+            "/new": self._cmd_new,
+            "/clear": self._cmd_clear,
+            "/model": self._cmd_model,
+            "/status": self._cmd_status,
+            "/permissions": self._cmd_permissions,
+            "/tasks": self._cmd_tasks,
+            "/continue": self._cmd_continue,
+            "/exit": self._cmd_exit,
+        }
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -235,53 +249,68 @@ class KnowFlowTui(App[None]):
         self._refresh_status_bar()
 
     async def _handle_command(self, value: str) -> bool:
-        value = canonical_command(value)
-        command = value.strip().lower()
-        if command.startswith("/help "):
-            part = command[len("/help ") :].strip()
-            if part == "commands":
-                children = command_children("/help")
-                if children:
-                    await self.query_one(TranscriptView).add_notice(
-                        "help子命令："
-                        + "、".join(children)
-                    )
-                else:
-                    await self.query_one(TranscriptView).add_notice(
-                        "当前无help子命令。"
-                    )
-                return True
-            if part == "shortcuts":
-                await self.query_one(TranscriptView).add_notice(
-                    "快捷键：Ctrl+P 命令面板, Ctrl+L清屏, Ctrl+N新会话, "
-                    "Ctrl+O展开过程, Shift+Enter换行, Esc聚焦输入。"
-                )
-                return True
-            if part == "tui":
-                await self.query_one(TranscriptView).add_notice(
-                    "TUI提示：输入/显示候选，↑↓切换，Tab/Enter确认。"
-                )
-                return True
+        if not value.startswith("/"):
+            return False
+        token, args = parse_command(value)
+        if not token:
+            return False
+
+        command_key = canonical_command(token)
+        command_definition = find_command(command_key)
+        if command_definition is None:
             await self.query_one(TranscriptView).add_notice(
-                f"未知help子命令：{part or '空'}。可用：{', '.join(command_children('/help')) or '无'}。"
+                f"未知命令：{value}。输入 / 查看支持命令。"
             )
             return True
-        if value in {"/quit", "/exit"}:
-            self.exit()
-            return True
-        if value == "/new":
-            await self.action_new()
-            return True
-        if value == "/clear":
-            await self.action_clear()
-            return True
-        if value == "/help":
+        handler = self.command_handlers.get(command_key)
+        if handler is None:
+            # 兜底处理，未注册 handler 的命令按文本提交
+            return False
+        return bool(await handler(list(args)))
+
+    async def _cmd_help(self, args: list[str]) -> bool:
+        if not args:
             await self.query_one(TranscriptView).add_notice(
                 "/help 查看命令分级，/new新会话，/clear清屏，/model模型，"
                 "/status状态，/permissions权限，/tasks队列，/exit退出。"
             )
             return True
-        if value == "/model":
+        part = args[0].lower().strip()
+        if part == "commands":
+            children = command_children("/help")
+            if children:
+                await self.query_one(TranscriptView).add_notice(
+                    "help子命令：" + "、".join(children)
+                )
+            else:
+                await self.query_one(TranscriptView).add_notice("当前无help子命令。")
+            return True
+        if part == "shortcuts":
+            await self.query_one(TranscriptView).add_notice(
+                "快捷键：Ctrl+P 命令面板, Ctrl+L清屏, Ctrl+N新会话, "
+                "Ctrl+O展开过程, Shift+Enter换行, Esc聚焦输入。"
+            )
+            return True
+        if part == "tui":
+            await self.query_one(TranscriptView).add_notice(
+                "TUI提示：输入/显示候选，↑↓切换，Tab/Enter确认。"
+            )
+            return True
+        await self.query_one(TranscriptView).add_notice(
+            f"未知help子命令：{part}。可用：{', '.join(command_children('/help')) or '无'}。"
+        )
+        return True
+
+    async def _cmd_new(self, args: list[str]) -> bool:
+        await self.action_new()
+        return True
+
+    async def _cmd_clear(self, args: list[str]) -> bool:
+        await self.action_clear()
+        return True
+
+    async def _cmd_model(self, args: list[str]) -> bool:
+        if not args:
             if self.backend.remote_client is not None:
                 await self.query_one(TranscriptView).add_notice(
                     f"当前模型：{self.backend.model_id or '默认'}。"
@@ -291,55 +320,64 @@ class KnowFlowTui(App[None]):
                     f"当前模型：{self.backend.model_label}。"
                 )
             return True
-        if value == "/model list":
+        part = args[0].lower().strip()
+        if part == "list":
             await self.query_one(TranscriptView).add_notice(
                 "模型列表请使用 /model（TUI显示当前）或在终端执行 knowflow models list。"
             )
             return True
-        if value == "/model config":
+        if part == "config":
             await self.query_one(TranscriptView).add_notice(
                 "模型配置请使用 knowflow configure，或在 /tools /models 面板里维护。"
             )
             return True
-        if value == "/status":
-            await self.query_one(TranscriptView).add_notice(
-                f"模型：{self.backend.model_label}；目录：{self.workspace}；"
-                f"状态：{self.current_phase}；等待任务："
-                f"{len(self.session.queued_questions)}。"
-            )
-            return True
-        if value == "/permissions":
-            tools = sorted(set(self.session.session_approvals.values()))
-            await self.query_one(TranscriptView).add_notice(
-                "本次会话已允许："
-                + ("、".join(tools) if tools else "无，所有写操作按需确认。")
-            )
-            return True
-        if value == "/tasks":
-            queued = self.session.queued_questions
-            await self.query_one(TranscriptView).add_notice(
-                "等待任务："
-                + (
-                    "；".join(
-                        f"{index + 1}. {item}"
-                        for index, item in enumerate(queued)
-                    )
-                    if queued
-                    else "无。"
+        await self.query_one(TranscriptView).add_notice(
+            f"未知参数：{part}。可用参数：list、config。"
+        )
+        return True
+
+    async def _cmd_status(self, args: list[str]) -> bool:
+        await self.query_one(TranscriptView).add_notice(
+            f"模型：{self.backend.model_label}；目录：{self.workspace}；"
+            f"状态：{self.current_phase}；等待任务："
+            f"{len(self.session.queued_questions)}。"
+        )
+        return True
+
+    async def _cmd_permissions(self, args: list[str]) -> bool:
+        tools = sorted(set(self.session.session_approvals.values()))
+        await self.query_one(TranscriptView).add_notice(
+            "本次会话已允许："
+            + ("、".join(tools) if tools else "无，所有写操作按需确认。")
+        )
+        return True
+
+    async def _cmd_tasks(self, args: list[str]) -> bool:
+        queued = self.session.queued_questions
+        await self.query_one(TranscriptView).add_notice(
+            "等待任务："
+            + (
+                "；".join(
+                    f"{index + 1}. {item}" for index, item in enumerate(queued)
                 )
+                if queued
+                else "无。"
             )
-            return True
-        if value == "/continue":
-            if self.running:
-                self.notify("当前任务仍在执行。", severity="warning")
-            elif not self.session.queued_questions:
-                await self.query_one(TranscriptView).add_notice(
-                    "等待队列为空。"
-                )
-            else:
-                self._run_next_queued()
-            return True
-        return False
+        )
+        return True
+
+    async def _cmd_continue(self, args: list[str]) -> bool:
+        if self.running:
+            self.notify("当前任务仍在执行。", severity="warning")
+        elif not self.session.queued_questions:
+            await self.query_one(TranscriptView).add_notice("等待队列为空。")
+        else:
+            self._run_next_queued()
+        return True
+
+    async def _cmd_exit(self, args: list[str]) -> bool:
+        self.exit()
+        return True
 
     @work(exclusive=True, thread=True, group="agent")
     def execute_turn(self, question: str) -> None:
@@ -454,10 +492,18 @@ class KnowFlowTui(App[None]):
             event.get("toolName") or "工具调用"
         )
         self.current_approval_policy = self._approval_policy_key(event)
+        self.current_approval_id = str(
+            event.get("approvalId")
+            or event.get("approval_id")
+            or event.get("id")
+            or ""
+        )
         if self.current_approval_policy in self.session.session_approvals:
+            self.current_approval_id = None
             self._approval_decided("allow_once")
             return
         if self.assume_yes:
+            self.current_approval_id = None
             self._approval_decided("allow_once")
             return
         self.push_screen(
@@ -466,12 +512,47 @@ class KnowFlowTui(App[None]):
                 str(event.get("risk") or "写入"),
                 self._approval_detail(event),
             ),
-            self._approval_decided,
+            self._on_approval_screen_result,
         )
+
+    def _on_approval_screen_result(self, decision: str | None) -> None:
+        self._approval_in_progress = False
+        if self.current_approval_id is None:
+            return
+        self._approval_decided(decision)
+
+    def _approval_decided(self, decision: str | None) -> None:
+        if self._approval_in_progress:
+            return
+        self._approval_in_progress = True
+        execution = self.pending_execution
+        if execution is None:
+            self._approval_in_progress = False
+            self.current_approval_id = None
+            return
+        if self.pending_execution is None:
+            self._approval_in_progress = False
+            self.current_approval_id = None
+            return
+        self.pending_execution = None
+        self.current_approval_id = None
+        selected = decision or "deny"
+        if selected == "allow_session":
+            if self.current_approval_policy:
+                self.session.session_approvals[
+                    self.current_approval_policy
+                ] = self.current_approval_tool
+            selected = "allow_once"
+        self._set_status("正在继续…")
+        self.resume_turn(execution, selected)
+        self._refresh_status_bar()
+        self._approval_in_progress = False
 
     async def on_turn_failed(self, message: TurnFailed) -> None:
         self.running = False
         self.pending_execution = None
+        self.current_approval_id = None
+        self._approval_in_progress = False
         self.current_run_id = None
         self.started_at = None
         self._set_status("执行失败")
@@ -487,6 +568,8 @@ class KnowFlowTui(App[None]):
                 f"队列已暂停，仍有{len(self.session.queued_questions)}项。"
                 "输入/continue继续。"
             )
+            if not self.session.cancel_requested:
+                self._run_next_queued()
 
     def on_cancel_requested(self, message: CancelRequested) -> None:
         if message.sent:
@@ -496,22 +579,6 @@ class KnowFlowTui(App[None]):
                 f"停止请求发送失败：{message.error}",
                 severity="error",
             )
-
-    def _approval_decided(self, decision: str | None) -> None:
-        execution = self.pending_execution
-        if execution is None:
-            return
-        self.pending_execution = None
-        selected = decision or "deny"
-        if selected == "allow_session":
-            if self.current_approval_policy:
-                self.session.session_approvals[
-                    self.current_approval_policy
-                ] = self.current_approval_tool
-            selected = "allow_once"
-        self._set_status("正在继续…")
-        self.resume_turn(execution, selected)
-        self._refresh_status_bar()
 
     @staticmethod
     def _approval_detail(event: dict[str, Any]) -> str:
@@ -578,9 +645,12 @@ class KnowFlowTui(App[None]):
         if not self.running or self.started_at is None:
             return
         elapsed = monotonic() - self.started_at
-        self.query_one("#run-status", Static).update(
-            f"{self.current_phase} · {elapsed:.1f}s"
-        )
+        try:
+            self.query_one("#run-status", Static).update(
+                f"{self.current_phase} · {elapsed:.1f}s"
+            )
+        except NoMatches:
+            return
         self.query_one(TranscriptView).tick_run(elapsed)
         self._refresh_status_bar()
 

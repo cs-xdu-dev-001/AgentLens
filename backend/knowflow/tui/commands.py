@@ -77,6 +77,25 @@ COMMANDS = (
 )
 
 
+def parse_command(value: str) -> tuple[str, list[str]]:
+    value = value.strip()
+    if not value:
+        return "", []
+    parts = [part for part in value.split() if part]
+    if not parts:
+        return "", []
+    return parts[0].lower(), parts[1:]
+
+
+def find_command(value: str) -> SlashCommand | None:
+    normalized = canonical_command(value)
+    normalized = normalized.strip().lower()
+    for command in COMMANDS:
+        if command.value == normalized:
+            return command
+    return None
+
+
 def match_commands(query: str) -> list[SlashCommand]:
     if not query.startswith("/"):
         return []
