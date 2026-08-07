@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import sys
 import time
 from typing import TYPE_CHECKING, Any, Iterator
 import webbrowser

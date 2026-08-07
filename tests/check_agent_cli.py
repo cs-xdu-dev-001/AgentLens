@@ -142,6 +142,37 @@ def main() -> None:
     assert '"type": "done"' in response.output
     assert '"runId": "run_command"' in response.output
 
+    tui_calls = []
+
+    class TtyStream:
+        @staticmethod
+        def isatty():
+            return True
+
+    def fake_run_tui(backend, *, assume_yes):
+        tui_calls.append((backend, assume_yes))
+
+    with (
+        patch.object(cli, "_local_agent", return_value=FakeLocalAgent()),
+        patch.object(cli, "_remote_client", return_value=None),
+        patch.object(cli.sys, "stdin", TtyStream()),
+        patch.object(cli.sys, "stdout", TtyStream()),
+        patch("knowflow.tui.run_tui", side_effect=fake_run_tui),
+    ):
+        cli.chat(
+            user_id=None,
+            model_id=None,
+            skill_id=None,
+            tools=True,
+            assume_yes=False,
+            server=None,
+            local=False,
+            remote_mode=False,
+            plain=False,
+        )
+    assert len(tui_calls) == 1
+    assert tui_calls[0][1] is False
+
     cli_source = (ROOT / "backend" / "knowflow" / "cli.py").read_text(
         encoding="utf-8"
     )
