@@ -75,4 +75,9 @@ assert "twine==6.2.0" in workflow
 assert "id-token: write" in workflow
 assert "gh release create" in workflow
 
+ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+assert "package_version=" in ci_workflow
+assert '"${package_version}"' in ci_workflow
+assert 'knowflow" --version)" = "0.5.0"' not in ci_workflow
+
 print("cli packaging checks passed")

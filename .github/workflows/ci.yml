@@ -47,7 +47,8 @@ jobs:
           python -m venv "${cli_venv}"
           "${cli_venv}/bin/python" -m pip install --disable-pip-version-check backend/dist/*.whl
           "${cli_venv}/bin/knowflow" --help >/dev/null
-          test "$("${cli_venv}/bin/knowflow" --version)" = "0.5.0"
+          package_version="$(python -c 'import tomllib; print(tomllib.load(open("backend/pyproject.toml", "rb"))["project"]["version"])')"
+          test "$("${cli_venv}/bin/knowflow" --version)" = "${package_version}"
           "${cli_venv}/bin/python" - <<'PY'
           import sys
           import knowflow.cli
