@@ -257,6 +257,10 @@ class LocalAgentRuntime:
         register_workspace_tools(registry, workspace, sandbox=sandbox)
         return registry
 
+    def tool_schemas(self) -> list[dict[str, Any]]:
+        """Return the public tool catalog used by local interactive clients."""
+        return self._registry(tools=True).schemas(engine_name="langgraph")
+
     @staticmethod
     def _system_message(workspace_root: Path) -> dict[str, str]:
         return {

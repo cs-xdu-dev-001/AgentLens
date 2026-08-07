@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 from threading import Event
+
+from textual import events
+from textual.widgets import Input, OptionList
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +20,7 @@ from knowflow.tui.backend import TuiBackend  # noqa: E402
 from knowflow.tui.widgets import (  # noqa: E402
     CommandMenu,
     Composer,
+    HistorySearchBar,
     redact_public_detail,
 )
 
@@ -72,6 +78,15 @@ class FakeBackend:
 
     def reset(self):
         self.reset_count += 1
+
+    def command_catalog(self):
+        return [
+            {
+                "value": "/tool:read-workspace-file",
+                "description": "读取工作区文件",
+                "source": "tool",
+            }
+        ]
 
 
 class ApprovalBackend(FakeBackend):
@@ -167,6 +182,23 @@ class SlowBackend(FakeBackend):
         )
 
 
+class FailThenBackend(SlowBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        if len(self.questions) == 1:
+            self.started.set()
+            if not self.release.wait(timeout=5):
+                raise TimeoutError("failure queue test did not release")
+            raise RuntimeError("synthetic failure")
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run_after_failure",
+                "answer": "队列继续完成",
+            }
+        )
+
+
 async def exercise_tui() -> None:
     backend = FakeBackend()
     app = KnowFlowTui(backend, assume_yes=False)
@@ -177,10 +209,26 @@ async def exercise_tui() -> None:
         assert "test-model" in str(app.query_one(".welcome-context").render())
         assert "输入 / 查看命令" in str(app.query_one(".welcome-tip").render())
         composer.load_text("line one")
+        composer.cursor_location = (0, len("line one"))
         await pilot.press("shift+enter")
         await pilot.pause(0.05)
-        assert composer.text == "\nline one"
+        assert composer.text == "line one\n"
         assert backend.questions == []
+        composer.insert("line two")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running and backend.questions:
+                break
+        assert backend.questions == ["line one\nline two"]
+
+        composer.clear()
+        large_paste = "前" * 5_500 + "后" * 5_500
+        composer.on_paste(events.Paste(large_paste))
+        assert "[粘贴内容 #1：已折叠" in composer.text
+        assert composer.expanded_text() == large_paste
+        composer.clear()
+        composer.pasted_contents.clear()
 
         composer.load_text("/")
         await pilot.pause(0.05)
@@ -194,7 +242,7 @@ async def exercise_tui() -> None:
         ]
         assert any(item.value == "/status" for item in menu.matches)
         assert "查看命令与快捷键" in str(
-            list(menu.query(".command-option"))[0].render()
+            menu.query_one(".command-menu-title").render()
         )
         await pilot.press("enter")
         await pilot.pause(0.05)
@@ -251,20 +299,20 @@ async def exercise_tui() -> None:
             await pilot.pause(0.05)
             if not app.running and backend.questions:
                 break
-        assert backend.questions == ["hello"]
+        assert backend.questions == ["line one\nline two", "hello"]
         assert not app.running
-        assert len(list(app.query(".assistant-message"))) == 1
-        assert len(list(app.query(".run-activity"))) == 1
+        assert len(list(app.query(".assistant-message"))) == 2
+        assert len(list(app.query(".run-activity"))) == 2
         assert len(list(app.query(".activity-step"))) >= 2
         activity = app.query_one(".run-activity")
         assert "执行完成" in str(activity.query_one(".activity-header").render())
         assert any(
-            "read_workspace_file" in str(item.render())
+            "read_workspace_file" in str(item.title)
             for item in activity.query(".activity-step")
         )
         assert any(
             "README.md" in str(item.render())
-            for item in activity.query(".activity-step")
+            for item in activity.query(".activity-detail")
         )
         assert "已完成" in str(app.query_one("#run-status").render())
         assert "test-model" in str(app.query_one("#status-bar").render())
@@ -273,6 +321,47 @@ async def exercise_tui() -> None:
         await pilot.pause(0.05)
         assert composer.text == "hello"
         composer.clear()
+
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.05)
+        history = app.query_one(HistorySearchBar)
+        assert history.has_class("visible")
+        history.query_one(Input).value = "hell"
+        await pilot.pause(0.05)
+        assert composer.text == "hello"
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert not history.has_class("visible")
+        composer.clear()
+
+        composer.load_text("未提交草稿")
+        await pilot.press("ctrl+r")
+        await pilot.pause(0.05)
+        history.query_one(Input).value = "hell"
+        await pilot.pause(0.05)
+        assert composer.text == "hello"
+        await pilot.press("escape")
+        await pilot.pause(0.05)
+        assert not history.has_class("visible")
+        assert composer.text == "未提交草稿"
+        composer.clear()
+
+        composer.load_text("暂存内容")
+        await pilot.press("ctrl+s")
+        await pilot.pause(0.05)
+        assert composer.text == ""
+        await pilot.press("ctrl+s")
+        await pilot.pause(0.05)
+        assert composer.text == "暂存内容"
+        composer.clear()
+
+        composer.load_text("/tool:read-workspace-file inspect")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if not app.running and len(backend.questions) >= 3:
+                break
+        assert "请使用tool read-workspace-file" in backend.questions[-1]
 
         composer.load_text("/pm")
         await pilot.pause(0.05)
@@ -344,6 +433,7 @@ async def exercise_narrow_command_menu() -> None:
         menu = app.query_one(CommandMenu)
         assert menu.matches
         assert 0 < menu.size.width < 48
+        assert app.screen.has_class("narrow")
 
 
 async def exercise_approval() -> None:
@@ -419,6 +509,12 @@ async def exercise_queue() -> None:
                 break
         assert backend.questions == ["first", "second"]
         assert app.session.queued_questions == []
+        app.session.enqueue("later", priority="later")
+        app.session.enqueue("now", priority="now")
+        assert [item.text for item in app.session.ordered_queue()] == [
+            "now",
+            "later",
+        ]
 
 
 async def exercise_scoped_session_approval() -> None:
@@ -475,6 +571,65 @@ async def exercise_interrupt_feedback() -> None:
         assert not app.running
 
 
+async def exercise_failed_queue_pause() -> None:
+    backend = FailThenBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        composer.load_text("first fails")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        composer.load_text("second waits")
+        await pilot.press("enter")
+        backend.release.set()
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert app.session.queue_paused
+        assert backend.questions == ["first fails"]
+        composer.load_text("/continue")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if backend.questions == ["first fails", "second waits"] and not app.running:
+                break
+        assert backend.questions == ["first fails", "second waits"]
+        assert not app.session.queue_paused
+
+
+async def exercise_render_caps() -> None:
+    app = KnowFlowTui(FakeBackend(), assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        transcript = app.query_one("#transcript")
+        for index in range(205):
+            await transcript.add_notice(f"notice {index}")
+        assert transcript._archived_records
+        assert len(transcript._message_widgets) <= transcript.MAX_VISIBLE_BLOCKS
+        await pilot.press("ctrl+o")
+        await pilot.pause(0.05)
+        assert transcript.archive_expanded
+
+        await transcript.begin_run()
+        for index in range(1_000):
+            await transcript.update_activity(
+                {
+                    "type": "tool_result",
+                    "toolCallId": f"call_{index}",
+                    "toolName": "synthetic_tool",
+                    "status": "success",
+                    "latencyMs": index,
+                }
+            )
+        activity = transcript._activity
+        assert activity is not None
+        assert len(activity._rows) <= 100
+        assert activity._hidden_steps >= 900
+
+
 def main() -> None:
     redacted = redact_public_detail(
         {
@@ -522,15 +677,24 @@ def main() -> None:
         ("POST", "/api/agent/runs/run_cancel/cancel")
     ]
     assert not tui_backend.cancel(None)
-    asyncio.run(exercise_tui())
-    asyncio.run(exercise_remote_streaming())
-    asyncio.run(exercise_live_status())
-    asyncio.run(exercise_narrow_command_menu())
-    asyncio.run(exercise_approval())
-    asyncio.run(exercise_session_approval())
-    asyncio.run(exercise_queue())
-    asyncio.run(exercise_scoped_session_approval())
-    asyncio.run(exercise_interrupt_feedback())
+    original_data_home = os.environ.get("XDG_DATA_HOME")
+    with TemporaryDirectory() as data_home:
+        os.environ["XDG_DATA_HOME"] = data_home
+        asyncio.run(exercise_tui())
+        asyncio.run(exercise_remote_streaming())
+        asyncio.run(exercise_live_status())
+        asyncio.run(exercise_narrow_command_menu())
+        asyncio.run(exercise_approval())
+        asyncio.run(exercise_session_approval())
+        asyncio.run(exercise_queue())
+        asyncio.run(exercise_scoped_session_approval())
+        asyncio.run(exercise_interrupt_feedback())
+        asyncio.run(exercise_failed_queue_pause())
+        asyncio.run(exercise_render_caps())
+    if original_data_home is None:
+        os.environ.pop("XDG_DATA_HOME", None)
+    else:
+        os.environ["XDG_DATA_HOME"] = original_data_home
     print("cli tui checks passed")
 
 

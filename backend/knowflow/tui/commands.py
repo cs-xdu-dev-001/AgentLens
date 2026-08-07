@@ -16,6 +16,9 @@ class SlashCommand:
     aliases: tuple[str, ...] = ()
     is_group: bool = False
     hidden: bool = False
+    source: str = "builtin"
+    argument_hint: str = ""
+    immediate: bool = False
 
     def score(self, query: str, parent: tuple[str, ...], prefix: str) -> int | None:
         if not query.startswith("/"):
@@ -65,16 +68,24 @@ COMMANDS = (
     SlashCommand("/help commands", "查看完整命令清单"),
     SlashCommand("/help shortcuts", "查看交互快捷键"),
     SlashCommand("/help tui", "查看TUI功能说明"),
-    SlashCommand("/new", "开始新会话"),
-    SlashCommand("/clear", "清空当前显示"),
+    SlashCommand("/new", "开始新会话", immediate=True),
+    SlashCommand("/clear", "清空当前显示", immediate=True),
     SlashCommand("/model", "查看当前模型", is_group=True),
     SlashCommand("/model list", "查看模型配置"),
     SlashCommand("/model config", "打开模型配置说明"),
-    SlashCommand("/model use", "切换会话模型（远程模式）"),
+    SlashCommand(
+        "/model use",
+        "切换会话模型（远程模式）",
+        argument_hint="<模型ID>",
+    ),
     SlashCommand("/status", "查看会话与运行状态"),
     SlashCommand("/permissions", "查看本次会话权限"),
-    SlashCommand("/tasks", "查看等待执行的任务"),
+    SlashCommand("/tasks", "查看等待执行的任务", is_group=True),
+    SlashCommand("/tasks list", "查看等待执行的任务"),
+    SlashCommand("/tasks remove", "移除一个等待任务", argument_hint="<序号>"),
+    SlashCommand("/tasks clear", "清空等待任务"),
     SlashCommand("/continue", "继续执行等待队列"),
+    SlashCommand("/retry", "重新执行上一项任务"),
     SlashCommand("/exit", "退出KnowFlow", ("/quit",)),
     SlashCommand("/about", "显示版本、执行环境与会话上下文"),
     SlashCommand("/version", "显示当前CLI与协议版本"),
@@ -87,6 +98,9 @@ COMMANDS = (
     SlashCommand("/mcp list", "列出MCP服务器"),
     SlashCommand("/memory", "查看长期记忆", is_group=True),
     SlashCommand("/memory list", "查看最近记忆摘要"),
+    SlashCommand("/history", "搜索或管理输入历史", is_group=True),
+    SlashCommand("/history search", "搜索输入历史", argument_hint="<关键词>"),
+    SlashCommand("/history clear", "清空本地输入历史"),
 )
 
 
@@ -100,50 +114,64 @@ def parse_command(value: str) -> tuple[str, list[str]]:
     return parts[0].lower(), parts[1:]
 
 
-def find_command(value: str) -> SlashCommand | None:
-    normalized = canonical_command(value)
+def find_command(
+    value: str,
+    commands: tuple[SlashCommand, ...] | list[SlashCommand] = COMMANDS,
+) -> SlashCommand | None:
+    normalized = canonical_command(value, commands)
     normalized = normalized.strip().lower()
-    for command in COMMANDS:
+    for command in commands:
         if command.value == normalized:
             return command
     return None
 
 
-def match_commands(query: str) -> list[SlashCommand]:
+def match_commands(
+    query: str,
+    commands: tuple[SlashCommand, ...] | list[SlashCommand] = COMMANDS,
+) -> list[SlashCommand]:
     if not query.startswith("/"):
         return []
     query = query.lower()
     parent, prefix, has_tail_space = _normalize_query(query)
     ranked: list[tuple[int, int, SlashCommand]] = []
-    for index, command in enumerate(COMMANDS):
+    for index, command in enumerate(commands):
         if command.score(command.value, parent, prefix) is not None:
             ranked.append((command.score(command.value, parent, prefix) or 0, index, command))
             continue
-        if parent or prefix or has_tail_space:
-            for alias in command.aliases:
-                score = command.score(alias, parent, prefix)
-                if score is not None:
-                    ranked.append((score + 1000, index, command))
-                    break
+        for alias in command.aliases:
+            score = command.score(alias, parent, prefix)
+            if score is not None:
+                ranked.append((score + 20, index, command))
+                break
+        else:
+            if not parent and prefix and prefix in command.description.lower():
+                ranked.append((500, index, command))
     ranked.sort(key=lambda item: (item[0], item[1]))
     return [item[2] for item in ranked]
 
 
-def canonical_command(value: str) -> str:
+def canonical_command(
+    value: str,
+    commands: tuple[SlashCommand, ...] | list[SlashCommand] = COMMANDS,
+) -> str:
     normalized = _normalize_prefix(value)
-    for command in COMMANDS:
+    for command in commands:
         if normalized == command.value or normalized in command.aliases:
             return command.value
     return value.strip()
 
 
-def command_children(prefix: str) -> list[str]:
+def command_children(
+    prefix: str,
+    commands: tuple[SlashCommand, ...] | list[SlashCommand] = COMMANDS,
+) -> list[str]:
     if not prefix.startswith("/"):
         return []
     normalized_prefix = prefix.strip().lower()
     parent = normalized_prefix
     children: list[str] = []
-    for command in COMMANDS:
+    for command in commands:
         value = command.value.lower()
         if not value.startswith(parent + " "):
             continue
@@ -152,3 +180,14 @@ def command_children(prefix: str) -> list[str]:
             continue
         children.append(command.value)
     return sorted(children)
+
+
+def merge_commands(
+    builtins: tuple[SlashCommand, ...],
+    dynamic: list[SlashCommand],
+) -> tuple[SlashCommand, ...]:
+    values: dict[str, SlashCommand] = {item.value: item for item in builtins}
+    for item in dynamic:
+        if item.value not in values:
+            values[item.value] = item
+    return tuple(values.values())

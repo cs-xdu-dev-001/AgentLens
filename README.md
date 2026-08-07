@@ -51,6 +51,8 @@ CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模�
 
 交互式终端中的`knowflow chat`默认打开全屏TUI，展示流式回答、工具步骤、运行状态和审批弹层。需要终端原生滚屏或兼容脚本时使用`knowflow chat --plain`。
 
+TUI支持多行输入、大段粘贴折叠、输入历史搜索、任务排队和动态工具/Skill/MCP命令。输入`/`查看命令；`Ctrl+R`搜索历史，`Ctrl+S`暂存或恢复输入，`Ctrl+T`查看队列，`Ctrl+O`展开运行详情，`Ctrl+C`请求停止当前任务。
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
@@ -71,7 +73,7 @@ knowflow run "检查测试并修复失败" --yes
 knowflow update
 ```
 
-本地配置位于`~/.config/knowflow`，LangGraph checkpoint位于`~/.local/share/knowflow`。默认工作区是启动命令时的当前目录。
+本地配置位于`~/.config/knowflow`；LangGraph checkpoint和权限为600的TUI输入历史位于`~/.local/share/knowflow`。可用`/history clear`删除输入历史。默认工作区是启动命令时的当前目录。
 
 连接已有KnowFlow Web服务是可选模式：
 

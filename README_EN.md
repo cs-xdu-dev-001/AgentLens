@@ -51,6 +51,8 @@ The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses you
 
 In an interactive terminal, `knowflow chat` opens the full-screen TUI by default with streaming answers, tool progress, run status, and approval dialogs. Use `knowflow chat --plain` for native terminal scrollback or script-friendly compatibility.
 
+The TUI supports multiline input, compact previews for large pastes, prompt history search, queued tasks, and dynamic tool/Skill/MCP commands. Type `/` to browse commands. Use `Ctrl+R` for history, `Ctrl+S` to stash or restore a draft, `Ctrl+T` for queued tasks, `Ctrl+O` for run details, and `Ctrl+C` to request cancellation.
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
@@ -71,7 +73,7 @@ knowflow run "Run the tests and fix failures" --yes
 knowflow update
 ```
 
-Local configuration lives under `~/.config/knowflow`; LangGraph checkpoints live under `~/.local/share/knowflow`. The current directory is the default workspace.
+Local configuration lives under `~/.config/knowflow`. LangGraph checkpoints and the mode-600 TUI prompt history live under `~/.local/share/knowflow`; `/history clear` removes that history. The current directory is the default workspace.
 
 Connecting to an existing KnowFlow Web deployment is optional:
 

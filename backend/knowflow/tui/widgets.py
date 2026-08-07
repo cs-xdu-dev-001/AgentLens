@@ -6,12 +6,13 @@ from typing import Any
 
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
-from textual import events
-from textual.containers import Vertical, VerticalScroll
+from textual import events, on
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Static, TextArea
+from textual.widgets import Collapsible, Input, OptionList, Static, TextArea
+from textual.widgets.option_list import Option
 
-from .commands import SlashCommand, match_commands
+from .commands import COMMANDS, SlashCommand, match_commands
 
 
 ACCENT = "#d97757"
@@ -78,84 +79,85 @@ class CommandMenu(Vertical):
         super().__init__(id="command-menu")
         self.matches: list[SlashCommand] = []
         self.selected = 0
-        self._visible_matches: list[SlashCommand] = []
-        self._option_widgets: list[Static] = []
-        self._window_start = 0
+        self.commands: tuple[SlashCommand, ...] = COMMANDS
 
-    def _render_option(self, command: SlashCommand, index: int) -> Text:
+    def compose(self):
+        yield Static("命令", classes="command-menu-title")
+        yield OptionList(id="command-options", compact=True)
+
+    @staticmethod
+    def _render_option(command: SlashCommand) -> Text:
         row = Text()
-        row.append(
-            "❯ " if index == self.selected else "  ",
-            style=f"bold {ACCENT}",
-        )
-        row.append(
-            f"{command.value:<19}",
-            style="bold" if index == self.selected else "",
-        )
-        row.append(
-            command.description,
-            style="" if index == self.selected else "dim",
-        )
+        row.append(command.value, style="bold")
+        if command.argument_hint:
+            row.append(f" {command.argument_hint}", style="dim")
+        if command.source != "builtin":
+            row.append(f"  [{command.source}]", style=ACCENT)
         if command.is_group:
             row.append("  ›", style=ACCENT)
         return row
 
-    def _window(self) -> tuple[int, int]:
-        limit = 5 if self.app.size.width < 64 else 8
-        start = max(
-            0,
-            min(
-                self.selected - 3,
-                max(0, len(self.matches) - limit),
-            ),
-        )
-        return start, limit
+    def set_commands(self, commands: tuple[SlashCommand, ...]) -> None:
+        self.commands = commands
 
     async def update_query(self, value: str) -> None:
         query = value.lstrip().lower()
-        self.matches = [item for item in match_commands(query) if not item.hidden]
+        self.matches = [
+            item for item in match_commands(query, self.commands) if not item.hidden
+        ]
         self.selected = min(self.selected, max(0, len(self.matches) - 1))
         await self._render_matches()
 
     async def _render_matches(self) -> None:
-        await self.remove_children()
         self.set_class(bool(self.matches), "visible")
-        start, limit = self._window()
-        self._window_start = start
-        self._visible_matches = self.matches[start : start + limit]
-        self._option_widgets = []
-        if not self._visible_matches:
-            return
-        parent = self._visible_matches[0].value.rsplit(" ", 1)[0]
-        if all(" " in item.value and item.value.rsplit(" ", 1)[0] == parent for item in self._visible_matches):
-            title = Text()
-            title.append(parent, style="bold")
-            title.append("  子命令", style="dim")
-        else:
-            title = Text("命令", style="bold")
-            title.append("  ↑↓选择  Enter确认  Esc关闭", style="dim")
-        await self.mount(Static(title, classes="command-menu-title"))
-        for index, command in enumerate(self._visible_matches, start=start):
-            item = Static(
-                self._render_option(command, index),
-                classes="command-option",
+        options = self.query_one("#command-options", OptionList)
+        options.clear_options()
+        if self.matches:
+            options.add_options(
+                [
+                    Option(self._render_option(command), id=command.value)
+                    for command in self.matches
+                ]
             )
-            item.set_class(index == self.selected, "selected")
-            self._option_widgets.append(item)
-            await self.mount(item)
+            options.highlighted = self.selected
+        self._update_title()
+
+    def _update_title(self) -> None:
+        title = self.query_one(".command-menu-title", Static)
+        parent = (
+            self.matches[0].value.rsplit(" ", 1)[0]
+            if self.matches and " " in self.matches[0].value
+            else ""
+        )
+        selected = self.matches[self.selected] if self.matches else None
+        description = selected.description if selected else ""
+        prefix = f"{parent}  子命令" if parent else "命令"
+        if self.size.width and self.size.width < 70:
+            title.update(f"{prefix} · {description} · ↑↓更多")
+        else:
+            title.update(f"{prefix} · {description}  ↑↓选择  Enter确认  Esc关闭")
 
     async def move(self, delta: int) -> None:
         if not self.matches:
             return
         self.selected = (self.selected + delta) % len(self.matches)
-        start, _limit = self._window()
-        if start != self._window_start:
-            await self._render_matches()
-            return
-        for offset, item in enumerate(self._option_widgets):
-            index = self._window_start + offset
-            item.set_class(index == self.selected, "selected")
-            item.update(self._render_option(self.matches[index], index))
+        self.query_one("#command-options", OptionList).highlighted = self.selected
+
+    @on(OptionList.OptionHighlighted)
+    def handle_option_highlighted(
+        self,
+        event: OptionList.OptionHighlighted,
+    ) -> None:
+        self.selected = event.option_index
+        self._update_title()
+
+    @on(OptionList.OptionSelected)
+    def handle_option_selected(
+        self,
+        event: OptionList.OptionSelected,
+    ) -> None:
+        self.selected = event.option_index
+        self.post_message(Composer.CommandAccepted())
 
     async def hide(self) -> None:
         self.matches = []
@@ -194,12 +196,13 @@ class RunActivity(Vertical):
         super().__init__(classes="run-activity")
         self.started_at = monotonic()
         self.finished = False
-        self._rows: dict[str, Static] = {}
+        self._rows: dict[str, Collapsible] = {}
         self._statuses: dict[str, str] = {}
         self._titles: dict[str, str] = {}
         self._details: dict[str, str] = {}
-        self.expanded = True
+        self.expanded = False
         self._tool_sequence = 0
+        self._hidden_steps = 0
 
     def compose(self):
         yield Static("✻ 正在处理… (0.0s)", classes="activity-header")
@@ -226,15 +229,38 @@ class RunActivity(Vertical):
         value.append(f"  {label}", style="dim")
         if detail:
             self._details[key] = detail
-            if self.expanded:
-                value.append(f"  {detail}", style="dim")
         row = self._rows.get(key)
         if row is None:
-            row = Static(value, classes="activity-step")
+            if len(self._rows) >= 100:
+                oldest_key = next(iter(self._rows))
+                row = self._rows.pop(oldest_key)
+                self._statuses.pop(oldest_key, None)
+                self._titles.pop(oldest_key, None)
+                self._details.pop(oldest_key, None)
+                row.title = value
+                row.query_one(".activity-detail", Static).update(
+                    detail or "暂无公开详情"
+                )
+                row.collapsed = not self.expanded or not bool(detail)
+                self.query_one(".activity-steps", Vertical).move_child(
+                    row,
+                    after=-1,
+                )
+                self._hidden_steps += 1
+            else:
+                row = Collapsible(
+                    Static(detail or "暂无公开详情", classes="activity-detail"),
+                    title=value,
+                    collapsed=not self.expanded or not bool(detail),
+                    classes="activity-step",
+                )
+                await self.query_one(".activity-steps", Vertical).mount(row)
             self._rows[key] = row
-            await self.query_one(".activity-steps", Vertical).mount(row)
         else:
-            row.update(value)
+            row.title = value
+            row.query_one(".activity-detail", Static).update(
+                detail or self._details.get(key) or "暂无公开详情"
+            )
         self._statuses[key] = normalized
         self._titles[key] = title
         row.set_class(normalized in {"failed", "error"}, "failed")
@@ -246,13 +272,8 @@ class RunActivity(Vertical):
 
     async def set_expanded(self, expanded: bool) -> None:
         self.expanded = expanded
-        for key in tuple(self._rows):
-            await self.upsert(
-                key,
-                self._titles.get(key, "Agent步骤"),
-                self._statuses.get(key, "running"),
-                self._details.get(key, ""),
-            )
+        for key, row in self._rows.items():
+            row.collapsed = not expanded or not bool(self._details.get(key))
 
     async def update_event(self, event: dict) -> None:
         event_type = str(event.get("type") or "")
@@ -366,6 +387,7 @@ class RunActivity(Vertical):
         frame = frames[int(value * 4) % len(frames)]
         self.query_one(".activity-header", Static).update(
             f"{frame} 正在处理… ({value:.1f}s)"
+            + (f" · +{self._hidden_steps}早期步骤" if self._hidden_steps else "")
         )
 
     async def finish(self, *, failed: bool = False) -> None:
@@ -380,6 +402,7 @@ class RunActivity(Vertical):
         elapsed = monotonic() - self.started_at
         self.query_one(".activity-header", Static).update(
             f"{'× 执行失败' if failed else '✓ 执行完成'} ({elapsed:.1f}s)"
+            + (f" · +{self._hidden_steps}早期步骤" if self._hidden_steps else "")
         )
         self.set_class(failed, "failed")
 
@@ -387,12 +410,93 @@ class RunActivity(Vertical):
 class TranscriptView(VerticalScroll):
     """Conversation transcript with one mutable streaming response."""
 
+    MAX_VISIBLE_BLOCKS = 200
+    TRIM_TO_BLOCKS = 160
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._assistant: Static | None = None
         self._assistant_text = ""
         self._activity: RunActivity | None = None
         self._assistant_render_scheduled = False
+        self._message_widgets: list[Static] = []
+        self._records: dict[int, tuple[str, str, bool]] = {}
+        self._archived_records: list[tuple[str, str, bool]] = []
+        self._archive_widgets: list[Static] = []
+        self._archive_summary: Static | None = None
+        self.archive_expanded = False
+
+    async def _register_block(
+        self,
+        widget: Static,
+        kind: str,
+        content: str,
+        error: bool = False,
+    ) -> None:
+        self._message_widgets.append(widget)
+        self._records[id(widget)] = (kind, content, error)
+        await self._enforce_render_cap()
+
+    async def _enforce_render_cap(self) -> None:
+        if len(self._message_widgets) <= self.MAX_VISIBLE_BLOCKS:
+            return
+        count = len(self._message_widgets) - self.TRIM_TO_BLOCKS
+        outgoing = self._message_widgets[:count]
+        self._message_widgets = self._message_widgets[count:]
+        for widget in outgoing:
+            record = self._records.pop(id(widget), None)
+            if record is not None:
+                self._archived_records.append(record)
+            await widget.remove()
+        await self._render_archive_summary()
+
+    async def _render_archive_summary(self) -> None:
+        if not self._archived_records:
+            return
+        label = (
+            f"已展开{len(self._archived_records)}条历史 · Ctrl+O收起"
+            if self.archive_expanded
+            else f"已折叠{len(self._archived_records)}条历史 · Ctrl+O展开"
+        )
+        if self._archive_summary is None:
+            self._archive_summary = Static(label, classes="archive-summary")
+            await self.mount(self._archive_summary, before=0)
+        else:
+            self._archive_summary.update(label)
+
+    @staticmethod
+    def _record_widget(record: tuple[str, str, bool]) -> Static:
+        kind, content, error = record
+        if kind == "user":
+            value = Text()
+            value.append("❯ ", style=f"bold {ACCENT}")
+            value.append(content, style="bold")
+            return Static(value, classes="message user-message archived-message")
+        if kind == "assistant":
+            return Static(
+                RichMarkdown(content),
+                classes="message assistant-message archived-message",
+            )
+        return Static(
+            content,
+            classes=(
+                "notice error-notice archived-message"
+                if error
+                else "notice archived-message"
+            ),
+        )
+
+    async def set_archive_expanded(self, expanded: bool) -> None:
+        self.archive_expanded = expanded
+        for widget in self._archive_widgets:
+            await widget.remove()
+        self._archive_widgets = []
+        if expanded and self._archived_records and self._archive_summary is not None:
+            for record in self._archived_records:
+                widget = self._record_widget(record)
+                self._archive_widgets.append(widget)
+                await self.mount(widget, before=self._archive_summary)
+        await self._render_archive_summary()
 
     async def show_welcome(
         self,
@@ -438,7 +542,9 @@ class TranscriptView(VerticalScroll):
         value = Text()
         value.append("❯ ", style=f"bold {ACCENT}")
         value.append(content, style="bold")
-        await self.mount(Static(value, classes="message user-message"))
+        widget = Static(value, classes="message user-message")
+        await self.mount(widget)
+        await self._register_block(widget, "user", content)
         self._assistant = None
         self._assistant_text = ""
         self.scroll_end(animate=False)
@@ -469,6 +575,7 @@ class TranscriptView(VerticalScroll):
         if self._assistant is None:
             self._assistant = Static(classes="message assistant-message")
             await self.mount(self._assistant)
+            await self._register_block(self._assistant, "assistant", "")
         self._assistant_text += content
         if not self._assistant_render_scheduled:
             self._assistant_render_scheduled = True
@@ -486,15 +593,20 @@ class TranscriptView(VerticalScroll):
         self._assistant_render_scheduled = False
         if self._assistant is not None and self._assistant_text:
             self._assistant.update(RichMarkdown(self._assistant_text))
+            self._records[id(self._assistant)] = (
+                "assistant",
+                self._assistant_text,
+                False,
+            )
             self.scroll_end(animate=False)
 
     async def add_notice(self, content: str, *, error: bool = False) -> None:
-        await self.mount(
-            Static(
-                content,
-                classes="notice error-notice" if error else "notice",
-            )
+        widget = Static(
+            content,
+            classes="notice error-notice" if error else "notice",
         )
+        await self.mount(widget)
+        await self._register_block(widget, "notice", content, error)
         self.scroll_end(animate=False)
 
     async def clear_transcript(self) -> None:
@@ -503,10 +615,86 @@ class TranscriptView(VerticalScroll):
         self._assistant_text = ""
         self._activity = None
         self._assistant_render_scheduled = False
+        self._message_widgets = []
+        self._records = {}
+        self._archived_records = []
+        self._archive_widgets = []
+        self._archive_summary = None
+        self.archive_expanded = False
 
     async def set_activity_expanded(self, expanded: bool) -> None:
         if self._activity is not None:
             await self._activity.set_expanded(expanded)
+        await self.set_archive_expanded(expanded)
+
+
+class HistorySearchBar(Horizontal):
+    class Preview(Message):
+        def __init__(self, value: str) -> None:
+            self.value = value
+            super().__init__()
+
+    class Accepted(Message):
+        pass
+
+    class Cancelled(Message):
+        pass
+
+    def __init__(self) -> None:
+        super().__init__(id="history-search")
+        self.history: list[str] = []
+        self.original = ""
+        self.match = ""
+
+    def compose(self):
+        yield Static("搜索历史：", id="history-search-label")
+        yield Input(placeholder="输入关键词", id="history-search-input")
+
+    def open(self, history: list[str], original: str) -> None:
+        self.history = list(history)
+        self.original = original
+        self.match = original
+        self.add_class("visible")
+        search = self.query_one("#history-search-input", Input)
+        search.value = ""
+        search.focus()
+
+    def close(self) -> None:
+        self.remove_class("visible")
+
+    @on(Input.Changed)
+    def handle_changed(self, event: Input.Changed) -> None:
+        query = event.value.strip().lower()
+        self.match = next(
+            (
+                item
+                for item in reversed(self.history)
+                if not query or query in item.lower()
+            ),
+            "",
+        )
+        label = self.query_one("#history-search-label", Static)
+        label.update("搜索历史：" if self.match else "没有匹配：")
+        self.post_message(self.Preview(self.match or self.original))
+
+    @on(Input.Submitted)
+    def handle_submitted(self) -> None:
+        self.post_message(self.Accepted())
+
+    async def _on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            event.prevent_default()
+            event.stop()
+            self.post_message(self.Cancelled())
+            return
+        await super()._on_key(event)
+
+
+PASTE_THRESHOLD = 10_000
+PASTE_PREVIEW = 500
+PASTE_REFERENCE_PATTERN = re.compile(
+    r"\n?\[粘贴内容 #(\d+)：已折叠 \d+ 字符\]\n?"
+)
 
 
 class Composer(TextArea):
@@ -529,6 +717,9 @@ class Composer(TextArea):
     class CommandDismissed(Message):
         pass
 
+    class HistoryRequested(Message):
+        pass
+
     def __init__(self) -> None:
         super().__init__(
             "",
@@ -542,6 +733,41 @@ class Composer(TextArea):
         self.prompt_history: list[str] = []
         self.history_index: int | None = None
         self.history_draft = ""
+        self.pasted_contents: dict[int, str] = {}
+        self._paste_sequence = 0
+
+    def set_history(self, values: list[str]) -> None:
+        self.prompt_history = list(values[-500:])
+        self.history_index = None
+        self.history_draft = ""
+
+    def clear_history(self) -> None:
+        self.set_history([])
+
+    def expanded_text(self) -> str:
+        def replace(match: re.Match[str]) -> str:
+            return self.pasted_contents.get(int(match.group(1)), match.group(0))
+
+        return PASTE_REFERENCE_PATTERN.sub(replace, self.text)
+
+    def _paste_preview(self, value: str) -> str:
+        if len(value) <= PASTE_THRESHOLD:
+            return value
+        self._paste_sequence += 1
+        reference = self._paste_sequence
+        hidden_content = value[PASTE_PREVIEW:-PASTE_PREVIEW]
+        self.pasted_contents[reference] = hidden_content
+        hidden = len(hidden_content)
+        return (
+            value[:PASTE_PREVIEW]
+            + f"\n[粘贴内容 #{reference}：已折叠 {hidden} 字符]\n"
+            + value[-PASTE_PREVIEW:]
+        )
+
+    def on_paste(self, event: events.Paste) -> None:
+        event.prevent_default()
+        event.stop()
+        self.insert(self._paste_preview(event.text))
 
     def remember(self, value: str) -> None:
         text = value.strip()
@@ -608,16 +834,7 @@ class Composer(TextArea):
         if event.key == "ctrl+r" and self.prompt_history:
             event.prevent_default()
             event.stop()
-            query = self.text.strip().lower()
-            match = next(
-                (
-                    item
-                    for item in reversed(self.prompt_history)
-                    if not query or query in item.lower()
-                ),
-                self.prompt_history[-1],
-            )
-            self.load_text(match)
+            self.post_message(self.HistoryRequested())
             return
         await super()._on_key(event)
 

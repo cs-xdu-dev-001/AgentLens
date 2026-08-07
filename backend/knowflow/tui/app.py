@@ -17,16 +17,39 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from ..services.agent_execution import AgentExecution
+from ..services.local_cli_runtime import local_data_dir
 from .backend import TuiBackend
-from .commands import canonical_command, command_children, find_command, parse_command
-from .state import TuiSessionState
+from .commands import (
+    COMMANDS,
+    SlashCommand,
+    canonical_command,
+    command_children,
+    find_command,
+    merge_commands,
+    parse_command,
+)
+from .state import PromptHistoryStore, QueuedPrompt, TuiSessionState
 from .widgets import (
     CommandMenu,
     Composer,
+    HistorySearchBar,
     StatusBar,
     TranscriptView,
     redact_public_detail,
 )
+
+
+def _cli_release() -> str:
+    """Read the checkout version during development, package metadata when installed."""
+    project_file = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if project_file.is_file():
+        for line in project_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version = "):
+                return line.split("=", 1)[1].strip().strip('"')
+    try:
+        return version("knowflow-ai")
+    except PackageNotFoundError:
+        return "dev"
 
 
 class AgentEventMessage(Message):
@@ -57,6 +80,12 @@ class CancelRequested(Message):
     def __init__(self, sent: bool, error: Exception | None = None) -> None:
         self.sent = sent
         self.error = error
+        super().__init__()
+
+
+class CommandCatalogLoaded(Message):
+    def __init__(self, items: list[dict[str, str]]) -> None:
+        self.items = items
         super().__init__()
 
 
@@ -117,6 +146,8 @@ class KnowFlowTui(App[None]):
         Binding("ctrl+l", "clear", "清屏", show=True),
         Binding("ctrl+n", "new", "新会话", show=True),
         Binding("ctrl+o", "toggle_details", "展开/收起过程", show=True),
+        Binding("ctrl+s", "stash", "暂存/恢复输入", show=False),
+        Binding("ctrl+t", "tasks", "任务队列", show=False),
         Binding("shift+enter", "newline", "换行", show=False),
         Binding("escape", "focus_composer", "输入", show=False),
     ]
@@ -135,7 +166,11 @@ class KnowFlowTui(App[None]):
         self.started_at: float | None = None
         self.current_phase = "就绪"
         self.session = TuiSessionState()
-        self.activity_expanded = True
+        self.commands: tuple[SlashCommand, ...] = COMMANDS
+        self.history_store = PromptHistoryStore(
+            local_data_dir() / "history.jsonl"
+        )
+        self.activity_expanded = False
         self.current_approval_tool = ""
         self.current_approval_policy = ""
         self.current_run_id: str | None = None
@@ -156,7 +191,9 @@ class KnowFlowTui(App[None]):
             "/status": self._cmd_status,
             "/permissions": self._cmd_permissions,
             "/tasks": self._cmd_tasks,
+            "/history": self._cmd_history,
             "/continue": self._cmd_continue,
+            "/retry": self._cmd_retry,
             "/update": self._cmd_update,
             "/exit": self._cmd_exit,
         }
@@ -168,22 +205,22 @@ class KnowFlowTui(App[None]):
             with Horizontal(id="composer-row"):
                 yield Static("❯", id="composer-prefix")
                 yield Composer()
+            yield HistorySearchBar()
             yield CommandMenu()
             with Horizontal(id="prompt-footer"):
                 yield Static("输入 / 查看命令", id="run-status")
                 yield StatusBar(id="status-bar")
 
     async def on_mount(self) -> None:
-        try:
-            release = version("knowflow-ai")
-        except PackageNotFoundError:
-            release = "dev"
         await self.query_one(TranscriptView).show_welcome(
-            version=release,
+            version=_cli_release(),
             model=self.backend.model_label,
             workspace=self.workspace,
         )
         self.query_one(Composer).focus()
+        self.query_one(Composer).set_history(self.history_store.load())
+        self.query_one(CommandMenu).set_commands(self.commands)
+        self.load_command_catalog()
         self.set_interval(0.25, self._tick_elapsed)
         self._apply_viewport_class(self.size.width)
         self._refresh_status_bar()
@@ -211,12 +248,12 @@ class KnowFlowTui(App[None]):
         if command is None:
             return
         composer = self.query_one(Composer)
-        if command.is_group:
+        if command.is_group or command.argument_hint or command.source != "builtin":
             composer.load_text(f"{command.value} ")
             await menu.update_query(f"{command.value} ")
             composer.command_menu_open = bool(menu.matches)
-            if not menu.matches:
-                await self._handle_command(f"{command.value}")
+            if command.is_group and not menu.matches:
+                await self._handle_command(command.value)
             return
         composer.load_text(command.value)
         if composer.command_menu_open:
@@ -233,28 +270,120 @@ class KnowFlowTui(App[None]):
     async def handle_composer_submitted(self) -> None:
         await self._submit()
 
+    @on(Composer.HistoryRequested)
+    def handle_history_requested(self) -> None:
+        composer = self.query_one(Composer)
+        self.query_one(HistorySearchBar).open(
+            composer.prompt_history,
+            composer.text,
+        )
+
+    @on(HistorySearchBar.Preview)
+    def handle_history_preview(self, message: HistorySearchBar.Preview) -> None:
+        self.query_one(Composer).load_text(message.value)
+
+    @on(HistorySearchBar.Accepted)
+    def handle_history_accepted(self) -> None:
+        self.query_one(HistorySearchBar).close()
+        self.query_one(Composer).focus()
+
+    @on(HistorySearchBar.Cancelled)
+    def handle_history_cancelled(self) -> None:
+        bar = self.query_one(HistorySearchBar)
+        original = bar.original
+        bar.close()
+        self.query_one(Composer).load_text(original)
+        self.query_one(Composer).focus()
+
+    def on_command_catalog_loaded(self, message: CommandCatalogLoaded) -> None:
+        dynamic = [
+            SlashCommand(
+                str(item.get("value") or ""),
+                str(item.get("description") or "Agent扩展"),
+                source=(
+                    "builtin"
+                    if str(item.get("source") or "") == "builtin-model"
+                    else str(item.get("source") or "dynamic")
+                ),
+                argument_hint=(
+                    ""
+                    if str(item.get("source") or "") == "builtin-model"
+                    else "<任务>"
+                ),
+            )
+            for item in message.items
+            if str(item.get("value") or "").startswith("/")
+        ]
+        self.commands = merge_commands(COMMANDS, dynamic)
+        self.query_one(CommandMenu).set_commands(self.commands)
+
+    @work(exclusive=True, thread=True, group="command-catalog")
+    def load_command_catalog(self) -> None:
+        try:
+            items = self.backend.command_catalog()
+        except Exception:
+            items = []
+        self.post_message(CommandCatalogLoaded(items))
+
     async def _submit(self) -> None:
         composer = self.query_one(Composer)
-        question = composer.text.strip()
-        if not question:
+        display_question = composer.text.strip()
+        question = composer.expanded_text().strip()
+        if not display_question or not question:
             return
-        composer.remember(question)
+        composer.remember(display_question)
+        if not self.history_store.append(display_question):
+            self.notify(
+                "输入历史无法写入，本次会话仍可继续。",
+                severity="warning",
+            )
         composer.clear()
-        if await self._handle_command(question):
+        composer.pasted_contents.clear()
+        dynamic = find_command(
+            parse_command(display_question)[0],
+            self.commands,
+        )
+        if dynamic is not None and dynamic.source != "builtin":
+            _token, args = parse_command(question)
+            task = " ".join(args).strip()
+            if not task:
+                await self.query_one(TranscriptView).add_notice(
+                    f"请在{dynamic.value}后输入要完成的任务。"
+                )
+                return
+            target = dynamic.value.removeprefix("/").split(":", 1)[-1]
+            question = (
+                f"请使用{dynamic.source} {target}完成以下任务：{task}"
+            )
+        elif await self._handle_command(display_question):
             return
         if self.running:
-            self.session.queued_questions.append(question)
+            self.session.enqueue(
+                question,
+                display_text=display_question,
+                priority="next",
+            )
             await self.query_one(TranscriptView).add_notice(
-                f"已加入队列：{redact_public_detail(question, limit=120)}"
+                f"已加入队列：{redact_public_detail(display_question, limit=120)}"
             )
             self._refresh_status_bar()
             return
-        await self._start_turn(question)
+        await self._start_turn(question, display_question=display_question)
 
-    async def _start_turn(self, question: str) -> None:
+    async def _start_turn(
+        self,
+        question: str,
+        *,
+        display_question: str | None = None,
+    ) -> None:
         transcript = self.query_one(TranscriptView)
-        await transcript.add_user(question)
+        await transcript.add_user(display_question or question)
+        self.session.last_prompt = QueuedPrompt(
+            text=question,
+            display_text=display_question or question,
+        )
         await transcript.begin_run()
+        await transcript.set_activity_expanded(self.activity_expanded)
         self.streamed = False
         self.running = True
         self.session.reset_run()
@@ -270,8 +399,8 @@ class KnowFlowTui(App[None]):
         if not token:
             return False
 
-        command_key = canonical_command(token)
-        command_definition = find_command(command_key)
+        command_key = canonical_command(token, self.commands)
+        command_definition = find_command(command_key, self.commands)
         if command_definition is None:
             await self.query_one(TranscriptView).add_notice(
                 f"未知命令：{value}。输入 / 查看支持命令。"
@@ -293,14 +422,15 @@ class KnowFlowTui(App[None]):
                 "  /tools        工具          /skills       Skills\n"
                 "  /mcp          MCP           /memory       长期记忆\n"
                 "  /status       运行状态      /permissions  权限\n"
-                "  /tasks        任务队列      /update       更新CLI\n"
+                "  /tasks        任务队列      /history      输入历史\n"
+                "  /update       更新CLI       /continue     继续队列\n"
                 "  /help         帮助          /exit         退出\n"
                 "\n输入命令后按Enter进入子命令；↑↓选择，Esc关闭。"
             )
             return True
         part = args[0].lower().strip()
         if part == "commands":
-            children = command_children("/help")
+            children = command_children("/help", self.commands)
             if children:
                 await self.query_one(TranscriptView).add_notice(
                     "help子命令：" + "、".join(children)
@@ -311,7 +441,8 @@ class KnowFlowTui(App[None]):
         if part == "shortcuts":
             await self.query_one(TranscriptView).add_notice(
                 "快捷键：Ctrl+P 命令面板, Ctrl+L清屏, Ctrl+N新会话, "
-                "Ctrl+O展开过程, Shift+Enter换行, Esc聚焦输入。"
+                "Ctrl+O展开过程, Ctrl+R搜索历史, Ctrl+S暂存输入, "
+                "Ctrl+T任务队列, Shift+Enter换行, Esc聚焦输入。"
             )
             return True
         if part == "tui":
@@ -320,7 +451,7 @@ class KnowFlowTui(App[None]):
             )
             return True
         await self.query_one(TranscriptView).add_notice(
-            f"未知help子命令：{part}。可用：{', '.join(command_children('/help')) or '无'}。"
+            f"未知help子命令：{part}。可用：{', '.join(command_children('/help', self.commands)) or '无'}。"
         )
         return True
 
@@ -333,12 +464,8 @@ class KnowFlowTui(App[None]):
         return True
 
     async def _cmd_version(self, args: list[str]) -> bool:
-        try:
-            cli_version = version("knowflow-ai")
-        except PackageNotFoundError:
-            cli_version = "dev"
         await self.query_one(TranscriptView).add_notice(
-            f"KnowFlow CLI 当前版本 v{cli_version}"
+            f"KnowFlow CLI 当前版本 v{_cli_release()}"
         )
         return True
 
@@ -411,7 +538,8 @@ class KnowFlowTui(App[None]):
         await self.query_one(TranscriptView).add_notice(
             f"模型：{self.backend.model_label}；目录：{self.workspace}；"
             f"状态：{self.current_phase}；等待任务："
-            f"{len(self.session.queued_questions)}。"
+            f"{len(self.session.queued_questions)}；队列："
+            f"{'已暂停' if self.session.queue_paused else '自动继续'}。"
         )
         return True
 
@@ -573,12 +701,44 @@ class KnowFlowTui(App[None]):
         return []
 
     async def _cmd_tasks(self, args: list[str]) -> bool:
-        queued = self.session.queued_questions
+        part = args[0].lower().strip() if args else "list"
+        if part == "remove":
+            if len(args) < 2 or not args[1].isdigit():
+                await self.query_one(TranscriptView).add_notice(
+                    "使用示例：/tasks remove <序号>"
+                )
+                return True
+            removed = self.session.remove_queued(int(args[1]) - 1)
+            await self.query_one(TranscriptView).add_notice(
+                (
+                    f"已移除：{redact_public_detail(removed.display_text, limit=100)}"
+                    if removed is not None
+                    else "没有这个等待任务。"
+                )
+            )
+            self._refresh_status_bar()
+            return True
+        if part == "clear":
+            count = len(self.session.prompt_queue)
+            self.session.prompt_queue.clear()
+            await self.query_one(TranscriptView).add_notice(
+                f"已清空{count}个等待任务。"
+            )
+            self._refresh_status_bar()
+            return True
+        if part not in {"list"}:
+            await self.query_one(TranscriptView).add_notice(
+                "可用参数：list、remove、clear。"
+            )
+            return True
+        queued = self.session.ordered_queue()
         await self.query_one(TranscriptView).add_notice(
             "等待任务："
             + (
                 "；".join(
-                    f"{index + 1}. {item}" for index, item in enumerate(queued)
+                    f"{index + 1}. [{item.priority}] "
+                    f"{redact_public_detail(item.display_text, limit=100)}"
+                    for index, item in enumerate(queued)
                 )
                 if queued
                 else "无。"
@@ -592,7 +752,70 @@ class KnowFlowTui(App[None]):
         elif not self.session.queued_questions:
             await self.query_one(TranscriptView).add_notice("等待队列为空。")
         else:
+            self.session.queue_paused = False
             self._run_next_queued()
+        return True
+
+    async def _cmd_retry(self, args: list[str]) -> bool:
+        if self.running:
+            self.notify("当前任务仍在执行。", severity="warning")
+            return True
+        prompt = self.session.last_prompt
+        if prompt is None:
+            await self.query_one(TranscriptView).add_notice(
+                "没有可重新执行的任务。"
+            )
+            return True
+        self.session.queue_paused = False
+        await self._start_turn(
+            prompt.text,
+            display_question=prompt.display_text,
+        )
+        return True
+
+    async def _cmd_history(self, args: list[str]) -> bool:
+        part = args[0].lower().strip() if args else "search"
+        composer = self.query_one(Composer)
+        if part == "clear":
+            cleared = self.history_store.clear()
+            composer.clear_history()
+            await self.query_one(TranscriptView).add_notice(
+                (
+                    "本地输入历史已清空。"
+                    if cleared
+                    else "输入历史文件无法删除；已清空本次会话历史。"
+                ),
+                error=not cleared,
+            )
+            return True
+        if part == "search":
+            query = " ".join(args[1:]).strip().lower()
+            if not query:
+                self.query_one(HistorySearchBar).open(
+                    composer.prompt_history,
+                    composer.text,
+                )
+                return True
+            matches = [
+                item
+                for item in reversed(composer.prompt_history)
+                if query in item.lower()
+            ][:10]
+            await self.query_one(TranscriptView).add_notice(
+                "历史匹配："
+                + (
+                    "；".join(
+                        redact_public_detail(item, limit=100)
+                        for item in matches
+                    )
+                    if matches
+                    else "无。"
+                )
+            )
+            return True
+        await self.query_one(TranscriptView).add_notice(
+            "可用参数：search、clear。"
+        )
         return True
 
     async def _cmd_exit(self, args: list[str]) -> bool:
@@ -696,7 +919,10 @@ class KnowFlowTui(App[None]):
         interrupted = self.session.cancel_requested
         self._set_status("已停止" if interrupted else "已完成")
         self.query_one(Composer).focus()
-        if not interrupted:
+        if interrupted:
+            self.session.queue_paused = bool(self.session.prompt_queue)
+        else:
+            self.session.queue_paused = False
             self._run_next_queued()
 
     def on_turn_paused(self, message: TurnPaused) -> None:
@@ -786,20 +1012,25 @@ class KnowFlowTui(App[None]):
         self.query_one(Composer).focus()
         self._refresh_status_bar()
         if self.session.queued_questions:
+            self.session.queue_paused = True
             await self.query_one(TranscriptView).add_notice(
                 f"队列已暂停，仍有{len(self.session.queued_questions)}项。"
-                "输入/continue继续。"
+                "输入/continue继续，或/retry重试上一任务。"
             )
-            if not self.session.cancel_requested:
-                self._run_next_queued()
 
     def on_cancel_requested(self, message: CancelRequested) -> None:
         if message.sent:
             self._set_status("已向服务器请求停止")
         elif message.error is not None:
             self.notify(
-                f"停止请求发送失败：{message.error}",
+                "停止请求发送失败："
+                f"{redact_public_detail(message.error, limit=180)}",
                 severity="error",
+            )
+        else:
+            self.notify(
+                "当前运行方式不支持远程取消；任务将在操作边界停止。",
+                severity="warning",
             )
 
     @staticmethod
@@ -843,8 +1074,9 @@ class KnowFlowTui(App[None]):
         prefix = "✻ " if self.running else ""
         queue = len(self.session.queued_questions)
         suffix = f" · 队列 {queue}" if queue else ""
+        interrupt = " · Ctrl+C中断" if self.running else ""
         self.query_one("#run-status", Static).update(
-            f"{prefix}{value}{suffix}"
+            f"{prefix}{value}{suffix}{interrupt}"
         )
         self._refresh_status_bar()
 
@@ -861,11 +1093,22 @@ class KnowFlowTui(App[None]):
         )
 
     def _run_next_queued(self) -> None:
-        if self.running or not self.session.queued_questions:
+        if (
+            self.running
+            or self.session.queue_paused
+            or not self.session.prompt_queue
+        ):
             self._refresh_status_bar()
             return
-        question = self.session.queued_questions.pop(0)
-        self.call_later(self._start_turn, question)
+        prompt = self.session.dequeue()
+        if prompt is None:
+            self._refresh_status_bar()
+            return
+        self.call_later(
+            self._start_turn,
+            prompt.text,
+            display_question=prompt.display_text,
+        )
         self._refresh_status_bar()
 
     def _tick_elapsed(self) -> None:
@@ -905,6 +1148,23 @@ class KnowFlowTui(App[None]):
 
     def action_focus_composer(self) -> None:
         self.query_one(Composer).focus()
+
+    async def action_stash(self) -> None:
+        composer = self.query_one(Composer)
+        if composer.text:
+            self.session.stashed_prompt = composer.text
+            composer.clear()
+            self.notify("输入已暂存；再次按Ctrl+S恢复。")
+            return
+        if self.session.stashed_prompt:
+            composer.load_text(self.session.stashed_prompt)
+            self.session.stashed_prompt = ""
+            self.notify("已恢复暂存输入。")
+        else:
+            self.notify("没有暂存输入。", severity="warning")
+
+    async def action_tasks(self) -> None:
+        await self._cmd_tasks(["list"])
 
     def action_interrupt(self) -> None:
         if self.running:

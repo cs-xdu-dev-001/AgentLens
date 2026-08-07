@@ -25,6 +25,7 @@ from knowflow.services.workspace_runtime import (  # noqa: E402
     WorkspaceRuntime,
     register_workspace_tools,
 )
+from knowflow.tui.state import PromptHistoryStore, TuiSessionState  # noqa: E402
 
 
 def main() -> None:
@@ -42,6 +43,27 @@ def main() -> None:
         "eyJheader.payload.signature",
     ):
         assert secret not in sanitized
+
+    with TemporaryDirectory() as folder:
+        history = PromptHistoryStore(Path(folder) / "state" / "history.jsonl")
+        assert history.append("first prompt")
+        assert history.append("second prompt")
+        assert history.load() == ["first prompt", "second prompt"]
+        if os.name != "nt":
+            assert history.path.parent.stat().st_mode & 0o777 == 0o700
+            assert history.path.stat().st_mode & 0o777 == 0o600
+        assert history.clear()
+        assert history.load() == []
+
+    session = TuiSessionState()
+    session.enqueue("later", priority="later")
+    session.enqueue("next", priority="next")
+    session.enqueue("now", priority="now")
+    assert [session.dequeue().text for _ in range(3)] == [
+        "now",
+        "next",
+        "later",
+    ]
 
     with TemporaryDirectory() as folder:
         store = LocalCliConfigStore(Path(folder) / "config")

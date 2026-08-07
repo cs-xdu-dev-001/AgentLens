@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..services.agent_execution import AgentEventSink, AgentExecution
@@ -40,6 +41,89 @@ class TuiBackend:
     def reset(self) -> None:
         self.session_id = None
         self.conversation = []
+
+    @staticmethod
+    def _command_name(value: Any) -> str:
+        normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value or "").strip())
+        return normalized.strip("-").lower()
+
+    def command_catalog(self) -> list[dict[str, str]]:
+        catalog: list[dict[str, str]] = []
+        if self.remote_client is None:
+            if self.local_agent is None or not self.tools:
+                return catalog
+            for schema in self.local_agent.tool_schemas():
+                function = schema.get("function") or {}
+                name = self._command_name(function.get("name"))
+                if name:
+                    catalog.append(
+                        {
+                            "value": f"/tool:{name}",
+                            "description": str(function.get("description") or "调用Agent工具"),
+                            "source": "tool",
+                        }
+                    )
+            return catalog
+
+        sources = (
+            ("/api/agent/tools", "tool", "name", "Agent工具"),
+            ("/api/skills/", "skill", "name", "Skill"),
+            ("/api/mcp/servers", "mcp", "slug", "MCP服务"),
+        )
+        for path, source, preferred_key, fallback in sources:
+            try:
+                payload = self.remote_client.request("GET", path, params={})
+            except Exception:
+                continue
+            if not isinstance(payload, list):
+                continue
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                raw_name = item.get(preferred_key) or item.get("name") or item.get("slug")
+                name = self._command_name(raw_name)
+                if not name:
+                    continue
+                description = str(
+                    item.get("description")
+                    or item.get("summary")
+                    or f"使用{fallback} {raw_name}"
+                )
+                catalog.append(
+                    {
+                        "value": f"/{source}:{name}",
+                        "description": description,
+                        "source": source,
+                    }
+                )
+        try:
+            models = self.remote_client.request(
+                "GET",
+                "/api/model-configs",
+                params={"modelType": "chat"},
+            )
+        except Exception:
+            models = []
+        if isinstance(models, list):
+            for item in models:
+                if not isinstance(item, dict) or item.get("id") is None:
+                    continue
+                model_id = str(item.get("id"))
+                label = str(
+                    item.get("name")
+                    or item.get("configName")
+                    or item.get("model")
+                    or item.get("modelName")
+                    or f"模型 {model_id}"
+                )
+                catalog.append(
+                    {
+                        "value": f"/model use {model_id}",
+                        "description": f"切换到{label}",
+                        "source": "builtin-model",
+                    }
+                )
+        return catalog
 
     def cancel(self, run_id: str | None) -> bool:
         if self.remote_client is None or not run_id:
