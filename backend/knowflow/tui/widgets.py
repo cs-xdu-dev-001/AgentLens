@@ -66,7 +66,7 @@ class CommandMenu(Vertical):
         self.selected = 0
 
     async def update_query(self, value: str) -> None:
-        query = value.strip().lower()
+        query = value.lstrip().lower()
         self.matches = match_commands(query)
         self.selected = min(self.selected, max(0, len(self.matches) - 1))
         await self._render_matches()
@@ -98,6 +98,12 @@ class CommandMenu(Vertical):
         if not self.matches:
             return None
         return self.matches[self.selected].value
+
+    @property
+    def selected_command(self) -> SlashCommand | None:
+        if not self.matches:
+            return None
+        return self.matches[self.selected]
 
 
 class RunActivity(Vertical):

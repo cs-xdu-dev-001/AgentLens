@@ -17,7 +17,7 @@ from textual.widgets import Button, Static
 
 from ..services.agent_execution import AgentExecution
 from .backend import TuiBackend
-from .commands import canonical_command
+from .commands import canonical_command, command_children
 from .state import TuiSessionState
 from .widgets import (
     CommandMenu,
@@ -178,13 +178,21 @@ class KnowFlowTui(App[None]):
     @on(Composer.CommandAccepted)
     async def handle_command_accepted(self) -> None:
         menu = self.query_one(CommandMenu)
-        value = menu.selected_value
-        if value is None:
+        command = menu.selected_command
+        if command is None:
             return
         composer = self.query_one(Composer)
-        composer.load_text(value)
-        await menu.hide()
-        composer.command_menu_open = False
+        if command.is_group:
+            composer.load_text(f"{command.value} ")
+            await menu.update_query(f"{command.value} ")
+            composer.command_menu_open = bool(menu.matches)
+            if not menu.matches:
+                await self._handle_command(f"{command.value}")
+            return
+        composer.load_text(command.value)
+        if composer.command_menu_open:
+            await menu.hide()
+            composer.command_menu_open = False
         await self._submit()
 
     @on(Composer.CommandDismissed)
@@ -228,6 +236,36 @@ class KnowFlowTui(App[None]):
 
     async def _handle_command(self, value: str) -> bool:
         value = canonical_command(value)
+        command = value.strip().lower()
+        if command.startswith("/help "):
+            part = command[len("/help ") :].strip()
+            if part == "commands":
+                children = command_children("/help")
+                if children:
+                    await self.query_one(TranscriptView).add_notice(
+                        "help子命令："
+                        + "、".join(children)
+                    )
+                else:
+                    await self.query_one(TranscriptView).add_notice(
+                        "当前无help子命令。"
+                    )
+                return True
+            if part == "shortcuts":
+                await self.query_one(TranscriptView).add_notice(
+                    "快捷键：Ctrl+P 命令面板, Ctrl+L清屏, Ctrl+N新会话, "
+                    "Ctrl+O展开过程, Shift+Enter换行, Esc聚焦输入。"
+                )
+                return True
+            if part == "tui":
+                await self.query_one(TranscriptView).add_notice(
+                    "TUI提示：输入/显示候选，↑↓切换，Tab/Enter确认。"
+                )
+                return True
+            await self.query_one(TranscriptView).add_notice(
+                f"未知help子命令：{part or '空'}。可用：{', '.join(command_children('/help')) or '无'}。"
+            )
+            return True
         if value in {"/quit", "/exit"}:
             self.exit()
             return True
@@ -239,13 +277,28 @@ class KnowFlowTui(App[None]):
             return True
         if value == "/help":
             await self.query_one(TranscriptView).add_notice(
-                "/new新会话  /clear清屏  /model模型  /status状态  "
-                "/permissions权限  /tasks队列  /exit退出"
+                "/help 查看命令分级，/new新会话，/clear清屏，/model模型，"
+                "/status状态，/permissions权限，/tasks队列，/exit退出。"
             )
             return True
         if value == "/model":
+            if self.backend.remote_client is not None:
+                await self.query_one(TranscriptView).add_notice(
+                    f"当前模型：{self.backend.model_id or '默认'}。"
+                )
+            else:
+                await self.query_one(TranscriptView).add_notice(
+                    f"当前模型：{self.backend.model_label}。"
+                )
+            return True
+        if value == "/model list":
             await self.query_one(TranscriptView).add_notice(
-                f"当前模型：{self.backend.model_label}。使用knowflow configure修改。"
+                "模型列表请使用 /model（TUI显示当前）或在终端执行 knowflow models list。"
+            )
+            return True
+        if value == "/model config":
+            await self.query_one(TranscriptView).add_notice(
+                "模型配置请使用 knowflow configure，或在 /tools /models 面板里维护。"
             )
             return True
         if value == "/status":

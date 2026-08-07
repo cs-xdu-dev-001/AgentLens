@@ -193,8 +193,21 @@ async def exercise_tui() -> None:
         assert "查看命令与快捷键" in str(
             list(menu.query(".command-option"))[0].render()
         )
-        await pilot.press("down")
-        assert menu.selected == 1
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert composer.text == "/help "
+        assert [item.value for item in menu.matches] == [
+            "/help commands",
+            "/help shortcuts",
+            "/help tui",
+        ]
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert not menu.matches
+        assert any(
+            "help子命令" in str(item.render()) for item in app.query(".notice")
+        )
+        assert not menu.matches
         await pilot.press("escape")
         await pilot.pause(0.05)
         assert not menu.matches
@@ -204,9 +217,31 @@ async def exercise_tui() -> None:
         assert [item.value for item in menu.matches] == ["/help"]
         await pilot.press("enter")
         await pilot.pause(0.05)
+        assert composer.text == "/help "
+        assert [item.value for item in menu.matches] == [
+            "/help commands",
+            "/help shortcuts",
+            "/help tui",
+        ]
+        await pilot.press("escape")
+        await pilot.pause(0.05)
         assert not menu.matches
-        assert any("/new新会话" in str(item.render()) for item in app.query(".notice"))
 
+        composer.load_text("/help c")
+        await pilot.pause(0.05)
+        assert [item.value for item in menu.matches] == [
+            "/help commands",
+            "/help shortcuts",
+        ]
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert any(
+            "help子命令" in str(item.render())
+            for item in app.query(".notice")
+        )
+        assert not menu.matches
+
+        composer.clear()
         composer.load_text("hello")
         await pilot.press("enter")
         for _ in range(20):
@@ -235,6 +270,18 @@ async def exercise_tui() -> None:
         composer.load_text("/pm")
         await pilot.pause(0.05)
         assert [item.value for item in menu.matches] == ["/permissions"]
+        await pilot.press("escape")
+
+        composer.load_text("/zzz")
+        await pilot.pause(0.05)
+        assert menu.matches == []
+        composer.load_text("/help ")
+        await pilot.pause(0.05)
+        assert [item.value for item in menu.matches] == [
+            "/help commands",
+            "/help shortcuts",
+            "/help tui",
+        ]
         await pilot.press("escape")
 
         composer.load_text("/new")
