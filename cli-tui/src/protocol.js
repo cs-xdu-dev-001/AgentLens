@@ -10,9 +10,12 @@ export function sanitizeTerminalText(value) {
 }
 
 const SECRET_PATTERNS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[已隐藏私钥]'],
   [/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[已隐藏]'],
   [/\bBearer\s+[A-Za-z0-9._~-]{8,}\b/gi, 'Bearer [已隐藏]'],
-  [/(api[_-]?key|token|password|secret)(\s*[:=]\s*)\S+/gi, '$1$2[已隐藏]'],
+  [/(api[_-]?key|token|password|secret|cookie|authorization|private[_-]?key)(\s*[:=]\s*)\S+/gi, '$1$2[已隐藏]'],
+  [/(--(?:api[-_]?key|token|password|secret|cookie|authorization|private[-_]?key))(?:=|\s+)\S+/gi, '$1=[已隐藏]'],
+  [/([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi, '$1[已隐藏]@'],
 ];
 
 export function redact(value, limit = 500) {

@@ -19,6 +19,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/doctor', description: '检查SRT沙箱依赖', source: 'builtin'},
   {value: '/tasks', description: '查看排队任务', source: 'builtin'},
   {value: '/retry', description: '重试上一个问题', source: 'builtin'},
+  {value: '/fix', description: '让Agent分析最近的工具错误并继续', source: 'builtin'},
   {value: '/exit', description: '退出KnowFlow', source: 'builtin', aliases: ['/quit']},
 ];
 

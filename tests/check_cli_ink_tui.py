@@ -189,7 +189,9 @@ def main() -> None:
     assert "useOnWheel" in app_source
     assert "flexShrink={1}" in app_source
     assert "if (!fullscreenEnabled)" in app_source
-    assert "使用终端滚轮浏览并拖动选择文本" in app_source
+    assert "终端滚轮选择复制" in app_source
+    assert "R重试本轮  F让Agent分析错误并继续" in app_source
+    assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
 
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")

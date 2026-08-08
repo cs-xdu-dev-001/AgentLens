@@ -183,7 +183,7 @@ test('terminal mode defaults to native scrollback and gates mouse capture behind
   });
 });
 
-test('native scrollback mode does not clamp long output to the app viewport', async () => {
+test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-scrolling viewer', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.5" />);
   await tick();
@@ -197,7 +197,64 @@ test('native scrollback mode does not clamp long output to the app viewport', as
   assert.ok(frame.split('\n').length > 24, `native scrollback was still viewport-clamped:\n${frame}`);
   assert.match(frame, /记录行1/);
   assert.match(frame, /记录行40/);
-  assert.match(frame, /终端滚轮浏览/);
+  assert.match(frame, /终端滚轮选择复制/);
+
+  view.stdin.write('\u000f');
+  await tick();
+  const viewerFrame = view.lastFrame();
+  assert.ok(viewerFrame.split('\n').length <= 24, `transcript viewer overflowed viewport:\n${viewerFrame}`);
+  assert.match(viewerFrame, /对话记录/);
+  assert.match(viewerFrame, /↑↓滚动/);
+
+  client.emit('message', {type: 'turn_completed', answer: '进入浏览器后到达的新消息'});
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /进入浏览器后到达的新消息/);
+  view.stdin.write('\u000f');
+  await tick();
+  assert.match(view.lastFrame(), /进入浏览器后到达的新消息/);
+  view.unmount();
+});
+
+test('failed tool details expose recovery actions that really retry or ask the agent to fix', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.12.0" />);
+  await tick();
+  view.stdin.write('读取缺失文件并继续');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_result',
+      toolCallId: 'call-missing',
+      toolName: '\u001b]0;forged-title\u0007read_workspace_file',
+      status: 'failed',
+      arguments: {path: 'missing.txt'},
+      errorCode: 'not_found',
+      errorMessage: 'missing path --password hunter2',
+      stderr: 'No such file',
+    },
+  });
+  client.emit('message', {type: 'turn_completed', answer: '读取失败'});
+  await tick();
+  assert.match(view.lastFrame(), /Ctrl\+E查看错误与恢复操作/);
+
+  view.stdin.write('\u0005');
+  await tick();
+  assert.match(view.lastFrame(), /工具详情/);
+  assert.match(view.lastFrame(), /missing path/);
+  assert.match(view.lastFrame(), /--password=\[已隐藏\]/);
+  assert.doesNotMatch(view.lastFrame(), /hunter2|forged-title/);
+  assert.match(view.lastFrame(), /R重试本轮/);
+  assert.match(view.lastFrame(), /F让Agent分析错误并继续/);
+
+  view.stdin.write('f');
+  await tick();
+  const recovery = client.sent.at(-1);
+  assert.equal(recovery.type, 'submit');
+  assert.match(recovery.text, /工具read_workspace_file执行失败/);
+  assert.match(recovery.text, /避免重复同一无效调用/);
+  assert.match(recovery.text, /读取缺失文件并继续/);
   view.unmount();
 });
 
