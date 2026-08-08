@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 from threading import Event, Lock
+import time
 from typing import Any, Callable
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -32,6 +34,7 @@ from .web_fetch import PublicWebFetcher
 from .web_search import TavilyWebSearch
 from .workspace_runtime import (
     SrtSandboxRunner,
+    WorkspaceContext,
     WorkspaceRuntime,
     register_workspace_tools,
 )
@@ -243,6 +246,81 @@ class _PlaintextCipher:
         return str(value or "")
 
 
+class LocalSessionStore:
+    """Small, local-only session index; LangGraph remains execution state."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root).expanduser().resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._chmod(self.root, 0o700)
+
+    @staticmethod
+    def _chmod(path: Path, mode: int) -> None:
+        if os.name != "nt":
+            try:
+                path.chmod(mode)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _identifier(value: str) -> str:
+        identifier = str(value or "")
+        if not identifier.startswith("run_") or not identifier[4:].isalnum():
+            raise ValueError("Invalid local session ID.")
+        return identifier
+
+    def _path(self, run_id: str) -> Path:
+        return self.root / f"{self._identifier(run_id)}.json"
+
+    def load(self, run_id: str) -> dict[str, Any] | None:
+        path = self._path(run_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def save(self, run_id: str, **updates: Any) -> dict[str, Any]:
+        path = self._path(run_id)
+        payload = self.load(run_id) or {"runId": run_id, "createdAt": time.time()}
+        payload.update(updates)
+        payload["updatedAt"] = time.time()
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self._chmod(temporary, 0o600)
+        temporary.replace(path)
+        self._chmod(path, 0o600)
+        return payload
+
+    def list(self, limit: int = 20) -> list[dict[str, Any]]:
+        sessions: list[dict[str, Any]] = []
+        for path in self.root.glob("run_*.json"):
+            payload = self.load(path.stem)
+            if payload is None:
+                continue
+            sessions.append(
+                {
+                    key: payload.get(key)
+                    for key in (
+                        "runId",
+                        "title",
+                        "status",
+                        "updatedAt",
+                        "projectRoot",
+                        "cwd",
+                        "answer",
+                    )
+                }
+            )
+        sessions.sort(key=lambda item: float(item.get("updatedAt") or 0), reverse=True)
+        return sessions[: max(1, min(100, int(limit)))]
+
+
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]):
     return requests.post(
         url,
@@ -306,6 +384,14 @@ class LocalAgentRuntime:
         if os.name != "nt":
             self.data_root.chmod(0o700)
         self.gateway = _gateway()
+        workspace_state = self.data_root / "workspace-state" / hashlib.sha256(
+            str(self.workspace_root).encode("utf-8")
+        ).hexdigest()[:16]
+        self.workspace = WorkspaceContext(
+            self.workspace_root,
+            state_root=workspace_state,
+        )
+        self.sessions = LocalSessionStore(self.data_root / "sessions")
         self.extensions = LocalExtensionStore(
             self.config_store,
             self.data_root,
@@ -343,7 +429,56 @@ class LocalAgentRuntime:
             max_file_bytes=DEFAULT_MAX_FILE_BYTES,
             isolated_namespace=False,
             manage_root_permissions=False,
+            context=self.workspace,
         )
+
+    def workspace_status(self) -> dict[str, Any]:
+        return self.workspace.status()
+
+    def workspace_add_directory(self, path: str) -> dict[str, Any]:
+        return self.workspace.add_directory(path)
+
+    def workspace_change_directory(self, path: str) -> dict[str, Any]:
+        return self.workspace.change_directory(path)
+
+    def workspace_diff(self, path: str | None = None) -> dict[str, Any]:
+        return self.workspace.diff(path or None)
+
+    def workspace_undo(self) -> dict[str, Any]:
+        result = self.workspace.undo_last()
+        return {**result, "workspace": self.workspace.status()}
+
+    def _session_workspace_fields(self) -> dict[str, Any]:
+        return {
+            "projectRoot": str(self.workspace.project_root),
+            "cwd": str(self.workspace.cwd),
+            "allowedDirectories": [
+                str(path) for path in self.workspace.allowed_roots
+            ],
+        }
+
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        project = str(self.workspace.project_root)
+        return [
+            session
+            for session in self.sessions.list(limit=limit * 3)
+            if str(session.get("projectRoot") or "") == project
+        ][:limit]
+
+    def load_session(self, run_id: str) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        for directory in session.get("allowedDirectories") or []:
+            path = str(directory or "").strip()
+            if path and path != str(self.workspace.project_root):
+                self.workspace.add_directory(path)
+        cwd = str(session.get("cwd") or "")
+        if cwd:
+            self.workspace.change_directory(cwd)
+        return session
 
     def _registry(
         self,
@@ -461,12 +596,22 @@ class LocalAgentRuntime:
         )
 
     @staticmethod
-    def _system_message(workspace_root: Path) -> dict[str, str]:
+    def _system_message(workspace: WorkspaceContext | Path) -> dict[str, str]:
+        if isinstance(workspace, WorkspaceContext):
+            project_root = workspace.project_root
+            cwd = workspace.cwd
+            allowed_roots = workspace.allowed_roots
+        else:
+            project_root = Path(workspace).expanduser().resolve()
+            cwd = project_root
+            allowed_roots = [project_root]
+        allowed = ", ".join(str(path) for path in allowed_roots)
         return {
             "role": "system",
             "content": (
                 "You are KnowFlow, a local Linux coding agent. Work only "
-                f"inside this workspace: {workspace_root}. Inspect before "
+                f"inside this workspace: {project_root}. The current "
+                f"directory is {cwd}. Allowed working directories: {allowed}. Inspect before "
                 "editing, use tools when needed, and report results concisely. "
                 "Use web_fetch for a specific URL and web_search to discover "
                 "URLs. Never turn a failed search or fetch into unsupported "
@@ -482,13 +627,16 @@ class LocalAgentRuntime:
         tools: bool = True,
         run_id: str | None = None,
         approval_decision: str | None = None,
+        resume_from_checkpoint: bool = False,
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
         config = gateway_config(self.config_store.load())
         identifier = run_id or f"run_{uuid4().hex[:12]}"
         messages = list(history or [])
         if not messages:
-            messages.append(self._system_message(self.workspace_root))
+            messages.append(self._system_message(self.workspace))
+        elif messages[0].get("role") == "system":
+            messages[0] = self._system_message(self.workspace)
         if task:
             messages.append({"role": "user", "content": task})
         memory_task = task or next(
@@ -503,6 +651,15 @@ class LocalAgentRuntime:
         cancel_event = Event()
         with self._cancel_lock:
             self._cancel_events[identifier] = cancel_event
+        self.workspace.begin_turn(identifier)
+        title = memory_task.strip().splitlines()[0][:80] if memory_task.strip() else identifier
+        self.sessions.save(
+            identifier,
+            title=title,
+            status="running",
+            **self._session_workspace_fields(),
+            messages=messages[-100:],
+        )
 
         def emit(event: dict[str, Any]) -> None:
             if (
@@ -656,7 +813,9 @@ class LocalAgentRuntime:
                     model_event_callback=model_event,
                     tool_event_callback=tool_lifecycle_event,
                     cancel_check=cancel_event.is_set,
-                    resume_from_checkpoint=approval_decision is not None,
+                    resume_from_checkpoint=(
+                        resume_from_checkpoint or approval_decision is not None
+                    ),
                     approval_decision=approval_decision,
                     skill_restore=restore_skill,
                     memory_enabled=memory_provider is not None,
@@ -671,6 +830,12 @@ class LocalAgentRuntime:
                     ),
                 )
         except AgentRunCancelledError:
+            self.sessions.save(
+                identifier,
+                status="cancelled",
+                **self._session_workspace_fields(),
+                messages=messages[-100:],
+            )
             emit(
                 {
                     "type": "done",
@@ -689,6 +854,15 @@ class LocalAgentRuntime:
                 },
                 events=events,
             )
+        except Exception as exc:
+            self.sessions.save(
+                identifier,
+                status="failed",
+                errorCode=type(exc).__name__,
+                **self._session_workspace_fields(),
+                messages=messages[-100:],
+            )
+            raise
         finally:
             with self._cancel_lock:
                 current = self._cancel_events.get(identifier)
@@ -712,6 +886,17 @@ class LocalAgentRuntime:
                     "destructive": bool(interrupt.get("destructive")),
                     "inputSummary": interrupt.get("inputSummary"),
                 }
+            )
+            self.sessions.save(
+                identifier,
+                status="waiting_approval",
+                **self._session_workspace_fields(),
+                messages=messages[-100:],
+                pendingApproval={
+                    "approvalId": tool_call_id,
+                    "toolName": interrupt.get("toolName") or "工具调用",
+                    "risk": interrupt.get("risk") or "unknown",
+                },
             )
         else:
             if memory_provider is not None and memory_task and result.answer:
@@ -750,6 +935,18 @@ class LocalAgentRuntime:
                         }
                     )
             emit({"type": "done", "runId": identifier})
+            stored_messages = list(messages)
+            if result.answer:
+                stored_messages.append({"role": "assistant", "content": result.answer})
+            self.sessions.save(
+                identifier,
+                status="completed",
+                answer=result.answer,
+                messages=stored_messages[-100:],
+                pendingApproval=None,
+                **self._session_workspace_fields(),
+                changes=self.workspace.diff(run_id=identifier).get("files", []),
+            )
         return AgentExecution(
             result={
                 "paused": result.paused,
@@ -759,4 +956,35 @@ class LocalAgentRuntime:
                 "messages": messages,
             },
             events=events,
+        )
+
+    def resume_session(
+        self,
+        run_id: str,
+        *,
+        approval_decision: str | None = None,
+        event_sink: AgentEventSink | None = None,
+    ) -> AgentExecution:
+        session = self.load_session(run_id)
+        status = str(session.get("status") or "")
+        if status == "completed":
+            return AgentExecution(
+                result={
+                    "paused": False,
+                    "runId": run_id,
+                    "answer": "",
+                    "messages": list(session.get("messages") or []),
+                    "restored": True,
+                },
+                events=[],
+            )
+        if status not in {"failed", "interrupted", "waiting_approval", "cancelled", "running"}:
+            raise ValueError("This local session cannot be resumed.")
+        return self.run(
+            "",
+            history=list(session.get("messages") or []),
+            run_id=run_id,
+            approval_decision=approval_decision,
+            resume_from_checkpoint=True,
+            event_sink=event_sink,
         )

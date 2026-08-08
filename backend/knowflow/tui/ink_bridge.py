@@ -13,7 +13,7 @@ from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
 from .backend import TuiBackend
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 class InkRuntimeBridge:
@@ -101,8 +101,36 @@ class InkRuntimeBridge:
                     "runId": str(execution.result.get("runId") or self._run_id),
                     "answer": str(execution.result.get("answer") or ""),
                     "cancelled": bool(execution.result.get("cancelled")),
+                    "restored": bool(execution.result.get("restored")),
+                    "messages": (
+                        self._public_messages(execution.result.get("messages"))
+                        if execution.result.get("restored")
+                        else None
+                    ),
+                    "changes": self._workspace_changes(),
                 }
             )
+
+    @staticmethod
+    def _public_messages(value: Any) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        for item in value if isinstance(value, list) else []:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "")
+            if role not in {"user", "assistant"}:
+                continue
+            content = sanitize_trace_value(item.get("content"), max_chars=20_000)
+            messages.append({"role": role, "content": str(content or "")})
+        return messages[-50:]
+
+    def _workspace_changes(self) -> list[dict[str, Any]]:
+        try:
+            value = self.backend.workspace_diff()
+        except Exception:
+            return []
+        files = value.get("files") if isinstance(value, dict) else []
+        return list(files) if isinstance(files, list) else []
 
     def _execute(self, callback: Any) -> None:
         queued_decision = None
@@ -115,6 +143,7 @@ class InkRuntimeBridge:
                 {
                     "type": "turn_failed",
                     "requestId": self._request_id,
+                    "runId": self._run_id,
                     "message": self._public_error(exc),
                 }
             )
@@ -173,6 +202,49 @@ class InkRuntimeBridge:
         except Exception as exc:
             self.send({"type": "doctor_failed", "message": self._public_error(exc)})
 
+    def _workspace(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "status")
+        try:
+            if action == "status":
+                result = self.backend.workspace_status()
+            elif action == "add":
+                result = self.backend.workspace_add_directory(str(message.get("path") or ""))
+            elif action == "cd":
+                result = self.backend.workspace_change_directory(str(message.get("path") or ""))
+            elif action == "diff":
+                result = self.backend.workspace_diff(str(message.get("path") or "") or None)
+            elif action == "undo":
+                result = self.backend.workspace_undo()
+            else:
+                raise ValueError("Unknown workspace action.")
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "workspace_failed",
+                    "action": action,
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "workspace_result",
+                    "action": action,
+                    "result": _public_value(result, max_chars=100_000),
+                }
+            )
+
+    def _resume_session(self, message: dict[str, Any]) -> None:
+        run_id = str(message.get("runId") or "")
+        if not run_id:
+            self.send({"type": "protocol_error", "message": "请选择要恢复的会话。"})
+            return
+        self._request_id = str(message.get("requestId") or "")
+        self._run_id = run_id
+        self._pending = None
+        self._queued_decision = None
+        self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
+
     def handle(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "")
         if message_type == "submit":
@@ -223,6 +295,17 @@ class InkRuntimeBridge:
                 )
         elif message_type == "doctor":
             Thread(target=self._doctor, daemon=True).start()
+        elif message_type == "workspace":
+            self._workspace(message)
+        elif message_type == "sessions":
+            try:
+                sessions = self.backend.list_sessions(limit=int(message.get("limit") or 20))
+            except Exception as exc:
+                self.send({"type": "sessions_failed", "message": self._public_error(exc)})
+            else:
+                self.send({"type": "session_list", "sessions": sessions})
+        elif message_type == "resume_session":
+            self._resume_session(message)
         elif message_type == "shutdown":
             self._stopping = True
             if self._running:
@@ -237,6 +320,8 @@ class InkRuntimeBridge:
                 "protocolVersion": PROTOCOL_VERSION,
                 "model": self.backend.model_label,
                 "commands": self.backend.command_catalog(),
+                "workspace": _public_value(self.backend.workspace_status(), max_chars=20_000),
+                "sessions": _public_value(self.backend.list_sessions(limit=8), max_chars=20_000),
             }
         )
         for line in self.input_stream:

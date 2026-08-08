@@ -95,3 +95,23 @@ export function MarkdownText({children}) {
   }, [source]);
   return <Box flexDirection="column" width="100%"><Blocks tokens={tokens} /></Box>;
 }
+
+export function stableMarkdownBoundary(source, previousBoundary = 0) {
+  const text = sanitizeTerminalText(source);
+  const boundary = text.length >= previousBoundary
+    ? Math.max(0, previousBoundary)
+    : 0;
+  let tokens;
+  try {
+    tokens = marked.lexer(text.slice(boundary), {gfm: true});
+  } catch {
+    return boundary;
+  }
+  let lastContent = tokens.length - 1;
+  while (lastContent >= 0 && tokens[lastContent]?.type === 'space') lastContent -= 1;
+  let advance = 0;
+  for (let index = 0; index < lastContent; index += 1) {
+    advance += String(tokens[index]?.raw ?? '').length;
+  }
+  return boundary + advance;
+}

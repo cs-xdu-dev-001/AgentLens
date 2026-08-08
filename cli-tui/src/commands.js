@@ -6,6 +6,13 @@ export const BUILTIN_COMMANDS = [
   {value: '/clear', description: '清空终端显示', source: 'builtin'},
   {value: '/model', description: '查看当前模型', source: 'builtin'},
   {value: '/status', description: '查看会话状态', source: 'builtin'},
+  {value: '/workspace', description: '查看工作区边界', source: 'builtin'},
+  {value: '/add-dir', description: '添加本次会话可访问的目录', source: 'builtin'},
+  {value: '/cd', description: '切换工具执行目录', source: 'builtin'},
+  {value: '/diff', description: '查看本轮文件改动', source: 'builtin'},
+  {value: '/undo', description: '安全撤销最近一次文件操作', source: 'builtin'},
+  {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin'},
+  {value: '/continue', description: '从最近失败点继续', source: 'builtin'},
   {value: '/permissions', description: '切换权限模式', source: 'builtin'},
   {value: '/tools', description: '查看本地工具状态', source: 'builtin'},
   {value: '/tools:configure', description: '查看联网搜索配置方法', source: 'builtin'},
@@ -18,7 +25,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/memory:configure', description: '查看Mem0配置方法', source: 'builtin'},
   {value: '/doctor', description: '检查SRT沙箱依赖', source: 'builtin'},
   {value: '/tasks', description: '查看排队任务', source: 'builtin'},
-  {value: '/retry', description: '重试上一个问题', source: 'builtin'},
+  {value: '/retry', description: '选择重试工具或整轮任务', source: 'builtin'},
   {value: '/fix', description: '让Agent分析最近的工具错误并继续', source: 'builtin'},
   {value: '/exit', description: '退出KnowFlow', source: 'builtin', aliases: ['/quit']},
 ];
@@ -45,7 +52,7 @@ export function commandSuggestions(input, commands, usage = {}) {
       const usageDelta = (usage[right.value] ?? 0) - (usage[left.value] ?? 0);
       if (usageDelta) return usageDelta;
       const sourceDelta = Number(left.source !== 'builtin') - Number(right.source !== 'builtin');
-      return sourceDelta || left.value.localeCompare(right.value);
+      return sourceDelta;
     });
   }
   const exact = command => command.value === query || command.aliases?.includes(query);

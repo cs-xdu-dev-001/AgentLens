@@ -53,6 +53,8 @@ Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术�
 
 Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史。默认使用终端主屏scrollback，滚轮浏览和拖拽选择复制都由终端负责；`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。需要固定输入框的全屏模式时使用`KNOWFLOW_CLI_FULLSCREEN=1 knowflow chat`，该模式支持`PgUp/PgDn`滚动；如需应用捕获滚轮，同时设置`KNOWFLOW_CLI_MOUSE=1`，部分终端此时需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
 
+工作区不等于当前目录：项目根目录是任务边界，`/cd`只改变工具执行位置，`/add-dir`可为本次会话增加明确允许的目录；Header和`/workspace`会显示cwd、Git分支、dirty状态与允许目录。文件修改使用结构化编辑并保存修改前快照，`/diff`查看本轮差异，`/undo`只在文件没有被后续改动时安全撤销。会话与LangGraph checkpoint一起保存；`/resume`选择历史会话，失败后队列会暂停，使用`/continue`从失败点继续，或用`/retry tool`、`/retry turn`选择重试范围。
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # 新版Ink界面需要v22+
@@ -110,7 +112,7 @@ knowflow memory list
 
 TUI输入`/tools`、`/mcp`、`/skills`或`/memory`可查看真实状态；`/tool:*`、`/skill:*`、`/mcp:*`来自运行时动态发现。涉及Key的配置仍通过隐藏输入的CLI命令完成，避免密钥出现在TUI记录或终端历史中。
 
-本地公开配置位于`~/.config/knowflow/config.json`，模型Key、Tavily Key、MCP凭据和Mem0 Key位于权限为600的`credentials.json`；LangGraph checkpoint、Skills、Mem0数据和TUI输入历史位于`~/.local/share/knowflow`。默认工作区是启动命令时的当前目录。
+本地公开配置位于`~/.config/knowflow/config.json`，模型Key、Tavily Key、MCP凭据和Mem0 Key位于权限为600的`credentials.json`；LangGraph checkpoint、会话记录、工作区快照、Skills、Mem0数据和TUI输入历史位于`~/.local/share/knowflow`。默认项目根目录是启动命令时的当前目录。
 
 连接已有KnowFlow Web服务是可选模式：
 

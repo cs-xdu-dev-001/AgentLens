@@ -181,6 +181,35 @@ def main() -> None:
                 if event.get("type") == "tool_result"
             ]
         ) == 4
+        stored = runtime.list_sessions()
+        assert stored and stored[0]["status"] == "completed"
+        loaded = runtime.load_session(stored[0]["runId"])
+        assert loaded["answer"] == "四轮检查完成。"
+        assert loaded["projectRoot"] == str((root / "workspace").resolve())
+        assert runtime.workspace_status()["cwd"] == str((root / "workspace").resolve())
+        extra = root / "extra-workspace"
+        extra.mkdir()
+        runtime.workspace_add_directory(str(extra))
+        runtime.workspace_change_directory(str(extra))
+        runtime.sessions.save(
+            "run_workspacerestore",
+            title="恢复额外工作目录",
+            status="completed",
+            messages=[],
+            **runtime._session_workspace_fields(),
+        )
+        restored_runtime = LocalAgentRuntime(
+            config_store=store,
+            workspace_root=root / "workspace",
+            data_root=root / "data",
+        )
+        restored_runtime.load_session("run_workspacerestore")
+        restored_status = restored_runtime.workspace_status()
+        assert restored_status["cwd"] == str(extra.resolve())
+        assert str(extra.resolve()) in restored_status["allowedDirectories"]
+        assert "edit_workspace_file" in {
+            item["function"]["name"] for item in runtime.tool_schemas()
+        }
 
     class FakeGateway:
         def __init__(self):

@@ -181,6 +181,67 @@ class TuiBackend:
             ]
         return list(diagnostic(smoke=True))
 
+    def workspace_status(self) -> dict[str, Any]:
+        if self.remote_client is not None:
+            return {"remote": True, "message": "远程模式的工作区由服务器管理。"}
+        if self.local_agent is None:
+            return {}
+        return dict(self.local_agent.workspace_status())
+
+    def workspace_add_directory(self, path: str) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持从CLI添加本地目录。")
+        return dict(self.local_agent.workspace_add_directory(path))
+
+    def workspace_change_directory(self, path: str) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式不能修改服务器工作目录。")
+        return dict(self.local_agent.workspace_change_directory(path))
+
+    def workspace_diff(self, path: str | None = None) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持本地Diff视图。")
+        return dict(self.local_agent.workspace_diff(path))
+
+    def workspace_undo(self) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持本地文件撤销。")
+        return dict(self.local_agent.workspace_undo())
+
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        if self.remote_client is not None:
+            return []
+        return list(self.local_agent.list_sessions(limit=limit))
+
+    def restore_session(
+        self,
+        run_id: str,
+        event_sink: AgentEventSink,
+    ) -> AgentExecution:
+        if self.remote_client is not None:
+            raise RuntimeError("远程会话请使用Web端恢复。")
+        session = self.local_agent.load_session(run_id)
+        status = str(session.get("status") or "")
+        if status == "completed":
+            self.conversation = list(session.get("messages") or [])
+            return AgentExecution(
+                result={
+                    "paused": False,
+                    "runId": run_id,
+                    "answer": "",
+                    "messages": self.conversation,
+                    "restored": True,
+                    "status": status,
+                },
+                events=[],
+            )
+        execution = self.local_agent.resume_session(
+            run_id,
+            event_sink=event_sink,
+        )
+        self._finish(execution)
+        return execution
+
     def run(
         self,
         question: str,

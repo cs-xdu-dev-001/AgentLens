@@ -34,7 +34,12 @@ const instance = render(
       mouseEnabled={mouseEnabled}
     />
   </MouseProvider>,
-  {exitOnCtrlC: false, alternateScreen: fullscreenEnabled},
+  {
+    exitOnCtrlC: false,
+    alternateScreen: fullscreenEnabled,
+    incrementalRendering: true,
+    maxFps: 30,
+  },
 );
 
 process.once('SIGTERM', () => {

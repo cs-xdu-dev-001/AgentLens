@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import difflib
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import tempfile
 from threading import Thread
 import time
 from typing import Any, Callable
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -53,6 +55,13 @@ class WriteWorkspaceFileArguments(WorkspacePathArguments):
     overwrite: bool = False
 
 
+class EditWorkspaceFileArguments(WorkspacePathArguments):
+    path: str = Field(min_length=1, max_length=500)
+    old_text: str = Field(min_length=1, max_length=500_000)
+    new_text: str = Field(max_length=500_000)
+    replace_all: bool = False
+
+
 class RunSandboxCommandArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     command: str = Field(min_length=1, max_length=4_000)
@@ -71,6 +80,286 @@ class SandboxCommandResult:
     total_bytes: int = 0
 
 
+class WorkspaceContext:
+    """Single source of truth for a local agent's project boundary and edits."""
+
+    def __init__(self, project_root: Path, *, state_root: Path | None = None) -> None:
+        self.project_root = Path(project_root).expanduser().resolve()
+        self.project_root.mkdir(parents=True, exist_ok=True)
+        self.original_cwd = self.project_root
+        self.cwd = self.project_root
+        self.allowed_roots: list[Path] = [self.project_root]
+        self.current_run_id: str | None = None
+        self.state_root = Path(state_root).expanduser().resolve() if state_root else None
+        if self.state_root is not None:
+            self.state_root.mkdir(parents=True, exist_ok=True)
+            self._chmod(self.state_root, 0o700)
+        self._journal_path = (
+            self.state_root / "changes.jsonl" if self.state_root is not None else None
+        )
+        self._snapshot_root = (
+            self.state_root / "snapshots" if self.state_root is not None else None
+        )
+        if self._snapshot_root is not None:
+            self._snapshot_root.mkdir(parents=True, exist_ok=True)
+            self._chmod(self._snapshot_root, 0o700)
+
+    @staticmethod
+    def _chmod(path: Path, mode: int) -> None:
+        if os.name == "nt":
+            return
+        try:
+            path.chmod(mode)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _inside(path: Path, root: Path) -> bool:
+        try:
+            path.relative_to(root)
+        except ValueError:
+            return False
+        return True
+
+    def contains(self, path: Path) -> bool:
+        resolved = Path(path).resolve(strict=False)
+        return any(self._inside(resolved, root) for root in self.allowed_roots)
+
+    def add_directory(self, value: str) -> dict[str, Any]:
+        raw = str(value or "").strip()
+        if not raw:
+            raise WorkspaceRuntimeError(
+                "workspace_directory_required",
+                "Please provide a directory path.",
+            )
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = self.cwd / candidate
+        resolved = candidate.resolve()
+        if not resolved.is_dir():
+            raise WorkspaceRuntimeError(
+                "workspace_directory_missing",
+                "Workspace directory was not found.",
+            )
+        for root in self.allowed_roots:
+            if self._inside(resolved, root):
+                return self.status(message=f"{resolved} is already accessible.")
+        self.allowed_roots.append(resolved)
+        return self.status(message=f"Added {resolved} for this session.")
+
+    def change_directory(self, value: str) -> dict[str, Any]:
+        raw = str(value or "").strip() or str(self.project_root)
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = self.cwd / candidate
+        resolved = candidate.resolve()
+        if not resolved.is_dir() or not self.contains(resolved):
+            raise WorkspaceRuntimeError(
+                "workspace_directory_denied",
+                "The directory must exist inside an allowed working directory.",
+            )
+        self.cwd = resolved
+        return self.status(message=f"Current directory: {resolved}")
+
+    def begin_turn(self, run_id: str) -> None:
+        self.current_run_id = str(run_id)
+
+    def _git(self, *arguments: str) -> str:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(self.project_root), *arguments],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return completed.stdout.strip() if completed.returncode == 0 else ""
+
+    def status(self, *, message: str | None = None) -> dict[str, Any]:
+        branch = self._git("branch", "--show-current")
+        porcelain = self._git("status", "--porcelain=v1")
+        changed = len([line for line in porcelain.splitlines() if line.strip()])
+        payload: dict[str, Any] = {
+            "projectRoot": str(self.project_root),
+            "cwd": str(self.cwd),
+            "allowedDirectories": [str(path) for path in self.allowed_roots],
+            "protectedPatterns": [".git", ".env*", ".ssh", ".tmp"],
+            "branch": branch or None,
+            "dirty": changed > 0,
+            "changedFiles": changed,
+            "runId": self.current_run_id,
+        }
+        if message:
+            payload["message"] = message
+        return payload
+
+    @staticmethod
+    def _digest(payload: bytes | None) -> str | None:
+        return hashlib.sha256(payload).hexdigest() if payload is not None else None
+
+    def _append_record(self, record: dict[str, Any]) -> None:
+        if self._journal_path is None:
+            return
+        with self._journal_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._chmod(self._journal_path, 0o600)
+
+    def _records(self) -> list[dict[str, Any]]:
+        if self._journal_path is None or not self._journal_path.is_file():
+            return []
+        records: list[dict[str, Any]] = []
+        try:
+            lines = self._journal_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError):
+            return []
+        for line in lines[-1000:]:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+        return records
+
+    def _active_records(self) -> list[dict[str, Any]]:
+        latest: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for record in self._records():
+            identifier = str(record.get("id") or "")
+            if not identifier:
+                continue
+            if identifier not in latest:
+                order.append(identifier)
+            latest[identifier] = record
+        return [latest[identifier] for identifier in order if not latest[identifier].get("undone")]
+
+    def record_change(
+        self,
+        target: Path,
+        *,
+        before: bytes | None,
+        after: bytes,
+        operation: str,
+    ) -> dict[str, Any]:
+        operation_id = f"edit_{uuid4().hex[:16]}"
+        snapshot_name = None
+        if before is not None and self._snapshot_root is not None:
+            snapshot_name = f"{operation_id}.before"
+            snapshot = self._snapshot_root / snapshot_name
+            snapshot.write_bytes(before)
+            self._chmod(snapshot, 0o600)
+        record = {
+            "id": operation_id,
+            "runId": self.current_run_id,
+            "path": str(target),
+            "displayPath": self.display_path(target),
+            "operation": operation,
+            "beforeHash": self._digest(before),
+            "afterHash": self._digest(after),
+            "beforeSnapshot": snapshot_name,
+            "created": before is None,
+            "undone": False,
+            "createdAt": time.time(),
+        }
+        self._append_record(record)
+        return record
+
+    def display_path(self, target: Path) -> str:
+        resolved = target.resolve(strict=False)
+        for root in self.allowed_roots:
+            if self._inside(resolved, root):
+                relative = resolved.relative_to(root).as_posix()
+                return relative or "."
+        return resolved.name
+
+    def changes(self, run_id: str | None = None) -> list[dict[str, Any]]:
+        selected = run_id or self.current_run_id
+        records = self._active_records()
+        if selected:
+            records = [item for item in records if item.get("runId") == selected]
+        return records
+
+    def diff(self, path: str | None = None, *, run_id: str | None = None) -> dict[str, Any]:
+        records = self.changes(run_id)
+        if path:
+            records = [item for item in records if item.get("displayPath") == path]
+        latest: dict[str, dict[str, Any]] = {}
+        first: dict[str, dict[str, Any]] = {}
+        for record in records:
+            key = str(record.get("path") or "")
+            first.setdefault(key, record)
+            latest[key] = record
+        chunks: list[str] = []
+        files: list[dict[str, Any]] = []
+        for key, record in latest.items():
+            target = Path(key)
+            initial = first[key]
+            before = b""
+            snapshot_name = initial.get("beforeSnapshot")
+            if snapshot_name and self._snapshot_root is not None:
+                snapshot = self._snapshot_root / str(snapshot_name)
+                if snapshot.is_file():
+                    before = snapshot.read_bytes()
+            after = target.read_bytes() if target.is_file() else b""
+            try:
+                before_text = before.decode("utf-8").splitlines(keepends=True)
+                after_text = after.decode("utf-8").splitlines(keepends=True)
+            except UnicodeDecodeError:
+                continue
+            display = str(record.get("displayPath") or target.name)
+            patch = "".join(
+                difflib.unified_diff(
+                    before_text,
+                    after_text,
+                    fromfile=f"a/{display}",
+                    tofile=f"b/{display}",
+                )
+            )
+            added = sum(1 for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
+            removed = sum(1 for line in patch.splitlines() if line.startswith("-") and not line.startswith("---"))
+            files.append({"path": display, "added": added, "removed": removed})
+            if patch:
+                chunks.append(patch)
+        return {
+            "runId": run_id or self.current_run_id,
+            "files": files,
+            "patch": "\n".join(chunks)[:100_000],
+        }
+
+    def undo_last(self) -> dict[str, Any]:
+        records = self._active_records()
+        record = records[-1] if records else None
+        if record is None:
+            raise WorkspaceRuntimeError("workspace_undo_empty", "There is no file change to undo.")
+        target = Path(str(record.get("path") or ""))
+        resolved = target.resolve(strict=False)
+        if target.is_symlink() or not self.contains(resolved):
+            raise WorkspaceRuntimeError(
+                "workspace_undo_denied",
+                "The changed path no longer resolves safely inside the workspace.",
+            )
+        current = target.read_bytes() if target.is_file() else None
+        if self._digest(current) != record.get("afterHash"):
+            raise WorkspaceRuntimeError(
+                "workspace_undo_conflict",
+                "The file changed after this operation; undo was not applied.",
+            )
+        snapshot_name = record.get("beforeSnapshot")
+        if record.get("created"):
+            target.unlink(missing_ok=True)
+        elif snapshot_name and self._snapshot_root is not None:
+            before = (self._snapshot_root / str(snapshot_name)).read_bytes()
+            target.write_bytes(before)
+        else:
+            raise WorkspaceRuntimeError("workspace_undo_unavailable", "The snapshot is unavailable.")
+        self._append_record({**record, "undone": True, "undoneAt": time.time()})
+        return {"path": record.get("displayPath"), "operationId": record.get("id")}
+
+
 class WorkspaceRuntime:
     def __init__(
         self,
@@ -80,22 +369,32 @@ class WorkspaceRuntime:
         max_file_bytes: int = 1_000_000,
         isolated_namespace: bool = True,
         manage_root_permissions: bool = True,
+        context: WorkspaceContext | None = None,
     ) -> None:
         base = Path(root).expanduser().resolve()
         base.mkdir(parents=True, exist_ok=True)
         namespace = hashlib.sha256(
             f"workspace\0{int(user_id)}".encode("utf-8")
         ).hexdigest()[:32]
-        self.root = (
+        self._root = (
             (base / namespace).resolve()
             if isolated_namespace
             else base
         )
-        self.root.mkdir(parents=True, exist_ok=True)
+        self._root.mkdir(parents=True, exist_ok=True)
+        self.context = context
         self.max_file_bytes = max(1_024, int(max_file_bytes))
         if manage_root_permissions:
             self._restrict_directory(base)
             self._restrict_directory(self.root)
+
+    @property
+    def root(self) -> Path:
+        return self.context.cwd if self.context is not None else self._root
+
+    @property
+    def allowed_roots(self) -> tuple[Path, ...]:
+        return tuple(self.context.allowed_roots) if self.context is not None else (self._root,)
 
     @staticmethod
     def _restrict_directory(path: Path) -> None:
@@ -176,19 +475,47 @@ class WorkspaceRuntime:
                         "Writing through workspace symlinks is not allowed.",
                     )
         resolved = candidate.resolve(strict=False)
+        matching_root = next(
+            (
+                root
+                for root in self.allowed_roots
+                if WorkspaceContext._inside(resolved, root)
+            ),
+            None,
+        )
+        allowed = matching_root is not None
         try:
             relative = resolved.relative_to(self.root)
+            allowed = True
         except ValueError as exc:
+            if self.context is not None and matching_root is not None:
+                relative = resolved.relative_to(matching_root)
+            else:
+                raise WorkspaceRuntimeError(
+                    "workspace_path_denied",
+                    "The path resolves outside the workspace.",
+                ) from exc
+        if not allowed:
             raise WorkspaceRuntimeError(
                 "workspace_path_denied",
                 "The path resolves outside the workspace.",
-            ) from exc
+            )
         if self._is_sensitive(tuple(relative.parts)):
             raise WorkspaceRuntimeError(
                 "workspace_path_denied",
                 "Sensitive workspace paths are not available to tools.",
             )
         return resolved
+
+    def _before_write(self, target: Path) -> bytes | None:
+        if not target.is_file():
+            return None
+        if target.stat().st_size > self.max_file_bytes:
+            raise WorkspaceRuntimeError(
+                "workspace_file_too_large",
+                "Existing workspace file exceeds the configured size limit.",
+            )
+        return target.read_bytes()
 
     def list_entries(self, path: str = "") -> dict[str, Any]:
         directory = self._resolve(path, write=False)
@@ -279,6 +606,7 @@ class WorkspaceRuntime:
                 "Workspace file exceeds the configured size limit.",
             )
         target = self._resolve(path, write=True)
+        before = self._before_write(target)
         if target.exists() and not overwrite:
             raise WorkspaceRuntimeError(
                 "workspace_file_exists",
@@ -301,6 +629,13 @@ class WorkspaceRuntime:
             self._restrict_file(target)
         finally:
             temporary.unlink(missing_ok=True)
+        if self.context is not None:
+            self.context.record_change(
+                target,
+                before=before,
+                after=payload,
+                operation="write",
+            )
         return {"path": path, "writtenBytes": len(payload)}
 
     def delete_file(self, path: str) -> None:
@@ -321,6 +656,7 @@ class WorkspaceRuntime:
                 "Workspace file exceeds the configured size limit.",
             )
         target = self._resolve(path, write=True)
+        before = self._before_write(target)
         if target.exists() and not overwrite:
             raise WorkspaceRuntimeError(
                 "workspace_file_exists",
@@ -344,10 +680,56 @@ class WorkspaceRuntime:
         finally:
             if temporary.exists():
                 temporary.unlink()
+        change = None
+        if self.context is not None:
+            change = self.context.record_change(
+                target,
+                before=before,
+                after=encoded,
+                operation="write",
+            )
+        diff = self.context.diff(path) if self.context is not None else {"files": []}
+        file_summary = next((item for item in diff.get("files", []) if item.get("path") == path), None)
+        output = {
+            "path": path,
+            "writtenBytes": len(encoded),
+            "operationId": change.get("id") if change else None,
+            "addedLines": (file_summary or {}).get("added", 0),
+            "removedLines": (file_summary or {}).get("removed", 0),
+        }
         return ToolHandlerResult(
-            output={"path": path, "writtenBytes": len(encoded)},
-            audit_output={"path": path, "writtenBytes": len(encoded)},
+            output=output,
+            audit_output=output,
         )
+
+    def edit_text(
+        self,
+        path: str,
+        old_text: str,
+        new_text: str,
+        *,
+        replace_all: bool,
+    ) -> ToolHandlerResult:
+        target = self._resolve(path, write=True)
+        if not target.is_file():
+            raise WorkspaceRuntimeError("workspace_file_missing", "Workspace file was not found.")
+        before = target.read_bytes()
+        if len(before) > self.max_file_bytes or b"\x00" in before:
+            raise WorkspaceRuntimeError("workspace_file_binary", "The workspace file is not editable text.")
+        try:
+            content = before.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise WorkspaceRuntimeError("workspace_file_encoding", "Workspace text files must use UTF-8.") from exc
+        occurrences = content.count(old_text)
+        if occurrences == 0:
+            raise WorkspaceRuntimeError("workspace_edit_not_found", "The requested text was not found.")
+        if occurrences > 1 and not replace_all:
+            raise WorkspaceRuntimeError(
+                "workspace_edit_ambiguous",
+                "The requested text occurs more than once; provide more context or enable replace_all.",
+            )
+        updated = content.replace(old_text, new_text, -1 if replace_all else 1)
+        return self.write_text(path, updated, overwrite=True)
 
 
 class SrtSandboxRunner:
@@ -545,10 +927,15 @@ class SrtSandboxRunner:
                 "Linux Anthropic Sandbox Runtime is not available.",
             )
         workspace_root = self.workspace.root.resolve()
+        allowed_roots = [path.resolve() for path in self.workspace.allowed_roots]
         denied_read = [
             str(path)
             for path in (Path.home().resolve(), Path.cwd().resolve())
             if path != workspace_root
+            and not any(
+                WorkspaceContext._inside(allowed, path)
+                for allowed in allowed_roots
+            )
         ]
         denied_read.extend(["/etc/knowflow-ai", "/proc"])
         settings = {
@@ -556,11 +943,12 @@ class SrtSandboxRunner:
                 "denyRead": [
                     str(path) for path in denied_read
                 ],
-                "allowRead": [str(self.workspace.root)],
-                "allowWrite": [str(self.workspace.root)],
+                "allowRead": [str(path) for path in allowed_roots],
+                "allowWrite": [str(path) for path in allowed_roots],
                 "denyWrite": [
-                    str(self.workspace.root / ".git"),
-                    str(self.workspace.root / ".env"),
+                    denied
+                    for path in allowed_roots
+                    for denied in (str(path / ".git"), str(path / ".env"))
                 ],
             },
             "network": {
@@ -836,6 +1224,29 @@ def register_workspace_tools(
         search_hint="write or update local project files",
     )
     registered.append("write_workspace_file")
+    registry.register(
+        name="edit_workspace_file",
+        description=(
+            "Replace one exact UTF-8 text fragment in an existing workspace "
+            "file. Prefer this over rewriting the whole file."
+        ),
+        arguments_model=EditWorkspaceFileArguments,
+        handler=lambda args: workspace.edit_text(
+            args.path,
+            args.old_text,
+            args.new_text,
+            replace_all=args.replace_all,
+        ),
+        read_only=False,
+        risk="write",
+        destructive=False,
+        concurrency_safe=False,
+        interrupt_behavior="block",
+        engine_names={"langgraph"},
+        trace_kind="workspace",
+        search_hint="make a precise edit to an existing local text file",
+    )
+    registered.append("edit_workspace_file")
     if sandbox is not None and sandbox.available():
         registry.register(
             name="run_sandbox_command",

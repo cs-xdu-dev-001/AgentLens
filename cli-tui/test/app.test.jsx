@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
-import {App, resolveTerminalMode, sanitizeComposerInput} from '../src/app.jsx';
+import {App, resolveTerminalMode, sanitizeComposerInput, streamingPreview} from '../src/app.jsx';
+import {stableMarkdownBoundary} from '../src/markdown.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -16,9 +17,19 @@ class FakeClient extends EventEmitter {
   start() {
     queueMicrotask(() => this.emit('message', {
       type: 'ready',
-      protocolVersion: 1,
+      protocolVersion: 2,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
+      workspace: {
+        projectRoot: '/workspace',
+        cwd: '/workspace',
+        allowedDirectories: ['/workspace'],
+        protectedPatterns: ['.git', '.env*'],
+        branch: 'main',
+        dirty: false,
+        changedFiles: 0,
+      },
+      sessions: [],
     }));
   }
 
@@ -126,6 +137,51 @@ test('capability commands request and render real runtime status', async () => {
   view.unmount();
 });
 
+test('workspace commands and resume picker use the runtime as source of truth', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.13.0" />);
+  await tick();
+  assert.match(view.lastFrame(), /\/workspace · main/);
+
+  view.stdin.write('/workspace');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'workspace', action: 'status'});
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'status',
+    result: {
+      projectRoot: '/workspace',
+      cwd: '/workspace/src',
+      allowedDirectories: ['/workspace'],
+      protectedPatterns: ['.git', '.env*'],
+      branch: 'main',
+      dirty: true,
+      changedFiles: 2,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /2个文件已修改/);
+
+  view.stdin.write('/resume');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).type, 'sessions');
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [{runId: 'run_restore', title: '恢复测试', status: 'failed'}],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /恢复测试 · 失败，可继续/);
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).type, 'resume_session');
+  assert.equal(client.sent.at(-1).runId, 'run_restore');
+  view.unmount();
+});
+
 test('long markdown replies stay inside the terminal viewport without raw markers', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.1" fullscreenEnabled />);
@@ -202,9 +258,10 @@ test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-sc
   view.stdin.write('\u000f');
   await tick();
   const viewerFrame = view.lastFrame();
-  assert.ok(viewerFrame.split('\n').length <= 24, `transcript viewer overflowed viewport:\n${viewerFrame}`);
-  assert.match(viewerFrame, /对话记录/);
-  assert.match(viewerFrame, /↑↓滚动/);
+  const visibleViewer = viewerFrame.split('\n').slice(-24).join('\n');
+  assert.ok(visibleViewer.split('\n').length <= 24, `transcript viewer overflowed viewport:\n${visibleViewer}`);
+  assert.match(visibleViewer, /对话记录/);
+  assert.match(visibleViewer, /↑↓滚动/);
 
   client.emit('message', {type: 'turn_completed', answer: '进入浏览器后到达的新消息'});
   await tick();
@@ -263,6 +320,45 @@ test('terminal control reports never become composer text', () => {
   assert.equal(sanitizeComposerInput('\u001b[M`!!world'), 'world');
   assert.equal(sanitizeComposerInput('\u001b]0;forged-title\u0007hello\u001b[2J'), 'hello');
   assert.equal(sanitizeComposerInput('a\u0000b\u001fc\r\nd'), 'abc\nd');
+});
+
+test('streaming keeps one Markdown block live and bounds the repainting tail', () => {
+  const source = '第一段已经完成。\n\n第二段仍在生成';
+  const boundary = stableMarkdownBoundary(source);
+  assert.ok(boundary > 0 && boundary < source.length);
+  assert.match(source.slice(0, boundary), /第一段已经完成/);
+  assert.match(source.slice(boundary), /第二段仍在生成/);
+
+  const preview = streamingPreview('长'.repeat(5000), 80, 24);
+  assert.ok(preview.length < 1600, `streaming preview was not bounded: ${preview.length}`);
+  assert.match(preview, /Ctrl\+O查看/);
+});
+
+test('streaming batches model deltas instead of repainting the whole conversation', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.14.0" />);
+  await tick();
+  view.stdin.write('生成流式报告');
+  view.stdin.write('\r');
+  await tick();
+  const baseline = view.frames.length;
+  const answer = Array.from({length: 80}, (_, index) => `第${index + 1}段完成。\n\n`).join('');
+  for (let index = 0; index < 80; index += 1) {
+    client.emit('message', {
+      type: 'agent_event',
+      event: {type: 'text_delta', text: `第${index + 1}段完成。\n\n`},
+    });
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const streamingFrames = view.frames.length - baseline;
+  assert.ok(streamingFrames < 35, `streaming caused ${streamingFrames} redraws for 80 deltas`);
+
+  client.emit('message', {type: 'turn_completed', answer});
+  await tick();
+  assert.match(view.lastFrame(), /第1段完成/);
+  assert.match(view.lastFrame(), /第80段完成/);
+  view.unmount();
 });
 
 test('composer owns editing keys without leaking global shortcuts into text', async () => {

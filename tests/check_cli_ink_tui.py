@@ -62,6 +62,42 @@ class FakeBackend:
             "memory": {"configured": False, "enabled": False},
         }
 
+    def workspace_status(self):
+        return {
+            "projectRoot": "/workspace",
+            "cwd": "/workspace",
+            "allowedDirectories": ["/workspace"],
+            "protectedPatterns": [".git", ".env*"],
+            "branch": "main",
+            "dirty": False,
+            "changedFiles": 0,
+        }
+
+    def workspace_diff(self, path=None):
+        return {"files": [], "patch": ""}
+
+    def workspace_add_directory(self, path):
+        return {**self.workspace_status(), "message": f"Added {path}"}
+
+    def workspace_change_directory(self, path):
+        return {**self.workspace_status(), "cwd": path}
+
+    def workspace_undo(self):
+        return {"path": "file.txt", "workspace": self.workspace_status()}
+
+    def list_sessions(self, limit=20):
+        return [{"runId": "run_ink", "title": "测试会话", "status": "completed"}]
+
+    def restore_session(self, run_id, event_sink):
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": run_id,
+                "restored": True,
+                "messages": [{"role": "user", "content": "旧问题"}],
+            }
+        )
+
 
 class ApprovalBackend(FakeBackend):
     def __init__(self) -> None:
@@ -126,6 +162,15 @@ def main() -> None:
     ready_bridge.run()
     ready = json.loads(ready_output.getvalue().splitlines()[0])
     assert ready["protocolVersion"] == PROTOCOL_VERSION
+    assert ready["workspace"]["branch"] == "main"
+    assert ready["sessions"][0]["runId"] == "run_ink"
+
+    ready_bridge.handle({"type": "workspace", "action": "status"})
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace"
+    ready_bridge.handle({"type": "sessions", "limit": 10})
+    session_rows = wait_for(ready_output, "session_list")
+    assert session_rows[-1]["sessions"][0]["title"] == "测试会话"
 
     approval_output = StringIO()
     approval_backend = ApprovalBackend()

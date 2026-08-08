@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.services.agent_loop import ToolRegistry
 from knowflow.services.workspace_runtime import (
     SrtSandboxRunner,
+    WorkspaceContext,
     WorkspaceRuntime,
     WorkspaceRuntimeError,
     register_workspace_tools,
@@ -155,6 +156,7 @@ def main() -> None:
             "list_workspace",
             "read_workspace_file",
             "write_workspace_file",
+            "edit_workspace_file",
             "run_sandbox_command",
         )
         assert registry.definition("read_workspace_file").read_only is True
@@ -163,6 +165,7 @@ def main() -> None:
         assert registry.definition("write_workspace_file").risk == "write"
         assert registry.definition("run_sandbox_command").risk == "execute"
         assert registry.definition("write_workspace_file").destructive is False
+        assert registry.definition("edit_workspace_file").requires_approval is True
         assert registry.definition("run_sandbox_command").destructive is True
         assert registry.definition("run_sandbox_command").interrupt_behavior == "cancel"
 
@@ -208,6 +211,63 @@ def main() -> None:
         )
         assert unsupported.available() is False
         assert unsupported.diagnostics(smoke=False)[0]["ready"] is False
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        project = root / "project"
+        extra = root / "notes"
+        project.mkdir()
+        extra.mkdir()
+        context = WorkspaceContext(project, state_root=root / "state")
+        workspace = WorkspaceRuntime(
+            project,
+            user_id=1,
+            isolated_namespace=False,
+            manage_root_permissions=False,
+            context=context,
+        )
+        context.begin_turn("run_workspace")
+        workspace.write_text("report.md", "old\n", overwrite=False)
+        edited = workspace.edit_text(
+            "report.md",
+            "old",
+            "new",
+            replace_all=False,
+        )
+        assert edited.output["addedLines"] == 1
+        diff = context.diff()
+        assert diff["files"] == [{"path": "report.md", "added": 1, "removed": 0}]
+        assert "+new" in diff["patch"]
+        assert context.undo_last()["path"] == "report.md"
+        assert (project / "report.md").read_text(encoding="utf-8") == "old\n"
+        (project / "report.md").write_text("user change\n", encoding="utf-8")
+        expect_error("workspace_undo_conflict", context.undo_last)
+        added = context.add_directory(str(extra))
+        assert str(extra) in added["allowedDirectories"]
+        protected = extra / ".git"
+        protected.mkdir()
+        (protected / "config").write_text("secret", encoding="utf-8")
+        protected_link = project / "linked-git-config"
+        try:
+            protected_link.symlink_to(protected / "config")
+        except OSError:
+            pass
+        else:
+            expect_error(
+                "workspace_path_denied",
+                lambda: workspace.read_text("linked-git-config"),
+            )
+        context.change_directory(str(extra))
+        workspace.write_text("note.md", "ok\n", overwrite=False)
+        assert (extra / "note.md").is_file()
+        oversized = extra / "oversized.txt"
+        oversized.write_bytes(b"x" * (workspace.max_file_bytes + 1))
+        expect_error(
+            "workspace_file_too_large",
+            lambda: workspace.write_text("oversized.txt", "small", overwrite=True),
+        )
+        assert context.status()["projectRoot"] == str(project)
+        assert context.status()["cwd"] == str(extra)
 
     print("workspace tools enforce user isolation and sandbox-only shell execution")
 

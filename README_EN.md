@@ -53,6 +53,8 @@ With Node.js 22+ installed on Linux, `knowflow chat` starts a React/Ink interfac
 
 The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, prompt history, queued tasks, streaming Markdown answers, approvals, and in-place tool progress. Type `/`, navigate with the arrow keys, accept with Tab or →, and dismiss with Esc. `Shift+Tab` cycles Ask, Auto edit, and Full access; `/permissions` opens the inline picker and `Ctrl+R` recalls history. The default main-screen mode delegates scrollback, wheel navigation, text selection, and copy to the terminal; `Ctrl+O` opens the full transcript and `Ctrl+E` expands tool details. Run `KNOWFLOW_CLI_FULLSCREEN=1 knowflow chat` for a fixed-composer fullscreen mode with `PgUp/PgDn` scrolling. To capture the wheel there, also set `KNOWFLOW_CLI_MOUSE=1`; some terminals then require Shift-drag for native selection. Shell progress shows recent output, elapsed time, lines, and bytes. `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary. The advanced Allow/Ask/Deny rule editor remains available through the Textual fallback during migration.
 
+A workspace is more than the current directory. The project root is the task boundary; `/cd` changes only the tool execution directory, while `/add-dir` explicitly grants another directory for the current session. The header and `/workspace` show cwd, Git branch, dirty state, and allowed directories. Structured file edits keep before-change snapshots: `/diff` shows the current turn and `/undo` reverts only when the file has not changed again. Sessions are stored with LangGraph checkpoints. Use `/resume` to select one, `/continue` to proceed from a failed checkpoint, or `/retry tool` and `/retry turn` to choose the retry scope.
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # The Ink interface requires v22+
@@ -110,7 +112,7 @@ knowflow memory list
 
 Type `/tools`, `/mcp`, `/skills`, or `/memory` in the TUI to inspect real runtime status. `/tool:*`, `/skill:*`, and `/mcp:*` commands are discovered at runtime. Secret-bearing setup remains in hidden-input CLI commands so keys do not enter TUI transcripts or shell history.
 
-Public settings live in `~/.config/knowflow/config.json`; the mode-600 `credentials.json` stores model, Tavily, MCP, and Mem0 secrets. LangGraph checkpoints, Skills, Mem0 data, and TUI prompt history live under `~/.local/share/knowflow`. The current directory is the default workspace.
+Public settings live in `~/.config/knowflow/config.json`; the mode-600 `credentials.json` stores model, Tavily, MCP, and Mem0 secrets. LangGraph checkpoints, session records, workspace snapshots, Skills, Mem0 data, and TUI prompt history live under `~/.local/share/knowflow`. The directory where the command starts is the default project root.
 
 Connecting to an existing KnowFlow Web deployment is optional:
 
