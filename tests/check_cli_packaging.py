@@ -22,7 +22,7 @@ assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.10.5"
+assert project["version"] == "0.11.0"
 package_data = configuration["tool"]["setuptools"]["package-data"]["knowflow"]
 assert "ink_tui/*.mjs" in package_data
 assert "ink_tui/*.txt" in package_data
@@ -53,6 +53,9 @@ for required in {
 }:
     assert required in local_dependencies
 
+agent_dependencies = set(project["optional-dependencies"]["agent"])
+assert agent_dependencies == {"mcp==1.28.1", "mem0ai==2.0.14"}
+
 probe = subprocess.run(
     [
         sys.executable,
@@ -73,6 +76,7 @@ assert probe.returncode == 0, probe.stderr or probe.stdout
 
 installer = (ROOT / "install.sh").read_text(encoding="utf-8")
 assert 'run_pipx install --force "$PACKAGE_SPEC"' in installer
+assert "knowflow-ai[agent] @ git+" in installer
 assert "KNOWFLOW_CLI_SPEC" in installer
 assert '"pipx==1.16.1"' in installer
 assert "sudo" not in installer
@@ -81,6 +85,7 @@ assert "Node.js 22+" in installer
 cli_source = (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
 assert 'def update() -> None:' in cli_source
 assert '[*pipx, "install", "--force", package_spec]' in cli_source
+assert "knowflow-ai[agent] @ git+" in cli_source
 assert 'os.getenv("KNOWFLOW_CLI_SPEC", "").strip()' in cli_source
 
 workflow = (ROOT / ".github/workflows/release-cli.yml").read_text(

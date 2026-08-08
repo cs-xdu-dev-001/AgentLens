@@ -222,6 +222,42 @@ function Transcript({items}) {
   );
 }
 
+function capabilityText(section, status) {
+  const value = status && typeof status === 'object' ? status : {};
+  if (section === 'tools') {
+    const web = value.webSearch ?? {};
+    return [
+      '工具状态',
+      `web_search  ${web.configured ? (web.enabled ? '已启用' : '已停用') : '未配置'}`,
+      web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：knowflow tools configure web-search',
+    ].join('\n');
+  }
+  if (section === 'mcp') {
+    const mcp = value.mcp ?? {};
+    const servers = Array.isArray(mcp.servers) ? mcp.servers : [];
+    return [
+      `MCP  ${mcp.connected ?? 0}/${mcp.count ?? servers.length}已连接`,
+      ...servers.map(item => `${item.status === 'connected' ? '✓' : '·'} ${item.name}  ${item.status}  ${(item.enabledTools ?? []).length}个工具`),
+      servers.length ? '管理：knowflow mcp list' : '添加：knowflow mcp add <名称> <URL> --auth oauth',
+    ].join('\n');
+  }
+  if (section === 'skills') {
+    const skills = value.skills ?? {};
+    const items = Array.isArray(skills.items) ? skills.items : [];
+    return [
+      `Skills  ${skills.count ?? items.length}个可用`,
+      ...items.map(item => `✓ ${item.name ?? item.slug}  ${item.version ?? ''}  [${item.sourceKind ?? 'local'}]`),
+      '安装：knowflow skills install <目录或SKILL.md>',
+    ].join('\n');
+  }
+  const memory = value.memory ?? {};
+  return [
+    '长期记忆（Mem0）',
+    `状态  ${memory.configured ? (memory.enabled ? '已启用' : '已配置但停用') : '未配置'}`,
+    memory.configured ? '管理：knowflow memory list|enable|disable' : '配置：knowflow memory configure',
+  ].join('\n');
+}
+
 function MouseWheelCapture({targetRef, onWheel}) {
   useOnWheel(targetRef, onWheel);
   return null;
@@ -398,7 +434,31 @@ export function App({
           }
         } else if (event.type === 'model_retry') {
           setPhase('模型请求重试');
+        } else if (event.type === 'memory_started') {
+          setActivities(value => activityFromEvent(value, {
+            ...event,
+            type: 'tool_started',
+            toolCallId: `memory:${event.runId ?? 'current'}`,
+            toolName: '长期记忆整理',
+          }));
+          setPhase('整理长期记忆');
+        } else if (event.type === 'memory_result') {
+          setActivities(value => activityFromEvent(value, {
+            ...event,
+            type: 'tool_result',
+            toolCallId: `memory:${event.runId ?? 'current'}`,
+            toolName: '长期记忆整理',
+            output: event.status === 'success' ? `写入${event.count ?? 0}条` : undefined,
+          }));
         }
+        return;
+      }
+      if (message.type === 'capability_status') {
+        appendItem('assistant', capabilityText(message.section, message.status));
+        return;
+      }
+      if (message.type === 'capability_failed') {
+        appendItem('error', message.message ?? '读取能力状态失败。');
         return;
       }
       if (message.type === 'turn_completed') {
@@ -553,6 +613,19 @@ export function App({
     } else if (command.value === '/permissions') {
       setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
       setPermissionPicker(true);
+    } else if (['/tools', '/mcp', '/skills', '/memory'].includes(command.value)) {
+      client.send({type: 'capabilities', section: command.value.slice(1)});
+      setPhase(`读取${command.value.slice(1)}状态`);
+    } else if (command.value === '/tools:configure') {
+      appendItem('assistant', '在另一个终端运行：knowflow tools configure web-search\nKey会隐藏输入并写入独立credentials.json。');
+    } else if (command.value === '/mcp:add') {
+      appendItem('assistant', '添加OAuth MCP：knowflow mcp add <名称> <URL> --auth oauth\n添加后按提示运行knowflow mcp oauth <ID>。');
+    } else if (command.value === '/mcp:oauth') {
+      appendItem('assistant', '运行：knowflow mcp oauth <ID>\nCLI会打开浏览器并在本机回环地址接收OAuth回调。');
+    } else if (command.value === '/skills:install') {
+      appendItem('assistant', '运行：knowflow skills install <目录或SKILL.md>');
+    } else if (command.value === '/memory:configure') {
+      appendItem('assistant', '运行：knowflow memory configure\n配置完成后运行knowflow memory enable。');
     } else if (command.value === '/doctor') {
       client.send({type: 'doctor'});
       setPhase('检查SRT沙箱');
@@ -563,7 +636,7 @@ export function App({
       else appendItem('error', '没有可重试的问题。');
     } else {
       appendItem('assistant', [
-        '常用命令：/new /model /permissions /doctor /tasks /retry /exit',
+        '常用命令：/new /model /permissions /tools /mcp /skills /memory /doctor /tasks /retry /exit',
         '快捷键：Shift+Tab切换权限，Ctrl+O查看记录，Ctrl+E展开工具，Ctrl+C取消，Ctrl+D退出',
         '输入/后使用↑↓选择，Tab或→补全，Esc关闭。',
       ].join('\n'));

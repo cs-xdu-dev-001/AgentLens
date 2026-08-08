@@ -202,6 +202,25 @@ class InkRuntimeBridge:
                 self.send({"type": "session_reset"})
         elif message_type == "catalog":
             self.send({"type": "command_catalog", "commands": self.backend.command_catalog()})
+        elif message_type == "capabilities":
+            try:
+                status = self.backend.capability_status()
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "capability_failed",
+                        "section": str(message.get("section") or ""),
+                        "message": self._public_error(exc),
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "capability_status",
+                        "section": str(message.get("section") or ""),
+                        "status": _public_value(status, max_chars=20_000),
+                    }
+                )
         elif message_type == "doctor":
             Thread(target=self._doctor, daemon=True).start()
         elif message_type == "shutdown":

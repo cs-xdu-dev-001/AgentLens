@@ -15,6 +15,11 @@ from ..services.langgraph_plan_executor import (
     PlanStepOutcome,
 )
 from ..services.agent_loop import ToolRegistry
+from ..services.agent_tooling import (
+    McpToolConfigurationError,
+    register_mcp_tools,
+    register_web_search_tool,
+)
 from ..services.agent_failure import classify_agent_failure
 from ..services.agent_trace import (
     AgentTraceRecorder,
@@ -29,7 +34,7 @@ from ..services.mcp_client import (
     McpClientError,
     McpRunSessionPool,
 )
-from ..services.web_search import TavilyWebSearch, WebSearchArguments
+from ..services.web_search import TavilyWebSearch
 from ..services.task_planner import (
     parse_execution_mode,
     register_task_planner,
@@ -45,10 +50,6 @@ router = APIRouter()
 plan_executor = LangGraphPlanExecutor()
 
 EXTENSION_TAGS = ["Extensions"]
-
-
-class McpToolConfigurationError(RuntimeError):
-    code = "mcp_tool_configuration_invalid"
 
 
 class AgentRunCancelled(RuntimeError):
@@ -100,17 +101,6 @@ def make_web_search_provider(api_key: str) -> TavilyWebSearch:
         timeout=WEB_SEARCH_TIMEOUT,
         max_results=WEB_SEARCH_MAX_RESULTS,
     )
-
-
-def tool_risk(tool: dict[str, Any]) -> str:
-    annotations = tool.get("annotations") or {}
-    if annotations.get("destructiveHint") is True:
-        return "destructive"
-    if annotations.get("readOnlyHint") is True:
-        return "read"
-    if annotations.get("readOnlyHint") is False:
-        return "write"
-    return "unknown"
 
 
 def _safe_public_value(value: Any) -> Any:
@@ -282,26 +272,12 @@ def build_tool_registry(
         )
     if config:
         provider = make_web_search_provider(config["api_key"])
-
-        def run_web_search(args: WebSearchArguments):
-            _raise_if_cancelled(cancel_event)
-            result = provider.search(args.query, args.top_k)
-            _raise_if_cancelled(cancel_event)
-            return {"results": result}
-
-        registry.register(
-            name="web_search",
-            description=(
-                "Search the public web for current or external information "
-                "and return source URLs."
+        register_web_search_tool(
+            registry,
+            provider=provider,
+            cancel_check=(
+                cancel_event.is_set if cancel_event is not None else None
             ),
-            arguments_model=WebSearchArguments,
-            handler=run_web_search,
-            read_only=True,
-            engine_names={"langgraph"},
-            concurrency_safe=True,
-            interrupt_behavior="cancel",
-            search_hint="current public web sources",
         )
         registered_names.add("web_search")
     if not enable_tools or mcp_pool is None:
@@ -331,70 +307,22 @@ def build_tool_registry(
                     ),
                 }
             )
-    if len(enabled_tools) > MCP_MAX_EXPOSED_TOOLS:
-        raise McpToolConfigurationError(
-            "Too many MCP tools are enabled."
-        )
-
-    for tool in enabled_tools:
-        name = str(tool.get("modelName") or "")
-        remote_name = str(tool.get("remoteName") or "")
-        input_schema = tool.get("inputSchema")
-        if (
-            not name
-            or not remote_name
-            or not isinstance(input_schema, dict)
-            or name in registered_names
-        ):
-            raise McpToolConfigurationError(
-                "The MCP tool snapshot is invalid."
-            )
-        read_only = (
-            (tool.get("annotations") or {}).get("readOnlyHint")
-            is True
-            and (tool.get("annotations") or {}).get(
-                "destructiveHint"
-            )
-            is not True
-        )
-        destructive = (
-            (tool.get("annotations") or {}).get("destructiveHint")
-            is True
-        )
-        registry.register(
-            name=name,
-            description=str(tool.get("description") or "")[:1000],
-            input_schema=input_schema,
-            handler=lambda args, item=tool, safe_read=read_only: (
-                call_mcp_tool(
-                    pool=mcp_pool,
-                    oauth=mcp_oauth,
-                    user_id=user_id,
-                    server_id=int(item["serverId"]),
-                    remote_name=str(item["remoteName"]),
-                    arguments=args,
-                    read_only=safe_read,
-                    cancel_event=cancel_event,
-                )
-            ),
-            read_only=read_only,
-            destructive=destructive,
-            # McpRunSessionPool owns a thread-affine event loop today.
-            # Keep MCP calls serial until the pool becomes async-native.
-            concurrency_safe=False,
-            interrupt_behavior="cancel" if read_only else "block",
-            engine_names={"langgraph"},
-            trace_kind="mcp",
-            risk=tool_risk(tool),
-            server_name=str(tool["serverName"]),
-            search_hint=(
-                f"{tool['serverName']} {remote_name}"
-            ),
-            should_defer=True,
-        )
-        registered_names.add(name)
-    registry.enable_tool_search(
-        threshold=AGENT_TOOL_SEARCH_THRESHOLD,
+    register_mcp_tools(
+        registry,
+        tools=enabled_tools,
+        max_tools=MCP_MAX_EXPOSED_TOOLS,
+        registered_names=registered_names,
+        search_threshold=AGENT_TOOL_SEARCH_THRESHOLD,
+        call_tool=lambda item, args, safe_read: call_mcp_tool(
+            pool=mcp_pool,
+            oauth=mcp_oauth,
+            user_id=user_id,
+            server_id=int(item["serverId"]),
+            remote_name=str(item["remoteName"]),
+            arguments=args,
+            read_only=safe_read,
+            cancel_event=cancel_event,
+        ),
     )
     return registry
 

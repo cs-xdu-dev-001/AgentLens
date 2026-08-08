@@ -86,7 +86,31 @@ knowflow run "检查测试并修复失败" --yes
 knowflow update
 ```
 
-本地配置位于`~/.config/knowflow`；LangGraph checkpoint和权限为600的TUI输入历史位于`~/.local/share/knowflow`。可用`/history clear`删除输入历史。默认工作区是启动命令时的当前目录。
+本地CLI与Web端共用Agent工具装配逻辑。联网搜索、MCP、Skills和Mem0都由本地配置启用，不需要KnowFlow账号：
+
+```bash
+# Tavily联网搜索
+knowflow tools configure web-search
+knowflow tools list
+
+# 公共HTTPS MCP；Notion使用 https://mcp.notion.com/mcp
+knowflow mcp add notion https://mcp.notion.com/mcp --auth oauth
+knowflow mcp oauth <上一步显示的ID>
+knowflow mcp list
+
+# 安装本地Skill
+knowflow skills install ./my-skill
+knowflow skills list
+
+# 可选：Mem0长期记忆
+knowflow memory configure
+knowflow memory enable
+knowflow memory list
+```
+
+TUI输入`/tools`、`/mcp`、`/skills`或`/memory`可查看真实状态；`/tool:*`、`/skill:*`、`/mcp:*`来自运行时动态发现。涉及Key的配置仍通过隐藏输入的CLI命令完成，避免密钥出现在TUI记录或终端历史中。
+
+本地公开配置位于`~/.config/knowflow/config.json`，模型Key、Tavily Key、MCP凭据和Mem0 Key位于权限为600的`credentials.json`；LangGraph checkpoint、Skills、Mem0数据和TUI输入历史位于`~/.local/share/knowflow`。默认工作区是启动命令时的当前目录。
 
 连接已有KnowFlow Web服务是可选模式：
 

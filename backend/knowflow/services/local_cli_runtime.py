@@ -12,12 +12,19 @@ import requests
 
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
+from .agent_tooling import register_mcp_tools, register_web_search_tool
 from .agent_trace import sanitize_trace_value
 from .langgraph_agent_engine import (
     AgentRunCancelledError,
     LangGraphAgentEngine,
 )
 from .model_gateway import ModelGateway
+from .local_cli_extensions import LocalExtensionStore
+from .mcp_client import McpRunSessionPool
+from .mcp_config import MCP_MAX_EXPOSED_TOOLS
+from .mcp_oauth import McpOAuthCoordinator
+from .skill_runtime import SkillActivationSession
+from .web_search import TavilyWebSearch
 from .workspace_runtime import (
     SrtSandboxRunner,
     WorkspaceRuntime,
@@ -112,6 +119,27 @@ class LocalCliConfigStore:
         temporary.replace(path)
         self._chmod(path, 0o600)
 
+    def load_public(self) -> dict[str, Any]:
+        return self._read_json(self.config_path)
+
+    def load_credentials(self) -> dict[str, Any]:
+        return self._read_json(self.credentials_path)
+
+    def update_public(self, update: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
+        value = self.load_public()
+        update(value)
+        self._write_json(self.config_path, value)
+        return value
+
+    def update_credentials(
+        self,
+        update: Callable[[dict[str, Any]], None],
+    ) -> dict[str, Any]:
+        value = self.load_credentials()
+        update(value)
+        self._write_json(self.credentials_path, value)
+        return value
+
     def load(self) -> dict[str, Any]:
         public = self._read_json(self.config_path)
         credentials = self._read_json(self.credentials_path)
@@ -153,19 +181,21 @@ class LocalCliConfigStore:
                 "api_key": api_key,
             }
         )
-        self._write_json(
-            self.config_path,
-            {
-                "provider": config["provider"],
-                "base_url": config["base_url"],
-                "model_name": config["model_name"],
-                "api_mode": config["api_mode"],
-            },
-        )
-        self._write_json(
-            self.credentials_path,
-            {"api_key": config["api_key"]},
-        )
+        def update_public(value: dict[str, Any]) -> None:
+            value.update(
+                {
+                    "provider": config["provider"],
+                    "base_url": config["base_url"],
+                    "model_name": config["model_name"],
+                    "api_mode": config["api_mode"],
+                }
+            )
+
+        def update_credentials(value: dict[str, Any]) -> None:
+            value["api_key"] = config["api_key"]
+
+        self.update_public(update_public)
+        self.update_credentials(update_credentials)
 
 
 def validate_local_config(value: dict[str, Any]) -> dict[str, str]:
@@ -271,6 +301,10 @@ class LocalAgentRuntime:
         if os.name != "nt":
             self.data_root.chmod(0o700)
         self.gateway = _gateway()
+        self.extensions = LocalExtensionStore(
+            self.config_store,
+            self.data_root,
+        )
         self.engine = LangGraphAgentEngine(
             gateway=self.gateway,
             max_tool_rounds=local_cli_max_tool_rounds(),
@@ -312,6 +346,7 @@ class LocalAgentRuntime:
         tools: bool,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        mcp_pool: McpRunSessionPool | None = None,
     ) -> ToolRegistry:
         registry = ToolRegistry()
         if not tools:
@@ -325,6 +360,71 @@ class LocalAgentRuntime:
             progress_callback=progress_callback,
             cancel_check=cancel_check,
         )
+        web = self.extensions.web_search()
+        if web["enabled"] and web["configured"]:
+            provider = TavilyWebSearch(
+                api_key=str(web["api_key"]),
+                post_json=lambda url, headers, payload, timeout: requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout,
+                ),
+                timeout=20,
+                max_results=10,
+            )
+            register_web_search_tool(
+                registry,
+                provider=provider,
+                cancel_check=cancel_check,
+            )
+        if mcp_pool is not None:
+            enabled_tools: list[dict[str, Any]] = []
+            for server in self.extensions.list_mcp():
+                if not server["enabled"] or server["status"] != "connected":
+                    continue
+                selected = set(server.get("enabledTools") or [])
+                for item in server.get("tools") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("modelName") or "") not in selected:
+                        continue
+                    enabled_tools.append(
+                        {
+                            **item,
+                            "serverId": server["id"],
+                            "serverName": server["name"],
+                        }
+                    )
+            oauth = McpOAuthCoordinator(
+                configs=self.extensions,
+                base_url="http://127.0.0.1",
+                allow_private=False,
+            )
+
+            def call_local_mcp(item: dict[str, Any], args: dict[str, Any], _safe_read: bool):
+                server_id = str(item["serverId"])
+                remote_name = str(item.get("remoteName") or item.get("name"))
+                try:
+                    return mcp_pool.call_tool(server_id, remote_name, args)
+                except Exception as exc:
+                    marker = f"{getattr(exc, 'code', '')} {exc}".lower()
+                    if "401" not in marker and "unauthorized" not in marker:
+                        raise
+                    oauth.ensure_access_token(
+                        LOCAL_USER_ID,
+                        server_id,
+                        force_refresh=True,
+                    )
+                    mcp_pool.invalidate(server_id)
+                    return mcp_pool.call_tool(server_id, remote_name, args)
+
+            register_mcp_tools(
+                registry,
+                tools=enabled_tools[:MCP_MAX_EXPOSED_TOOLS],
+                max_tools=MCP_MAX_EXPOSED_TOOLS,
+                call_tool=call_local_mcp,
+            )
         return registry
 
     def sandbox_diagnostics(self, *, smoke: bool = True) -> list[dict[str, Any]]:
@@ -332,7 +432,23 @@ class LocalAgentRuntime:
 
     def tool_schemas(self) -> list[dict[str, Any]]:
         """Return the public tool catalog used by local interactive clients."""
-        return self._registry(tools=True).schemas(engine_name="langgraph")
+        with self._mcp_pool() as pool:
+            registry = self._registry(tools=True, mcp_pool=pool)
+            return registry.schemas(engine_name="langgraph")
+
+    def capability_status(self) -> dict[str, Any]:
+        return self.extensions.capability_status()
+
+    def _mcp_pool(self) -> McpRunSessionPool:
+        return McpRunSessionPool(
+            server_loader=lambda server_id: self.extensions.secret(
+                LOCAL_USER_ID,
+                server_id,
+            ),
+            allow_private=False,
+            connect_timeout=10,
+            request_timeout=30,
+        )
 
     @staticmethod
     def _system_message(workspace_root: Path) -> dict[str, str]:
@@ -362,6 +478,14 @@ class LocalAgentRuntime:
             messages.append(self._system_message(self.workspace_root))
         if task:
             messages.append({"role": "user", "content": task})
+        memory_task = task or next(
+            (
+                str(message.get("content") or "")
+                for message in reversed(messages)
+                if message.get("role") == "user"
+            ),
+            "",
+        )
         events: list[dict[str, Any]] = []
         cancel_event = Event()
         with self._cancel_lock:
@@ -472,25 +596,67 @@ class LocalAgentRuntime:
                 }
             )
 
+        memory_provider = self.extensions.memory_provider()
         emit({"type": "run_started", "runId": identifier})
         try:
-            result = self.engine.run(
-                user_id=LOCAL_USER_ID,
-                run_id=identifier,
-                messages=messages,
-                config=config,
-                registry=self._registry(
+            with self._mcp_pool() as mcp_pool:
+                registry = self._registry(
                     tools=tools,
                     progress_callback=tool_progress_event,
                     cancel_check=cancel_event.is_set,
-                ),
-                execution_callback=tool_event,
-                model_event_callback=model_event,
-                tool_event_callback=tool_lifecycle_event,
-                cancel_check=cancel_event.is_set,
-                resume_from_checkpoint=approval_decision is not None,
-                approval_decision=approval_decision,
-            )
+                    mcp_pool=mcp_pool,
+                )
+                available_skill_dependencies = set(registry.names())
+                available_skill_dependencies.update(
+                    str(server.get("slug") or "")
+                    for server in self.extensions.list_mcp()
+                    if server.get("enabled")
+                    and server.get("status") == "connected"
+                    and server.get("slug")
+                )
+                activation = SkillActivationSession(
+                    store=self.extensions,
+                    user_id=LOCAL_USER_ID,
+                    available_tools=available_skill_dependencies,
+                )
+                catalog = activation.catalog() if tools else []
+                if catalog:
+                    activation.register_activation_tool(registry)
+                    if approval_decision is None:
+                        messages[0]["content"] += (
+                            "\nAvailable Skills (activate at most one with activate_skill): "
+                            + json.dumps(catalog, ensure_ascii=False)
+                        )
+
+                def restore_skill(snapshot: dict[str, Any]) -> None:
+                    activation.restore(snapshot)
+                    activation.register_read_resource(registry)
+                    registry.unregister("activate_skill")
+
+                result = self.engine.run(
+                    user_id=LOCAL_USER_ID,
+                    run_id=identifier,
+                    messages=messages,
+                    config=config,
+                    registry=registry,
+                    execution_callback=tool_event,
+                    model_event_callback=model_event,
+                    tool_event_callback=tool_lifecycle_event,
+                    cancel_check=cancel_event.is_set,
+                    resume_from_checkpoint=approval_decision is not None,
+                    approval_decision=approval_decision,
+                    skill_restore=restore_skill,
+                    memory_enabled=memory_provider is not None,
+                    memory_recall=(
+                        lambda: memory_provider.search(
+                            user_id=LOCAL_USER_ID,
+                            query=memory_task,
+                            limit=5,
+                        )
+                        if memory_provider is not None
+                        else None
+                    ),
+                )
         except AgentRunCancelledError:
             emit(
                 {
@@ -535,6 +701,41 @@ class LocalAgentRuntime:
                 }
             )
         else:
+            if memory_provider is not None and memory_task and result.answer:
+                emit(
+                    {
+                        "type": "memory_started",
+                        "runId": identifier,
+                        "status": "running",
+                    }
+                )
+                try:
+                    remembered = memory_provider.remember(
+                        user_id=LOCAL_USER_ID,
+                        messages=[
+                            {"role": "user", "content": memory_task},
+                            {"role": "assistant", "content": result.answer},
+                        ],
+                        metadata={"session_id": identifier},
+                    )
+                except Exception as exc:
+                    emit(
+                        {
+                            "type": "memory_result",
+                            "runId": identifier,
+                            "status": "failed",
+                            "errorCode": type(exc).__name__,
+                        }
+                    )
+                else:
+                    emit(
+                        {
+                            "type": "memory_result",
+                            "runId": identifier,
+                            "status": "success",
+                            "count": len(remembered),
+                        }
+                    )
             emit({"type": "done", "runId": identifier})
         return AgentExecution(
             result={

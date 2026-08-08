@@ -86,7 +86,31 @@ knowflow run "Run the tests and fix failures" --yes
 knowflow update
 ```
 
-Local configuration lives under `~/.config/knowflow`. LangGraph checkpoints and the mode-600 TUI prompt history live under `~/.local/share/knowflow`; `/history clear` removes that history. The current directory is the default workspace.
+The local CLI and Web app now share the Agent tool-assembly layer. Web search, MCP, Skills, and Mem0 are enabled from local configuration and do not require a KnowFlow account:
+
+```bash
+# Tavily web search
+knowflow tools configure web-search
+knowflow tools list
+
+# Public HTTPS MCP; Notion uses https://mcp.notion.com/mcp
+knowflow mcp add notion https://mcp.notion.com/mcp --auth oauth
+knowflow mcp oauth <ID printed by the previous command>
+knowflow mcp list
+
+# Install a local Skill
+knowflow skills install ./my-skill
+knowflow skills list
+
+# Optional Mem0 long-term memory
+knowflow memory configure
+knowflow memory enable
+knowflow memory list
+```
+
+Type `/tools`, `/mcp`, `/skills`, or `/memory` in the TUI to inspect real runtime status. `/tool:*`, `/skill:*`, and `/mcp:*` commands are discovered at runtime. Secret-bearing setup remains in hidden-input CLI commands so keys do not enter TUI transcripts or shell history.
+
+Public settings live in `~/.config/knowflow/config.json`; the mode-600 `credentials.json` stores model, Tavily, MCP, and Mem0 secrets. LangGraph checkpoints, Skills, Mem0 data, and TUI prompt history live under `~/.local/share/knowflow`. The current directory is the default workspace.
 
 Connecting to an existing KnowFlow Web deployment is optional:
 

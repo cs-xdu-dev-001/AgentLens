@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-PACKAGE_SPEC="${KNOWFLOW_CLI_SPEC:-git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend}"
+PACKAGE_SPEC="${KNOWFLOW_CLI_SPEC:-knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend}"
 
 fail() {
   printf 'KnowFlow CLI安装失败：%s\n' "$1" >&2
@@ -50,7 +50,7 @@ run_pipx() {
 }
 
 case "$PACKAGE_SPEC" in
-  git+*)
+  *git+*)
     command -v git >/dev/null 2>&1 || fail "GitHub版本安装需要git。"
     ;;
 esac

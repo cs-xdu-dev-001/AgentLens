@@ -55,7 +55,7 @@ error_console = Console(stderr=True)
 profile_store = RemoteProfileStore()
 
 DEFAULT_CLI_PACKAGE_SPEC = (
-    "git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+    "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
 )
 
 
@@ -1181,16 +1181,70 @@ def list_tools(
             else []
         )
     else:
-        from .routers.extensions import build_tool_registry
-
-        resolved_user = _resolve_user_id(user_id)
-        registry = build_tool_registry(resolved_user, True)
-        names = list(registry.names())
+        if user_id is not None:
+            raise typer.BadParameter("本地模式不支持--user-id。")
+        names = [
+            str((schema.get("function") or {}).get("name") or "")
+            for schema in _local_agent().tool_schemas()
+        ]
     table = Table(title="可用工具")
     table.add_column("名称")
     for name in names:
         table.add_row(str(name))
     console.print(table)
+
+
+@tools_app.command("configure")
+def configure_tool(
+    tool: str = typer.Argument("web-search"),
+    api_key: str | None = typer.Option(None, "--api-key"),
+    skip_test: bool = typer.Option(False, "--skip-test"),
+) -> None:
+    """配置本地Agent工具。当前支持web-search。"""
+    normalized = tool.strip().lower().replace("_", "-")
+    if normalized != "web-search":
+        raise typer.BadParameter("当前仅支持web-search。")
+    from .services.web_search import TavilyWebSearch
+
+    agent = _local_agent()
+    resolved_key = api_key or typer.prompt(
+        "Tavily Key",
+        hide_input=True,
+        confirmation_prompt=False,
+    )
+    if not skip_test:
+        provider = TavilyWebSearch(
+            api_key=resolved_key,
+            post_json=lambda url, headers, payload, timeout: __import__("requests").post(
+                url, headers=headers, json=payload, timeout=timeout
+            ),
+            timeout=20,
+            max_results=3,
+        )
+        try:
+            with console.status("正在验证Tavily连接..."):
+                provider.search("KnowFlow AI", 1)
+        except Exception as exc:
+            error_console.print(f"[red]配置失败：{type(exc).__name__}[/red]")
+            raise typer.Exit(1) from exc
+    agent.extensions.save_web_search(api_key=resolved_key, enabled=True)
+    console.print("[green]web_search已启用。[/green]")
+
+
+@tools_app.command("enable")
+def enable_tool(tool: str = typer.Argument("web-search")) -> None:
+    if tool.strip().lower().replace("_", "-") != "web-search":
+        raise typer.BadParameter("当前仅支持web-search。")
+    _local_agent().extensions.set_web_search_enabled(True)
+    console.print("web_search已启用。")
+
+
+@tools_app.command("disable")
+def disable_tool(tool: str = typer.Argument("web-search")) -> None:
+    if tool.strip().lower().replace("_", "-") != "web-search":
+        raise typer.BadParameter("当前仅支持web-search。")
+    _local_agent().extensions.set_web_search_enabled(False)
+    console.print("web_search已停用。")
 
 
 @models_app.command("list")
@@ -1260,8 +1314,9 @@ def list_skills(
         data = remote.request("GET", "/api/skills/")
         rows = data if isinstance(data, list) else []
     else:
-        runtime = _runtime()
-        rows = runtime.skills.list_for_user(_resolve_user_id(user_id))
+        if user_id is not None:
+            raise typer.BadParameter("本地模式不支持--user-id。")
+        rows = _local_agent().extensions.list_skills()
     table = Table(title="Skills")
     table.add_column("名称")
     table.add_column("版本")
@@ -1273,6 +1328,24 @@ def list_skills(
             "启用" if row.get("enabled") else "停用",
         )
     console.print(table)
+
+
+@skills_app.command("install")
+def install_skill(source: Path = typer.Argument(..., exists=True)) -> None:
+    """从本地目录或SKILL.md安装Skill。"""
+    try:
+        item = _local_agent().extensions.install_skill(source)
+    except Exception as exc:
+        error_console.print(f"[red]安装失败：{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]已安装Skill：{item['slug']}[/green]")
+
+
+@skills_app.command("remove")
+def remove_skill(slug: str = typer.Argument(...)) -> None:
+    if not _local_agent().extensions.remove_skill(slug):
+        raise typer.BadParameter("Skill不存在或属于内置Skill。")
+    console.print(f"已移除Skill：{slug}")
 
 
 @mcp_app.command("list")
@@ -1290,8 +1363,9 @@ def list_mcp(
         data = remote.request("GET", "/api/mcp/servers")
         rows = data if isinstance(data, list) else []
     else:
-        runtime = _runtime()
-        rows = runtime.mcp_configs.list_for_user(_resolve_user_id(user_id))
+        if user_id is not None:
+            raise typer.BadParameter("本地模式不支持--user-id。")
+        rows = _local_agent().extensions.list_mcp()
     table = Table(title="MCP服务器")
     table.add_column("名称")
     table.add_column("连接")
@@ -1303,6 +1377,134 @@ def list_mcp(
             str(row.get("status") or ""),
         )
     console.print(table)
+
+
+@mcp_app.command("add")
+def add_mcp(
+    name: str = typer.Argument(...),
+    url: str = typer.Argument(...),
+    auth: str = typer.Option("none", "--auth"),
+    bearer_token: str | None = typer.Option(None, "--bearer-token"),
+) -> None:
+    """添加本地MCP服务器。认证支持none、headers、oauth。"""
+    normalized = auth.strip().lower()
+    headers: dict[str, str] = {}
+    if normalized == "headers":
+        token = bearer_token or typer.prompt(
+            "Bearer Token",
+            hide_input=True,
+            confirmation_prompt=False,
+        )
+        headers["Authorization"] = f"Bearer {token.strip()}"
+    try:
+        item = _local_agent().extensions.add_mcp(
+            name=name,
+            url=url,
+            auth_type=normalized,
+            headers=headers,
+        )
+    except Exception as exc:
+        error_console.print(f"[red]添加失败：{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"已添加MCP：{item['name']}（ID {item['id']}）")
+    if normalized == "oauth":
+        console.print(f"下一步：knowflow mcp oauth {item['id']}")
+    else:
+        console.print(f"下一步：knowflow mcp connect {item['id']}")
+
+
+@mcp_app.command("connect")
+def connect_mcp(server_id: str = typer.Argument(...)) -> None:
+    """连接MCP并发现工具，默认启用发现到的全部工具。"""
+    agent = _local_agent()
+    try:
+        with console.status("正在连接MCP并发现工具..."):
+            item = agent.extensions.discover_mcp(server_id)
+    except Exception as exc:
+        error_console.print(f"[red]连接失败：{type(exc).__name__}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]{item['name']}已连接，共{len(item.get('tools') or [])}个工具。[/green]"
+    )
+
+
+@mcp_app.command("remove")
+def remove_mcp(server_id: str = typer.Argument(...)) -> None:
+    if not _local_agent().extensions.remove_mcp(server_id):
+        raise typer.BadParameter("MCP服务器不存在。")
+    console.print("MCP服务器已移除。")
+
+
+@mcp_app.command("oauth")
+def oauth_mcp(server_id: str = typer.Argument(...)) -> None:
+    """在本机浏览器完成MCP OAuth授权，然后自动发现工具。"""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from queue import Queue
+    from urllib.parse import parse_qs, urlsplit
+
+    from .services.mcp_oauth import McpOAuthCoordinator
+
+    agent = _local_agent()
+    store = agent.extensions
+    server = store.get_owned(1, server_id)
+    if server is None:
+        raise typer.BadParameter("MCP服务器不存在。")
+    callback_values: Queue[dict[str, str]] = Queue(maxsize=1)
+
+    class CallbackHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlsplit(self.path)
+            values = parse_qs(parsed.query)
+            callback_values.put(
+                {
+                    "state": str((values.get("state") or [""])[0]),
+                    "code": str((values.get("code") or [""])[0]),
+                    "error": str((values.get("error") or [""])[0]),
+                }
+            )
+            body = "KnowFlow MCP授权已完成，可以关闭此页面。".encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: Any) -> None:
+            return
+
+    callback_server = ThreadingHTTPServer(("127.0.0.1", 0), CallbackHandler)
+    callback_server.timeout = 300
+    port = int(callback_server.server_address[1])
+    coordinator = McpOAuthCoordinator(
+        configs=store,
+        base_url=f"http://127.0.0.1:{port}",
+        allow_private=False,
+    )
+    try:
+        started = coordinator.start_authorization(1, server_id, "/")
+        console.print("正在打开浏览器完成MCP授权...")
+        if not webbrowser.open(started["authorizationUrl"]):
+            console.print(started["authorizationUrl"])
+        callback_server.handle_request()
+        if callback_values.empty():
+            raise RuntimeError("等待OAuth回调超时。")
+        callback = callback_values.get_nowait()
+        coordinator.complete_authorization(
+            1,
+            callback["state"],
+            callback["code"] or None,
+            callback["error"] or None,
+        )
+        with console.status("授权成功，正在发现MCP工具..."):
+            item = store.discover_mcp(server_id)
+    except Exception as exc:
+        error_console.print(f"[red]OAuth失败：{type(exc).__name__}[/red]")
+        raise typer.Exit(1) from exc
+    finally:
+        callback_server.server_close()
+    console.print(
+        f"[green]{item['name']}已授权，共{len(item.get('tools') or [])}个工具。[/green]"
+    )
 
 
 @memory_app.command("list")
@@ -1323,8 +1525,10 @@ def list_memory(
         )
         rows = data if isinstance(data, list) else []
     else:
-        runtime = _runtime()
-        rows = runtime.memory_manager.list(_resolve_user_id(user_id), limit)
+        if user_id is not None:
+            raise typer.BadParameter("本地模式不支持--user-id。")
+        provider = _local_agent().extensions.memory_provider()
+        rows = provider.list(user_id=1, limit=limit) if provider else []
     table = Table(title="长期记忆")
     table.add_column("内容")
     table.add_column("更新时间")
@@ -1334,6 +1538,77 @@ def list_memory(
             str(row.get("updatedAt") or row.get("createdAt") or ""),
         )
     console.print(table)
+
+
+@memory_app.command("configure")
+def configure_memory(
+    llm_base_url: str | None = typer.Option(None, "--llm-base-url"),
+    llm_model: str | None = typer.Option(None, "--llm-model"),
+    llm_api_key: str | None = typer.Option(None, "--llm-api-key"),
+    embedder_base_url: str | None = typer.Option(None, "--embedder-base-url"),
+    embedder_model: str | None = typer.Option(None, "--embedder-model"),
+    embedder_api_key: str | None = typer.Option(None, "--embedder-api-key"),
+    embedding_dims: int = typer.Option(1536, "--embedding-dims", min=1, max=65536),
+) -> None:
+    """配置本地Mem0。Key保存在独立credentials.json。"""
+    agent = _local_agent()
+    model_config = agent.config_store.load()
+    resolved_llm_base = llm_base_url or typer.prompt(
+        "记忆LLM API地址",
+        default=model_config.get("base_url") or "https://api.openai.com/v1",
+    )
+    resolved_llm_model = llm_model or typer.prompt(
+        "记忆LLM模型",
+        default=model_config.get("model_name") or "gpt-4.1-mini",
+    )
+    resolved_llm_key = llm_api_key or typer.prompt("记忆LLM Key", hide_input=True)
+    resolved_embed_base = embedder_base_url or typer.prompt(
+        "Embedding API地址",
+        default=resolved_llm_base,
+    )
+    resolved_embed_model = embedder_model or typer.prompt(
+        "Embedding模型",
+        default="text-embedding-3-small",
+    )
+    resolved_embed_key = embedder_api_key or typer.prompt("Embedding Key", hide_input=True)
+    agent.extensions.save_memory(
+        public={
+            "enabled": False,
+            "llm_base_url": resolved_llm_base.rstrip("/"),
+            "llm_model": resolved_llm_model,
+            "embedder_base_url": resolved_embed_base.rstrip("/"),
+            "embedder_model": resolved_embed_model,
+            "embedding_dims": embedding_dims,
+        },
+        secrets={
+            "llm_api_key": resolved_llm_key,
+            "embedder_api_key": resolved_embed_key,
+        },
+    )
+    console.print("Mem0配置已保存，运行knowflow memory enable启用。")
+
+
+@memory_app.command("enable")
+def enable_memory() -> None:
+    _local_agent().extensions.set_memory_enabled(True)
+    console.print("长期记忆已启用。")
+
+
+@memory_app.command("disable")
+def disable_memory() -> None:
+    _local_agent().extensions.set_memory_enabled(False)
+    console.print("长期记忆已停用。")
+
+
+@memory_app.command("clear")
+def clear_memory(yes: bool = typer.Option(False, "--yes")) -> None:
+    provider = _local_agent().extensions.memory_provider()
+    if provider is None:
+        raise typer.BadParameter("长期记忆未启用或尚未配置。")
+    if not yes and not typer.confirm("确认删除全部本地长期记忆？"):
+        raise typer.Abort()
+    provider.delete_all(user_id=1)
+    console.print("长期记忆已清空。")
 
 
 def main() -> None:

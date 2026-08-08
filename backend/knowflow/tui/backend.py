@@ -71,6 +71,31 @@ class TuiBackend:
                             "source": "tool",
                         }
                     )
+            status = self.local_agent.capability_status()
+            for item in (status.get("skills") or {}).get("items") or []:
+                name = self._command_name(item.get("slug") or item.get("name"))
+                if name:
+                    catalog.append(
+                        {
+                            "value": f"/skill:{name}",
+                            "description": self._command_description(
+                                item.get("description"), "使用Skill"
+                            ),
+                            "source": "skill",
+                        }
+                    )
+            for item in (status.get("mcp") or {}).get("servers") or []:
+                if not item.get("enabled") or item.get("status") != "connected":
+                    continue
+                name = self._command_name(item.get("slug") or item.get("name"))
+                if name:
+                    catalog.append(
+                        {
+                            "value": f"/mcp:{name}",
+                            "description": f"使用MCP服务 {item.get('name') or name}",
+                            "source": "mcp",
+                        }
+                    )
             return catalog
 
         sources = (
@@ -104,6 +129,25 @@ class TuiBackend:
                     }
                 )
         return catalog
+
+    def capability_status(self) -> dict[str, Any]:
+        if self.remote_client is None:
+            if self.local_agent is None:
+                return {}
+            status = getattr(self.local_agent, "capability_status", None)
+            return dict(status()) if callable(status) else {}
+        result: dict[str, Any] = {}
+        for key, path in (
+            ("tools", "/api/agent/tools"),
+            ("skills", "/api/skills/"),
+            ("mcp", "/api/mcp/servers"),
+            ("memory", "/api/memory/settings"),
+        ):
+            try:
+                result[key] = self.remote_client.request("GET", path, params={})
+            except Exception:
+                result[key] = None
+        return result
 
     def cancel(self, run_id: str | None) -> bool:
         if self.remote_client is None:

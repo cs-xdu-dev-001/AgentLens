@@ -107,6 +107,25 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
   view.unmount();
 });
 
+test('capability commands request and render real runtime status', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.11.0" />);
+  await tick();
+  view.stdin.write('/tools');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'capabilities', section: 'tools'});
+  client.emit('message', {
+    type: 'capability_status',
+    section: 'tools',
+    status: {webSearch: {configured: true, enabled: true}},
+  });
+  await tick();
+  assert.match(view.lastFrame(), /web_search\s+已启用/);
+  view.unmount();
+});
+
 test('long markdown replies stay inside the terminal viewport without raw markers', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.1" fullscreenEnabled />);

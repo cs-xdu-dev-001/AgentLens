@@ -54,6 +54,14 @@ class FakeBackend:
     def sandbox_diagnostics(self):
         return [{"name": "sandbox_smoke", "ready": True, "detail": "ok"}]
 
+    def capability_status(self):
+        return {
+            "webSearch": {"configured": True, "enabled": True},
+            "mcp": {"count": 0, "connected": 0, "servers": []},
+            "skills": {"count": 1, "items": [{"slug": "research"}]},
+            "memory": {"configured": False, "enabled": False},
+        }
+
 
 class ApprovalBackend(FakeBackend):
     def __init__(self) -> None:
@@ -138,6 +146,9 @@ def main() -> None:
     bridge.handle({"type": "doctor"})
     rows = wait_for(output, "doctor_result")
     assert rows[-1]["checks"][0]["ready"] is True
+    bridge.handle({"type": "capabilities", "section": "tools"})
+    rows = wait_for(output, "capability_status")
+    assert rows[-1]["status"]["webSearch"]["enabled"] is True
     bridge.handle({"type": "reset"})
     assert backend.reset_count == 1
 
