@@ -4,6 +4,7 @@ import {marked} from 'marked';
 import {sanitizeTerminalText} from './protocol.js';
 
 const ACCENT = '#d97757';
+const PRIMARY = '#e5e7eb';
 const MUTED = '#8b8b8b';
 
 function plainText(token) {
@@ -16,7 +17,7 @@ function plainText(token) {
 
 function Inline({tokens = []}) {
   return (
-    <Text wrap="wrap">
+    <Text color={PRIMARY} wrap="wrap">
       {tokens.map((token, index) => {
         const key = `${token.type}-${index}`;
         if (token.type === 'strong') return <Text key={key} bold><Inline tokens={token.tokens} /></Text>;
@@ -37,7 +38,7 @@ function Blocks({tokens = [], compact = false}) {
     const key = `${token.type}-${index}`;
     if (token.type === 'space') return null;
     if (token.type === 'heading') {
-      return <Box key={key} marginTop={compact ? 0 : 1}><Text color={ACCENT} bold><Inline tokens={token.tokens} /></Text></Box>;
+      return <Box key={key} marginTop={compact ? 0 : 1}><Text color={PRIMARY} bold><Inline tokens={token.tokens} /></Text></Box>;
     }
     if (token.type === 'paragraph' || token.type === 'text') {
       return <Box key={key} marginBottom={compact ? 0 : 1}><Inline tokens={token.tokens ?? [{type: 'text', text: token.text}]} /></Box>;
@@ -45,7 +46,7 @@ function Blocks({tokens = [], compact = false}) {
     if (token.type === 'code') {
       return (
         <Box key={key} marginBottom={compact ? 0 : 1} paddingLeft={1} borderStyle="single" borderLeft borderRight={false} borderTop={false} borderBottom={false} borderColor={MUTED}>
-          <Text>{token.text}</Text>
+          <Text color={PRIMARY}>{token.text}</Text>
         </Box>
       );
     }
@@ -61,7 +62,7 @@ function Blocks({tokens = [], compact = false}) {
         <Box key={key} flexDirection="column" marginBottom={compact ? 0 : 1}>
           {token.items.map((item, itemIndex) => (
             <Box key={`${key}-${itemIndex}`}>
-              <Text color={ACCENT}>{token.ordered ? `${Number(token.start ?? 1) + itemIndex}. ` : '• '}</Text>
+              <Text color={MUTED}>{token.ordered ? `${Number(token.start ?? 1) + itemIndex}. ` : '• '}</Text>
               <Box flexDirection="column" flexGrow={1}>
                 <Blocks tokens={item.tokens} compact />
               </Box>
@@ -74,12 +75,12 @@ function Blocks({tokens = [], compact = false}) {
       const rows = [token.header, ...token.rows];
       return (
         <Box key={key} flexDirection="column" marginBottom={compact ? 0 : 1}>
-          {rows.map((row, rowIndex) => <Text key={`${key}-${rowIndex}`}>{row.map(plainText).join(' │ ')}</Text>)}
+          {rows.map((row, rowIndex) => <Text color={PRIMARY} key={`${key}-${rowIndex}`}>{row.map(plainText).join(' │ ')}</Text>)}
         </Box>
       );
     }
     if (token.type === 'hr') return <Text key={key} color={MUTED}>────────────────</Text>;
-    return <Text key={key}>{plainText(token)}</Text>;
+    return <Text color={PRIMARY} key={key}>{plainText(token)}</Text>;
   });
 }
 

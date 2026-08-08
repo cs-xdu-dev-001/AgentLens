@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
-import {App} from '../src/app.jsx';
+import {App, sanitizeComposerInput} from '../src/app.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -125,5 +125,43 @@ test('long markdown replies stay inside the terminal viewport without raw marker
   assert.doesNotMatch(frame, /\*\*状态正常\*\*/);
   assert.doesNotMatch(frame, /example\.com/);
   assert.match(frame, /检查项80/);
+  assert.match(frame, /输入任务/);
+  assert.match(frame, /询问/);
+
+  view.stdin.write('\u001b[<64;5;5M');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /\[<64;5;5M/);
+
+  view.stdin.write('\u000f');
+  await tick();
+  assert.match(view.lastFrame(), /对话记录/);
+  assert.doesNotMatch(view.lastFrame(), /输入任务/);
+  view.stdin.write('\u000f');
+  await tick();
+  assert.match(view.lastFrame(), /输入任务/);
+  view.unmount();
+});
+
+test('terminal control reports never become composer text', () => {
+  assert.equal(sanitizeComposerInput('\u001b[<64;12;8Mhello\u001b[<65;12;8M'), 'hello');
+  assert.equal(sanitizeComposerInput('\u001b[M`!!world'), 'world');
+  assert.equal(sanitizeComposerInput('\u001b]0;forged-title\u0007hello\u001b[2J'), 'hello');
+  assert.equal(sanitizeComposerInput('a\u0000b\u001fc\r\nd'), 'abc\nd');
+});
+
+test('composer owns editing keys without leaking global shortcuts into text', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.10.2" />);
+  await tick();
+  view.stdin.write('ab');
+  view.stdin.write('\u001b[D');
+  view.stdin.write('X');
+  view.stdin.write('\u000f');
+  await tick();
+  assert.match(view.lastFrame(), /对话记录/);
+  view.stdin.write('\u000f');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).text, 'aXb');
   view.unmount();
 });

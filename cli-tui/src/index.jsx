@@ -1,5 +1,6 @@
 import React from 'react';
 import {render} from 'ink';
+import {MouseProvider} from '@ink-tools/ink-mouse';
 import {App} from './app.jsx';
 import {RuntimeClient} from './protocol.js';
 
@@ -23,7 +24,9 @@ const version = process.env.KNOWFLOW_CLI_VERSION || 'development';
 const client = new RuntimeClient({python, config});
 
 const instance = render(
-  <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} />,
+  <MouseProvider>
+    <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} mouseEnabled />
+  </MouseProvider>,
   {exitOnCtrlC: false, alternateScreen: true},
 );
 

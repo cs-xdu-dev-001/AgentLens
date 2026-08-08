@@ -1,7 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
+import {useOnWheel} from '@ink-tools/ink-mouse';
 import {ScrollView} from 'ink-scroll-view';
-import TextInput from 'ink-text-input';
+import stripAnsi from 'strip-ansi';
 import {
   commandSuggestions,
   dynamicCommandTask,
@@ -12,11 +13,22 @@ import {PROTOCOL_VERSION, redact} from './protocol.js';
 import {MarkdownText} from './markdown.jsx';
 
 const ACCENT = '#d97757';
+const PRIMARY = '#e5e7eb';
 const MUTED = '#8b8b8b';
 const SUCCESS = '#6fba82';
 const WARNING = '#d9a441';
 const ERROR = '#d96b6b';
 const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽'];
+const SGR_MOUSE_INPUT = /(?:\u001b)?\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
+const X10_MOUSE_INPUT = /(?:\u001b)?\[M[\x20-\x7f]{3}/g;
+const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+export function sanitizeComposerInput(value) {
+  const withoutMouse = String(value ?? '').replace(SGR_MOUSE_INPUT, '').replace(X10_MOUSE_INPUT, '');
+  return stripAnsi(withoutMouse)
+    .replace(/\r\n?/g, '\n')
+    .replace(UNSAFE_CONTROL_INPUT, '');
+}
 
 const PERMISSION_MODES = [
   {id: 'ask', label: '询问', detail: '写入和命令执行前确认'},
@@ -92,7 +104,7 @@ function ActivityView({activities, expanded, running}) {
           <Box key={row.id} flexDirection="column">
             <Box>
               <Text color={state.color}>{state.symbol} </Text>
-              <Text bold={row.status === 'running'}>{row.name}</Text>
+              <Text color={PRIMARY} bold={row.status === 'running'}>{row.name}</Text>
               <Text color={MUTED}>{metrics ? `  ${metrics}` : ''}</Text>
             </Box>
             {expanded && (row.arguments || row.output || row.errorCode) ? (
@@ -120,7 +132,7 @@ function CommandMenu({suggestions, selected}) {
         const source = command.source === 'builtin' ? '' : ` [${command.source}]`;
         return (
           <Box key={`${command.source}:${command.value}`}>
-            <Text color={active ? ACCENT : undefined} bold={active}>{active ? '❯ ' : '  '}{command.value}</Text>
+            <Text color={active ? ACCENT : PRIMARY} bold={active}>{active ? '❯ ' : '  '}{command.value}</Text>
             <Text color={MUTED}>  {command.description}{source}</Text>
           </Box>
         );
@@ -136,7 +148,7 @@ function PermissionPicker({selected}) {
       <Text bold>权限模式</Text>
       {PERMISSION_MODES.map((mode, index) => (
         <Box key={mode.id}>
-          <Text color={index === selected ? ACCENT : undefined} bold={index === selected}>
+          <Text color={index === selected ? ACCENT : PRIMARY} bold={index === selected}>
             {index === selected ? '❯ ' : '  '}{mode.label}
           </Text>
           <Text color={MUTED}>  {mode.detail}</Text>
@@ -153,7 +165,7 @@ function ApprovalPrompt({approval, selected}) {
     <Box flexDirection="column" marginY={1} paddingLeft={1}>
       <Text color={WARNING} bold>需要确认：{approval.toolName ?? '工具调用'}</Text>
       <Text color={MUTED}>风险 {approval.risk ?? 'unknown'}{approval.destructive ? ' · 可能产生破坏性修改' : ''}</Text>
-      {approval.inputSummary ? <Text>{safeJson(approval.inputSummary, 700)}</Text> : null}
+      {approval.inputSummary ? <Text color={PRIMARY}>{safeJson(approval.inputSummary, 700)}</Text> : null}
       <Box marginTop={1}>
         {options.map((option, index) => (
           <Text key={option} color={index === selected ? ACCENT : MUTED} bold={index === selected}>
@@ -173,7 +185,7 @@ function Welcome({version, model}) {
         <Text color={ACCENT} bold>KnowFlow</Text>
         <Text color={MUTED}> v{version}</Text>
       </Box>
-      <Text>{model || '正在连接模型'} <Text color={MUTED}>· {process.cwd()}</Text></Text>
+      <Text color={PRIMARY}>{model || '正在连接模型'} <Text color={MUTED}>· {process.cwd()}</Text></Text>
       <Text color={MUTED}>输入任务，/查看命令</Text>
     </Box>
   );
@@ -190,7 +202,7 @@ function Transcript({items}) {
           ) : item.role === 'assistant' ? (
             <MarkdownText>{item.content}</MarkdownText>
           ) : (
-            <Text wrap="wrap">{item.content}</Text>
+            <Text color={PRIMARY} wrap="wrap">{item.content}</Text>
           )}
         </Box>
       ))}
@@ -198,16 +210,38 @@ function Transcript({items}) {
   );
 }
 
-export function App({client, version = 'development', assumeYes = false}) {
+function MouseWheelCapture({targetRef, onWheel}) {
+  useOnWheel(targetRef, onWheel);
+  return null;
+}
+
+function ComposerInput({value, cursorOffset, placeholder}) {
+  if (!value) return <Text color={MUTED}>{placeholder}</Text>;
+  const cursor = Math.max(0, Math.min(value.length, cursorOffset));
+  const before = value.slice(0, cursor);
+  const current = value[cursor] ?? ' ';
+  const after = value.slice(cursor + (cursor < value.length ? 1 : 0));
+  return (
+    <Text color={PRIMARY} wrap="wrap">
+      {before}<Text inverse>{current}</Text>{after}
+    </Text>
+  );
+}
+
+export function App({client, version = 'development', assumeYes = false, mouseEnabled = false}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
   const scrollRef = useRef(null);
+  const viewportRef = useRef(null);
   const scrollPinnedRef = useRef(true);
   const [ready, setReady] = useState(false);
   const [model, setModel] = useState('');
   const [commands, setCommands] = useState(() => mergeCommands());
   const [usage, setUsage] = useState({});
   const [input, setInput] = useState('');
+  const inputRef = useRef('');
+  const [cursorOffset, setCursorOffset] = useState(0);
+  const cursorOffsetRef = useRef(0);
   const [dismissedInput, setDismissedInput] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [transcript, setTranscript] = useState([]);
@@ -216,6 +250,8 @@ export function App({client, version = 'development', assumeYes = false}) {
   const [activities, setActivities] = useState(new Map());
   const activitiesRef = useRef(activities);
   const [expanded, setExpanded] = useState(false);
+  const [transcriptMode, setTranscriptMode] = useState(false);
+  const transcriptModeRef = useRef(false);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState('正在启动');
   const [approval, setApproval] = useState(null);
@@ -228,6 +264,7 @@ export function App({client, version = 'development', assumeYes = false}) {
   const [lastQuestion, setLastQuestion] = useState('');
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyDraftRef = useRef('');
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
   const spinner = useSpinner(running && !approval);
@@ -252,6 +289,39 @@ export function App({client, version = 'development', assumeYes = false}) {
     });
     return () => clearImmediate(immediate);
   }, [activities, assistantDraft, expanded, transcript]);
+
+  const scrollConversation = useCallback(delta => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const current = scroller.getScrollOffset();
+    const bottom = scroller.getBottomOffset();
+    const next = Math.max(0, Math.min(bottom, current + delta));
+    scroller.scrollTo(next);
+    scrollPinnedRef.current = next >= bottom;
+  }, []);
+
+  const scrollPage = useCallback(direction => {
+    const height = Math.max(1, scrollRef.current?.getViewportHeight() ?? 1);
+    scrollConversation(direction * Math.max(1, Math.floor(height / 2)));
+  }, [scrollConversation]);
+
+  const handleWheel = useCallback(event => {
+    if (event.button === 'wheel-up') scrollConversation(-3);
+    else if (event.button === 'wheel-down') scrollConversation(3);
+  }, [scrollConversation]);
+
+  const toggleTranscriptMode = useCallback(() => {
+    const next = !transcriptModeRef.current;
+    transcriptModeRef.current = next;
+    setTranscriptMode(next);
+    scrollRef.current?.scrollToBottom();
+    scrollPinnedRef.current = true;
+  }, []);
+
+  const closeTranscriptMode = useCallback(() => {
+    transcriptModeRef.current = false;
+    setTranscriptMode(false);
+  }, []);
 
   const appendItem = useCallback((role, content) => {
     const text = String(content ?? '').trim();
@@ -400,6 +470,16 @@ export function App({client, version = 'development', assumeYes = false}) {
 
   useEffect(() => setSelectedSuggestion(0), [input]);
 
+  const updateComposer = useCallback((value, cursor = String(value ?? '').length) => {
+    const next = String(value ?? '');
+    const nextCursor = Math.max(0, Math.min(next.length, cursor));
+    inputRef.current = next;
+    cursorOffsetRef.current = nextCursor;
+    setInput(next);
+    setCursorOffset(nextCursor);
+    if (next !== dismissedInput) setDismissedInput('');
+  }, [dismissedInput]);
+
   const startTurn = useCallback(text => {
     if (!ready) {
       appendItem('error', '运行时尚未准备好。');
@@ -466,7 +546,7 @@ export function App({client, version = 'development', assumeYes = false}) {
     } else {
       appendItem('assistant', [
         '常用命令：/new /model /permissions /doctor /tasks /retry /exit',
-        '快捷键：Shift+Tab切换权限，Ctrl+O展开工具，Ctrl+C取消，Ctrl+D退出',
+        '快捷键：Shift+Tab切换权限，Ctrl+O查看记录，Ctrl+E展开工具，Ctrl+C取消，Ctrl+D退出',
         '输入/后使用↑↓选择，Tab或→补全，Esc关闭。',
       ].join('\n'));
     }
@@ -475,9 +555,10 @@ export function App({client, version = 'development', assumeYes = false}) {
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
     if (!suggestion) return;
-    setInput(`${suggestion.value} `);
-    setDismissedInput(`${suggestion.value} `);
-  }, [selectedSuggestion, suggestions]);
+    const next = `${suggestion.value} `;
+    updateComposer(next);
+    setDismissedInput(next);
+  }, [selectedSuggestion, suggestions, updateComposer]);
 
   const submitComposer = useCallback(value => {
     const selected = suggestions[selectedSuggestion];
@@ -485,10 +566,11 @@ export function App({client, version = 'development', assumeYes = false}) {
       acceptSuggestion();
       return;
     }
-    setInput('');
+    updateComposer('', 0);
     setDismissedInput('');
+    historyDraftRef.current = '';
     executeInput(value);
-  }, [acceptSuggestion, executeInput, selectedSuggestion, suggestions]);
+  }, [acceptSuggestion, executeInput, selectedSuggestion, suggestions, updateComposer]);
 
   useInput((character, key) => {
     if (approval) {
@@ -511,23 +593,43 @@ export function App({client, version = 'development', assumeYes = false}) {
     }
     if (key.ctrl && character === 'c') {
       if (running) client.send({type: 'cancel'});
-      else if (input) setInput('');
+      else if (inputRef.current) updateComposer('', 0);
       else exit();
       return;
     }
-    if (key.ctrl && character === 'd' && !running && !input) {
+    if (key.ctrl && character === 'd' && !running && !inputRef.current) {
       client.close();
       exit();
       return;
     }
     if (key.ctrl && character === 'o') {
+      toggleTranscriptMode();
+      return;
+    }
+    if (transcriptModeRef.current) {
+      if (key.escape) closeTranscriptMode();
+      else if (key.pageUp) scrollPage(-1);
+      else if (key.pageDown) scrollPage(1);
+      else if (key.upArrow) scrollConversation(-1);
+      else if (key.downArrow) scrollConversation(1);
+      else if (key.home) {
+        scrollRef.current?.scrollToTop();
+        scrollPinnedRef.current = false;
+      } else if (key.end) {
+        scrollRef.current?.scrollToBottom();
+        scrollPinnedRef.current = true;
+      }
+      return;
+    }
+    if (key.ctrl && character === 'e') {
       setExpanded(value => !value);
       return;
     }
     if (key.ctrl && character === 'r' && history.length) {
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
+      if (historyIndex < 0) historyDraftRef.current = inputRef.current;
       setHistoryIndex(next);
-      setInput(history[next]);
+      updateComposer(history[next]);
       return;
     }
     if (key.shift && key.tab) {
@@ -536,30 +638,119 @@ export function App({client, version = 'development', assumeYes = false}) {
       return;
     }
     if (key.pageUp) {
-      const height = Math.max(1, scrollRef.current?.getViewportHeight() ?? 1);
-      scrollPinnedRef.current = false;
-      scrollRef.current?.scrollBy(-height);
+      scrollPage(-1);
       return;
     }
     if (key.pageDown) {
-      const height = Math.max(1, scrollRef.current?.getViewportHeight() ?? 1);
-      scrollRef.current?.scrollBy(height);
-      const bottom = scrollRef.current?.getBottomOffset() ?? 0;
-      const offset = scrollRef.current?.getScrollOffset() ?? 0;
-      scrollPinnedRef.current = bottom - offset <= 1;
+      scrollPage(1);
       return;
     }
     if (suggestions.length) {
-      if (key.upArrow) setSelectedSuggestion(value => (value + suggestions.length - 1) % suggestions.length);
-      else if (key.downArrow) setSelectedSuggestion(value => (value + 1) % suggestions.length);
-      else if (key.tab || key.rightArrow) acceptSuggestion();
-      else if (key.escape) setDismissedInput(input);
-      return;
+      if (key.upArrow) {
+        setSelectedSuggestion(value => (value + suggestions.length - 1) % suggestions.length);
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedSuggestion(value => (value + 1) % suggestions.length);
+        return;
+      }
+      if (key.tab || key.rightArrow) {
+        acceptSuggestion();
+        return;
+      }
+      if (key.return) {
+        submitComposer(inputRef.current);
+        return;
+      }
+      if (key.escape) {
+        setDismissedInput(input);
+        return;
+      }
     }
-    if (!input && history.length && key.upArrow) {
+    if (!inputRef.current && history.length && key.upArrow) {
+      historyDraftRef.current = inputRef.current;
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);
-      setInput(history[next]);
+      updateComposer(history[next]);
+      return;
+    }
+    if (historyIndex >= 0 && key.upArrow) {
+      const next = Math.max(0, historyIndex - 1);
+      setHistoryIndex(next);
+      updateComposer(history[next]);
+      return;
+    }
+    if (historyIndex >= 0 && key.downArrow) {
+      const next = historyIndex + 1;
+      if (next >= history.length) {
+        setHistoryIndex(-1);
+        updateComposer(historyDraftRef.current);
+      } else {
+        setHistoryIndex(next);
+        updateComposer(history[next]);
+      }
+      return;
+    }
+    if (key.return) {
+      submitComposer(inputRef.current);
+      return;
+    }
+    if (key.leftArrow) {
+      const next = Math.max(0, cursorOffsetRef.current - 1);
+      cursorOffsetRef.current = next;
+      setCursorOffset(next);
+      return;
+    }
+    if (key.rightArrow) {
+      const next = Math.min(inputRef.current.length, cursorOffsetRef.current + 1);
+      cursorOffsetRef.current = next;
+      setCursorOffset(next);
+      return;
+    }
+    if (key.home) {
+      cursorOffsetRef.current = 0;
+      setCursorOffset(0);
+      return;
+    }
+    if (key.end) {
+      cursorOffsetRef.current = inputRef.current.length;
+      setCursorOffset(inputRef.current.length);
+      return;
+    }
+    if (key.backspace) {
+      const value = inputRef.current;
+      const cursor = cursorOffsetRef.current;
+      if (cursor > 0) {
+        updateComposer(
+          value.slice(0, cursor - 1) + value.slice(cursor),
+          cursor - 1,
+        );
+      }
+      return;
+    }
+    if (key.delete) {
+      const value = inputRef.current;
+      const cursor = cursorOffsetRef.current;
+      if (cursor < value.length) {
+        updateComposer(
+          value.slice(0, cursor) + value.slice(cursor + 1),
+          cursor,
+        );
+      }
+      return;
+    }
+    if (key.ctrl || key.meta || key.tab || key.escape) return;
+    const text = sanitizeComposerInput(character);
+    if (!text) return;
+    const value = inputRef.current;
+    const cursor = cursorOffsetRef.current;
+    updateComposer(
+      value.slice(0, cursor) + text + value.slice(cursor),
+      cursor + text.length,
+    );
+    if (historyIndex >= 0) {
+      setHistoryIndex(-1);
+      historyDraftRef.current = '';
     }
   }, {
     isActive: true,
@@ -569,59 +760,67 @@ export function App({client, version = 'development', assumeYes = false}) {
   const narrow = (stdout.columns ?? 80) < 72;
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   return (
-    <Box flexDirection="column" height={frameHeight} paddingX={1}>
-      <ScrollView
-        ref={scrollRef}
-        flexGrow={1}
-        minHeight={1}
-        onScroll={offset => {
-          const bottom = scrollRef.current?.getBottomOffset() ?? 0;
-          scrollPinnedRef.current = bottom - offset <= 1;
-        }}
-        onContentHeightChange={() => {
-          if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
-        }}
-      >
-        <Box key="conversation" flexDirection="column" width="100%">
-          <Welcome version={version} model={model} />
-          <Transcript items={transcript} />
-          {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
-          {assistantDraft ? (
-            <Box marginTop={1}>
-              <MarkdownText>{assistantDraft}</MarkdownText>
+    <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
+      <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
+        {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
+        <ScrollView
+          ref={scrollRef}
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={1}
+          onScroll={offset => {
+            const bottom = scrollRef.current?.getBottomOffset() ?? 0;
+            scrollPinnedRef.current = bottom - offset <= 1;
+          }}
+          onContentHeightChange={() => {
+            if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
+          }}
+        >
+          <Box key="conversation" flexDirection="column" width="100%">
+            <Welcome version={version} model={model} />
+            <Transcript items={transcript} />
+            {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
+            {assistantDraft ? (
+              <Box marginTop={1}>
+                <MarkdownText>{assistantDraft}</MarkdownText>
+              </Box>
+            ) : null}
+          </Box>
+        </ScrollView>
+      </Box>
+      {transcriptMode ? (
+        <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
+          <Text color={PRIMARY}>对话记录</Text>
+          <Text color={MUTED}>滚轮/↑↓滚动 · PgUp/PgDn翻页 · Home/End定位 · Ctrl+O/Esc返回</Text>
+        </Box>
+      ) : (
+        <>
+          {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} /> : null}
+          <Box marginTop={1}>
+            <Text color={running ? ACCENT : MUTED}>{running && !approval ? `${spinner} ${phase}` : phase}</Text>
+            {running ? <Text color={MUTED}> · Ctrl+C取消</Text> : null}
+            {queue.length ? <Text color={MUTED}> · 队列{queue.length}</Text> : null}
+          </Box>
+          {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
+          {!permissionPicker && !approval ? <CommandMenu suggestions={suggestions} selected={selectedSuggestion} /> : null}
+          <Box flexDirection="column" marginTop={suggestions.length || permissionPicker ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+            <Box>
+              <Text color={ACCENT}>❯ </Text>
+              <ComposerInput
+                value={input}
+                cursorOffset={cursorOffset}
+                placeholder={running ? '继续输入可加入队列' : '输入任务，/查看命令'}
+              />
             </Box>
-          ) : null}
-        </Box>
-      </ScrollView>
-      {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} /> : null}
-      <Box marginTop={1}>
-        <Text color={running ? ACCENT : MUTED}>{running && !approval ? `${spinner} ${phase}` : phase}</Text>
-        {running ? <Text color={MUTED}> · Ctrl+C取消</Text> : null}
-        {queue.length ? <Text color={MUTED}> · 队列{queue.length}</Text> : null}
-      </Box>
-      <Box flexDirection="column" marginTop={1} borderStyle="single" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1}>
-        {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
-        {!permissionPicker && !approval ? <CommandMenu suggestions={suggestions} selected={selectedSuggestion} /> : null}
-        <Box>
-          <Text color={ACCENT}>❯ </Text>
-          <TextInput
-            value={input}
-            onChange={value => {
-              setInput(value);
-              if (value !== dismissedInput) setDismissedInput('');
-            }}
-            onSubmit={submitComposer}
-            placeholder={running ? '继续输入可加入队列' : '输入任务，/查看命令'}
-            focus={!approval && !permissionPicker}
-          />
-        </Box>
-      </Box>
-      <Box justifyContent="space-between">
-        <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
-          {permission.label}{narrow ? '' : ' · Shift+Tab切换'}
-        </Text>
-        {!narrow ? <Text color={MUTED}>{model || '连接中'} · PgUp/PgDn滚动 · Ctrl+O详情</Text> : null}
-      </Box>
+          </Box>
+          <Box justifyContent="space-between" flexShrink={0}>
+            <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
+              {permission.label}{narrow ? '' : ' · Shift+Tab切换'}
+            </Text>
+            {!narrow ? <Text color={MUTED}>{model || '连接中'} · Ctrl+O记录 · Ctrl+E工具详情</Text> : null}
+          </Box>
+        </>
+      )}
     </Box>
   );
 }

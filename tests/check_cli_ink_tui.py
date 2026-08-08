@@ -161,10 +161,14 @@ def main() -> None:
         encoding="utf-8"
     )
     assert "alternateScreen: true" in entry_source
+    assert "MouseProvider" in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
     assert "<ScrollView" in app_source
+    assert "useOnWheel" in app_source
+    assert "flexShrink={1}" in app_source
+    assert "对话记录" in app_source
 
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
 
