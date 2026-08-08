@@ -791,7 +791,7 @@ export function App({client, version = 'development', assumeYes = false, mouseEn
       {transcriptMode ? (
         <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
           <Text color={PRIMARY}>对话记录</Text>
-          <Text color={MUTED}>滚轮/↑↓滚动 · PgUp/PgDn翻页 · Home/End定位 · Ctrl+O/Esc返回</Text>
+          <Text color={MUTED}>{mouseEnabled ? '滚轮/↑↓滚动' : '↑↓滚动'} · PgUp/PgDn翻页 · Home/End定位 · Ctrl+O/Esc返回</Text>
         </Box>
       ) : (
         <>

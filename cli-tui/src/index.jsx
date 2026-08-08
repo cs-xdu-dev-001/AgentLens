@@ -18,14 +18,19 @@ function runtimeConfig() {
   }
 }
 
+function envEnabled(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
+}
+
 const config = runtimeConfig();
 const python = process.env.KNOWFLOW_RUNTIME_PYTHON || 'python3';
 const version = process.env.KNOWFLOW_CLI_VERSION || 'development';
+const mouseEnabled = envEnabled(process.env.KNOWFLOW_CLI_MOUSE);
 const client = new RuntimeClient({python, config});
 
 const instance = render(
-  <MouseProvider>
-    <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} mouseEnabled />
+  <MouseProvider autoEnable={mouseEnabled}>
+    <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} mouseEnabled={mouseEnabled} />
   </MouseProvider>,
   {exitOnCtrlC: false, alternateScreen: true},
 );

@@ -145,6 +145,8 @@ def main() -> None:
     assert '"ink_tui/*.mjs"' in package
     bundle = ROOT / "backend" / "knowflow" / "ink_tui" / "index.mjs"
     assert bundle.is_file() and bundle.stat().st_size > 100_000
+    bundle_source = bundle.read_text(encoding="utf-8")
+    assert "KNOWFLOW_CLI_MOUSE" in bundle_source
     node = shutil.which("node")
     if node:
         result = subprocess.run(
@@ -162,6 +164,10 @@ def main() -> None:
     )
     assert "alternateScreen: true" in entry_source
     assert "MouseProvider" in entry_source
+    assert "KNOWFLOW_CLI_MOUSE" in entry_source
+    assert "autoEnable={mouseEnabled}" in entry_source
+    assert "mouseEnabled={mouseEnabled}" in entry_source
+    assert "mouseEnabled />" not in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
