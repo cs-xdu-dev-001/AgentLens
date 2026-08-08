@@ -49,9 +49,9 @@
 
 CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
-Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。需要原生滚屏或脚本兼容时使用`knowflow chat --plain`。
+Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。脚本或管道场景使用`knowflow chat --plain`。
 
-Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史。默认不捕获鼠标，可直接拖拽选择复制；用`PgUp/PgDn`滚动对话，`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。如需滚轮捕获，可使用`KNOWFLOW_CLI_MOUSE=1 knowflow chat`，此时部分终端需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
+Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史。默认使用终端主屏scrollback，滚轮浏览和拖拽选择复制都由终端负责；`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。需要固定输入框的全屏模式时使用`KNOWFLOW_CLI_FULLSCREEN=1 knowflow chat`，该模式支持`PgUp/PgDn`滚动；如需应用捕获滚轮，同时设置`KNOWFLOW_CLI_MOUSE=1`，部分终端此时需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git

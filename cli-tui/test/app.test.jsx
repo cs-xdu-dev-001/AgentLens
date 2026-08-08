@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
-import {App, sanitizeComposerInput} from '../src/app.jsx';
+import {App, resolveTerminalMode, sanitizeComposerInput} from '../src/app.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -109,7 +109,7 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
 
 test('long markdown replies stay inside the terminal viewport without raw markers', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.10.1" />);
+  const view = render(<App client={client} version="0.10.1" fullscreenEnabled />);
   await tick();
   view.stdin.write('生成长报告');
   await tick();
@@ -139,6 +139,46 @@ test('long markdown replies stay inside the terminal viewport without raw marker
   view.stdin.write('\u000f');
   await tick();
   assert.match(view.lastFrame(), /输入任务/);
+  view.unmount();
+});
+
+test('terminal mode defaults to native scrollback and gates mouse capture behind fullscreen', () => {
+  assert.deepEqual(resolveTerminalMode({}), {
+    fullscreenEnabled: false,
+    mouseEnabled: false,
+  });
+  assert.deepEqual(resolveTerminalMode({KNOWFLOW_CLI_MOUSE: '1'}), {
+    fullscreenEnabled: false,
+    mouseEnabled: false,
+  });
+  assert.deepEqual(resolveTerminalMode({KNOWFLOW_CLI_FULLSCREEN: '1'}), {
+    fullscreenEnabled: true,
+    mouseEnabled: false,
+  });
+  assert.deepEqual(resolveTerminalMode({
+    KNOWFLOW_CLI_FULLSCREEN: '1',
+    KNOWFLOW_CLI_MOUSE: '1',
+  }), {
+    fullscreenEnabled: true,
+    mouseEnabled: true,
+  });
+});
+
+test('native scrollback mode does not clamp long output to the app viewport', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.10.5" />);
+  await tick();
+  view.stdin.write('输出长报告');
+  view.stdin.write('\r');
+  await tick();
+  const answer = Array.from({length: 40}, (_, index) => `记录行${index + 1}`).join('\n');
+  client.emit('message', {type: 'turn_completed', answer});
+  await tick();
+  const frame = view.lastFrame();
+  assert.ok(frame.split('\n').length > 24, `native scrollback was still viewport-clamped:\n${frame}`);
+  assert.match(frame, /记录行1/);
+  assert.match(frame, /记录行40/);
+  assert.match(frame, /终端滚轮浏览/);
   view.unmount();
 });
 

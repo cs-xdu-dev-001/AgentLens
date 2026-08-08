@@ -1,7 +1,7 @@
 import React from 'react';
 import {render} from 'ink';
 import {MouseProvider} from '@ink-tools/ink-mouse';
-import {App} from './app.jsx';
+import {App, resolveTerminalMode} from './app.jsx';
 import {RuntimeClient} from './protocol.js';
 
 if (process.argv.includes('--self-test')) {
@@ -18,21 +18,23 @@ function runtimeConfig() {
   }
 }
 
-function envEnabled(value) {
-  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
-}
-
 const config = runtimeConfig();
 const python = process.env.KNOWFLOW_RUNTIME_PYTHON || 'python3';
 const version = process.env.KNOWFLOW_CLI_VERSION || 'development';
-const mouseEnabled = envEnabled(process.env.KNOWFLOW_CLI_MOUSE);
+const {fullscreenEnabled, mouseEnabled} = resolveTerminalMode(process.env);
 const client = new RuntimeClient({python, config});
 
 const instance = render(
   <MouseProvider autoEnable={mouseEnabled}>
-    <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} mouseEnabled={mouseEnabled} />
+    <App
+      client={client}
+      version={version}
+      assumeYes={Boolean(config.assumeYes)}
+      fullscreenEnabled={fullscreenEnabled}
+      mouseEnabled={mouseEnabled}
+    />
   </MouseProvider>,
-  {exitOnCtrlC: false, alternateScreen: true},
+  {exitOnCtrlC: false, alternateScreen: fullscreenEnabled},
 );
 
 process.once('SIGTERM', () => {

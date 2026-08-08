@@ -23,6 +23,18 @@ const SGR_MOUSE_INPUT = /(?:\u001b)?\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const X10_MOUSE_INPUT = /(?:\u001b)?\[M[\x20-\x7f]{3}/g;
 const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
+function envEnabled(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+export function resolveTerminalMode(env = process.env) {
+  const fullscreenEnabled = envEnabled(env.KNOWFLOW_CLI_FULLSCREEN);
+  return {
+    fullscreenEnabled,
+    mouseEnabled: fullscreenEnabled && envEnabled(env.KNOWFLOW_CLI_MOUSE),
+  };
+}
+
 export function sanitizeComposerInput(value) {
   const withoutMouse = String(value ?? '').replace(SGR_MOUSE_INPUT, '').replace(X10_MOUSE_INPUT, '');
   return stripAnsi(withoutMouse)
@@ -228,7 +240,13 @@ function ComposerInput({value, cursorOffset, placeholder}) {
   );
 }
 
-export function App({client, version = 'development', assumeYes = false, mouseEnabled = false}) {
+export function App({
+  client,
+  version = 'development',
+  assumeYes = false,
+  fullscreenEnabled = false,
+  mouseEnabled = false,
+}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
   const scrollRef = useRef(null);
@@ -608,14 +626,14 @@ export function App({client, version = 'development', assumeYes = false, mouseEn
     }
     if (transcriptModeRef.current) {
       if (key.escape) closeTranscriptMode();
-      else if (key.pageUp) scrollPage(-1);
-      else if (key.pageDown) scrollPage(1);
-      else if (key.upArrow) scrollConversation(-1);
-      else if (key.downArrow) scrollConversation(1);
-      else if (key.home) {
+      else if (fullscreenEnabled && key.pageUp) scrollPage(-1);
+      else if (fullscreenEnabled && key.pageDown) scrollPage(1);
+      else if (fullscreenEnabled && key.upArrow) scrollConversation(-1);
+      else if (fullscreenEnabled && key.downArrow) scrollConversation(1);
+      else if (fullscreenEnabled && key.home) {
         scrollRef.current?.scrollToTop();
         scrollPinnedRef.current = false;
-      } else if (key.end) {
+      } else if (fullscreenEnabled && key.end) {
         scrollRef.current?.scrollToBottom();
         scrollPinnedRef.current = true;
       }
@@ -637,11 +655,11 @@ export function App({client, version = 'development', assumeYes = false, mouseEn
       setPermissionMode(PERMISSION_MODES[(index + 1) % PERMISSION_MODES.length].id);
       return;
     }
-    if (key.pageUp) {
+    if (fullscreenEnabled && key.pageUp) {
       scrollPage(-1);
       return;
     }
-    if (key.pageDown) {
+    if (fullscreenEnabled && key.pageDown) {
       scrollPage(1);
       return;
     }
@@ -759,6 +777,70 @@ export function App({client, version = 'development', assumeYes = false, mouseEn
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
   const narrow = (stdout.columns ?? 80) < 72;
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
+  const conversation = (
+    <Box key="conversation" flexDirection="column" width="100%">
+      <Welcome version={version} model={model} />
+      <Transcript items={transcript} />
+      {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
+      {assistantDraft ? (
+        <Box marginTop={1}>
+          <MarkdownText>{assistantDraft}</MarkdownText>
+        </Box>
+      ) : null}
+    </Box>
+  );
+  const transcriptFooter = (
+    <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
+      <Text color={PRIMARY}>对话记录</Text>
+      <Text color={MUTED}>
+        {fullscreenEnabled
+          ? `${mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Home/End定位`
+          : '使用终端滚轮浏览并拖动选择文本'} · Ctrl+O/Esc返回
+      </Text>
+    </Box>
+  );
+  const controls = (
+    <>
+      {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} /> : null}
+      <Box marginTop={1}>
+        <Text color={running ? ACCENT : MUTED}>{running && !approval ? `${spinner} ${phase}` : phase}</Text>
+        {running ? <Text color={MUTED}> · Ctrl+C取消</Text> : null}
+        {queue.length ? <Text color={MUTED}> · 队列{queue.length}</Text> : null}
+      </Box>
+      {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
+      {!permissionPicker && !approval ? <CommandMenu suggestions={suggestions} selected={selectedSuggestion} /> : null}
+      <Box flexDirection="column" marginTop={suggestions.length || permissionPicker ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+        <Box>
+          <Text color={ACCENT}>❯ </Text>
+          <ComposerInput
+            value={input}
+            cursorOffset={cursorOffset}
+            placeholder={running ? '继续输入可加入队列' : '输入任务，/查看命令'}
+          />
+        </Box>
+      </Box>
+      <Box justifyContent="space-between" flexShrink={0}>
+        <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
+          {permission.label}{narrow ? '' : ' · Shift+Tab切换'}
+        </Text>
+        {!narrow ? (
+          <Text color={MUTED}>
+            {model || '连接中'} · {fullscreenEnabled ? 'Ctrl+O记录' : '终端滚轮浏览'} · Ctrl+E工具详情
+          </Text>
+        ) : null}
+      </Box>
+    </>
+  );
+
+  if (!fullscreenEnabled) {
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {conversation}
+        {transcriptMode ? transcriptFooter : controls}
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
       <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
@@ -776,51 +858,10 @@ export function App({client, version = 'development', assumeYes = false, mouseEn
             if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
           }}
         >
-          <Box key="conversation" flexDirection="column" width="100%">
-            <Welcome version={version} model={model} />
-            <Transcript items={transcript} />
-            {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
-            {assistantDraft ? (
-              <Box marginTop={1}>
-                <MarkdownText>{assistantDraft}</MarkdownText>
-              </Box>
-            ) : null}
-          </Box>
+          {conversation}
         </ScrollView>
       </Box>
-      {transcriptMode ? (
-        <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
-          <Text color={PRIMARY}>对话记录</Text>
-          <Text color={MUTED}>{mouseEnabled ? '滚轮/↑↓滚动' : '↑↓滚动'} · PgUp/PgDn翻页 · Home/End定位 · Ctrl+O/Esc返回</Text>
-        </Box>
-      ) : (
-        <>
-          {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} /> : null}
-          <Box marginTop={1}>
-            <Text color={running ? ACCENT : MUTED}>{running && !approval ? `${spinner} ${phase}` : phase}</Text>
-            {running ? <Text color={MUTED}> · Ctrl+C取消</Text> : null}
-            {queue.length ? <Text color={MUTED}> · 队列{queue.length}</Text> : null}
-          </Box>
-          {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
-          {!permissionPicker && !approval ? <CommandMenu suggestions={suggestions} selected={selectedSuggestion} /> : null}
-          <Box flexDirection="column" marginTop={suggestions.length || permissionPicker ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
-            <Box>
-              <Text color={ACCENT}>❯ </Text>
-              <ComposerInput
-                value={input}
-                cursorOffset={cursorOffset}
-                placeholder={running ? '继续输入可加入队列' : '输入任务，/查看命令'}
-              />
-            </Box>
-          </Box>
-          <Box justifyContent="space-between" flexShrink={0}>
-            <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
-              {permission.label}{narrow ? '' : ' · Shift+Tab切换'}
-            </Text>
-            {!narrow ? <Text color={MUTED}>{model || '连接中'} · Ctrl+O记录 · Ctrl+E工具详情</Text> : null}
-          </Box>
-        </>
-      )}
+      {transcriptMode ? transcriptFooter : controls}
     </Box>
   );
 }

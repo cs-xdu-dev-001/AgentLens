@@ -147,6 +147,7 @@ def main() -> None:
     assert bundle.is_file() and bundle.stat().st_size > 100_000
     bundle_source = bundle.read_text(encoding="utf-8")
     assert "KNOWFLOW_CLI_MOUSE" in bundle_source
+    assert "KNOWFLOW_CLI_FULLSCREEN" in bundle_source
     node = shutil.which("node")
     if node:
         result = subprocess.run(
@@ -162,18 +163,22 @@ def main() -> None:
     entry_source = (ROOT / "cli-tui" / "src" / "index.jsx").read_text(
         encoding="utf-8"
     )
-    assert "alternateScreen: true" in entry_source
+    assert "alternateScreen: fullscreenEnabled" in entry_source
     assert "MouseProvider" in entry_source
-    assert "KNOWFLOW_CLI_MOUSE" in entry_source
     assert "autoEnable={mouseEnabled}" in entry_source
+    assert "fullscreenEnabled={fullscreenEnabled}" in entry_source
     assert "mouseEnabled={mouseEnabled}" in entry_source
     assert "mouseEnabled />" not in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
+    assert "KNOWFLOW_CLI_FULLSCREEN" in app_source
+    assert "KNOWFLOW_CLI_MOUSE" in app_source
     assert "<ScrollView" in app_source
     assert "useOnWheel" in app_source
     assert "flexShrink={1}" in app_source
+    assert "if (!fullscreenEnabled)" in app_source
+    assert "使用终端滚轮浏览并拖动选择文本" in app_source
     assert "对话记录" in app_source
 
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
