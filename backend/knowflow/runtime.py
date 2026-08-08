@@ -1268,9 +1268,13 @@ def build_messages(
     if agent_mode:
         system += (
             " Use available tools only when they are needed. "
-            "For time-sensitive or external facts, use web_search instead of guessing. "
+            "For a specific URL, use web_fetch. Use web_search to discover URLs "
+            "for time-sensitive or external facts instead of guessing. "
             "When web results are used, cite their original URLs as Markdown links. "
-            "Never claim that a search ran unless a tool result is present."
+            "Never claim that a search or fetch ran unless its tool result is present. "
+            "A failed or empty search/fetch does not prove that a page is unavailable, "
+            "unindexed, poorly optimized, or low quality; report the observed failure "
+            "without inventing conclusions."
         )
     system += memory_rule
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]

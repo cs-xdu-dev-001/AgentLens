@@ -32,7 +32,7 @@
 - **可观察的Agent执行**：基于LangGraph运行，展示模型、工具、MCP、记忆和审批步骤，支持持久化checkpoint与失败恢复。
 - **带引用的知识库问答**：上传常见办公文档，查看命中文本、相关度和引用来源。
 - **模型与协议可切换**：支持OpenAI兼容端点，可为模型选择Chat Completions或Responses API。
-- **工具、MCP与Skills**：模型可自主联网搜索、调用已授权的MCP服务，并按任务启用Skill。
+- **工具、MCP与Skills**：模型可读取指定网页、联网搜索、调用已授权的MCP服务，并按任务启用Skill。
 - **用户隔离**：知识库、模型配置、工具密钥、MCP连接、Skills和长期记忆均按用户隔离。
 - **Web与Linux CLI**：终端默认使用本地BYOK Agent；也可显式连接KnowFlow服务，共用服务端的审批、记忆与运行记录。
 
@@ -86,7 +86,7 @@ knowflow run "检查测试并修复失败" --yes
 knowflow update
 ```
 
-本地CLI与Web端共用Agent工具装配逻辑。联网搜索、MCP、Skills和Mem0都由本地配置启用，不需要KnowFlow账号：
+本地CLI与Web端共用Agent工具装配逻辑。读取用户提供的公共网页无需配置；联网搜索、MCP、Skills和Mem0按需启用，也不需要KnowFlow账号：
 
 ```bash
 # Tavily联网搜索
@@ -191,6 +191,7 @@ API文档：http://127.0.0.1:8010/docs
 | 功能 | 配置入口 |
 | --- | --- |
 | 聊天与Embedding模型 | 前端“设置” |
+| 读取指定公共网页 | 无需配置，Agent自动调用`web_fetch` |
 | Tavily联网搜索 | 前端“工具与MCP” |
 | GitHub登录 | `KNOWFLOW_GITHUB_CLIENT_ID`、`KNOWFLOW_GITHUB_CLIENT_SECRET` |
 | Mem0长期记忆 | `KNOWFLOW_MEMORY_*` |
@@ -230,7 +231,7 @@ http://127.0.0.1:8010/api/auth/oauth/github/callback
 
 #### 联网搜索与运行轨迹
 
-`web_search`通过`tool_choice: auto`交给模型自主判断是否搜索。每位用户在设置页保存自己的Tavily Key。后端通过SSE推送脱敏事件，聊天消息显示当前步骤，右侧Agent运行图显示完整过程。
+`web_fetch`用于读取用户提供或搜索发现的公共HTTP/HTTPS网页，无需Key；它会阻止内网地址、限制重定向与响应大小，并提取可读正文。`web_search`负责通过Tavily发现网址，每位用户在设置页保存自己的Key。两者均通过`tool_choice: auto`由模型自主判断调用；抓取或搜索失败只会报告可验证的错误，不会据此臆测网站未收录、SEO较差或无法访问。后端通过SSE推送脱敏事件，聊天消息显示当前步骤，右侧Agent运行图显示完整过程。
 
 #### 远程MCP
 

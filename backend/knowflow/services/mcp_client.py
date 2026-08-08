@@ -11,7 +11,9 @@ except ModuleNotFoundError as exc:
  if exc.name != "mcp": raise
  ClientSession = None; streamable_http_client = None
 from ..config import MCP_MAX_RESPONSE_BYTES
-from .mcp_security import validate_remote_url, validate_static_headers, resolve_remote_addresses
+from .mcp_security import PinnedAsyncTransport, validate_remote_url, validate_static_headers
+
+_PinnedTransport = PinnedAsyncTransport
 
 class McpClientError(Exception):
  def __init__(self,message,code="mcp_client_error"): super().__init__(message); self.code=code
@@ -20,19 +22,6 @@ def _size(x):
  try: return len(json.dumps(x,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode())
  except (TypeError, ValueError) as exc: raise McpClientError("invalid structured content","mcp_invalid_response") from exc
 
-class _PinnedTransport(httpx.AsyncBaseTransport):
- def __init__(self, delegate, resolver, allow_private=False): self.delegate,self.resolver,self.allow_private=delegate,resolver,allow_private
- async def handle_async_request(self, request):
-  host=request.url.host; port=request.url.port or (443 if request.url.scheme=="https" else 80)
-  ip=resolve_remote_addresses(host,port,self.resolver,self.allow_private)[0]
-  headers=request.headers.copy()
-  if "host" not in headers: headers["host"]=request.url.netloc.decode("ascii")
-  req=httpx.Request(request.method,request.url,headers=headers,stream=request.stream,extensions=dict(request.extensions))
-  req.url=req.url.copy_with(host=ip)
-  req.extensions["sni_hostname"]=host
-  return await self.delegate.handle_async_request(req)
- async def aclose(self):
-  await self.delegate.aclose()
 def _slug(x,fallback="server"):
  s=re.sub(r"[^A-Za-z0-9_-]+","-",str(x or "")).strip("-") or fallback
  return s
@@ -60,7 +49,7 @@ class McpRemoteClient:
   validate_remote_url(self.server_url,resolver=self.resolver,allow_private=self.allow_private)
   timeout=httpx.Timeout(self.request_timeout,connect=self.connect_timeout)
   delegate=self.base_transport or httpx.AsyncHTTPTransport(trust_env=False)
-  transport=_PinnedTransport(delegate,self.resolver,self.allow_private)
+  transport=PinnedAsyncTransport(delegate,self.resolver,self.allow_private)
   http=httpx.AsyncClient(headers=self.headers,trust_env=False,follow_redirects=False,timeout=timeout,transport=transport)
   stack=AsyncExitStack(); await stack.__aenter__()
   try:

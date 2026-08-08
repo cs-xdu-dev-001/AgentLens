@@ -18,6 +18,7 @@ from ..services.agent_loop import ToolRegistry
 from ..services.agent_tooling import (
     McpToolConfigurationError,
     register_mcp_tools,
+    register_web_fetch_tool,
     register_web_search_tool,
 )
 from ..services.agent_failure import classify_agent_failure
@@ -34,6 +35,7 @@ from ..services.mcp_client import (
     McpClientError,
     McpRunSessionPool,
 )
+from ..services.web_fetch import PublicWebFetcher
 from ..services.web_search import TavilyWebSearch
 from ..services.task_planner import (
     parse_execution_mode,
@@ -242,6 +244,21 @@ def build_tool_registry(
         else None
     )
     registered_names: set[str] = set()
+    if enable_tools:
+        register_web_fetch_tool(
+            registry,
+            provider=PublicWebFetcher(
+                cancel_check=(
+                    cancel_event.is_set
+                    if cancel_event is not None
+                    else None
+                )
+            ),
+            cancel_check=(
+                cancel_event.is_set if cancel_event is not None else None
+            ),
+        )
+        registered_names.add("web_fetch")
     if enable_tools and WORKSPACE_ENABLED:
         workspace = WorkspaceRuntime(
             WORKSPACE_DIR,

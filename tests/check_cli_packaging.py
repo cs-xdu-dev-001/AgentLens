@@ -22,13 +22,15 @@ assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.12.0"
+assert project["version"] == "0.13.0"
 package_data = configuration["tool"]["setuptools"]["package-data"]["knowflow"]
 assert "ink_tui/*.mjs" in package_data
 assert "ink_tui/*.txt" in package_data
 
 dependencies = set(project["dependencies"])
 for required in {
+    "beautifulsoup4==4.12.3",
+    "httpx==0.28.1",
     "jsonschema==4.23.0",
     "langgraph==1.2.10",
     "langgraph-checkpoint-sqlite==3.1.0",

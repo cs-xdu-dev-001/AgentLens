@@ -217,7 +217,7 @@ test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-sc
 
 test('failed tool details expose recovery actions that really retry or ask the agent to fix', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.12.0" />);
+  const view = render(<App client={client} version="0.13.0" />);
   await tick();
   view.stdin.write('读取缺失文件并继续');
   view.stdin.write('\r');

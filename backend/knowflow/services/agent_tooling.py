@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from .agent_loop import ToolRegistry
+from .web_fetch import WebFetchArguments, WebFetchProvider
 from .web_search import WebSearchArguments, WebSearchProvider
 
 
@@ -49,6 +50,39 @@ def register_web_search_tool(
         concurrency_safe=True,
         interrupt_behavior="cancel",
         search_hint="current public web sources",
+    )
+
+
+def register_web_fetch_tool(
+    registry: ToolRegistry,
+    *,
+    provider: WebFetchProvider,
+    cancel_check: Callable[[], bool] | None = None,
+) -> None:
+    def run_web_fetch(args: WebFetchArguments):
+        if cancel_check and cancel_check():
+            raise RuntimeError("Agent run was cancelled.")
+        result = provider.fetch(args.url, max_chars=args.max_chars)
+        if cancel_check and cancel_check():
+            raise RuntimeError("Agent run was cancelled.")
+        return result
+
+    registry.register(
+        name="web_fetch",
+        description=(
+            "Open a specific public HTTP or HTTPS URL and return its "
+            "readable page content. Use this for URLs supplied by the user "
+            "or URLs discovered with web_search. A fetch failure is not "
+            "evidence that the page is unindexed, unavailable, or low quality."
+        ),
+        arguments_model=WebFetchArguments,
+        handler=run_web_fetch,
+        read_only=True,
+        engine_names={"langgraph"},
+        concurrency_safe=True,
+        interrupt_behavior="cancel",
+        search_hint="open read fetch public URL webpage content",
+        always_load=True,
     )
 
 

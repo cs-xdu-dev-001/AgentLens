@@ -429,6 +429,7 @@ def main() -> None:
         mcp_pool=FakePool(),
     )
     assert set(eligibility_registry.eligible_names("langgraph")) == {
+        "web_fetch",
         configured["readNotion"]["modelName"],
         configured["readDocs"]["modelName"],
         configured["writeNotion"]["modelName"],

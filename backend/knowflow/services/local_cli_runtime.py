@@ -12,7 +12,11 @@ import requests
 
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
-from .agent_tooling import register_mcp_tools, register_web_search_tool
+from .agent_tooling import (
+    register_mcp_tools,
+    register_web_fetch_tool,
+    register_web_search_tool,
+)
 from .agent_trace import sanitize_trace_value
 from .langgraph_agent_engine import (
     AgentRunCancelledError,
@@ -24,6 +28,7 @@ from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
 from .mcp_oauth import McpOAuthCoordinator
 from .skill_runtime import SkillActivationSession
+from .web_fetch import PublicWebFetcher
 from .web_search import TavilyWebSearch
 from .workspace_runtime import (
     SrtSandboxRunner,
@@ -360,6 +365,11 @@ class LocalAgentRuntime:
             progress_callback=progress_callback,
             cancel_check=cancel_check,
         )
+        register_web_fetch_tool(
+            registry,
+            provider=PublicWebFetcher(cancel_check=cancel_check),
+            cancel_check=cancel_check,
+        )
         web = self.extensions.web_search()
         if web["enabled"] and web["configured"]:
             provider = TavilyWebSearch(
@@ -457,7 +467,10 @@ class LocalAgentRuntime:
             "content": (
                 "You are KnowFlow, a local Linux coding agent. Work only "
                 f"inside this workspace: {workspace_root}. Inspect before "
-                "editing, use tools when needed, and report results concisely."
+                "editing, use tools when needed, and report results concisely. "
+                "Use web_fetch for a specific URL and web_search to discover "
+                "URLs. Never turn a failed search or fetch into unsupported "
+                "claims about availability, indexing, SEO, or page quality."
             ),
         }
 

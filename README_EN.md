@@ -32,7 +32,7 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 - **Observable agent runs**: LangGraph execution with visible model, tool, MCP, memory, and approval steps, plus durable checkpoints and failure recovery.
 - **Knowledge-base answers with citations**: ingest common office documents and inspect matched text, relevance, and sources.
 - **Switchable models and protocols**: connect OpenAI-compatible endpoints through Chat Completions or the Responses API.
-- **Tools, MCP, and Skills**: let the model search the web, call authorized MCP servers, and activate a Skill for the current task.
+- **Tools, MCP, and Skills**: let the model read specific webpages, search the web, call authorized MCP servers, and activate a Skill for the current task.
 - **Per-user isolation**: separate knowledge bases, model settings, tool keys, MCP connections, Skills, and memories.
 - **Web and Linux CLI**: the terminal runs a local BYOK agent by default, or can explicitly connect to a KnowFlow server for shared approvals, memory, and run history.
 
@@ -86,7 +86,7 @@ knowflow run "Run the tests and fix failures" --yes
 knowflow update
 ```
 
-The local CLI and Web app now share the Agent tool-assembly layer. Web search, MCP, Skills, and Mem0 are enabled from local configuration and do not require a KnowFlow account:
+The local CLI and Web app share the Agent tool-assembly layer. Reading a user-supplied public webpage needs no configuration. Web search, MCP, Skills, and Mem0 are enabled as needed and do not require a KnowFlow account:
 
 ```bash
 # Tavily web search
@@ -191,6 +191,7 @@ Local development does not require editing every environment variable. Copy `bac
 | Capability | Configuration |
 | --- | --- |
 | Chat and embedding models | Settings in the web UI |
+| Read a specific public webpage | No configuration; the Agent uses `web_fetch` |
 | Tavily web search | Tools & MCP in the web UI |
 | GitHub login | `KNOWFLOW_GITHUB_CLIENT_ID`, `KNOWFLOW_GITHUB_CLIENT_SECRET` |
 | Mem0 long-term memory | `KNOWFLOW_MEMORY_*` |
@@ -214,7 +215,7 @@ The Vite development server uses `--strictPort` and connects to `VITE_BACKEND_UR
 
 Local accounts use PBKDF2 password hashes and HttpOnly session cookies. GitHub OAuth is optional. Its local callback is `http://127.0.0.1:8010/api/auth/oauth/github/callback`.
 
-`web_search` uses `tool_choice: auto`; each user stores their own Tavily key. Sanitized SSE events feed the chat progress card and run inspector.
+`web_fetch` reads a user-supplied or discovered public HTTP/HTTPS page without a key. It blocks private-network targets, bounds redirects and response size, and extracts readable text. `web_search` discovers URLs through Tavily, with a separate key per user. The model chooses both tools automatically; an empty or failed fetch/search is reported as observed and is never treated as proof of poor SEO, missing indexing, or unavailability. Sanitized SSE events feed the chat progress card and run inspector.
 
 The Notion preset connects to `https://mcp.notion.com/mcp` with per-user OAuth. Custom public HTTPS MCP servers use Streamable HTTP with no authentication, encrypted static headers, or OAuth. Read-only calls may run automatically; write and unknown-risk calls require approval.
 

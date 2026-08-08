@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import ipaddress
-import socket
 import re
-from urllib.parse import urlsplit
+import socket
 from typing import Callable, Iterable
+from urllib.parse import urlsplit
+
+import httpx
 
 _HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"}
 _BLOCKED = _HOP_BY_HOP | {"host", "cookie", "mcp-session-id"}
@@ -41,7 +43,13 @@ def resolve_remote_addresses(host: str, port: int, resolver: Callable | None = N
         result.append(str(raw))
     return result
 
-def validate_remote_url(url: str, *, resolver: Callable | None = None, allow_private: bool = False) -> str:
+def _validate_url(
+    url: str,
+    *,
+    allowed_schemes: tuple[str, ...],
+    resolver: Callable | None = None,
+    allow_private: bool = False,
+) -> str:
     if not isinstance(url, str) or "\r" in url or "\n" in url:
         raise ValueError("invalid_url")
     try:
@@ -49,7 +57,7 @@ def validate_remote_url(url: str, *, resolver: Callable | None = None, allow_pri
         hostname = parts.hostname
     except (ValueError, UnicodeError) as exc:
         raise ValueError("invalid_url") from exc
-    if parts.scheme.lower() not in (("http", "https") if allow_private else ("https",)):
+    if parts.scheme.lower() not in allowed_schemes:
         raise ValueError("insecure_scheme")
     if not hostname or parts.username is not None or parts.password is not None or parts.fragment:
         raise ValueError("invalid_url")
@@ -75,6 +83,116 @@ def validate_remote_url(url: str, *, resolver: Callable | None = None, allow_pri
         raise ValueError("invalid_port") from exc
     resolve_remote_addresses(host, port, resolver, allow_private)
     return url
+
+
+def validate_remote_url(url: str, *, resolver: Callable | None = None, allow_private: bool = False) -> str:
+    return _validate_url(
+        url,
+        allowed_schemes=("http", "https") if allow_private else ("https",),
+        resolver=resolver,
+        allow_private=allow_private,
+    )
+
+
+def validate_public_url(url: str, *, resolver: Callable | None = None) -> str:
+    """Validate an HTTP(S) URL whose destination must stay on the public internet."""
+    return _validate_url(
+        url,
+        allowed_schemes=("http", "https"),
+        resolver=resolver,
+        allow_private=False,
+    )
+
+
+class PinnedTransport(httpx.BaseTransport):
+    """Resolve and validate the address used by the actual HTTP connection."""
+
+    def __init__(
+        self,
+        delegate: httpx.BaseTransport,
+        resolver: Callable | None = None,
+        allow_private: bool = False,
+    ) -> None:
+        self.delegate = delegate
+        self.resolver = resolver
+        self.allow_private = allow_private
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if not host:
+            raise httpx.InvalidURL("URL is missing a host.")
+        port = request.url.port or (
+            443 if request.url.scheme == "https" else 80
+        )
+        ip = resolve_remote_addresses(
+            host,
+            port,
+            self.resolver,
+            self.allow_private,
+        )[0]
+        headers = request.headers.copy()
+        if "host" not in headers:
+            headers["host"] = request.url.netloc.decode("ascii")
+        pinned = httpx.Request(
+            request.method,
+            request.url,
+            headers=headers,
+            stream=request.stream,
+            extensions=dict(request.extensions),
+        )
+        pinned.url = pinned.url.copy_with(host=ip)
+        pinned.extensions["sni_hostname"] = host
+        return self.delegate.handle_request(pinned)
+
+    def close(self) -> None:
+        self.delegate.close()
+
+
+class PinnedAsyncTransport(httpx.AsyncBaseTransport):
+    """Async counterpart used by remote MCP connections."""
+
+    def __init__(
+        self,
+        delegate: httpx.AsyncBaseTransport,
+        resolver: Callable | None = None,
+        allow_private: bool = False,
+    ) -> None:
+        self.delegate = delegate
+        self.resolver = resolver
+        self.allow_private = allow_private
+
+    async def handle_async_request(
+        self,
+        request: httpx.Request,
+    ) -> httpx.Response:
+        host = request.url.host
+        if not host:
+            raise httpx.InvalidURL("URL is missing a host.")
+        port = request.url.port or (
+            443 if request.url.scheme == "https" else 80
+        )
+        ip = resolve_remote_addresses(
+            host,
+            port,
+            self.resolver,
+            self.allow_private,
+        )[0]
+        headers = request.headers.copy()
+        if "host" not in headers:
+            headers["host"] = request.url.netloc.decode("ascii")
+        pinned = httpx.Request(
+            request.method,
+            request.url,
+            headers=headers,
+            stream=request.stream,
+            extensions=dict(request.extensions),
+        )
+        pinned.url = pinned.url.copy_with(host=ip)
+        pinned.extensions["sni_hostname"] = host
+        return await self.delegate.handle_async_request(pinned)
+
+    async def aclose(self) -> None:
+        await self.delegate.aclose()
 
 def validate_static_headers(headers: dict) -> dict[str, str]:
     if not isinstance(headers, dict): raise ValueError("invalid_headers")

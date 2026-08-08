@@ -75,8 +75,15 @@ class FakeComplete:
                 "tool_choice": tool_choice,
             }
         )
-        if not tools:
-            return {"role": "assistant", "content": "No tools configured."}
+        tool_names = {
+            item["function"]["name"]
+            for item in (tools or [])
+        }
+        if "web_search" not in tool_names:
+            return {
+                "role": "assistant",
+                "content": "No search tool configured.",
+            }
         if messages[-1]["role"] == "tool":
             if event_callback is not None:
                 event_callback(
@@ -180,8 +187,13 @@ def main() -> None:
         },
     )
     assert bob_response.status_code == 200, bob_response.text
-    assert bob_response.json()["data"]["answer"] == "No tools configured."
-    assert complete.calls[-1]["tools"] is None
+    assert bob_response.json()["data"]["answer"] == "No search tool configured."
+    bob_tool_names = {
+        item["function"]["name"]
+        for item in complete.calls[-1]["tools"]
+    }
+    assert "web_fetch" in bob_tool_names
+    assert "web_search" not in bob_tool_names
     assert provider.calls == [("current release", 3)]
     print("native agent chat uses only the current user's web search tool")
 

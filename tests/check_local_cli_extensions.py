@@ -50,6 +50,7 @@ def main() -> None:
             str((schema.get("function") or {}).get("name") or "")
             for schema in runtime.tool_schemas()
         }
+        assert "web_fetch" in names
         assert "web_search" in names
 
         skill = root / "sample-skill"
