@@ -1167,8 +1167,13 @@ def list_tools(
     user_id: int | None = typer.Option(None, "--user-id"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
-    remote = _remote_client(server, local=local)
+    remote = _remote_client(
+        server,
+        local=local,
+        remote=remote_mode,
+    )
     if remote is not None:
         if user_id is not None:
             raise typer.BadParameter(
@@ -1304,8 +1309,13 @@ def list_skills(
     user_id: int | None = typer.Option(None, "--user-id"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
-    remote = _remote_client(server, local=local)
+    remote = _remote_client(
+        server,
+        local=local,
+        remote=remote_mode,
+    )
     if remote is not None:
         if user_id is not None:
             raise typer.BadParameter(
@@ -1353,8 +1363,13 @@ def list_mcp(
     user_id: int | None = typer.Option(None, "--user-id"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
-    remote = _remote_client(server, local=local)
+    remote = _remote_client(
+        server,
+        local=local,
+        remote=remote_mode,
+    )
     if remote is not None:
         if user_id is not None:
             raise typer.BadParameter(
@@ -1513,8 +1528,13 @@ def list_memory(
     limit: int = typer.Option(20, min=1, max=100),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
+    remote_mode: bool = typer.Option(False, "--remote"),
 ) -> None:
-    remote = _remote_client(server, local=local)
+    remote = _remote_client(
+        server,
+        local=local,
+        remote=remote_mode,
+    )
     if remote is not None:
         if user_id is not None:
             raise typer.BadParameter(

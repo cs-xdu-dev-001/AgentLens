@@ -106,6 +106,57 @@ def main() -> None:
                 local=False,
                 remote=False,
             ) is None
+
+            class FakeExtensions:
+                @staticmethod
+                def list_skills():
+                    return []
+
+                @staticmethod
+                def list_mcp():
+                    return []
+
+                @staticmethod
+                def memory_provider():
+                    return None
+
+            class FakeLocalCatalog:
+                extensions = FakeExtensions()
+
+                @staticmethod
+                def tool_schemas():
+                    return [
+                        {
+                            "function": {
+                                "name": "web_search",
+                            }
+                        }
+                    ]
+
+            with patch.object(
+                cli,
+                "_local_agent",
+                return_value=FakeLocalCatalog(),
+            ):
+                for command in (
+                    ["tools", "list"],
+                    ["skills", "list"],
+                    ["mcp", "list"],
+                    ["memory", "list"],
+                ):
+                    response = CliRunner().invoke(cli.app, command)
+                    assert response.exit_code == 0, (
+                        command,
+                        response.output,
+                    )
+
+            response = CliRunner().invoke(
+                cli.app,
+                ["tools", "list", "--remote"],
+            )
+            assert response.exit_code != 0
+            assert "auth login" in response.output
+
             class FakeLocal:
                 def run(self, task, *, tools, event_sink):
                     assert task == "local task"
