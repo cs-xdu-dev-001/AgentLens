@@ -626,10 +626,16 @@ async def exercise_narrow_command_menu() -> None:
     app = KnowFlowTui(FakeBackend(), assume_yes=False)
     async with app.run_test(size=(48, 20)) as pilot:
         app.query_one(Composer).load_text("/")
-        await pilot.pause(0.05)
         menu = app.query_one(CommandMenu)
+        for _ in range(50):
+            await pilot.pause(0.02)
+            if menu.matches and menu.size.width > 0:
+                break
         assert menu.matches
-        assert 0 < menu.size.width < 48
+        assert 0 < menu.size.width < 48, (
+            f"narrow command menu width={menu.size.width}, "
+            f"region={menu.region}, screen={app.screen.size}"
+        )
         assert app.screen.has_class("narrow")
 
 
