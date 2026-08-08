@@ -96,7 +96,7 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
 
 test('Ink app rejects unknown slash commands instead of sending them to the model', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.10.0" />);
+  const view = render(<App client={client} version="0.10.1" />);
   await tick();
   view.stdin.write('/does-not-exist');
   await tick();
@@ -104,5 +104,26 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
   await tick();
   assert.match(view.lastFrame(), /未知命令/);
   assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  view.unmount();
+});
+
+test('long markdown replies stay inside the terminal viewport without raw markers', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.10.1" />);
+  await tick();
+  view.stdin.write('生成长报告');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  const answer = `\u001b]8;;https://example.com\u0007**状态正常**\u001b]8;;\u0007\n\n${Array.from({length: 80}, (_, index) => `- 检查项${index + 1}`).join('\n')}`;
+  client.emit('message', {type: 'agent_event', event: {type: 'text_delta', text: answer}});
+  client.emit('message', {type: 'turn_completed', answer});
+  await tick();
+  await tick();
+  const frame = view.lastFrame();
+  assert.ok(frame.split('\n').length <= 24, `frame overflowed viewport:\n${frame}`);
+  assert.doesNotMatch(frame, /\*\*状态正常\*\*/);
+  assert.doesNotMatch(frame, /example\.com/);
+  assert.match(frame, /检查项80/);
   view.unmount();
 });

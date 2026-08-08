@@ -157,6 +157,15 @@ def main() -> None:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "knowflow-ink-ok"
 
+    entry_source = (ROOT / "cli-tui" / "src" / "index.jsx").read_text(
+        encoding="utf-8"
+    )
+    assert "alternateScreen: true" in entry_source
+    app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
+        encoding="utf-8"
+    )
+    assert "<ScrollView" in app_source
+
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
 
 

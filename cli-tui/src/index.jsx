@@ -24,7 +24,7 @@ const client = new RuntimeClient({python, config});
 
 const instance = render(
   <App client={client} version={version} assumeYes={Boolean(config.assumeYes)} />,
-  {exitOnCtrlC: false},
+  {exitOnCtrlC: false, alternateScreen: true},
 );
 
 process.once('SIGTERM', () => {

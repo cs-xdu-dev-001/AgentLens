@@ -1,8 +1,13 @@
 import {EventEmitter} from 'node:events';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
+import stripAnsi from 'strip-ansi';
 
 export const PROTOCOL_VERSION = 1;
+
+export function sanitizeTerminalText(value) {
+  return stripAnsi(String(value ?? '')).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
+}
 
 const SECRET_PATTERNS = [
   [/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[已隐藏]'],
@@ -11,7 +16,7 @@ const SECRET_PATTERNS = [
 ];
 
 export function redact(value, limit = 500) {
-  let text = String(value ?? '');
+  let text = sanitizeTerminalText(value);
   for (const [pattern, replacement] of SECRET_PATTERNS) text = text.replace(pattern, replacement);
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }

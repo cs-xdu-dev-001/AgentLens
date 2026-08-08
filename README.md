@@ -51,7 +51,7 @@ CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模�
 
 Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。需要原生滚屏或脚本兼容时使用`knowflow chat --plain`。
 
-Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史，`Ctrl+O`展开工具详情。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
+Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，`Ctrl+R`回看历史，`PgUp/PgDn`滚动对话，`Ctrl+O`展开工具详情。Shell工具持续显示最近输出、耗时、总行数和输出大小；`Ctrl+C`终止SRT进程组并在安全边界停止Agent。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git

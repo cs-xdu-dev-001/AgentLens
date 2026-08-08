@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
+import {ScrollView} from 'ink-scroll-view';
 import TextInput from 'ink-text-input';
 import {
   commandSuggestions,
@@ -8,6 +9,7 @@ import {
   resolveCommand,
 } from './commands.js';
 import {PROTOCOL_VERSION, redact} from './protocol.js';
+import {MarkdownText} from './markdown.jsx';
 
 const ACCENT = '#d97757';
 const MUTED = '#8b8b8b';
@@ -183,7 +185,13 @@ function Transcript({items}) {
       {items.map(item => (
         <Box key={item.id} marginBottom={item.role === 'user' ? 1 : 0}>
           {item.role === 'user' ? <Text color={ACCENT} bold>› </Text> : null}
-          {item.role === 'error' ? <Text color={ERROR}>错误：{item.content}</Text> : <Text wrap="wrap">{item.content}</Text>}
+          {item.role === 'error' ? (
+            <Text color={ERROR}>错误：{item.content}</Text>
+          ) : item.role === 'assistant' ? (
+            <MarkdownText>{item.content}</MarkdownText>
+          ) : (
+            <Text wrap="wrap">{item.content}</Text>
+          )}
         </Box>
       ))}
     </Box>
@@ -193,6 +201,8 @@ function Transcript({items}) {
 export function App({client, version = 'development', assumeYes = false}) {
   const {exit} = useApp();
   const {stdout} = useStdout();
+  const scrollRef = useRef(null);
+  const scrollPinnedRef = useRef(true);
   const [ready, setReady] = useState(false);
   const [model, setModel] = useState('');
   const [commands, setCommands] = useState(() => mergeCommands());
@@ -228,6 +238,20 @@ export function App({client, version = 'development', assumeYes = false}) {
   useEffect(() => {
     permissionRef.current = permissionMode;
   }, [permissionMode]);
+
+  useEffect(() => {
+    const handleResize = () => scrollRef.current?.remeasure();
+    stdout.on?.('resize', handleResize);
+    return () => stdout.off?.('resize', handleResize);
+  }, [stdout]);
+
+  useEffect(() => {
+    const immediate = setImmediate(() => {
+      scrollRef.current?.remeasure();
+      if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
+    });
+    return () => clearImmediate(immediate);
+  }, [activities, assistantDraft, expanded, transcript]);
 
   const appendItem = useCallback((role, content) => {
     const text = String(content ?? '').trim();
@@ -511,6 +535,20 @@ export function App({client, version = 'development', assumeYes = false}) {
       setPermissionMode(PERMISSION_MODES[(index + 1) % PERMISSION_MODES.length].id);
       return;
     }
+    if (key.pageUp) {
+      const height = Math.max(1, scrollRef.current?.getViewportHeight() ?? 1);
+      scrollPinnedRef.current = false;
+      scrollRef.current?.scrollBy(-height);
+      return;
+    }
+    if (key.pageDown) {
+      const height = Math.max(1, scrollRef.current?.getViewportHeight() ?? 1);
+      scrollRef.current?.scrollBy(height);
+      const bottom = scrollRef.current?.getBottomOffset() ?? 0;
+      const offset = scrollRef.current?.getScrollOffset() ?? 0;
+      scrollPinnedRef.current = bottom - offset <= 1;
+      return;
+    }
     if (suggestions.length) {
       if (key.upArrow) setSelectedSuggestion(value => (value + suggestions.length - 1) % suggestions.length);
       else if (key.downArrow) setSelectedSuggestion(value => (value + 1) % suggestions.length);
@@ -529,12 +567,32 @@ export function App({client, version = 'development', assumeYes = false}) {
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
   const narrow = (stdout.columns ?? 80) < 72;
+  const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Welcome version={version} model={model} />
-      <Transcript items={transcript} />
-      {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
-      {assistantDraft ? <Box marginTop={1}><Text wrap="wrap">{assistantDraft}</Text></Box> : null}
+    <Box flexDirection="column" height={frameHeight} paddingX={1}>
+      <ScrollView
+        ref={scrollRef}
+        flexGrow={1}
+        minHeight={1}
+        onScroll={offset => {
+          const bottom = scrollRef.current?.getBottomOffset() ?? 0;
+          scrollPinnedRef.current = bottom - offset <= 1;
+        }}
+        onContentHeightChange={() => {
+          if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
+        }}
+      >
+        <Box key="conversation" flexDirection="column" width="100%">
+          <Welcome version={version} model={model} />
+          <Transcript items={transcript} />
+          {running || activities.size ? <ActivityView activities={activities} expanded={expanded} running={running} /> : null}
+          {assistantDraft ? (
+            <Box marginTop={1}>
+              <MarkdownText>{assistantDraft}</MarkdownText>
+            </Box>
+          ) : null}
+        </Box>
+      </ScrollView>
       {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} /> : null}
       <Box marginTop={1}>
         <Text color={running ? ACCENT : MUTED}>{running && !approval ? `${spinner} ${phase}` : phase}</Text>
@@ -562,7 +620,7 @@ export function App({client, version = 'development', assumeYes = false}) {
         <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
           {permission.label}{narrow ? '' : ' · Shift+Tab切换'}
         </Text>
-        {!narrow ? <Text color={MUTED}>{model || '连接中'} · Ctrl+O详情</Text> : null}
+        {!narrow ? <Text color={MUTED}>{model || '连接中'} · PgUp/PgDn滚动 · Ctrl+O详情</Text> : null}
       </Box>
     </Box>
   );
