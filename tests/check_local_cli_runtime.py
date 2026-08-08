@@ -12,8 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.local_cli_runtime import (  # noqa: E402
+    LocalAgentRuntime,
     LocalCliConfigError,
     LocalCliConfigStore,
+    local_cli_max_tool_rounds,
     validate_local_config,
 )
 from knowflow.services.agent_trace import sanitize_trace_value  # noqa: E402
@@ -123,6 +125,62 @@ def main() -> None:
         }
     )
     assert loopback["api_mode"] == "chat_completions"
+
+    class FourRoundGateway:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, _messages, _config, **_kwargs):
+            self.calls += 1
+            if self.calls <= 4:
+                return {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": f"call_list_{self.calls}",
+                            "type": "function",
+                            "function": {
+                                "name": "list_workspace",
+                                "arguments": json.dumps({"path": "."}),
+                            },
+                        }
+                    ],
+                }
+            return {"role": "assistant", "content": "四轮检查完成。"}
+
+    with TemporaryDirectory() as folder, patch.dict(
+        os.environ,
+        {"KNOWFLOW_CLI_MAX_TOOL_ROUNDS": "4"},
+    ):
+        root = Path(folder)
+        store = LocalCliConfigStore(root / "config")
+        store.save(
+            provider="custom",
+            base_url="https://gateway.example/v1",
+            model_name="agent-model",
+            api_mode="responses",
+            api_key="secret-value",
+        )
+        runtime = LocalAgentRuntime(
+            config_store=store,
+            workspace_root=root / "workspace",
+            data_root=root / "data",
+        )
+        gateway = FourRoundGateway()
+        runtime.engine._gateway = gateway
+        execution = runtime.run("连续检查四次")
+        assert local_cli_max_tool_rounds() == 4
+        assert runtime.engine._max_tool_rounds == 4
+        assert execution.result["answer"] == "四轮检查完成。"
+        assert gateway.calls == 5
+        assert len(
+            [
+                event
+                for event in execution.events
+                if event.get("type") == "tool_result"
+            ]
+        ) == 4
 
     class FakeGateway:
         def __init__(self):

@@ -27,6 +27,20 @@ from .workspace_runtime import (
 
 LOCAL_USER_ID = 1
 DEFAULT_MAX_FILE_BYTES = 2_000_000
+DEFAULT_LOCAL_MAX_TOOL_ROUNDS = 50
+
+
+def local_cli_max_tool_rounds() -> int:
+    try:
+        configured = int(
+            os.getenv(
+                "KNOWFLOW_CLI_MAX_TOOL_ROUNDS",
+                str(DEFAULT_LOCAL_MAX_TOOL_ROUNDS),
+            )
+        )
+    except ValueError:
+        configured = DEFAULT_LOCAL_MAX_TOOL_ROUNDS
+    return max(1, min(200, configured))
 
 
 def _public_event_value(value: Any, *, max_chars: int) -> Any:
@@ -259,6 +273,7 @@ class LocalAgentRuntime:
         self.gateway = _gateway()
         self.engine = LangGraphAgentEngine(
             gateway=self.gateway,
+            max_tool_rounds=local_cli_max_tool_rounds(),
             checkpoint_db_path=(
                 self.data_root / "langgraph" / "checkpoints.sqlite3"
             ),
