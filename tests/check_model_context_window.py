@@ -5,6 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+import knowflow.services.model_context_window as model_context_window
 from knowflow.services.model_context_window import prepare_model_context
 
 
@@ -57,6 +58,29 @@ def main() -> None:
     )
     assert small.trimmed is False
     assert small.messages == [{"role": "user", "content": "hello"}]
+
+    original_trim_messages = model_context_window.trim_messages
+    try:
+        model_context_window.trim_messages = (
+            lambda *_args, **_kwargs: [{"role": "system", "content": "policy only"}]
+        )
+        guarded = prepare_model_context(
+            [
+                {"role": "system", "content": "policy"},
+                {
+                    "role": "user",
+                    "content": "must stay visible " + ("filler " * 4_000),
+                },
+            ],
+            max_tokens=1_000,
+        )
+    finally:
+        model_context_window.trim_messages = original_trim_messages
+    assert any(
+        message.get("role") == "user"
+        and str(message.get("content") or "").startswith("must stay visible")
+        for message in guarded.messages
+    )
 
     print("model context uses bounded LangChain trimming without mutating history")
 

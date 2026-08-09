@@ -294,11 +294,16 @@ def build_responses_payload(
     tool_choice: str | None = None,
 ) -> dict[str, Any]:
     system = [str(item.get("content", "")) for item in messages if item.get("role") == "system"]
+    response_input = messages_to_response_input(messages)
+    if not response_input:
+        raise ResponsesProtocolError(
+            "Responses API request has no input messages after context trimming."
+        )
     payload: dict[str, Any] = {
         "model": config["model_name"],
         "store": False,
         "stream": True,
-        "input": messages_to_response_input(messages),
+        "input": response_input,
     }
     if tools:
         payload["tools"] = [to_responses_tool(t) for t in tools]

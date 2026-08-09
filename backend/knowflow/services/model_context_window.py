@@ -42,6 +42,13 @@ def _tool_sequence_is_complete(messages: list[dict[str, Any]]) -> bool:
     return not pending
 
 
+def _has_model_input(messages: list[dict[str, Any]]) -> bool:
+    return any(
+        str(message.get("role") or "") in {"user", "assistant", "tool"}
+        for message in messages
+    )
+
+
 def _latest_valid_turn(
     messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -95,7 +102,11 @@ def prepare_model_context(
     if isinstance(converted, dict):
         converted = [converted]
     normalized = [dict(message) for message in converted]
-    if not normalized or not _tool_sequence_is_complete(normalized):
+    if (
+        not normalized
+        or not _has_model_input(normalized)
+        or not _tool_sequence_is_complete(normalized)
+    ):
         normalized = _latest_valid_turn(copied)
     sent_tokens = count_tokens_approximately(normalized)
     return ModelContextWindow(
