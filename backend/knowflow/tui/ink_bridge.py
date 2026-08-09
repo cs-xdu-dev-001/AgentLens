@@ -13,7 +13,7 @@ from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
 from .backend import TuiBackend
 
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 class InkRuntimeBridge:
@@ -245,6 +245,61 @@ class InkRuntimeBridge:
         self._queued_decision = None
         self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
 
+    def _context(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "status")
+        if action == "status":
+            try:
+                result = self.backend.context_status()
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "context_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "context_status",
+                        "status": _public_value(result, max_chars=20_000),
+                    }
+                )
+            return
+        if action != "compact":
+            self.send({"type": "protocol_error", "message": "未知上下文操作。"})
+            return
+        if not self._set_running(True):
+            self.send({"type": "busy", "message": "请等待当前任务结束后再压缩上下文。"})
+            return
+
+        def compact() -> None:
+            try:
+                with redirect_stdout(sys.stderr):
+                    result = self.backend.compact_context(
+                        str(message.get("instructions") or "")
+                    )
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "context_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "context_compacted",
+                        "reason": "manual",
+                        **_public_value(result, max_chars=20_000),
+                    }
+                )
+            finally:
+                self._set_running(False)
+
+        Thread(target=compact, daemon=True).start()
+
     def handle(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "")
         if message_type == "submit":
@@ -306,6 +361,8 @@ class InkRuntimeBridge:
                 self.send({"type": "session_list", "sessions": sessions})
         elif message_type == "resume_session":
             self._resume_session(message)
+        elif message_type == "context":
+            self._context(message)
         elif message_type == "shutdown":
             self._stopping = True
             if self._running:

@@ -20,6 +20,10 @@ from .agent_tooling import (
     register_web_search_tool,
 )
 from .agent_trace import sanitize_trace_value
+from .context_compaction import (
+    compact_context,
+    context_status,
+)
 from .langgraph_agent_engine import (
     AgentRunCancelledError,
     LangGraphAgentEngine,
@@ -43,6 +47,7 @@ from .workspace_runtime import (
 LOCAL_USER_ID = 1
 DEFAULT_MAX_FILE_BYTES = 2_000_000
 DEFAULT_LOCAL_MAX_TOOL_ROUNDS = 50
+DEFAULT_LOCAL_MAX_CONTEXT_TOKENS = 96_000
 
 
 def local_cli_max_tool_rounds() -> int:
@@ -56,6 +61,19 @@ def local_cli_max_tool_rounds() -> int:
     except ValueError:
         configured = DEFAULT_LOCAL_MAX_TOOL_ROUNDS
     return max(1, min(200, configured))
+
+
+def local_cli_max_context_tokens() -> int:
+    try:
+        configured = int(
+            os.getenv(
+                "KNOWFLOW_CLI_MAX_CONTEXT_TOKENS",
+                str(DEFAULT_LOCAL_MAX_CONTEXT_TOKENS),
+            )
+        )
+    except ValueError:
+        configured = DEFAULT_LOCAL_MAX_CONTEXT_TOKENS
+    return max(8_000, min(1_000_000, configured))
 
 
 def _public_event_value(value: Any, *, max_chars: int) -> Any:
@@ -396,9 +414,11 @@ class LocalAgentRuntime:
             self.config_store,
             self.data_root,
         )
+        self.max_context_tokens = local_cli_max_context_tokens()
         self.engine = LangGraphAgentEngine(
             gateway=self.gateway,
             max_tool_rounds=local_cli_max_tool_rounds(),
+            max_context_tokens=self.max_context_tokens,
             checkpoint_db_path=(
                 self.data_root / "langgraph" / "checkpoints.sqlite3"
             ),
@@ -584,6 +604,57 @@ class LocalAgentRuntime:
     def capability_status(self) -> dict[str, Any]:
         return self.extensions.capability_status()
 
+    def context_status(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return context_status(
+            list(messages or []),
+            max_tokens=self.max_context_tokens,
+        )
+
+    def compact_context(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        instructions: str = "",
+        reason: str = "manual",
+    ) -> dict[str, Any]:
+        config = gateway_config(self.config_store.load())
+        result = compact_context(
+            list(messages or []),
+            gateway=self.gateway,
+            config=config,
+            max_tokens=self.max_context_tokens,
+            custom_instructions=instructions,
+            reason=reason,
+        )
+        status = context_status(
+            result.messages,
+            max_tokens=self.max_context_tokens,
+        )
+        return {
+            "messages": result.messages,
+            "metadata": result.metadata,
+            "compacted": result.compacted,
+            "reason": result.reason,
+            "status": status,
+        }
+
+    def save_context_state(
+        self,
+        run_id: str,
+        *,
+        messages: list[dict[str, Any]],
+        metadata: dict[str, Any],
+    ) -> None:
+        self.load_session(run_id)
+        self.sessions.save(
+            run_id,
+            contextMessages=list(messages or []),
+            compaction=dict(metadata or {}),
+        )
+
     def _mcp_pool(self) -> McpRunSessionPool:
         return McpRunSessionPool(
             server_loader=lambda server_id: self.extensions.secret(
@@ -624,6 +695,8 @@ class LocalAgentRuntime:
         task: str,
         *,
         history: list[dict[str, Any]] | None = None,
+        transcript: list[dict[str, Any]] | None = None,
+        context_metadata: dict[str, Any] | None = None,
         tools: bool = True,
         run_id: str | None = None,
         approval_decision: str | None = None,
@@ -637,8 +710,14 @@ class LocalAgentRuntime:
             messages.append(self._system_message(self.workspace))
         elif messages[0].get("role") == "system":
             messages[0] = self._system_message(self.workspace)
+        transcript_messages = list(transcript if transcript is not None else messages)
+        if not transcript_messages:
+            transcript_messages.append(self._system_message(self.workspace))
+        elif transcript_messages[0].get("role") == "system":
+            transcript_messages[0] = self._system_message(self.workspace)
         if task:
             messages.append({"role": "user", "content": task})
+            transcript_messages.append({"role": "user", "content": task})
         memory_task = task or next(
             (
                 str(message.get("content") or "")
@@ -658,7 +737,9 @@ class LocalAgentRuntime:
             title=title,
             status="running",
             **self._session_workspace_fields(),
-            messages=messages[-100:],
+            messages=transcript_messages,
+            contextMessages=messages,
+            compaction=dict(context_metadata or {}),
         )
 
         def emit(event: dict[str, Any]) -> None:
@@ -834,7 +915,9 @@ class LocalAgentRuntime:
                 identifier,
                 status="cancelled",
                 **self._session_workspace_fields(),
-                messages=messages[-100:],
+                messages=transcript_messages,
+                contextMessages=messages,
+                compaction=dict(context_metadata or {}),
             )
             emit(
                 {
@@ -851,6 +934,8 @@ class LocalAgentRuntime:
                     "answer": "",
                     "trace": [],
                     "messages": messages,
+                    "transcriptMessages": transcript_messages,
+                    "compaction": dict(context_metadata or {}),
                 },
                 events=events,
             )
@@ -860,7 +945,9 @@ class LocalAgentRuntime:
                 status="failed",
                 errorCode=type(exc).__name__,
                 **self._session_workspace_fields(),
-                messages=messages[-100:],
+                messages=transcript_messages,
+                contextMessages=messages,
+                compaction=dict(context_metadata or {}),
             )
             raise
         finally:
@@ -891,7 +978,9 @@ class LocalAgentRuntime:
                 identifier,
                 status="waiting_approval",
                 **self._session_workspace_fields(),
-                messages=messages[-100:],
+                messages=transcript_messages,
+                contextMessages=messages,
+                compaction=dict(context_metadata or {}),
                 pendingApproval={
                     "approvalId": tool_call_id,
                     "toolName": interrupt.get("toolName") or "工具调用",
@@ -936,13 +1025,19 @@ class LocalAgentRuntime:
                     )
             emit({"type": "done", "runId": identifier})
             stored_messages = list(messages)
+            stored_transcript = list(transcript_messages)
             if result.answer:
                 stored_messages.append({"role": "assistant", "content": result.answer})
+                stored_transcript.append(
+                    {"role": "assistant", "content": result.answer}
+                )
             self.sessions.save(
                 identifier,
                 status="completed",
                 answer=result.answer,
-                messages=stored_messages[-100:],
+                messages=stored_transcript,
+                contextMessages=stored_messages,
+                compaction=dict(context_metadata or {}),
                 pendingApproval=None,
                 **self._session_workspace_fields(),
                 changes=self.workspace.diff(run_id=identifier).get("files", []),
@@ -954,6 +1049,8 @@ class LocalAgentRuntime:
                 "answer": result.answer,
                 "trace": result.trace,
                 "messages": messages,
+                "transcriptMessages": transcript_messages,
+                "compaction": dict(context_metadata or {}),
             },
             events=events,
         )
@@ -973,7 +1070,15 @@ class LocalAgentRuntime:
                     "paused": False,
                     "runId": run_id,
                     "answer": "",
-                    "messages": list(session.get("messages") or []),
+                    "messages": list(
+                        session.get("contextMessages")
+                        or session.get("messages")
+                        or []
+                    ),
+                    "transcriptMessages": list(
+                        session.get("messages") or []
+                    ),
+                    "compaction": dict(session.get("compaction") or {}),
                     "restored": True,
                 },
                 events=[],
@@ -982,7 +1087,13 @@ class LocalAgentRuntime:
             raise ValueError("This local session cannot be resumed.")
         return self.run(
             "",
-            history=list(session.get("messages") or []),
+            history=list(
+                session.get("contextMessages")
+                or session.get("messages")
+                or []
+            ),
+            transcript=list(session.get("messages") or []),
+            context_metadata=dict(session.get("compaction") or {}),
             run_id=run_id,
             approval_decision=approval_decision,
             resume_from_checkpoint=True,

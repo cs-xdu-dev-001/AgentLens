@@ -55,6 +55,8 @@ The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, pr
 
 A workspace is more than the current directory. The project root is the task boundary; `/cd` changes only the tool execution directory, while `/add-dir` explicitly grants another directory for the current session. The header and `/workspace` show cwd, Git branch, dirty state, and allowed directories. Structured file edits keep before-change snapshots: `/diff` shows the current turn and `/undo` reverts only when the file has not changed again. Sessions are stored with LangGraph checkpoints. Use `/resume` to select one, `/continue` to proceed from a failed checkpoint, or `/retry tool` and `/retry turn` to choose the retry scope.
 
+The model context is stored separately from the full transcript. `/context` shows token usage, role distribution, and the automatic-compaction threshold. `/compact [instructions]` turns early turns into a structured summary while preserving recent messages and the complete original transcript. At 75% usage, the CLI compacts before the next turn. A compaction failure keeps the old context and does not corrupt the session or checkpoint. Mem0 long-term memory remains separate from session context.
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # The Ink interface requires v22+

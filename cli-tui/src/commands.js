@@ -6,6 +6,8 @@ export const BUILTIN_COMMANDS = [
   {value: '/clear', description: '清空终端显示', source: 'builtin'},
   {value: '/model', description: '查看当前模型', source: 'builtin'},
   {value: '/status', description: '查看会话状态', source: 'builtin'},
+  {value: '/context', description: '查看模型上下文占用', source: 'builtin'},
+  {value: '/compact', description: '压缩早期会话并保留结构化摘要', source: 'builtin', argumentHint: '[补充要求]'},
   {value: '/workspace', description: '查看工作区边界', source: 'builtin'},
   {value: '/add-dir', description: '添加本次会话可访问的目录', source: 'builtin'},
   {value: '/cd', description: '切换工具执行目录', source: 'builtin'},

@@ -98,6 +98,29 @@ class FakeBackend:
             }
         )
 
+    def context_status(self):
+        return {
+            "usedTokens": 1200,
+            "maxTokens": 96000,
+            "usagePercent": 1.2,
+            "autoCompactAtPercent": 75,
+            "messageCount": 4,
+            "transcriptMessageCount": 6,
+            "roleTokens": {"system": 100, "user": 400, "assistant": 700},
+        }
+
+    def compact_context(self, instructions=""):
+        return {
+            "compacted": True,
+            "metadata": {
+                "reason": "manual",
+                "originalTokens": 1200,
+                "compactedTokens": 500,
+            },
+            "status": {"usedTokens": 500, "maxTokens": 96000},
+            "instructionsSeen": instructions,
+        }
+
 
 class ApprovalBackend(FakeBackend):
     def __init__(self) -> None:
@@ -171,6 +194,19 @@ def main() -> None:
     ready_bridge.handle({"type": "sessions", "limit": 10})
     session_rows = wait_for(ready_output, "session_list")
     assert session_rows[-1]["sessions"][0]["title"] == "测试会话"
+    ready_bridge.handle({"type": "context", "action": "status"})
+    context_rows = wait_for(ready_output, "context_status")
+    assert context_rows[-1]["status"]["usedTokens"] == 1200
+    ready_bridge.handle(
+        {
+            "type": "context",
+            "action": "compact",
+            "instructions": "保留工作区边界",
+        }
+    )
+    compact_rows = wait_for(ready_output, "context_compacted")
+    assert compact_rows[-1]["metadata"]["compactedTokens"] == 500
+    assert compact_rows[-1]["instructionsSeen"] == "保留工作区边界"
 
     approval_output = StringIO()
     approval_backend = ApprovalBackend()

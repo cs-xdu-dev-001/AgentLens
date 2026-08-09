@@ -267,6 +267,21 @@ function workspaceText(workspace) {
   ].join('\n');
 }
 
+function contextText(status) {
+  const value = status && typeof status === 'object' ? status : {};
+  const roleTokens = value.roleTokens ?? {};
+  const compacted = value.compaction && Object.keys(value.compaction).length
+    ? `最近压缩  ${value.compaction.reason === 'automatic' ? '自动' : '手动'} · ${value.compaction.compactedMessageCount ?? 0}条早期消息`
+    : '最近压缩  尚未压缩';
+  return [
+    `上下文  ${value.usedTokens ?? 0}/${value.maxTokens ?? 0} tokens · ${value.usagePercent ?? 0}%`,
+    `自动压缩阈值  ${value.autoCompactAtPercent ?? 75}%${value.shouldAutoCompact ? ' · 下一轮开始前压缩' : ''}`,
+    `消息  工作上下文${value.messageCount ?? 0}条 · 完整记录${value.transcriptMessageCount ?? value.messageCount ?? 0}条`,
+    `分布  系统${roleTokens.system ?? 0} · 用户${roleTokens.user ?? 0} · 助手${roleTokens.assistant ?? 0} · 工具${roleTokens.tool ?? 0}`,
+    compacted,
+  ].join('\n');
+}
+
 function SessionPicker({sessions, selected}) {
   const labels = {
     running: '执行中',
@@ -621,6 +636,14 @@ export function App({
                 : '整理结果'
               : `执行${toolName}`,
           );
+        } else if (event.type === 'context_compaction_started') {
+          setPhase('压缩早期会话');
+        } else if (event.type === 'context_compacted') {
+          appendItem('assistant', `上下文已自动压缩  ${event.originalTokens ?? 0} → ${event.compactedTokens ?? 0} tokens`);
+          setPhase('上下文压缩完成');
+        } else if (event.type === 'context_compaction_failed') {
+          appendItem('error', event.message ?? '自动压缩失败，已保留原上下文。');
+          setPhase('继续使用原上下文');
         } else if (event.type === 'agent_step') {
           setPhase(publicLabel(event.name, '分析任务'));
         } else if (event.type === 'approval_required') {
@@ -658,6 +681,35 @@ export function App({
       }
       if (message.type === 'capability_status') {
         appendItem('assistant', capabilityText(message.section, message.status));
+        return;
+      }
+      if (message.type === 'context_status') {
+        appendItem('assistant', contextText(message.status));
+        setPhase('就绪');
+        return;
+      }
+      if (message.type === 'context_compacted') {
+        const status = message.status ?? {};
+        if (message.compacted) {
+          appendItem('assistant', `上下文压缩完成  ${message.metadata?.originalTokens ?? 0} → ${message.metadata?.compactedTokens ?? 0} tokens\n完整对话记录仍保留，后续模型使用结构化摘要和最近消息。`);
+        } else {
+          appendItem('assistant', '当前会话还没有足够的早期轮次可压缩，原上下文保持不变。');
+        }
+        setRunning(false);
+        setPhase('就绪');
+        if (status.usedTokens != null) {
+          appendItem('assistant', contextText({
+            ...status,
+            transcriptMessageCount: message.transcriptMessageCount,
+            compaction: message.metadata,
+          }));
+        }
+        return;
+      }
+      if (message.type === 'context_failed') {
+        appendItem('error', `${message.message ?? '上下文操作失败。'} 原上下文未改变。`);
+        setRunning(false);
+        setPhase('就绪');
         return;
       }
       if (message.type === 'capability_failed') {
@@ -897,6 +949,17 @@ export function App({
     } else if (command.value === '/status') {
       appendItem('assistant', `${running ? '执行中' : '就绪'} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}`);
       client.send({type: 'workspace', action: 'status'});
+    } else if (command.value === '/context') {
+      client.send({type: 'context', action: 'status'});
+      setPhase('统计上下文');
+    } else if (command.value === '/compact') {
+      if (running || approval) {
+        appendItem('error', '请等待当前任务结束后再压缩上下文。');
+      } else {
+        setRunning(true);
+        setPhase('压缩早期会话');
+        client.send({type: 'context', action: 'compact', instructions: args});
+      }
     } else if (command.value === '/workspace') {
       client.send({type: 'workspace', action: 'status'});
     } else if (command.value === '/add-dir') {
@@ -981,12 +1044,12 @@ export function App({
       }
     } else {
       appendItem('assistant', [
-        '常用命令：/workspace /diff /undo /resume /continue /permissions /tools /mcp /skills /memory /retry /fix /exit',
+        '常用命令：/context /compact /workspace /diff /undo /resume /continue /permissions /tools /mcp /skills /memory /retry /fix /exit',
         '快捷键：Shift+Tab切换权限，Ctrl+O查看记录，Ctrl+E展开工具，Ctrl+C取消，Ctrl+D退出',
         '输入/后使用↑↓选择，Tab或→补全，Esc关闭。',
       ].join('\n'));
     }
-  }, [appendItem, client, commands, currentRunId, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, resumeRun, running, sessions, startTurn]);
+  }, [approval, appendItem, client, commands, currentRunId, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, resumeRun, running, sessions, startTurn]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];

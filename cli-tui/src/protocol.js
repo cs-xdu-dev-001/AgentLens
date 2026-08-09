@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export function sanitizeTerminalText(value) {
   return stripAnsi(String(value ?? '')).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');

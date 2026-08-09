@@ -17,7 +17,7 @@ class FakeClient extends EventEmitter {
   start() {
     queueMicrotask(() => this.emit('message', {
       type: 'ready',
-      protocolVersion: 2,
+      protocolVersion: 3,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
       workspace: {
@@ -134,6 +134,52 @@ test('capability commands request and render real runtime status', async () => {
   });
   await tick();
   assert.match(view.lastFrame(), /web_search\s+已启用/);
+  view.unmount();
+});
+
+test('context commands inspect usage and compact with optional instructions', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.15.0" />);
+  await tick();
+  view.stdin.write('/context');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'context', action: 'status'});
+  client.emit('message', {
+    type: 'context_status',
+    status: {
+      usedTokens: 1200,
+      maxTokens: 96000,
+      usagePercent: 1.2,
+      autoCompactAtPercent: 75,
+      messageCount: 4,
+      transcriptMessageCount: 6,
+      roleTokens: {system: 100, user: 400, assistant: 700},
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /1200\/96000 tokens/);
+
+  view.stdin.write('/compact 保留工作区边界');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'context',
+    action: 'compact',
+    instructions: '保留工作区边界',
+  });
+  client.emit('message', {
+    type: 'context_compacted',
+    compacted: true,
+    metadata: {reason: 'manual', originalTokens: 1200, compactedTokens: 500},
+    status: {usedTokens: 500, maxTokens: 96000, usagePercent: 0.5},
+    transcriptMessageCount: 6,
+  });
+  await tick();
+  assert.match(view.lastFrame(), /上下文压缩完成/);
+  assert.match(view.lastFrame(), /完整对话记录仍保留/);
   view.unmount();
 });
 
@@ -336,7 +382,7 @@ test('streaming keeps one Markdown block live and bounds the repainting tail', (
 
 test('streaming batches model deltas instead of repainting the whole conversation', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.14.0" />);
+  const view = render(<App client={client} version="0.15.0" />);
   await tick();
   view.stdin.write('生成流式报告');
   view.stdin.write('\r');

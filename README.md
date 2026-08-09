@@ -55,6 +55,8 @@ Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任�
 
 工作区不等于当前目录：项目根目录是任务边界，`/cd`只改变工具执行位置，`/add-dir`可为本次会话增加明确允许的目录；Header和`/workspace`会显示cwd、Git分支、dirty状态与允许目录。文件修改使用结构化编辑并保存修改前快照，`/diff`查看本轮差异，`/undo`只在文件没有被后续改动时安全撤销。会话与LangGraph checkpoint一起保存；`/resume`选择历史会话，失败后队列会暂停，使用`/continue`从失败点继续，或用`/retry tool`、`/retry turn`选择重试范围。
 
+模型上下文与完整对话记录分开保存：`/context`查看token占用、角色分布和自动压缩阈值；`/compact [补充要求]`把早期会话整理为结构化摘要，同时保留最近消息和完整原始记录。上下文达到75%时，CLI会在下一轮开始前自动压缩；压缩失败会继续使用原上下文，不会破坏会话或checkpoint。长期记忆Mem0与当前会话上下文仍是两套独立机制。
+
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # 新版Ink界面需要v22+

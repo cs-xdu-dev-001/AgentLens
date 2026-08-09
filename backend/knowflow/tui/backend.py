@@ -26,6 +26,9 @@ class TuiBackend:
         self.skill_id = skill_id
         self.session_id: str | None = None
         self.conversation: list[dict[str, Any]] = []
+        self.transcript: list[dict[str, Any]] = []
+        self.context_metadata: dict[str, Any] = {}
+        self.current_run_id: str | None = None
 
     @property
     def model_label(self) -> str:
@@ -42,6 +45,9 @@ class TuiBackend:
     def reset(self) -> None:
         self.session_id = None
         self.conversation = []
+        self.transcript = []
+        self.context_metadata = {}
+        self.current_run_id = None
 
     @staticmethod
     def _command_name(value: Any) -> str:
@@ -213,6 +219,100 @@ class TuiBackend:
             return []
         return list(self.local_agent.list_sessions(limit=limit))
 
+    def context_status(self) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持CLI上下文管理。")
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        status = dict(self.local_agent.context_status(self.conversation))
+        status["compaction"] = dict(self.context_metadata)
+        status["transcriptMessageCount"] = len(self.transcript)
+        return status
+
+    def compact_context(self, instructions: str = "") -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持CLI上下文压缩。")
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        result = dict(
+            self.local_agent.compact_context(
+                self.conversation,
+                instructions=instructions,
+                reason="manual",
+            )
+        )
+        if result.get("compacted"):
+            self.conversation = list(result.get("messages") or [])
+            self.context_metadata = dict(result.get("metadata") or {})
+            if self.current_run_id:
+                self.local_agent.save_context_state(
+                    self.current_run_id,
+                    messages=self.conversation,
+                    metadata=self.context_metadata,
+                )
+        result.pop("messages", None)
+        result["transcriptMessageCount"] = len(self.transcript)
+        return result
+
+    def _auto_compact(
+        self,
+        event_sink: AgentEventSink,
+        pending_user_text: str = "",
+    ) -> None:
+        if self.local_agent is None or not self.conversation:
+            return
+        preview = list(self.conversation)
+        if pending_user_text:
+            preview.append({"role": "user", "content": pending_user_text})
+        status = dict(self.local_agent.context_status(preview))
+        if not status.get("shouldAutoCompact"):
+            return
+        event_sink(
+            {
+                "type": "context_compaction_started",
+                "reason": "automatic",
+                "usedTokens": status.get("usedTokens"),
+                "maxTokens": status.get("maxTokens"),
+            }
+        )
+        try:
+            result = dict(
+                self.local_agent.compact_context(
+                    self.conversation,
+                    reason="automatic",
+                )
+            )
+        except Exception:
+            event_sink(
+                {
+                    "type": "context_compaction_failed",
+                    "reason": "automatic",
+                    "message": "自动压缩失败，已保留原上下文。",
+                }
+            )
+            return
+        if not result.get("compacted"):
+            event_sink(
+                {
+                    "type": "context_compaction_failed",
+                    "reason": "automatic",
+                    "message": "当前会话缺少可安全压缩的早期轮次，已保留原上下文。",
+                }
+            )
+            return
+        self.conversation = list(result.get("messages") or [])
+        self.context_metadata = dict(result.get("metadata") or {})
+        compacted_status = dict(result.get("status") or {})
+        event_sink(
+            {
+                "type": "context_compacted",
+                "reason": "automatic",
+                "originalTokens": self.context_metadata.get("originalTokens"),
+                "compactedTokens": self.context_metadata.get("compactedTokens"),
+                "usagePercent": compacted_status.get("usagePercent"),
+            }
+        )
+
     def restore_session(
         self,
         run_id: str,
@@ -221,15 +321,24 @@ class TuiBackend:
         if self.remote_client is not None:
             raise RuntimeError("远程会话请使用Web端恢复。")
         session = self.local_agent.load_session(run_id)
+        self.current_run_id = run_id
         status = str(session.get("status") or "")
         if status == "completed":
-            self.conversation = list(session.get("messages") or [])
+            self.conversation = list(
+                session.get("contextMessages")
+                or session.get("messages")
+                or []
+            )
+            self.transcript = list(session.get("messages") or [])
+            self.context_metadata = dict(session.get("compaction") or {})
             return AgentExecution(
                 result={
                     "paused": False,
                     "runId": run_id,
                     "answer": "",
-                    "messages": self.conversation,
+                    "messages": self.transcript,
+                    "contextMessages": self.conversation,
+                    "compaction": self.context_metadata,
                     "restored": True,
                     "status": status,
                 },
@@ -262,9 +371,12 @@ class TuiBackend:
         else:
             if self.local_agent is None:
                 raise RuntimeError("本地Agent尚未初始化。")
+            self._auto_compact(event_sink, question)
             execution = self.local_agent.run(
                 question,
                 history=self.conversation,
+                transcript=self.transcript,
+                context_metadata=self.context_metadata,
                 tools=self.tools,
                 event_sink=event_sink,
             )
@@ -296,6 +408,16 @@ class TuiBackend:
             resolved = self.local_agent.run(
                 "",
                 history=list(execution.result.get("messages") or []),
+                transcript=list(
+                    execution.result.get("transcriptMessages")
+                    or self.transcript
+                    or execution.result.get("messages")
+                    or []
+                ),
+                context_metadata=dict(
+                    execution.result.get("compaction")
+                    or self.context_metadata
+                ),
                 tools=self.tools,
                 run_id=run_id,
                 approval_decision=decision,
@@ -308,6 +430,9 @@ class TuiBackend:
         if execution.paused:
             return
         value = execution.result
+        run_id = str(value.get("runId") or "")
+        if run_id:
+            self.current_run_id = run_id
         self.session_id = str(
             value.get("sessionId") or self.session_id or ""
         ) or None
@@ -315,8 +440,19 @@ class TuiBackend:
             self.conversation = list(
                 value.get("messages") or self.conversation
             )
+            self.transcript = list(
+                value.get("transcriptMessages")
+                or self.transcript
+                or self.conversation
+            )
+            self.context_metadata = dict(
+                value.get("compaction") or self.context_metadata
+            )
             answer = str(value.get("answer") or "")
             if answer:
                 self.conversation.append(
+                    {"role": "assistant", "content": answer}
+                )
+                self.transcript.append(
                     {"role": "assistant", "content": answer}
                 )
