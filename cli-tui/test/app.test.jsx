@@ -154,11 +154,12 @@ test('Ink app renders a live task summary and collapses it after completion', as
     },
   });
   await tick();
-  assert.match(view.lastFrame(), /任务/);
+  assert.match(view.lastFrame(), /本次运行/);
   assert.match(view.lastFrame(), /~637 tokens/);
   assert.match(view.lastFrame(), /0\/2/);
   assert.match(view.lastFrame(), /模型正在分析/);
   assert.match(view.lastFrame(), /正在读取网页/);
+  assert.match(view.lastFrame(), /[├└]/);
 
   client.emit('message', {
     type: 'agent_event',
@@ -169,7 +170,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   });
   await new Promise(resolve => setTimeout(resolve, 180));
   const runningFrame = view.lastFrame();
-  assert.ok(runningFrame.indexOf('任务') < runningFrame.indexOf('回答第一段。'));
+  assert.ok(runningFrame.indexOf('本次运行') < runningFrame.indexOf('回答第一段。'));
 
   for (const [stepId, title] of [['step-model', '模型分析完成'], ['step-tool', '网页读取完成']]) {
     client.emit('message', {
@@ -198,7 +199,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   const completedFrame = view.lastFrame();
   assert.match(completedFrame, /2\/2/);
   assert.match(completedFrame, /已完成/);
-  assert.ok(completedFrame.indexOf('任务') < completedFrame.indexOf('回答第一段。'));
+  assert.ok(completedFrame.indexOf('本次运行') < completedFrame.indexOf('回答第一段。'));
   assert.doesNotMatch(completedFrame, /模型分析完成/);
 
   view.stdin.write('\u000f');

@@ -213,23 +213,29 @@ const TaskSummary = React.memo(function TaskSummary({
   ].filter(Boolean).join(' · ');
   const stateLabel = waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
   const stateColor = failed ? ERROR : waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
+    ?? rows[rows.length - 1];
+  const processLabel = running
+    ? publicLabel(phase || currentRow?.title, '正在执行')
+    : `${completed}个步骤已结束`;
 
   return (
-    <Box flexDirection="column" marginTop={1} marginLeft={1}>
+    <Box flexDirection="column" marginTop={1} marginLeft={1} marginBottom={1}>
       <Box justifyContent="space-between">
         <Box>
           <Text color={ACCENT}>{expanded ? '⌄' : '›'} </Text>
-          <Text color={PRIMARY} bold>任务</Text>
+          <Text color={PRIMARY} bold>本次运行</Text>
           {metrics ? <Text color={MUTED}>  {metrics}</Text> : null}
         </Box>
-        <Text color={stateColor}>{stateLabel}</Text>
+        <Text color={stateColor} bold={running || failed}>{stateLabel}</Text>
       </Box>
+      <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text>
       {failed && !expanded ? (
         <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
       ) : null}
       {expanded ? (
         <Box flexDirection="column" marginLeft={2} marginTop={1}>
-          {rows.slice(0, 6).map(row => {
+          {rows.slice(0, 8).map((row, index) => {
             const state = statusSymbol(row.status, spinner);
             const elapsed = row.elapsedSeconds !== undefined
               ? `${Number(row.elapsedSeconds).toFixed(1)}s`
@@ -245,6 +251,7 @@ const TaskSummary = React.memo(function TaskSummary({
             ].filter(Boolean).join(' · ');
             return (
               <Box key={row.id}>
+                <Text color={MUTED}>{index === Math.min(rows.length, 8) - 1 ? '└' : '├'} </Text>
                 <Text color={state.color}>{state.symbol} </Text>
                 <Text color={row.status === 'running' ? PRIMARY : MUTED} bold={row.status === 'running'}>
                   {row.title}
@@ -253,9 +260,9 @@ const TaskSummary = React.memo(function TaskSummary({
               </Box>
             );
           })}
-          {rows.length > 6 ? <Text color={MUTED}>  另有{rows.length - 6}个步骤</Text> : null}
+          {rows.length > 8 ? <Text color={MUTED}>  另有{rows.length - 8}个步骤</Text> : null}
           {!rows.length ? <Text color={MUTED}>{spinner} {phase}</Text> : null}
-          <Text color={MUTED}>Ctrl+T收起 · Ctrl+E工具详情</Text>
+          <Text color={MUTED}>  Ctrl+T收起 · Ctrl+E工具详情</Text>
         </Box>
       ) : null}
     </Box>
@@ -822,7 +829,7 @@ export function App({
           const nextTraceSteps = traceStepFromEvent(traceStepsRef.current, event);
           traceStepsRef.current = nextTraceSteps;
           setTraceSteps(nextTraceSteps);
-          setPhase(publicLabel(event.name, '分析任务'));
+          setPhase(publicLabel(event.title ?? event.name, '分析任务'));
         } else if (event.type === 'approval_required') {
           const mode = permissionRef.current;
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));

@@ -78,6 +78,17 @@ export function AgentRunSummary({ trace = [], run = null }) {
           step.kind === "tool" || step.kind === "mcp",
       ).length,
       total: progress.total || safeTrace.length,
+      progressPercent: (progress.total || safeTrace.length)
+        ? Math.min(
+            100,
+            Math.round(
+              ((progress.total
+                ? progress.completed
+                : safeTrace.filter((step) => terminalStatuses.has(step.status)).length)
+              / (progress.total || safeTrace.length)) * 100,
+            ),
+          )
+        : 0,
     };
   }, [now, rootStep, run, safeTrace]);
 
@@ -115,17 +126,40 @@ export function AgentRunSummary({ trace = [], run = null }) {
       : ["waiting", "waiting_start", "waiting_approval"].includes(status)
         ? "等待"
         : "已保存";
+  const currentStep = (
+    [...safeTrace].reverse().find(
+      (step) => step.status === "waiting" && step.kind === "approval",
+    )
+    || [...safeTrace].reverse().find((step) => step.status === "running")
+  );
+  const currentTitle = (
+    run?.steps?.find((step) => step.id === run?.currentStepId)?.title
+    || currentStep?.title
+    || currentStep?.name
+    || "记录Agent在本轮任务中的执行状态"
+  );
 
   return (
     <section className={"agent-run-summary"} aria-label={"本次运行概览"}>
       <div className={"agent-run-summary-head"}>
-        <div>
+        <div className={"agent-run-summary-copy"}>
           <h2>{"本次运行"}</h2>
           <span>{metrics.runId}{" · "}{freshness}</span>
+          <p>{currentTitle}</p>
         </div>
         <strong className={`agent-run-status ${status}`}>
           {statusLabel}
         </strong>
+      </div>
+      <div
+        className={"agent-run-progress"}
+        role={"progressbar"}
+        aria-label={"本次运行进度"}
+        aria-valuemin={0}
+        aria-valuemax={metrics.total || 1}
+        aria-valuenow={metrics.completed}
+      >
+        <span style={{ transform: `scaleX(${metrics.progressPercent / 100})` }}></span>
       </div>
       <div className={"agent-run-metrics"}>
         <div>

@@ -147,6 +147,21 @@ console.log(JSON.stringify({
         "live elapsed task metric",
     )
     require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "执行过程",
+        "inline run process heading",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        'role={"progressbar"}',
+        "accessible inline run progress",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "agent-task-capsule-step-copy",
+        "progressive step metadata",
+    )
+    require(
         "frontend/react/src/components/AgentRunSummary.jsx",
         '"回答已完成"',
         "completed answer status while background work continues",
