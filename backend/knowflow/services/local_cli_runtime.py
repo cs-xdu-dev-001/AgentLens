@@ -19,7 +19,7 @@ from .agent_tooling import (
     register_web_fetch_tool,
     register_web_search_tool,
 )
-from .agent_trace import sanitize_trace_value
+from .agent_trace import AgentTraceRecorder, sanitize_trace_value
 from .context_compaction import (
     compact_context,
     context_status,
@@ -758,6 +758,11 @@ class LocalAgentRuntime:
         def model_event(event: dict[str, Any]) -> None:
             emit({"type": "model_event", **event})
 
+        trace = AgentTraceRecorder(
+            emit=lambda event: emit({"type": "agent_step", **event}),
+            run_id=identifier,
+        )
+
         active_tool: dict[str, str] = {}
 
         def tool_lifecycle_event(event: dict[str, Any]) -> None:
@@ -890,6 +895,7 @@ class LocalAgentRuntime:
                     messages=messages,
                     config=config,
                     registry=registry,
+                    trace=trace,
                     execution_callback=tool_event,
                     model_event_callback=model_event,
                     tool_event_callback=tool_lifecycle_event,

@@ -133,8 +133,18 @@ console.log(JSON.stringify({
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "runProgress(run, trace)",
-        "trace progress fallback in the compact run strip",
+        "agent-task-capsule",
+        "expandable task capsule in the compact run strip",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "estimatedTokenCount",
+        "live estimated token metric",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "setInterval",
+        "live elapsed task metric",
     )
     require(
         "frontend/react/src/components/AgentRunSummary.jsx",

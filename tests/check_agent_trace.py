@@ -90,6 +90,22 @@ def main() -> None:
     ]
     assert all(step["status"] == "success" for step in snapshot)
 
+    boundary_trace = AgentTraceRecorder(run_id="run_boundary_trace")
+    boundary_trace.start_step(
+        kind="workspace",
+        name="read_workspace_file",
+        title="正在读取工作区文件",
+    )
+    boundary_trace.start_step(
+        kind="sandbox",
+        name="run_sandbox_command",
+        title="正在沙箱中执行命令",
+    )
+    assert [step["kind"] for step in boundary_trace.snapshot()] == [
+        "workspace",
+        "sandbox",
+    ]
+
     model_trace = AgentTraceRecorder(run_id="run_model_trace")
     run_langgraph_agent(
         gateway=FakeGateway(),

@@ -105,6 +105,81 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
   view.unmount();
 });
 
+test('Ink app renders a live task summary and collapses it after completion', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.16.0" />);
+  await tick();
+  view.stdin.write('检查服务状态');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      runId: 'run-live-summary',
+      stepId: 'step-model',
+      kind: 'model',
+      name: 'model_completion',
+      title: '模型正在分析',
+      status: 'running',
+      inputSummary: JSON.stringify({estimatedTokenCount: 637}),
+    },
+  });
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      runId: 'run-live-summary',
+      stepId: 'step-tool',
+      kind: 'tool',
+      name: 'web_fetch',
+      title: '正在读取网页',
+      status: 'running',
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /任务/);
+  assert.match(view.lastFrame(), /~637 tokens/);
+  assert.match(view.lastFrame(), /0\/2/);
+  assert.match(view.lastFrame(), /模型正在分析/);
+  assert.match(view.lastFrame(), /正在读取网页/);
+
+  for (const [stepId, title] of [['step-model', '模型分析完成'], ['step-tool', '网页读取完成']]) {
+    client.emit('message', {
+      type: 'agent_event',
+      event: {
+        type: 'agent_step',
+        runId: 'run-live-summary',
+        stepId,
+        kind: stepId === 'step-model' ? 'model' : 'tool',
+        name: stepId === 'step-model' ? 'model_completion' : 'web_fetch',
+        title,
+        status: 'success',
+        inputSummary: stepId === 'step-model'
+          ? JSON.stringify({estimatedTokenCount: 637})
+          : undefined,
+        durationMs: 500,
+      },
+    });
+  }
+  client.emit('message', {
+    type: 'turn_completed',
+    runId: 'run-live-summary',
+    answer: '检查完成。',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /2\/2/);
+  assert.match(view.lastFrame(), /已完成/);
+  assert.doesNotMatch(view.lastFrame(), /模型分析完成/);
+
+  view.stdin.write('\u0014');
+  await tick();
+  assert.match(view.lastFrame(), /模型分析完成/);
+  assert.match(view.lastFrame(), /网页读取完成/);
+  view.unmount();
+});
+
 test('Ink app rejects unknown slash commands instead of sending them to the model', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.1" />);

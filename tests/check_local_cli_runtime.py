@@ -181,6 +181,17 @@ def main() -> None:
                 if event.get("type") == "tool_result"
             ]
         ) == 4
+        trace_events = [
+            event
+            for event in execution.events
+            if event.get("type") == "agent_step"
+        ]
+        assert trace_events
+        assert any(event.get("kind") == "model" for event in trace_events)
+        assert any(
+            event.get("kind") in {"tool", "workspace", "sandbox"}
+            for event in trace_events
+        )
         stored = runtime.list_sessions()
         assert stored and stored[0]["status"] == "completed"
         loaded = runtime.load_session(stored[0]["runId"])

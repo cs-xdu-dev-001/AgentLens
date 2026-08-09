@@ -107,6 +107,50 @@ function activityFromEvent(previous, event) {
   return next;
 }
 
+function traceStepFromEvent(previous, event) {
+  const stepId = String(event.stepId ?? '');
+  if (!stepId) return previous;
+  const next = new Map(previous);
+  next.set(stepId, {
+    id: stepId,
+    kind: publicLabel(event.kind, 'agent', 40),
+    name: publicLabel(event.name, 'agent_step', 120),
+    status: publicLabel(event.status, 'running', 40),
+    title: publicLabel(event.title ?? event.name, '分析任务', 160),
+    inputSummary: event.inputSummary,
+    durationMs: event.durationMs,
+  });
+  return next;
+}
+
+function parseSummary(value) {
+  if (value && typeof value === 'object') return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatTaskTokens(value) {
+  const tokens = Math.max(0, Number(value) || 0);
+  if (!tokens) return '';
+  if (tokens < 1000) return `~${Math.round(tokens)} tokens`;
+  const compact = (tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0).replace(/\.0$/, '');
+  return `~${compact}k tokens`;
+}
+
+function formatTaskElapsed(milliseconds) {
+  const value = Math.max(0, Number(milliseconds) || 0);
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${Math.round(value / 1000)}s`;
+  const minutes = Math.floor(value / 60_000);
+  const seconds = Math.floor((value % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
 function statusSymbol(status, spinner) {
   if (['success', 'succeeded', 'completed'].includes(status)) return {symbol: '✓', color: SUCCESS};
   if (['failed', 'error'].includes(status)) return {symbol: '✕', color: ERROR};
@@ -132,37 +176,88 @@ function ActivityDetails({row, compact = false}) {
   );
 }
 
-const ActivityView = React.memo(function ActivityView({activities, expanded, running, spinner = '·'}) {
-  const rows = [...activities.values()];
-  if (!rows.length) return null;
+const TaskSummary = React.memo(function TaskSummary({
+  activities,
+  elapsedMs,
+  expanded,
+  phase,
+  running,
+  spinner = '·',
+  traceSteps,
+}) {
+  const tracedRows = [...traceSteps.values()].filter(row => row.name !== 'agent_run');
+  const fallbackRows = [...activities.values()].map(row => ({
+    id: row.id,
+    kind: 'tool',
+    name: row.name,
+    status: row.status,
+    title: row.name,
+    elapsedSeconds: row.elapsedSeconds,
+    latencyMs: row.latencyMs,
+    totalLines: row.totalLines,
+    totalBytes: row.totalBytes,
+  }));
+  const rows = tracedRows.length ? tracedRows : fallbackRows;
+  if (!running && !rows.length) return null;
+  const completed = rows.filter(row => ['success', 'succeeded', 'completed', 'cancelled'].includes(row.status)).length;
+  const failed = rows.some(row => ['failed', 'error'].includes(row.status));
+  const waiting = rows.some(row => row.status === 'waiting');
+  const tokens = tracedRows.reduce((total, row) => {
+    if (row.kind !== 'model') return total;
+    return total + Math.max(0, Number(parseSummary(row.inputSummary).estimatedTokenCount) || 0);
+  }, 0);
+  const metrics = [
+    formatTaskElapsed(elapsedMs),
+    formatTaskTokens(tokens),
+    rows.length ? `${completed}/${rows.length}` : '',
+  ].filter(Boolean).join(' · ');
+  const stateLabel = waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
+  const stateColor = failed ? ERROR : waiting ? WARNING : running ? ACCENT : SUCCESS;
+
   return (
-    <Box flexDirection="column" marginLeft={1} marginTop={1}>
-      {rows.map(row => {
-        const state = statusSymbol(row.status, spinner);
-        const elapsed = row.elapsedSeconds !== undefined
-          ? `${Number(row.elapsedSeconds).toFixed(1)}s`
-          : row.latencyMs !== undefined
-            ? `${(Number(row.latencyMs) / 1000).toFixed(1)}s`
-            : '';
-        const metrics = [elapsed, row.totalLines ? `${row.totalLines}行` : '', row.totalBytes ? `${row.totalBytes}B` : '']
-          .filter(Boolean)
-          .join(' · ');
-        return (
-          <Box key={row.id} flexDirection="column">
-            <Box>
-              <Text color={state.color}>{state.symbol} </Text>
-              <Text color={PRIMARY} bold={row.status === 'running'}>{row.name}</Text>
-              <Text color={MUTED}>{metrics ? `  ${metrics}` : ''}</Text>
-            </Box>
-            {expanded && (row.arguments || row.output || row.stdout || row.stderr || row.errorCode || row.errorMessage)
-              ? <ActivityDetails row={row} compact />
-              : null}
-            {row.status === 'failed' && !expanded ? (
-              <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
-            ) : null}
-          </Box>
-        );
-      })}
+    <Box flexDirection="column" marginTop={1} marginLeft={1}>
+      <Box justifyContent="space-between">
+        <Box>
+          <Text color={ACCENT}>{expanded ? '⌄' : '›'} </Text>
+          <Text color={PRIMARY} bold>任务</Text>
+          {metrics ? <Text color={MUTED}>  {metrics}</Text> : null}
+        </Box>
+        <Text color={stateColor}>{stateLabel}</Text>
+      </Box>
+      {failed && !expanded ? (
+        <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
+      ) : null}
+      {expanded ? (
+        <Box flexDirection="column" marginLeft={2} marginTop={1}>
+          {rows.slice(0, 6).map(row => {
+            const state = statusSymbol(row.status, spinner);
+            const elapsed = row.elapsedSeconds !== undefined
+              ? `${Number(row.elapsedSeconds).toFixed(1)}s`
+              : row.latencyMs !== undefined
+                ? `${(Number(row.latencyMs) / 1000).toFixed(1)}s`
+                : row.durationMs !== undefined && row.durationMs !== null
+                  ? `${(Number(row.durationMs) / 1000).toFixed(1)}s`
+                  : '';
+            const rowMetrics = [
+              elapsed,
+              row.totalLines ? `${row.totalLines}行` : '',
+              row.totalBytes ? `${row.totalBytes}B` : '',
+            ].filter(Boolean).join(' · ');
+            return (
+              <Box key={row.id}>
+                <Text color={state.color}>{state.symbol} </Text>
+                <Text color={row.status === 'running' ? PRIMARY : MUTED} bold={row.status === 'running'}>
+                  {row.title}
+                </Text>
+                {rowMetrics ? <Text color={MUTED}>  {rowMetrics}</Text> : null}
+              </Box>
+            );
+          })}
+          {rows.length > 6 ? <Text color={MUTED}>  另有{rows.length - 6}个步骤</Text> : null}
+          {!rows.length ? <Text color={MUTED}>{spinner} {phase}</Text> : null}
+          <Text color={MUTED}>Ctrl+T收起 · Ctrl+E工具详情</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 });
@@ -455,7 +550,11 @@ export function App({
   const viewportSizeRef = useRef({columns: stdout.columns, rows: stdout.rows});
   const [activities, setActivities] = useState(new Map());
   const activitiesRef = useRef(activities);
-  const [expanded, setExpanded] = useState(false);
+  const [traceSteps, setTraceSteps] = useState(new Map());
+  const [taskExpanded, setTaskExpanded] = useState(true);
+  const runStartedAtRef = useRef(0);
+  const [runElapsedMs, setRunElapsedMs] = useState(0);
+  const [runClock, setRunClock] = useState(() => Date.now());
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
   const [transcriptMode, setTranscriptMode] = useState(false);
@@ -480,6 +579,12 @@ export function App({
   const spinner = useSpinner(running && !approval);
 
   useEffect(() => {
+    if (!running) return undefined;
+    const timer = setInterval(() => setRunClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  useEffect(() => {
     activitiesRef.current = activities;
   }, [activities]);
   useEffect(() => {
@@ -502,7 +607,7 @@ export function App({
       if (scrollPinnedRef.current) scrollRef.current?.scrollToBottom();
     });
     return () => clearImmediate(immediate);
-  }, [activities, assistantDraft, expanded, fullscreenEnabled, transcript, transcriptMode, transcriptSnapshot]);
+  }, [activities, assistantDraft, fullscreenEnabled, transcript, transcriptMode, transcriptSnapshot]);
 
   const scrollConversation = useCallback(delta => {
     const scroller = scrollRef.current;
@@ -538,13 +643,17 @@ export function App({
     setTranscriptSnapshot({
       transcript: [...transcript],
       activities: new Map(activitiesRef.current),
+      traceSteps: new Map(traceSteps),
+      elapsedMs: runStartedAtRef.current
+        ? (running ? Date.now() - runStartedAtRef.current : runElapsedMs)
+        : 0,
       assistantDraft: assistantDraftRef.current.slice(committedDraftBoundaryRef.current),
       running,
     });
     transcriptModeRef.current = true;
     setTranscriptMode(true);
     scrollPinnedRef.current = true;
-  }, [closeTranscriptMode, running, transcript]);
+  }, [closeTranscriptMode, runElapsedMs, running, traceSteps, transcript]);
 
   const appendItem = useCallback((role, content) => {
     const text = redact(String(content ?? ''), 200_000).trim();
@@ -622,7 +731,13 @@ export function App({
       if (message.type === 'agent_event') {
         const event = message.event ?? {};
         if (event.runId) setCurrentRunId(String(event.runId));
-        if (event.type === 'text_delta') {
+        if (event.type === 'run_started') {
+          const startedAt = Date.now();
+          runStartedAtRef.current = startedAt;
+          setRunClock(startedAt);
+          setRunElapsedMs(0);
+          setTaskExpanded(true);
+        } else if (event.type === 'text_delta') {
           const delta = sanitizeTerminalText(event.text ?? event.delta ?? '');
           assistantDraftRef.current += delta;
           scheduleDraftFlush();
@@ -645,6 +760,7 @@ export function App({
           appendItem('error', event.message ?? '自动压缩失败，已保留原上下文。');
           setPhase('继续使用原上下文');
         } else if (event.type === 'agent_step') {
+          setTraceSteps(value => traceStepFromEvent(value, event));
           setPhase(publicLabel(event.name, '分析任务'));
         } else if (event.type === 'approval_required') {
           const mode = permissionRef.current;
@@ -735,7 +851,11 @@ export function App({
           appendItem('assistant', `本轮修改  ${summary}  · /diff查看`);
         }
         resetAssistantDraft();
+        if (runStartedAtRef.current) {
+          setRunElapsedMs(Date.now() - runStartedAtRef.current);
+        }
         setRunning(false);
+        setTaskExpanded(false);
         setQueuePaused(false);
         setLastFailedRunId('');
         setPhase(message.cancelled ? '已取消' : '就绪');
@@ -749,7 +869,11 @@ export function App({
         }
         appendItem('error', `${message.message}  输入/continue从checkpoint继续，或/retry选择重试范围`);
         resetAssistantDraft();
+        if (runStartedAtRef.current) {
+          setRunElapsedMs(Date.now() - runStartedAtRef.current);
+        }
         setRunning(false);
+        setTaskExpanded(true);
         setQueuePaused(true);
         setPhase('执行失败');
         return;
@@ -778,6 +902,9 @@ export function App({
         setPermissionMode('ask');
         setCurrentRunId('');
         setLastFailedRunId('');
+        setTraceSteps(new Map());
+        setRunElapsedMs(0);
+        runStartedAtRef.current = 0;
         setQueuePaused(false);
         setPhase('新会话');
         return;
@@ -848,6 +975,11 @@ export function App({
     requestCounter.current += 1;
     setRunning(true);
     setActivities(new Map());
+    setTraceSteps(new Map());
+    setTaskExpanded(true);
+    runStartedAtRef.current = Date.now();
+    setRunClock(runStartedAtRef.current);
+    setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
     resetAssistantDraft();
@@ -888,6 +1020,11 @@ export function App({
     requestCounter.current += 1;
     setRunning(true);
     setActivities(new Map());
+    setTraceSteps(new Map());
+    setTaskExpanded(true);
+    runStartedAtRef.current = Date.now();
+    setRunClock(runStartedAtRef.current);
+    setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
     resetAssistantDraft();
@@ -905,6 +1042,11 @@ export function App({
     setRunning(true);
     setSessionPicker(false);
     setActivities(new Map());
+    setTraceSteps(new Map());
+    setTaskExpanded(true);
+    runStartedAtRef.current = Date.now();
+    setRunClock(runStartedAtRef.current);
+    setRunElapsedMs(0);
     setToolDetailOpen(false);
     resetAssistantDraft();
     setPhase('恢复会话');
@@ -942,6 +1084,9 @@ export function App({
       setStaticEpoch(value => value + 1);
       setTranscript([]);
       setActivities(new Map());
+      setTraceSteps(new Map());
+      setRunElapsedMs(0);
+      runStartedAtRef.current = 0;
       setToolDetailOpen(false);
       setToolDetailIndex(0);
     } else if (command.value === '/model') {
@@ -1156,9 +1301,12 @@ export function App({
       toggleTranscriptMode();
       return;
     }
+    if (key.ctrl && character === 't') {
+      setTaskExpanded(value => !value);
+      return;
+    }
     if (transcriptModeRef.current) {
       if (key.escape) closeTranscriptMode();
-      else if (key.ctrl && character === 'e') setExpanded(value => !value);
       else if (key.pageUp) scrollPage(-1);
       else if (key.pageDown) scrollPage(1);
       else if (key.upArrow) scrollConversation(-1);
@@ -1310,6 +1458,9 @@ export function App({
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
   const narrow = (stdout.columns ?? 80) < 72;
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
+  const taskElapsedMs = runStartedAtRef.current
+    ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
+    : 0;
   const liveConversation = (
     <Box key="conversation" flexDirection="column" width="100%">
       {fullscreenEnabled ? (
@@ -1318,8 +1469,16 @@ export function App({
           <Transcript items={transcript} />
         </>
       ) : null}
-      {running || activities.size ? (
-        <ActivityView activities={activities} expanded={false} running={running} spinner={spinner} />
+      {running || activities.size || traceSteps.size ? (
+        <TaskSummary
+          activities={activities}
+          elapsedMs={taskElapsedMs}
+          expanded={taskExpanded}
+          phase={phase}
+          running={running}
+          spinner={spinner}
+          traceSteps={traceSteps}
+        />
       ) : null}
       <StreamingReply>{assistantDraft}</StreamingReply>
     </Box>
@@ -1336,6 +1495,8 @@ export function App({
   const frozen = transcriptSnapshot ?? {
     transcript,
     activities,
+    traceSteps,
+    elapsedMs: taskElapsedMs,
     assistantDraft,
     running,
   };
@@ -1343,8 +1504,16 @@ export function App({
     <Box key="transcript-conversation" flexDirection="column" width="100%">
       <Welcome version={version} model={model} workspace={workspace} />
       <Transcript items={frozen.transcript} />
-      {frozen.running || frozen.activities.size ? (
-        <ActivityView activities={frozen.activities} expanded={expanded} running={false} />
+      {frozen.running || frozen.activities.size || frozen.traceSteps?.size ? (
+        <TaskSummary
+          activities={frozen.activities}
+          elapsedMs={frozen.elapsedMs ?? taskElapsedMs}
+          expanded={taskExpanded}
+          phase={phase}
+          running={frozen.running}
+          spinner={spinner}
+          traceSteps={frozen.traceSteps ?? new Map()}
+        />
       ) : null}
       <StreamingReply>{frozen.assistantDraft}</StreamingReply>
     </Box>
@@ -1353,7 +1522,7 @@ export function App({
     <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
       <Text color={PRIMARY}>对话记录</Text>
       <Text color={MUTED}>
-        {mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Ctrl+E展开工具 · Ctrl+O/Esc返回
+        {mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Ctrl+T任务 · Ctrl+O/Esc返回
       </Text>
     </Box>
   );
@@ -1389,7 +1558,7 @@ export function App({
             </Text>
             {!narrow ? (
               <Text color={MUTED}>
-                {model || '连接中'} · {workspace?.branch || '工作区'} · {fullscreenEnabled ? 'Ctrl+O记录' : '终端滚轮选择复制'} · Ctrl+E工具详情
+                {model || '连接中'} · {workspace?.branch || '工作区'} · {fullscreenEnabled ? 'Ctrl+O记录' : '终端滚轮选择复制'} · Ctrl+T任务
               </Text>
             ) : null}
           </Box>

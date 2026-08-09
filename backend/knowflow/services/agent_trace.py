@@ -19,6 +19,8 @@ TRACE_KINDS = {
     "system",
     "approval",
     "memory",
+    "sandbox",
+    "workspace",
 }
 TRACE_STATUSES = {
     "waiting",
