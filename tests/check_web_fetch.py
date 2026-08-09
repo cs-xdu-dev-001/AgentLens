@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 import sys
 
 import httpx
+from pypdf import PdfWriter
+from pypdf.generic import (
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -188,6 +195,57 @@ def exercise_limits_and_policy() -> None:
     )
 
 
+def exercise_pdf() -> None:
+    buffer = BytesIO()
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    font_ref = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject(
+                {NameObject("/F1"): font_ref}
+            )
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(
+        b"BT /F1 12 Tf 72 720 Td (Evidence from PDF.) Tj ET"
+    )
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    writer.add_metadata({"/Title": "AI Index Report"})
+    writer.write(buffer)
+
+    fetcher = PublicWebFetcher(
+        resolver=public_resolver,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                headers={
+                    "content-type": "application/pdf",
+                    "content-length": "30264659",
+                },
+                content=buffer.getvalue(),
+            )
+        ),
+    )
+    result = fetcher.fetch(
+        "https://example.com/report.pdf",
+        max_chars=5000,
+    )
+    assert result["content_type"] == "application/pdf"
+    assert result["title"] == "AI Index Report"
+    assert result["page_count"] == 1
+    assert result["content"] == "Evidence from PDF."
+    assert result["truncated"] is False
+
+
 def exercise_tool_and_grounding_contract() -> None:
     class Provider:
         def fetch(self, url: str, *, max_chars: int):
@@ -231,6 +289,7 @@ def exercise_tool_and_grounding_contract() -> None:
 def main() -> None:
     exercise_html_and_redirect()
     exercise_limits_and_policy()
+    exercise_pdf()
     exercise_tool_and_grounding_contract()
     print("web fetch is public-only, bounded, grounded, and registered")
 

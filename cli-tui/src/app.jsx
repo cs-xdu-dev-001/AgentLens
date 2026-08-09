@@ -412,7 +412,19 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   );
 });
 
-const TranscriptRow = React.memo(function TranscriptRow({item}) {
+const TranscriptRow = React.memo(function TranscriptRow({item, taskExpanded = false}) {
+  if (item.role === 'task_summary') {
+    return (
+      <TaskSummary
+        activities={new Map(item.activities ?? [])}
+        elapsedMs={item.elapsedMs ?? 0}
+        expanded={taskExpanded}
+        phase={item.phase ?? '已完成'}
+        running={false}
+        traceSteps={new Map(item.traceSteps ?? [])}
+      />
+    );
+  }
   const assistant = item.role === 'assistant' || item.role === 'assistant_chunk';
   return (
     <Box marginBottom={item.role === 'user' ? 1 : 0}>
@@ -428,10 +440,10 @@ const TranscriptRow = React.memo(function TranscriptRow({item}) {
   );
 });
 
-const Transcript = React.memo(function Transcript({items}) {
+const Transcript = React.memo(function Transcript({items, taskExpanded = false}) {
   return (
     <Box flexDirection="column">
-      {items.map(item => <TranscriptRow key={item.id} item={item} />)}
+      {items.map(item => <TranscriptRow key={item.id} item={item} taskExpanded={taskExpanded} />)}
     </Box>
   );
 });
@@ -546,11 +558,14 @@ export function App({
   const [assistantDraft, setAssistantDraft] = useState('');
   const assistantDraftRef = useRef('');
   const committedDraftBoundaryRef = useRef(0);
+  const [turnChunks, setTurnChunks] = useState([]);
   const draftFlushTimerRef = useRef(null);
   const viewportSizeRef = useRef({columns: stdout.columns, rows: stdout.rows});
   const [activities, setActivities] = useState(new Map());
   const activitiesRef = useRef(activities);
   const [traceSteps, setTraceSteps] = useState(new Map());
+  const traceStepsRef = useRef(traceSteps);
+  const [taskArchived, setTaskArchived] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(true);
   const runStartedAtRef = useRef(0);
   const [runElapsedMs, setRunElapsedMs] = useState(0);
@@ -587,6 +602,9 @@ export function App({
   useEffect(() => {
     activitiesRef.current = activities;
   }, [activities]);
+  useEffect(() => {
+    traceStepsRef.current = traceSteps;
+  }, [traceSteps]);
   useEffect(() => {
     permissionRef.current = permissionMode;
   }, [permissionMode]);
@@ -644,6 +662,7 @@ export function App({
       transcript: [...transcript],
       activities: new Map(activitiesRef.current),
       traceSteps: new Map(traceSteps),
+      turnChunks: [...turnChunks],
       elapsedMs: runStartedAtRef.current
         ? (running ? Date.now() - runStartedAtRef.current : runElapsedMs)
         : 0,
@@ -653,12 +672,49 @@ export function App({
     transcriptModeRef.current = true;
     setTranscriptMode(true);
     scrollPinnedRef.current = true;
-  }, [closeTranscriptMode, runElapsedMs, running, traceSteps, transcript]);
+  }, [closeTranscriptMode, runElapsedMs, running, traceSteps, transcript, turnChunks]);
 
   const appendItem = useCallback((role, content) => {
     const text = redact(String(content ?? ''), 200_000).trim();
     if (!text) return;
     setTranscript(items => [...items, {id: `${Date.now()}-${Math.random()}`, role, content: text}]);
+  }, []);
+
+  const appendTurnChunk = useCallback(content => {
+    const text = redact(String(content ?? ''), 200_000).trim();
+    if (!text) return;
+    setTurnChunks(items => [...items, {
+      id: `${Date.now()}-${Math.random()}`,
+      role: 'assistant_chunk',
+      content: text,
+    }]);
+  }, []);
+
+  const archiveCurrentTurn = useCallback((answer, finalPhase) => {
+    const additions = [];
+    if (activitiesRef.current.size || traceStepsRef.current.size) {
+      additions.push({
+        id: `${Date.now()}-${Math.random()}`,
+        role: 'task_summary',
+        activities: [...activitiesRef.current.entries()],
+        traceSteps: [...traceStepsRef.current.entries()],
+        elapsedMs: runStartedAtRef.current
+          ? Math.max(0, Date.now() - runStartedAtRef.current)
+          : 0,
+        phase: finalPhase,
+      });
+    }
+    const text = redact(String(answer ?? ''), 200_000).trim();
+    if (text) {
+      additions.push({
+        id: `${Date.now()}-${Math.random()}`,
+        role: 'assistant',
+        content: text,
+      });
+    }
+    if (additions.length) setTranscript(items => [...items, ...additions]);
+    setTurnChunks([]);
+    setTaskArchived(true);
   }, []);
 
   const cancelDraftFlush = useCallback(() => {
@@ -674,13 +730,13 @@ export function App({
     const start = Math.min(committedDraftBoundaryRef.current, source.length);
     const end = final ? source.length : stableMarkdownBoundary(source, start);
     if (end > start) {
-      appendItem('assistant_chunk', source.slice(start, end));
+      appendTurnChunk(source.slice(start, end));
       committedDraftBoundaryRef.current = end;
     }
     const pending = source.slice(committedDraftBoundaryRef.current);
     const {columns, rows} = viewportSizeRef.current;
     setAssistantDraft(final ? '' : streamingPreview(pending, columns, rows));
-  }, [appendItem, cancelDraftFlush]);
+  }, [appendTurnChunk, cancelDraftFlush]);
 
   const scheduleDraftFlush = useCallback(() => {
     if (draftFlushTimerRef.current !== null) return;
@@ -694,6 +750,7 @@ export function App({
     cancelDraftFlush();
     assistantDraftRef.current = '';
     committedDraftBoundaryRef.current = 0;
+    setTurnChunks([]);
     setAssistantDraft('');
   }, [cancelDraftFlush]);
 
@@ -742,7 +799,9 @@ export function App({
           assistantDraftRef.current += delta;
           scheduleDraftFlush();
         } else if (['tool_started', 'tool_progress', 'tool_result'].includes(event.type)) {
-          setActivities(value => activityFromEvent(value, event));
+          const nextActivities = activityFromEvent(activitiesRef.current, event);
+          activitiesRef.current = nextActivities;
+          setActivities(nextActivities);
           const toolName = publicLabel(event.toolName, '工具');
           setPhase(
             event.type === 'tool_result'
@@ -760,7 +819,9 @@ export function App({
           appendItem('error', event.message ?? '自动压缩失败，已保留原上下文。');
           setPhase('继续使用原上下文');
         } else if (event.type === 'agent_step') {
-          setTraceSteps(value => traceStepFromEvent(value, event));
+          const nextTraceSteps = traceStepFromEvent(traceStepsRef.current, event);
+          traceStepsRef.current = nextTraceSteps;
+          setTraceSteps(nextTraceSteps);
           setPhase(publicLabel(event.name, '分析任务'));
         } else if (event.type === 'approval_required') {
           const mode = permissionRef.current;
@@ -777,21 +838,25 @@ export function App({
         } else if (event.type === 'model_retry') {
           setPhase('模型请求重试');
         } else if (event.type === 'memory_started') {
-          setActivities(value => activityFromEvent(value, {
+          const nextActivities = activityFromEvent(activitiesRef.current, {
             ...event,
             type: 'tool_started',
             toolCallId: `memory:${event.runId ?? 'current'}`,
             toolName: '长期记忆整理',
-          }));
+          });
+          activitiesRef.current = nextActivities;
+          setActivities(nextActivities);
           setPhase('整理长期记忆');
         } else if (event.type === 'memory_result') {
-          setActivities(value => activityFromEvent(value, {
+          const nextActivities = activityFromEvent(activitiesRef.current, {
             ...event,
             type: 'tool_result',
             toolCallId: `memory:${event.runId ?? 'current'}`,
             toolName: '长期记忆整理',
             output: event.status === 'success' ? `写入${event.count ?? 0}条` : undefined,
-          }));
+          });
+          activitiesRef.current = nextActivities;
+          setActivities(nextActivities);
         }
         return;
       }
@@ -840,10 +905,12 @@ export function App({
             role: item.role,
             content: String(item.content ?? ''),
           })));
-        } else if (assistantDraftRef.current) {
-          flushAssistantDraft(true);
+          setTaskArchived(true);
         } else {
-          appendItem('assistant', message.answer);
+          archiveCurrentTurn(
+            assistantDraftRef.current || message.answer,
+            message.cancelled ? '已取消' : '已完成',
+          );
         }
         if (message.runId) setCurrentRunId(String(message.runId));
         if (Array.isArray(message.changes) && message.changes.length) {
@@ -862,7 +929,7 @@ export function App({
         return;
       }
       if (message.type === 'turn_failed') {
-        flushAssistantDraft(true);
+        archiveCurrentTurn(assistantDraftRef.current, '执行失败');
         if (message.runId) {
           setCurrentRunId(String(message.runId));
           setLastFailedRunId(String(message.runId));
@@ -895,14 +962,19 @@ export function App({
         setStaticEpoch(value => value + 1);
         resetAssistantDraft();
         setTranscript([]);
-        setActivities(new Map());
+        const emptyActivities = new Map();
+        const emptyTraceSteps = new Map();
+        activitiesRef.current = emptyActivities;
+        traceStepsRef.current = emptyTraceSteps;
+        setActivities(emptyActivities);
+        setTaskArchived(false);
         setToolDetailOpen(false);
         setToolDetailIndex(0);
         sessionApprovals.current.clear();
         setPermissionMode('ask');
         setCurrentRunId('');
         setLastFailedRunId('');
-        setTraceSteps(new Map());
+        setTraceSteps(emptyTraceSteps);
         setRunElapsedMs(0);
         runStartedAtRef.current = 0;
         setQueuePaused(false);
@@ -966,7 +1038,7 @@ export function App({
       client.off('exit', onExit);
       client.close();
     };
-  }, [appendItem, client, flushAssistantDraft, resetAssistantDraft, scheduleDraftFlush]);
+  }, [appendItem, archiveCurrentTurn, client, resetAssistantDraft, scheduleDraftFlush]);
 
   useEffect(() => {
     if (running || approval || queuePaused || !ready || queue.length === 0) return;
@@ -974,8 +1046,13 @@ export function App({
     setQueue(remaining);
     requestCounter.current += 1;
     setRunning(true);
-    setActivities(new Map());
-    setTraceSteps(new Map());
+    const emptyActivities = new Map();
+    const emptyTraceSteps = new Map();
+    activitiesRef.current = emptyActivities;
+    traceStepsRef.current = emptyTraceSteps;
+    setActivities(emptyActivities);
+    setTraceSteps(emptyTraceSteps);
+    setTaskArchived(false);
     setTaskExpanded(true);
     runStartedAtRef.current = Date.now();
     setRunClock(runStartedAtRef.current);
@@ -1019,8 +1096,13 @@ export function App({
     }
     requestCounter.current += 1;
     setRunning(true);
-    setActivities(new Map());
-    setTraceSteps(new Map());
+    const emptyActivities = new Map();
+    const emptyTraceSteps = new Map();
+    activitiesRef.current = emptyActivities;
+    traceStepsRef.current = emptyTraceSteps;
+    setActivities(emptyActivities);
+    setTraceSteps(emptyTraceSteps);
+    setTaskArchived(false);
     setTaskExpanded(true);
     runStartedAtRef.current = Date.now();
     setRunClock(runStartedAtRef.current);
@@ -1041,8 +1123,13 @@ export function App({
     requestCounter.current += 1;
     setRunning(true);
     setSessionPicker(false);
-    setActivities(new Map());
-    setTraceSteps(new Map());
+    const emptyActivities = new Map();
+    const emptyTraceSteps = new Map();
+    activitiesRef.current = emptyActivities;
+    traceStepsRef.current = emptyTraceSteps;
+    setActivities(emptyActivities);
+    setTraceSteps(emptyTraceSteps);
+    setTaskArchived(false);
     setTaskExpanded(true);
     runStartedAtRef.current = Date.now();
     setRunClock(runStartedAtRef.current);
@@ -1083,8 +1170,14 @@ export function App({
     } else if (command.value === '/clear') {
       setStaticEpoch(value => value + 1);
       setTranscript([]);
-      setActivities(new Map());
-      setTraceSteps(new Map());
+      const emptyActivities = new Map();
+      const emptyTraceSteps = new Map();
+      activitiesRef.current = emptyActivities;
+      traceStepsRef.current = emptyTraceSteps;
+      setActivities(emptyActivities);
+      setTraceSteps(emptyTraceSteps);
+      setTaskArchived(false);
+      resetAssistantDraft();
       setRunElapsedMs(0);
       runStartedAtRef.current = 0;
       setToolDetailOpen(false);
@@ -1469,7 +1562,7 @@ export function App({
           <Transcript items={transcript} />
         </>
       ) : null}
-      {running || activities.size || traceSteps.size ? (
+      {!taskArchived && (running || activities.size || traceSteps.size) ? (
         <TaskSummary
           activities={activities}
           elapsedMs={taskElapsedMs}
@@ -1480,6 +1573,7 @@ export function App({
           traceSteps={traceSteps}
         />
       ) : null}
+      <Transcript items={turnChunks} />
       <StreamingReply>{assistantDraft}</StreamingReply>
     </Box>
   );
@@ -1496,6 +1590,7 @@ export function App({
     transcript,
     activities,
     traceSteps,
+    turnChunks,
     elapsedMs: taskElapsedMs,
     assistantDraft,
     running,
@@ -1503,7 +1598,7 @@ export function App({
   const transcriptConversation = (
     <Box key="transcript-conversation" flexDirection="column" width="100%">
       <Welcome version={version} model={model} workspace={workspace} />
-      <Transcript items={frozen.transcript} />
+      <Transcript items={frozen.transcript} taskExpanded={taskExpanded} />
       {frozen.running || frozen.activities.size || frozen.traceSteps?.size ? (
         <TaskSummary
           activities={frozen.activities}
@@ -1515,6 +1610,7 @@ export function App({
           traceSteps={frozen.traceSteps ?? new Map()}
         />
       ) : null}
+      <Transcript items={frozen.turnChunks ?? []} />
       <StreamingReply>{frozen.assistantDraft}</StreamingReply>
     </Box>
   );

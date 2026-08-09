@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 import re
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -20,9 +21,12 @@ from .mcp_security import PinnedTransport, validate_public_url
 
 
 DEFAULT_MAX_RESPONSE_BYTES = 2_000_000
+DEFAULT_MAX_PDF_RESPONSE_BYTES = 40_000_000
 DEFAULT_MAX_REDIRECTS = 3
 DEFAULT_MAX_CONTENT_CHARS = 16_000
+DEFAULT_MAX_PDF_PAGES = 100
 ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
     "application/json",
     "application/xhtml+xml",
     "application/xml",
@@ -161,6 +165,71 @@ def _extract_html(
     }
 
 
+def _extract_pdf(
+    data: bytes,
+    *,
+    max_chars: int,
+    max_pages: int = DEFAULT_MAX_PDF_PAGES,
+) -> dict[str, Any]:
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(BytesIO(data), strict=False)
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise WebFetchError(
+                "web_fetch_pdf_encrypted",
+                "The PDF is encrypted and cannot be read.",
+            )
+        page_count = len(reader.pages)
+        parts: list[str] = []
+        content_length = 0
+        pages_read = 0
+        for page in reader.pages[: max(1, int(max_pages))]:
+            pages_read += 1
+            try:
+                page_text = _clean_text(page.extract_text() or "")
+            except Exception:
+                continue
+            if not page_text:
+                continue
+            remaining = max_chars - content_length
+            if remaining <= 0:
+                break
+            value = page_text[:remaining]
+            parts.append(value)
+            content_length += len(value) + 1
+            if len(value) < len(page_text):
+                break
+        content = "\n".join(parts)[:max_chars]
+        if not content:
+            raise WebFetchError(
+                "web_fetch_pdf_no_text",
+                "The PDF contains no extractable text.",
+            )
+        try:
+            title = str((reader.metadata or {}).get("/Title") or "")[:300]
+        except Exception:
+            title = ""
+        return {
+            "title": title,
+            "description": "",
+            "content": content,
+            "links": [],
+            "page_count": page_count,
+            "pages_read": pages_read,
+            "truncated": (
+                pages_read < page_count or content_length > max_chars
+            ),
+        }
+    except WebFetchError:
+        raise
+    except Exception as exc:
+        raise WebFetchError(
+            "web_fetch_pdf_invalid",
+            "The PDF could not be parsed.",
+        ) from exc
+
+
 class PublicWebFetcher:
     def __init__(
         self,
@@ -170,6 +239,7 @@ class PublicWebFetcher:
         connect_timeout: float = 5,
         request_timeout: float = 20,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+        max_pdf_response_bytes: int = DEFAULT_MAX_PDF_RESPONSE_BYTES,
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cancel_check: Callable[[], bool] | None = None,
     ) -> None:
@@ -178,6 +248,10 @@ class PublicWebFetcher:
         self.connect_timeout = connect_timeout
         self.request_timeout = request_timeout
         self.max_response_bytes = max(1, int(max_response_bytes))
+        self.max_pdf_response_bytes = max(
+            self.max_response_bytes,
+            int(max_pdf_response_bytes),
+        )
         self.max_redirects = max(0, int(max_redirects))
         self.cancel_check = cancel_check
 
@@ -269,10 +343,15 @@ class PublicWebFetcher:
                                 "web_fetch_unsupported_content",
                                 "The page content type is not supported.",
                             )
+                        response_limit = (
+                            self.max_pdf_response_bytes
+                            if content_type == "application/pdf"
+                            else self.max_response_bytes
+                        )
                         length = response.headers.get("content-length")
                         if length:
                             try:
-                                if int(length) > self.max_response_bytes:
+                                if int(length) > response_limit:
                                     raise WebFetchError(
                                         "web_fetch_response_too_large",
                                         "The page is larger than the fetch limit.",
@@ -283,22 +362,28 @@ class PublicWebFetcher:
                         for chunk in response.iter_bytes():
                             self._cancelled()
                             body.extend(chunk)
-                            if len(body) > self.max_response_bytes:
+                            if len(body) > response_limit:
                                 raise WebFetchError(
                                     "web_fetch_response_too_large",
                                     "The page is larger than the fetch limit.",
                                 )
-                        encoding = response.charset_encoding or "utf-8"
-                        try:
-                            decoded = bytes(body).decode(
-                                encoding,
-                                errors="replace",
+                        if content_type == "application/pdf":
+                            extracted = _extract_pdf(
+                                bytes(body),
+                                max_chars=text_limit,
                             )
-                        except LookupError:
-                            decoded = bytes(body).decode(
-                                "utf-8",
-                                errors="replace",
-                            )
+                        else:
+                            encoding = response.charset_encoding or "utf-8"
+                            try:
+                                decoded = bytes(body).decode(
+                                    encoding,
+                                    errors="replace",
+                                )
+                            except LookupError:
+                                decoded = bytes(body).decode(
+                                    "utf-8",
+                                    errors="replace",
+                                )
                         if content_type in {
                             "text/html",
                             "application/xhtml+xml",
@@ -308,7 +393,7 @@ class PublicWebFetcher:
                                 base_url=current_url,
                                 max_chars=text_limit,
                             )
-                        else:
+                        elif content_type != "application/pdf":
                             content = _clean_text(decoded)
                             extracted = {
                                 "title": "",

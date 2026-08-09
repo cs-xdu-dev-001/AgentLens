@@ -8,14 +8,27 @@ import {stableMarkdownBoundary} from '../src/markdown.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
 
+async function waitForFrame(view, pattern, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const frame = view.lastFrame() ?? '';
+    pattern.lastIndex = 0;
+    if (pattern.test(frame)) return frame;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.match(view.lastFrame() ?? '', pattern);
+  return view.lastFrame() ?? '';
+}
+
 class FakeClient extends EventEmitter {
-  constructor() {
+  constructor({readyDelay = 0} = {}) {
     super();
     this.sent = [];
+    this.readyDelay = readyDelay;
   }
 
   start() {
-    queueMicrotask(() => this.emit('message', {
+    const emitReady = () => this.emit('message', {
       type: 'ready',
       protocolVersion: 3,
       model: 'deepseek-chat',
@@ -30,7 +43,9 @@ class FakeClient extends EventEmitter {
         changedFiles: 0,
       },
       sessions: [],
-    }));
+    });
+    if (this.readyDelay > 0) setTimeout(emitReady, this.readyDelay);
+    else queueMicrotask(emitReady);
   }
 
   send(message) {
@@ -42,9 +57,9 @@ class FakeClient extends EventEmitter {
 }
 
 test('Ink app renders command suggestions and streamed tool progress', async () => {
-  const client = new FakeClient();
+  const client = new FakeClient({readyDelay: 80});
   const view = render(<App client={client} version="0.9.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   assert.match(view.lastFrame(), /KnowFlow/);
   assert.match(view.lastFrame(), /deepseek-chat/);
 
@@ -108,7 +123,7 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
 test('Ink app renders a live task summary and collapses it after completion', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.16.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('检查服务状态');
   view.stdin.write('\r');
   await tick();
@@ -145,6 +160,17 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(view.lastFrame(), /模型正在分析/);
   assert.match(view.lastFrame(), /正在读取网页/);
 
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'text_delta',
+      text: '回答第一段。\n\n回答第二段。\n\n',
+    },
+  });
+  await new Promise(resolve => setTimeout(resolve, 180));
+  const runningFrame = view.lastFrame();
+  assert.ok(runningFrame.indexOf('任务') < runningFrame.indexOf('回答第一段。'));
+
   for (const [stepId, title] of [['step-model', '模型分析完成'], ['step-tool', '网页读取完成']]) {
     client.emit('message', {
       type: 'agent_event',
@@ -169,10 +195,14 @@ test('Ink app renders a live task summary and collapses it after completion', as
     answer: '检查完成。',
   });
   await tick();
-  assert.match(view.lastFrame(), /2\/2/);
-  assert.match(view.lastFrame(), /已完成/);
-  assert.doesNotMatch(view.lastFrame(), /模型分析完成/);
+  const completedFrame = view.lastFrame();
+  assert.match(completedFrame, /2\/2/);
+  assert.match(completedFrame, /已完成/);
+  assert.ok(completedFrame.indexOf('任务') < completedFrame.indexOf('回答第一段。'));
+  assert.doesNotMatch(completedFrame, /模型分析完成/);
 
+  view.stdin.write('\u000f');
+  await tick();
   view.stdin.write('\u0014');
   await tick();
   assert.match(view.lastFrame(), /模型分析完成/);
@@ -183,7 +213,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
 test('Ink app rejects unknown slash commands instead of sending them to the model', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.1" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('/does-not-exist');
   await tick();
   view.stdin.write('\r');
@@ -196,7 +226,7 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
 test('capability commands request and render real runtime status', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.11.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('/tools');
   await tick();
   view.stdin.write('\r');
@@ -215,7 +245,7 @@ test('capability commands request and render real runtime status', async () => {
 test('context commands inspect usage and compact with optional instructions', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.15.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('/context');
   await tick();
   view.stdin.write('\r');
@@ -261,7 +291,7 @@ test('context commands inspect usage and compact with optional instructions', as
 test('workspace commands and resume picker use the runtime as source of truth', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.13.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   assert.match(view.lastFrame(), /\/workspace · main/);
 
   view.stdin.write('/workspace');
@@ -306,7 +336,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 test('long markdown replies stay inside the terminal viewport without raw markers', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.1" fullscreenEnabled />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('生成长报告');
   await tick();
   view.stdin.write('\r');
@@ -363,7 +393,7 @@ test('terminal mode defaults to native scrollback and gates mouse capture behind
 test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-scrolling viewer', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.5" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('输出长报告');
   view.stdin.write('\r');
   await tick();
@@ -396,7 +426,7 @@ test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-sc
 test('failed tool details expose recovery actions that really retry or ask the agent to fix', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.13.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('读取缺失文件并继续');
   view.stdin.write('\r');
   await tick();
@@ -458,7 +488,7 @@ test('streaming keeps one Markdown block live and bounds the repainting tail', (
 test('streaming batches model deltas instead of repainting the whole conversation', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.15.0" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('生成流式报告');
   view.stdin.write('\r');
   await tick();
@@ -485,7 +515,7 @@ test('streaming batches model deltas instead of repainting the whole conversatio
 test('composer owns editing keys without leaking global shortcuts into text', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.10.2" />);
-  await tick();
+  await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('ab');
   view.stdin.write('\u001b[D');
   view.stdin.write('X');

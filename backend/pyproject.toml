@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knowflow-ai"
-version = "0.16.0"
+version = "0.17.0"
 description = "KnowFlow AI backend and Linux Agent CLI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,6 +30,7 @@ dependencies = [
   "langgraph==1.2.10",
   "langgraph-checkpoint-sqlite==3.1.0",
   "prompt-toolkit==3.0.53",
+  "pypdf==5.1.0",
   "pydantic==2.13.4",
   "requests==2.32.3",
   "rich==15.0.0",
@@ -56,7 +57,6 @@ local = [
   "openpyxl==3.1.5",
   "pydantic==2.13.4",
   "pymysql==1.1.1",
-  "pypdf==5.1.0",
   "python-docx==1.1.2",
   "python-dotenv==1.0.1",
   "python-multipart==0.0.20",
