@@ -183,6 +183,29 @@ class WorkspaceContext:
         branch = self._git("branch", "--show-current")
         porcelain = self._git("status", "--porcelain=v1")
         changed = len([line for line in porcelain.splitlines() if line.strip()])
+        home = Path.home().resolve()
+        is_home = self.project_root == home
+        project_markers = (
+            ".git",
+            "pyproject.toml",
+            "package.json",
+            "pnpm-workspace.yaml",
+            "Cargo.toml",
+            "go.mod",
+            "README.md",
+        )
+        has_project_marker = any(
+            (self.project_root / marker).exists() for marker in project_markers
+        )
+        warnings: list[str] = []
+        if is_home:
+            warnings.append(
+                "当前工作区是HOME目录。建议用knowflow chat --workspace <项目目录>进入真实项目，避免Agent只看到用户配置文件。"
+            )
+        elif not has_project_marker:
+            warnings.append(
+                "当前目录缺少常见项目标记。若这是测试目录可忽略；否则请用/workspace确认边界或用--workspace指定项目根目录。"
+            )
         payload: dict[str, Any] = {
             "projectRoot": str(self.project_root),
             "cwd": str(self.cwd),
@@ -192,6 +215,8 @@ class WorkspaceContext:
             "dirty": changed > 0,
             "changedFiles": changed,
             "runId": self.current_run_id,
+            "workspaceKind": "home" if is_home else ("project" if has_project_marker else "directory"),
+            "warnings": warnings,
         }
         if message:
             payload["message"] = message

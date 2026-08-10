@@ -46,11 +46,17 @@ export class RuntimeClient extends EventEmitter {
     });
     const lines = createInterface({input: this.child.stdout});
     lines.on('line', line => {
+      if (!String(line ?? '').trim()) return;
       try {
         const event = JSON.parse(line);
         if (event && typeof event === 'object') this.emit('message', event);
       } catch {
-        this.emit('message', {type: 'protocol_error', message: 'Python运行时返回了无效消息。'});
+        this.emit('message', {
+          type: 'protocol_error',
+          message: `Python运行时返回了非JSON事件：${redact(line, 300) || '空行'}`,
+          stderr: [...this.stderr],
+          hint: '运行knowflow doctor --cli检查本地运行环境；如果刚更新过，请重新打开终端后再试。',
+        });
       }
     });
     this.child.stderr.on('data', chunk => {

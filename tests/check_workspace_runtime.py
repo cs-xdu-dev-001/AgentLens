@@ -266,8 +266,15 @@ def main() -> None:
             "workspace_file_too_large",
             lambda: workspace.write_text("oversized.txt", "small", overwrite=True),
         )
-        assert context.status()["projectRoot"] == str(project)
-        assert context.status()["cwd"] == str(extra)
+        status = context.status()
+        assert status["projectRoot"] == str(project)
+        assert status["cwd"] == str(extra)
+        assert status["workspaceKind"] == "directory"
+        assert status["warnings"]
+        (project / "README.md").write_text("project\n", encoding="utf-8")
+        status = context.status()
+        assert status["workspaceKind"] == "project"
+        assert status["warnings"] == []
 
     print("workspace tools enforce user isolation and sandbox-only shell execution")
 

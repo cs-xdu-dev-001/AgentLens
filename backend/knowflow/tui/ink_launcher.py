@@ -54,6 +54,8 @@ def run_ink_tui(backend: Any, *, assume_yes: bool = False) -> bool:
     if not node or entry is None or _node_major(node) < 22:
         return False
     remote = getattr(backend, "remote_client", None)
+    local_agent = getattr(backend, "local_agent", None)
+    workspace_root = getattr(local_agent, "workspace_root", None)
     payload = {
         "mode": "remote" if remote is not None else "local",
         "server": str(getattr(remote, "server", "") or ""),
@@ -61,6 +63,7 @@ def run_ink_tui(backend: Any, *, assume_yes: bool = False) -> bool:
         "modelId": getattr(backend, "model_id", None),
         "skillId": getattr(backend, "skill_id", None),
         "assumeYes": bool(assume_yes),
+        "workspaceRoot": str(workspace_root) if workspace_root is not None else "",
     }
     environment = dict(os.environ)
     environment.update(

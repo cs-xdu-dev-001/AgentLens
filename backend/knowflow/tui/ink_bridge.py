@@ -371,13 +371,23 @@ class InkRuntimeBridge:
             self.send({"type": "protocol_error", "message": "未知运行时命令。"})
 
     def run(self) -> None:
+        workspace = _public_value(self.backend.workspace_status(), max_chars=20_000)
+        self.send(
+            {
+                "type": "runtime_handshake",
+                "protocolVersion": PROTOCOL_VERSION,
+                "python": sys.executable,
+                "model": self.backend.model_label,
+                "workspace": workspace,
+            }
+        )
         self.send(
             {
                 "type": "ready",
                 "protocolVersion": PROTOCOL_VERSION,
                 "model": self.backend.model_label,
                 "commands": self.backend.command_catalog(),
-                "workspace": _public_value(self.backend.workspace_status(), max_chars=20_000),
+                "workspace": workspace,
                 "sessions": _public_value(self.backend.list_sessions(limit=8), max_chars=20_000),
             }
         )
@@ -437,7 +447,8 @@ def _backend(config: dict[str, Any]) -> TuiBackend:
         from ..cli import _local_agent
 
         remote = None
-        local_agent = _local_agent()
+        workspace_root = str(config.get("workspaceRoot") or "").strip()
+        local_agent = _local_agent(Path(workspace_root) if workspace_root else None)
     return TuiBackend(
         local_agent=local_agent,
         remote_client=remote,

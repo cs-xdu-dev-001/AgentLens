@@ -183,7 +183,11 @@ def main() -> None:
         output_stream=ready_output,
     )
     ready_bridge.run()
-    ready = json.loads(ready_output.getvalue().splitlines()[0])
+    handshake = json.loads(ready_output.getvalue().splitlines()[0])
+    assert handshake["type"] == "runtime_handshake"
+    assert handshake["protocolVersion"] == PROTOCOL_VERSION
+    assert handshake["workspace"]["branch"] == "main"
+    ready = json.loads(ready_output.getvalue().splitlines()[1])
     assert ready["protocolVersion"] == PROTOCOL_VERSION
     assert ready["workspace"]["branch"] == "main"
     assert ready["sessions"][0]["runId"] == "run_ink"
@@ -261,6 +265,10 @@ def main() -> None:
     assert "fullscreenEnabled={fullscreenEnabled}" in entry_source
     assert "mouseEnabled={mouseEnabled}" in entry_source
     assert "mouseEnabled />" not in entry_source
+    launcher_source = (ROOT / "backend" / "knowflow" / "tui" / "ink_launcher.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"workspaceRoot"' in launcher_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
@@ -274,6 +282,7 @@ def main() -> None:
     assert "R重试本轮  F让Agent分析错误并继续" in app_source
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
+    assert "runtime_handshake" in app_source
 
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
 

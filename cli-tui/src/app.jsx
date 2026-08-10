@@ -359,10 +359,13 @@ function workspaceLabel(workspace) {
 
 function workspaceText(workspace) {
   if (!workspace || workspace.remote) return workspace?.message || '工作区信息不可用。';
+  const warnings = Array.isArray(workspace.warnings) ? workspace.warnings.filter(Boolean) : [];
   return [
     `项目根目录  ${workspace.projectRoot}`,
     `当前目录    ${workspace.cwd}`,
     `Git         ${workspace.branch || '非Git仓库'}${workspace.dirty ? ` · ${workspace.changedFiles}个文件已修改` : ' · 干净'}`,
+    `类型        ${workspace.workspaceKind || 'directory'}`,
+    ...(warnings.length ? ['警告', ...warnings.map(item => `  ${item}`)] : []),
     '允许目录',
     ...(workspace.allowedDirectories ?? []).map(path => `  ${path}`),
     `保护        ${(workspace.protectedPatterns ?? []).join('  ')}`,
@@ -776,6 +779,21 @@ export function App({
 
   useEffect(() => {
     const onMessage = message => {
+      if (message.type === 'runtime_handshake') {
+        if (message.protocolVersion !== PROTOCOL_VERSION) {
+          appendItem('error', `运行时协议不兼容：需要v${PROTOCOL_VERSION}，收到v${message.protocolVersion ?? '未知'}`);
+          setReady(false);
+          setPhase('协议不兼容');
+          return;
+        }
+        if (message.workspace) {
+          setWorkspace(message.workspace);
+          const warnings = Array.isArray(message.workspace.warnings) ? message.workspace.warnings.filter(Boolean) : [];
+          if (warnings.length) appendItem('error', warnings.join('\n'));
+        }
+        setPhase('运行时已连接');
+        return;
+      }
       if (message.type === 'ready') {
         if (message.protocolVersion !== PROTOCOL_VERSION) {
           appendItem('error', `运行时协议不兼容：需要v${PROTOCOL_VERSION}，收到v${message.protocolVersion ?? '未知'}`);
@@ -789,7 +807,8 @@ export function App({
         setWorkspace(message.workspace ?? null);
         setSessions(Array.isArray(message.sessions) ? message.sessions : []);
         const recoverable = (message.sessions ?? []).some(session => !['completed', 'cancelled'].includes(session.status));
-        setPhase(recoverable ? '发现未完成会话 · /resume' : '就绪');
+        const warnings = Array.isArray(message.workspace?.warnings) ? message.workspace.warnings.filter(Boolean) : [];
+        setPhase(warnings.length ? '请确认工作区' : (recoverable ? '发现未完成会话 · /resume' : '就绪'));
         return;
       }
       if (message.type === 'agent_event') {
@@ -1027,7 +1046,11 @@ export function App({
         return;
       }
       if (['doctor_failed', 'startup_failed', 'protocol_error'].includes(message.type)) {
-        appendItem('error', message.message ?? '运行时错误');
+        const stderr = Array.isArray(message.stderr) && message.stderr.length
+          ? `\n\nPython stderr：\n${message.stderr.join('\n')}`
+          : '';
+        const hint = message.hint ? `\n\n建议：${message.hint}` : '';
+        appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}`);
         if (message.type === 'startup_failed') setRunning(false);
       }
     };

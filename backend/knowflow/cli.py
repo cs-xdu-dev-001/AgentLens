@@ -153,10 +153,19 @@ def _remote_client(
     )
 
 
-def _local_agent():
+def _resolve_workspace_path(value: Path | None) -> Path | None:
+    if value is None:
+        return None
+    candidate = value.expanduser().resolve()
+    if not candidate.is_dir():
+        raise typer.BadParameter(f"工作区目录不存在：{candidate}")
+    return candidate
+
+
+def _local_agent(workspace_root: Path | None = None):
     from .services.local_cli_runtime import LocalAgentRuntime
 
-    return LocalAgentRuntime()
+    return LocalAgentRuntime(workspace_root=workspace_root)
 
 
 def _local_approval_loop(
@@ -977,8 +986,18 @@ def chat(
         "--plain",
         help="Use the legacy line-oriented REPL instead of the full-screen TUI.",
     ),
+    workspace: Path | None = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Set the local workspace root for this Agent session.",
+    ),
 ) -> None:
     """Start an interactive Agent conversation."""
+    if workspace is not None and (server or remote_mode):
+        raise typer.BadParameter("--workspace仅适用于本地模式。")
+    if workspace is not None:
+        local = True
     remote = _remote_client(
         server,
         local=local,
@@ -994,7 +1013,8 @@ def chat(
         raise typer.BadParameter(
             "--user-id、--model-id和--skill-id仅适用于--remote模式。"
         )
-    agent = None if remote is not None else _local_agent()
+    workspace_root = _resolve_workspace_path(workspace) if remote is None else None
+    agent = None if remote is not None else _local_agent(workspace_root)
     if not plain and sys.stdin.isatty() and sys.stdout.isatty():
         from .tui import run_tui
         from .tui.backend import TuiBackend
