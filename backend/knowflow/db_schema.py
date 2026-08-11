@@ -141,6 +141,16 @@ CREATE TABLE IF NOT EXISTS agent_run_step (
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (run_id, position)
 );
+CREATE TABLE IF NOT EXISTS agent_run_event (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  event_sequence INTEGER NOT NULL,
+  event_name TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (run_id, event_sequence)
+);
 CREATE TABLE IF NOT EXISTS agent_tool_call (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL,
@@ -338,6 +348,7 @@ CREATE INDEX IF NOT EXISTS idx_retrieval_run_user_time ON retrieval_run(user_id,
 CREATE INDEX IF NOT EXISTS idx_agent_run_user_time ON agent_run(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_run_session_time ON agent_run(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_run_step_run_position ON agent_run_step(run_id, position);
+CREATE INDEX IF NOT EXISTS idx_agent_run_event_run_sequence ON agent_run_event(run_id, event_sequence);
 CREATE INDEX IF NOT EXISTS idx_tool_session_time ON agent_tool_call(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_tool_operation_user_status ON agent_tool_operation(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_agent_tool_operation_run ON agent_tool_operation(run_id);
@@ -499,6 +510,17 @@ CREATE TABLE IF NOT EXISTS agent_run_step (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_agent_run_step_position (run_id, position),
   KEY idx_agent_run_step_run_position (run_id, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS agent_run_event (
+  id VARCHAR(64) PRIMARY KEY,
+  run_id VARCHAR(64) NOT NULL,
+  event_sequence BIGINT NOT NULL,
+  event_name VARCHAR(100) NOT NULL,
+  payload_json LONGTEXT NOT NULL,
+  occurred_at VARCHAR(40) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_agent_run_event_sequence (run_id, event_sequence),
+  KEY idx_agent_run_event_run_sequence (run_id, event_sequence)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS agent_tool_call (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,

@@ -1,7 +1,21 @@
 import { notifyAuthRequired } from "../api/client.js";
 import { agentRunApi } from "../api/client.js";
 import { normalizeErrorMessage } from "../api/errors.js";
+import {
+  agentEventError,
+  agentEventIs,
+  agentReconnectDelay,
+  cancelPendingAgentApprovals,
+  createAgentProjection,
+  isRetryableAgentStreamStatus,
+  markAgentTraceInterrupted,
+  mergeAgentToolCall,
+  projectAgentEvent,
+  shouldProcessAgentEvent,
+} from "./agentEvents.js";
 import { isActiveRun } from "./agentRunState.js";
+
+export { mergeAgentToolCall as mergeToolCall } from "./agentEvents.js";
 
 async function readStreamError(response) {
   const fallback = response.status === 401 ? "请先登录。" : "请求失败，请稍后重试。";
@@ -13,6 +27,27 @@ async function readStreamError(response) {
   } catch {
     return normalizeErrorMessage(text, fallback);
   }
+}
+
+function waitForAgentReconnect(delayMs, signal) {
+  if (signal?.aborted) {
+    const error = new Error("Agent连接已取消。");
+    error.name = "AbortError";
+    return Promise.reject(error);
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      const error = new Error("Agent连接已取消。");
+      error.name = "AbortError";
+      reject(error);
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function clonePlainSnapshotValue(value) {
@@ -41,70 +76,6 @@ export function cloneChatPayload(payload) {
   };
 }
 
-function mergeTraceStep(trace, step) {
-  const next = Array.isArray(trace) ? [...trace] : [];
-  const index = next.findIndex(
-    (item) => item.stepId === step.stepId,
-  );
-  if (index >= 0) {
-    next[index] = { ...next[index], ...step };
-  } else {
-    next.push(step);
-  }
-  return next;
-}
-
-function markTraceInterrupted(trace) {
-  return (Array.isArray(trace) ? trace : []).map((step) => {
-    if (step.status === "waiting" && step.kind === "approval") {
-      return {
-        ...step,
-        status: "cancelled",
-        title: "确认已取消",
-        errorCode: "approval_cancelled",
-      };
-    }
-    return step.status === "running"
-      ? {
-          ...step,
-          status: "failed",
-          title: "连接中断",
-          errorCode: "stream_interrupted",
-        }
-      : step;
-  });
-}
-
-function mergeApproval(approvals, event) {
-  const next = Array.isArray(approvals) ? [...approvals] : [];
-  const index = next.findIndex(
-    (item) => item.approvalId === event.approvalId,
-  );
-  const value = {
-    ...(index >= 0 ? next[index] : {}),
-    ...event,
-    status:
-      event.type === "approval_required"
-        ? "waiting"
-        : event.status || "cancelled",
-  };
-  if (index >= 0) next[index] = value;
-  else next.push(value);
-  return next;
-}
-
-function markApprovalsCancelled(approvals) {
-  return (Array.isArray(approvals) ? approvals : []).map((approval) =>
-    approval.status === "waiting" && !approval.decision
-      ? {
-          ...approval,
-          status: "cancelled",
-          decision: "cancelled",
-        }
-      : approval,
-  );
-}
-
 export function createChatFlow({
   state,
   messageRetryRequests,
@@ -129,6 +100,58 @@ export function createChatFlow({
   requestReactSessionsRefresh,
   switchPage,
 }) {
+  function renderProjectedAgentState(message, result) {
+    const { projection, changed } = result;
+    const changedSet = new Set(changed);
+    if (changedSet.has("answer")) {
+      setMessageContent(message, "assistant", projection.answer);
+    }
+    if (changedSet.has("trace")) {
+      renderAgentTrace(message, projection.trace);
+    }
+    if (changedSet.has("approvals")) {
+      renderAgentApprovals(message, projection.approvals);
+    }
+    if (changedSet.has("toolCalls")) {
+      renderToolTimeline(projection.toolCalls);
+    }
+    if (changedSet.has("references")) {
+      renderReferences(projection.references);
+    }
+    if (changedSet.has("run")) {
+      renderAgentRun(message, projection.run);
+    }
+    if (changedSet.has("memoryActivity")) {
+      renderMemoryActivity(message, projection.memoryActivity);
+    }
+    if (changedSet.has("quality")) {
+      renderRagQuality(projection.ragQuality, projection.retrievalRun);
+      openRetrievalDrawerFromRun(projection.retrievalRun);
+    }
+    if (projection.sessionId) {
+      state.currentSessionId = projection.sessionId;
+    }
+    if (projection.terminal) {
+      state.activeRunId = null;
+      state.activeRunMessageId = null;
+      renderActiveSession();
+    } else if (projection.run) {
+      state.activeRunId = isActiveRun(projection.run)
+        ? projection.run.id
+        : null;
+      state.activeRunMessageId = isActiveRun(projection.run)
+        ? message.messageId
+        : null;
+    }
+    return projection;
+  }
+
+  function applyAgentEvent(projection, event, message) {
+    const result = projectAgentEvent(projection, event);
+    renderProjectedAgentState(message, result);
+    return result.projection;
+  }
+
   async function continueSession(sessionId) {
     const messages = await request(`/api/sessions/${sessionId}/messages`);
     state.activeRunReconnectController?.abort();
@@ -301,27 +324,23 @@ export function createChatFlow({
       setMessageThinking(answer, true);
     }
 
-    let answerBuffer = "";
-    let trace = [];
-    let approvals = [];
-    let run = null;
-    let receivedDone = false;
-    let receivedPause = false;
+    let projection = createAgentProjection();
+    let recoveredStream = false;
     const controller = new AbortController();
     state.activeChatController = controller;
     setSending(true);
     renderReferences([]);
     renderToolTimeline([]);
-    renderAgentApprovals(answer, approvals);
-    renderAgentRun(answer, run);
+    renderAgentApprovals(answer, projection.approvals);
+    renderAgentRun(answer, projection.run);
 
     const cancelPendingApprovals = () => {
-      const next = markApprovalsCancelled(approvals);
+      const next = cancelPendingAgentApprovals(projection.approvals);
       const changed = next.some(
-        (approval, index) => approval !== approvals[index],
+        (approval, index) => approval !== projection.approvals[index],
       );
-      approvals = next;
-      if (changed) renderAgentApprovals(answer, approvals);
+      projection = { ...projection, approvals: next };
+      if (changed) renderAgentApprovals(answer, next);
     };
     const handleLocalApprovalState = (event) => {
       const detail = event.detail || {};
@@ -329,7 +348,7 @@ export function createChatFlow({
         !detail.approvalId ||
         !["resolved", "expired"].includes(detail.state)
       ) return;
-      const current = approvals.find(
+      const current = projection.approvals.find(
         (approval) =>
           approval.approvalId === detail.approvalId,
       );
@@ -342,15 +361,15 @@ export function createChatFlow({
         decision === "allow_once"
           ? "success"
           : "failed";
-      approvals = mergeApproval(approvals, {
+      projection = applyAgentEvent(projection, {
         type: "approval_submitted",
         approvalId: detail.approvalId,
         decision,
         status,
-      });
-      renderAgentApprovals(answer, approvals);
+      }, answer);
       if (current.stepId) {
-        trace = mergeTraceStep(trace, {
+        projection = applyAgentEvent(projection, {
+          type: "agent_step",
           stepId: current.stepId,
           status,
           title:
@@ -366,8 +385,7 @@ export function createChatFlow({
               : decision === "deny"
                 ? "permission_denied"
                 : "approval_expired",
-        });
-        renderAgentTrace(answer, trace);
+        }, answer);
       }
     };
     window.addEventListener(
@@ -393,8 +411,7 @@ export function createChatFlow({
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      const references = [];
-      const calls = [];
+      const seenEventIds = new Set();
       let buffer = "";
 
       while (true) {
@@ -407,106 +424,50 @@ export function createChatFlow({
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
           const eventPayload = JSON.parse(dataLine.slice(6));
-          if (eventPayload.type === "agent_step") {
-            if (!state.activeRunId && eventPayload.runId) {
-              state.activeRunId = eventPayload.runId;
-              state.activeRunMessageId = answer.messageId;
-            }
-            trace = mergeTraceStep(trace, eventPayload);
-            renderAgentTrace(answer, trace);
+          if (!shouldProcessAgentEvent(seenEventIds, eventPayload)) continue;
+          projection = applyAgentEvent(projection, eventPayload, answer);
+          if (!state.activeRunId && eventPayload.runId && !projection.terminal) {
+            state.activeRunId = eventPayload.runId;
+            state.activeRunMessageId = answer.messageId;
           }
-          if (
-            eventPayload.type === "run_snapshot"
-            || eventPayload.type === "plan_created"
-            || eventPayload.type === "run_updated"
-            || eventPayload.type === "step_updated"
-          ) {
-            run = eventPayload.run || run;
-            if (run?.status === "waiting_approval") {
-              receivedPause = true;
-            }
-            state.activeRunId = isActiveRun(run) ? run.id : null;
-            state.activeRunMessageId = isActiveRun(run)
-              ? answer.messageId
-              : null;
-            renderAgentRun(answer, run);
-          }
-          if (eventPayload.type === "approval_required") {
-            approvals = mergeApproval(approvals, eventPayload);
-            renderAgentApprovals(answer, approvals);
-          }
-          if (eventPayload.type === "approval_resolved") {
-            approvals = mergeApproval(approvals, eventPayload);
-            renderAgentApprovals(answer, approvals);
-          }
-          if (eventPayload.type === "answer") {
-            answerBuffer += eventPayload.content || "";
-            setMessageContent(answer, "assistant", answerBuffer);
-          }
-          if (eventPayload.type === "reference") {
-            references.push(eventPayload);
-            renderReferences(references);
-          }
-          if (eventPayload.type === "tool") {
-            calls.push(eventPayload);
-            renderToolTimeline(calls);
-          }
-          if (eventPayload.type === "quality") {
-            renderRagQuality(eventPayload.ragQuality, eventPayload.retrievalRun);
-            openRetrievalDrawerFromRun(eventPayload.retrievalRun);
-          }
-          if (eventPayload.type === "error") {
-            cancelPendingApprovals();
-            trace = markTraceInterrupted(trace);
-            renderAgentTrace(answer, trace);
-            throw new Error(
-              eventPayload.message || "Agent运行失败。",
-            );
-          }
-          if (eventPayload.type === "cancelled") {
-            run = eventPayload.run || run;
-            state.activeRunId = null;
-            state.activeRunMessageId = null;
-            renderAgentRun(answer, run);
-          }
-          if (eventPayload.type === "done") {
-            receivedDone = true;
-            cancelPendingApprovals();
-            if (Array.isArray(eventPayload.trace)) {
-              trace = eventPayload.trace;
-              renderAgentTrace(answer, trace);
-            }
-            if (eventPayload.run) {
-              run = eventPayload.run;
-              renderAgentRun(answer, run);
-            }
-            if (eventPayload.memoryActivity) {
-              renderMemoryActivity(
-                answer,
-                eventPayload.memoryActivity,
-              );
-            }
-            state.activeRunId = isActiveRun(run) ? run.id : null;
-            state.activeRunMessageId = isActiveRun(run)
-              ? answer.messageId
-              : null;
-            state.currentSessionId = eventPayload.sessionId;
-            renderActiveSession();
-          }
+          if (projection.error) throw new Error(projection.error.message);
         }
       }
-      if (!receivedDone && !receivedPause) {
+      if (
+        !projection.terminal
+        && !projection.paused
+        && state.activeRunId
+        && !controller.signal.aborted
+      ) {
+        projection = await reconnectAgentRun(
+          state.activeRunId,
+          answer.messageId,
+          controller.signal,
+          projection.lastSequence,
+          projection,
+        );
+        recoveredStream = true;
+      }
+      if (!projection.terminal && !projection.paused && !recoveredStream) {
         cancelPendingApprovals();
-        if (trace.length) {
-          trace = markTraceInterrupted(trace);
-          renderAgentTrace(answer, trace);
+        if (projection.trace.length) {
+          projection = {
+            ...projection,
+            trace: markAgentTraceInterrupted(projection.trace),
+          };
+          renderAgentTrace(answer, projection.trace);
         }
       }
       if (answer.thinking) {
         setMessageContent(
           answer,
           "assistant",
-          answerBuffer || (receivedPause ? "等待确认后继续。" : "模型没有返回内容。"),
+          projection.answer
+            || (projection.paused
+              ? "等待确认后继续。"
+              : projection.terminal === "cancelled"
+                ? "生成已停止。"
+                : "模型没有返回内容。"),
         );
       }
       if (!retryRequest) {
@@ -516,14 +477,44 @@ export function createChatFlow({
       }
       requestReactSessionsRefresh();
     } catch (error) {
-      cancelPendingApprovals();
-      if (trace.length) {
-        trace = markTraceInterrupted(trace);
-        renderAgentTrace(answer, trace);
-      }
       if (controller.signal.aborted || error?.name === "AbortError") {
-        setMessageContent(answer, "assistant", answerBuffer || "生成已停止。");
+        cancelPendingApprovals();
+        setMessageContent(answer, "assistant", projection.answer || "生成已停止。");
+      } else if (state.activeRunId) {
+        try {
+          projection = await reconnectAgentRun(
+            state.activeRunId,
+            answer.messageId,
+            controller.signal,
+            projection.lastSequence,
+            projection,
+          );
+          recoveredStream = true;
+        } catch (reconnectError) {
+          cancelPendingApprovals();
+          if (projection.trace.length) {
+            projection = {
+              ...projection,
+              trace: markAgentTraceInterrupted(projection.trace),
+            };
+            renderAgentTrace(answer, projection.trace);
+          }
+          setMessageContent(
+            answer,
+            "assistant",
+            `请求失败：${reconnectError.message || error.message || "未知错误"}`,
+          );
+          toast("聊天请求失败", 4200, "error");
+        }
       } else {
+        cancelPendingApprovals();
+        if (projection.trace.length) {
+          projection = {
+            ...projection,
+            trace: markAgentTraceInterrupted(projection.trace),
+          };
+          renderAgentTrace(answer, projection.trace);
+        }
         setMessageContent(answer, "assistant", `请求失败：${error.message || "未知错误"}`);
         toast("聊天请求失败", 4200, "error");
       }
@@ -540,122 +531,128 @@ export function createChatFlow({
     }
   }
 
-  async function reconnectAgentRun(runId, messageId, signal = undefined) {
+  async function reconnectAgentRun(
+    runId,
+    messageId,
+    signal = undefined,
+    afterSequence = 0,
+    initialProjection = null,
+  ) {
     const message = {
       messageId,
       streaming: true,
       thinking: false,
     };
-    let answerBuffer = "";
-    let trace = [];
-    let approvals = [];
-    const cancelPendingApprovals = () => {
-      const next = markApprovalsCancelled(approvals);
-      const changed = next.some(
-        (approval, index) => approval !== approvals[index],
-      );
-      approvals = next;
-      if (changed) renderAgentApprovals(message, approvals);
-    };
+    let projection = createAgentProjection({
+      ...(initialProjection || {}),
+      lastSequence: Math.max(
+        Number(initialProjection?.lastSequence || 0),
+        Number(afterSequence || 0),
+      ),
+    });
+    const seenEventIds = new Set();
+    const maxReconnectAttempts = 5;
+    let settled = false;
+    let lastError = null;
+
     try {
-      const response = await fetch(
-        `/api/agent/runs/${runId}/events`,
-        { credentials: "include", signal },
-      );
-      if (!response.ok) {
-        throw new Error(await readStreamError(response));
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop();
-        for (const event of events) {
-          const dataLine = event
-            .split("\n")
-            .find((line) => line.startsWith("data: "));
-          if (!dataLine) continue;
-          const eventPayload = JSON.parse(dataLine.slice(6));
-          if (
-            eventPayload.type === "run_snapshot"
-            || eventPayload.type === "plan_created"
-            || eventPayload.type === "run_updated"
-            || eventPayload.type === "step_updated"
-          ) {
-            const nextRun = eventPayload.run || null;
-            renderAgentRun(message, nextRun);
-            state.activeRunId = isActiveRun(nextRun)
-              ? nextRun.id
-              : null;
-            state.activeRunMessageId = isActiveRun(nextRun)
-              ? messageId
-              : null;
-          }
-          if (eventPayload.type === "agent_step") {
-            trace = mergeTraceStep(trace, eventPayload);
-            renderAgentTrace(message, trace);
-          }
-          if (eventPayload.type === "approval_required") {
-            approvals = mergeApproval(approvals, eventPayload);
-            renderAgentApprovals(message, approvals);
-          }
-          if (eventPayload.type === "approval_resolved") {
-            approvals = mergeApproval(approvals, eventPayload);
-            renderAgentApprovals(message, approvals);
-          }
-          if (eventPayload.type === "answer") {
-            answerBuffer += eventPayload.content || "";
-            setMessageContent(message, "assistant", answerBuffer);
-          }
-          if (eventPayload.type === "done") {
-            cancelPendingApprovals();
-            if (eventPayload.run) {
-              renderAgentRun(message, eventPayload.run);
-            }
-            if (eventPayload.sessionId) {
-              state.currentSessionId = eventPayload.sessionId;
-            }
-            if (eventPayload.memoryActivity) {
-              renderMemoryActivity(
-                message,
-                eventPayload.memoryActivity,
-              );
-            }
-            state.activeRunId = null;
-            state.activeRunMessageId = null;
-            renderActiveSession();
-          }
-          if (eventPayload.type === "error") {
-            cancelPendingApprovals();
-            renderAgentRun(message, eventPayload.run || null);
-            state.activeRunId = null;
-            state.activeRunMessageId = null;
-            setMessageContent(
-              message,
-              "assistant",
-              `请求失败：${eventPayload.message || "Agent运行失败。"}`,
-            );
-            renderActiveSession();
-          }
-          if (eventPayload.type === "cancelled") {
-            cancelPendingApprovals();
-            renderAgentRun(message, eventPayload.run || null);
-            state.activeRunId = null;
-            state.activeRunMessageId = null;
-            setMessageContent(
-              message,
-              "assistant",
-              answerBuffer || "生成已停止。",
-            );
-            renderActiveSession();
-          }
+      for (let attempt = 0; attempt <= maxReconnectAttempts; attempt += 1) {
+        const replayQuery = projection.lastSequence > 0
+          ? `?afterSequence=${encodeURIComponent(projection.lastSequence)}`
+          : "";
+        let response;
+        try {
+          response = await fetch(
+            `/api/agent/runs/${runId}/events${replayQuery}`,
+            { credentials: "include", signal },
+          );
+        } catch (error) {
+          if (signal?.aborted || error?.name === "AbortError") throw error;
+          lastError = error;
+          if (attempt >= maxReconnectAttempts) break;
+          await waitForAgentReconnect(agentReconnectDelay(attempt), signal);
+          continue;
         }
+
+        if (!response.ok) {
+          const error = new Error(await readStreamError(response));
+          error.status = response.status;
+          error.retryable = isRetryableAgentStreamStatus(response.status);
+          if (response.status === 401) {
+            notifyAuthRequired({
+              path: `/api/agent/runs/${runId}/events`,
+              status: response.status,
+              message: error.message,
+            });
+          }
+          lastError = error;
+          if (!error.retryable || attempt >= maxReconnectAttempts) throw error;
+          await waitForAgentReconnect(agentReconnectDelay(attempt), signal);
+          continue;
+        }
+
+        try {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split("\n\n");
+            buffer = events.pop();
+            for (const event of events) {
+              const dataLine = event
+                .split("\n")
+                .find((line) => line.startsWith("data: "));
+              if (!dataLine) continue;
+              const eventPayload = JSON.parse(dataLine.slice(6));
+              if (!shouldProcessAgentEvent(seenEventIds, eventPayload)) continue;
+              projection = applyAgentEvent(projection, eventPayload, message);
+              if (!state.activeRunId && eventPayload.runId && !projection.terminal) {
+                state.activeRunId = eventPayload.runId;
+                state.activeRunMessageId = messageId;
+              }
+              if (projection.error) {
+                setMessageContent(
+                  message,
+                  "assistant",
+                  `请求失败：${projection.error.message}`,
+                );
+                const error = new Error(projection.error.message);
+                error.retryable = false;
+                throw error;
+              }
+              if (projection.terminal || projection.paused) {
+                settled = true;
+                break;
+              }
+            }
+            if (settled) break;
+          }
+        } catch (error) {
+          if (signal?.aborted || error?.name === "AbortError") throw error;
+          if (error?.retryable === false) throw error;
+          lastError = error;
+        }
+
+        if (projection.terminal || projection.paused) {
+          settled = true;
+          break;
+        }
+        if (attempt >= maxReconnectAttempts) break;
+        await waitForAgentReconnect(agentReconnectDelay(attempt), signal);
       }
-      if (!answerBuffer) {
+
+      if (!settled) {
+        const error = new Error(
+          lastError?.message || "Agent连接多次中断，请刷新页面恢复运行状态。",
+        );
+        error.retryable = true;
+        throw error;
+      }
+
+      if (!projection.answer) {
         const snapshot = await agentRunApi.get(runId);
         if (snapshot?.assistantMessageId && snapshot?.sessionId) {
           const messages = await request(
@@ -665,23 +662,32 @@ export function createChatFlow({
             (item) => item.id === snapshot.assistantMessageId,
           );
           if (saved) {
-            setMessageContent(message, "assistant", saved.content);
-            renderAgentTrace(message, saved.trace || []);
-            renderAgentRun(message, saved.run || snapshot);
-            renderMemoryActivity(
-              message,
-              saved.memoryActivity || null,
-            );
+            projection = createAgentProjection({
+              ...projection,
+              answer: saved.content || "",
+              trace: saved.trace || projection.trace,
+              run: saved.run || snapshot,
+              memoryActivity:
+                saved.memoryActivity || projection.memoryActivity,
+              sessionId: snapshot.sessionId,
+            });
+            setMessageContent(message, "assistant", projection.answer);
+            renderAgentTrace(message, projection.trace);
+            renderAgentRun(message, projection.run);
+            renderMemoryActivity(message, projection.memoryActivity);
           }
         }
       }
+      if (projection.terminal === "cancelled" && !projection.answer) {
+        setMessageContent(message, "assistant", "生成已停止。");
+      }
+      return projection;
     } finally {
       message.streaming = false;
       message.thinking = false;
       setMessageThinking(message, false);
     }
   }
-
   async function handleAgentRunAction(event) {
     const detail = event.detail || {};
     const action = detail.action;

@@ -247,11 +247,18 @@ def main() -> None:
         and event.get("kind") == "tool"
     )
     assert last_tool_event < first_answer
+    expected_answer = "See [Current source](https://example.com/current)."
     assert "".join(
         str(event.get("content") or "")
         for event in events
-        if event.get("type") == "answer"
-    ) == "See [Current source](https://example.com/current)."
+        if event.get("eventName") == "message.delta"
+    ) == expected_answer
+    completed_answer = next(
+        event
+        for event in events
+        if event.get("eventName") == "message.completed"
+    )
+    assert completed_answer["content"] == expected_answer
     done = next(
         event
         for event in events

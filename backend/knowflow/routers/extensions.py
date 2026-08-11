@@ -8,6 +8,10 @@ import uuid
 from fastapi import APIRouter
 
 from ..runtime import *
+from ..services.agent_event_protocol import (
+    AgentEventNormalizer,
+    normalize_agent_event,
+)
 from ..services.agent_engine import build_agent_engine
 from ..services.langgraph_checkpoint import LangGraphCheckpointError
 from ..services.langgraph_plan_executor import (
@@ -106,13 +110,35 @@ def make_web_search_provider(api_key: str) -> TavilyWebSearch:
 
 
 def _safe_public_value(value: Any) -> Any:
-    summary = sanitize_trace_value(value, max_chars=4000)
+    summary = sanitize_trace_value(value, max_chars=1_000_000)
     if summary is None:
         return None
     try:
         return json.loads(summary)
     except json.JSONDecodeError:
-        return {"summary": summary}
+        if not isinstance(value, dict):
+            return {"summary": summary, "payloadTruncated": True}
+        safe_envelope: dict[str, Any] = {}
+        for key in (
+            "type",
+            "eventName",
+            "eventId",
+            "runId",
+            "sessionId",
+            "messageId",
+            "sequence",
+            "status",
+            "normalizedStatus",
+            "code",
+            "phase",
+            "category",
+        ):
+            if value.get(key) is None:
+                continue
+            item = sanitize_trace_value(value.get(key), max_chars=2000)
+            safe_envelope[key] = item
+        safe_envelope["payloadTruncated"] = True
+        return safe_envelope
 
 
 def _exception_code(exc: Exception) -> str:
@@ -1579,7 +1605,7 @@ def agent_chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
 
 
 def _agent_done_payload(result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return normalize_agent_event({
         "type": "done",
         "runId": result["runId"],
         "sessionId": result["sessionId"],
@@ -1587,7 +1613,7 @@ def _agent_done_payload(result: dict[str, Any]) -> dict[str, Any]:
         "trace": result["trace"],
         "run": result.get("run"),
         "memoryActivity": result.get("memoryActivity"),
-    }
+    }, run_id=str(result.get("runId") or "") or None)
 
 
 def _publish_agent_result(
@@ -1597,23 +1623,21 @@ def _publish_agent_result(
     if result.get("paused"):
         return
     for call in result.get("toolCalls", []):
-        publish({"type": "tool", **call})
-    for index in range(0, len(result["answer"]), 12):
-        publish(
-            {
-                "type": "answer",
-                "content": result["answer"][index : index + 12],
-            }
-        )
+        publish(normalize_agent_event({"type": "tool", **call}))
+    publish(normalize_agent_event({
+        "type": "answer",
+        "content": result["answer"],
+        "final": True,
+    }))
     for reference in result.get("references", []):
-        publish({"type": "reference", **reference})
+        publish(normalize_agent_event({"type": "reference", **reference}))
     if result.get("ragQuality", {}).get("enabled"):
         publish(
-            {
+            normalize_agent_event({
                 "type": "quality",
                 "ragQuality": result["ragQuality"],
                 "retrievalRun": result.get("retrievalRun"),
-            }
+            })
         )
     publish(_agent_done_payload(result))
 
@@ -1733,30 +1757,34 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
 
     def generate() -> Iterable[str]:
         queue: Queue[tuple[str, Any]] = Queue()
-        streamed_answer = False
-        def enqueue(
-            event_name: str,
-            payload_value: dict[str, Any],
-        ) -> None:
+
+        def publish_to_stream(
+            publish: Callable[[dict[str, Any]], dict[str, Any]],
+            source: dict[str, Any],
+        ) -> dict[str, Any] | None:
             safe = _safe_public_value(
-                {
-                    "type": event_name,
-                    **payload_value,
-                }
+                source
             )
             if isinstance(safe, dict):
-                queue.put((event_name, safe))
+                public = publish(safe)
+                event_type = str(public.get("type") or "run_updated")
+                stream_name = "message" if event_type == "answer" else event_type
+                queue.put((stream_name, public))
+                return public
+            return None
 
         def worker(
             cancel_event: Event,
-            publish: Callable[[dict[str, Any]], None],
+            publish: Callable[[dict[str, Any]], dict[str, Any]],
         ) -> None:
             def emit_both(
                 event_name: str,
                 value: dict[str, Any],
             ) -> None:
-                enqueue(event_name, value)
-                publish({"type": event_name, **value})
+                publish_to_stream(
+                    publish,
+                    {"type": event_name, **value},
+                )
 
             try:
                 result = execute_agent_chat(
@@ -1766,18 +1794,22 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                     event_emit=emit_both,
                     cancel_event=cancel_event,
                 )
-                queue.put(("result", result))
-                _publish_agent_result(result, publish)
+                if result.get("paused"):
+                    queue.put(("paused", result))
+                else:
+                    _publish_agent_result(
+                        result,
+                        lambda event: publish_to_stream(publish, event),
+                    )
             except Exception as exc:
                 if isinstance(exc, AgentRunCancelled):
-                    queue.put(
-                        (
-                            "cancelled",
-                            {
-                                "code": "agent_run_cancelled",
-                                "message": "Agent run was cancelled.",
-                            },
-                        )
+                    publish_to_stream(
+                        publish,
+                        {
+                            "type": "cancelled",
+                            "code": "agent_run_cancelled",
+                            "message": "Agent run was cancelled.",
+                        },
                     )
                     return
                 failure = classify_agent_failure(
@@ -1788,24 +1820,23 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                         else "agent"
                     ),
                 )
-                queue.put(
-                    (
-                        "error",
-                        {
-                            "code": failure["code"],
-                            "message": failure["summary"],
-                        },
-                    )
+                publish_to_stream(
+                    publish,
+                    {
+                        "type": "error",
+                        "code": failure["code"],
+                        "message": failure["summary"],
+                    },
                 )
 
         if not agent_run_coordinator.start(run_id, worker):
             yield sse_event(
                 "error",
-                {
+                normalize_agent_event({
                     "type": "error",
                     "code": "agent_run_conflict",
                     "message": "Agent run is already active.",
-                },
+                }, run_id=run_id),
             )
             return
         try:
@@ -1823,68 +1854,25 @@ def agent_chat_stream(payload: ChatRequest, request: Request) -> StreamingRespon
                     yield sse_event(event_name, value)
                     continue
                 if event_name == "message":
-                    streamed_answer = True
                     yield sse_event("message", value)
                     continue
                 if event_name == "error":
                     yield sse_event(
                         "error",
-                        {
-                            "type": "error",
-                            **value,
-                        },
+                        value,
                     )
                     break
                 if event_name == "cancelled":
                     yield sse_event(
                         "cancelled",
-                        {"type": "cancelled", **value},
+                        value,
                     )
                     break
-                result = value
-                if result.get("paused"):
+                if event_name == "paused":
                     break
-                for call in result.get("toolCalls", []):
-                    yield sse_event(
-                        "tool",
-                        {"type": "tool", **call},
-                    )
-                if not streamed_answer:
-                    for index in range(
-                        0,
-                        len(result["answer"]),
-                        12,
-                    ):
-                        yield sse_event(
-                            "message",
-                            {
-                                "type": "answer",
-                                "content": result["answer"][
-                                    index : index + 12
-                                ],
-                            },
-                        )
-                for ref in result["references"]:
-                    yield sse_event(
-                        "reference",
-                        {"type": "reference", **ref},
-                    )
-                if result.get("ragQuality", {}).get("enabled"):
-                    yield sse_event(
-                        "quality",
-                        {
-                            "type": "quality",
-                            "ragQuality": result["ragQuality"],
-                            "retrievalRun": result.get(
-                                "retrievalRun"
-                            ),
-                        },
-                    )
-                yield sse_event(
-                    "done",
-                    _agent_done_payload(result),
-                )
-                break
+                yield sse_event(event_name, value)
+                if event_name == "done":
+                    break
         finally:
             pass
 

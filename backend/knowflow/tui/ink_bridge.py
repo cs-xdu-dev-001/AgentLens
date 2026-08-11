@@ -7,6 +7,10 @@ import sys
 from threading import Lock, Thread
 from typing import Any, TextIO
 
+from ..services.agent_event_protocol import (
+    AGENT_EVENT_SCHEMA_VERSION,
+    normalize_agent_event,
+)
 from ..services.agent_execution import AgentExecution
 from ..services.agent_trace import sanitize_trace_value
 from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
@@ -51,6 +55,7 @@ class InkRuntimeBridge:
         return str(value or type(exc).__name__)
 
     def _agent_event(self, event: dict[str, Any]) -> None:
+        event = normalize_agent_event(event, run_id=self._run_id or None)
         run_id = str(event.get("runId") or "")
         if run_id:
             self._run_id = run_id
@@ -376,6 +381,7 @@ class InkRuntimeBridge:
             {
                 "type": "runtime_handshake",
                 "protocolVersion": PROTOCOL_VERSION,
+                "agentEventSchemaVersion": AGENT_EVENT_SCHEMA_VERSION,
                 "python": sys.executable,
                 "model": self.backend.model_label,
                 "workspace": workspace,
@@ -385,6 +391,7 @@ class InkRuntimeBridge:
             {
                 "type": "ready",
                 "protocolVersion": PROTOCOL_VERSION,
+                "agentEventSchemaVersion": AGENT_EVENT_SCHEMA_VERSION,
                 "model": self.backend.model_label,
                 "commands": self.backend.command_catalog(),
                 "workspace": workspace,

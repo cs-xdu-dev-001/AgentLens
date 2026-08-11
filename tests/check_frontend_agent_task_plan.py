@@ -172,9 +172,9 @@ console.log(JSON.stringify({
         "background freshness status",
     )
     require(
-        "frontend/react/src/controller/chatFlow.js",
-        'eventPayload.type === "run_snapshot"',
-        "run snapshot SSE branch",
+        "frontend/react/src/controller/agentEvents.js",
+        'run_snapshot: "run.updated"',
+        "run snapshot protocol mapping",
     )
     require(
         "frontend/react/src/controller/chatFlow.js",
@@ -197,19 +197,25 @@ console.log(JSON.stringify({
         "reconnect completion state",
     )
     require(
-        "frontend/react/src/controller/chatFlow.js",
-        'eventPayload.type === "error"',
-        "reconnect error event",
+        "frontend/react/src/controller/agentEvents.js",
+        'name === "error.raised" || name === "run.failed"',
+        "projected terminal error event",
+    )
+    require(
+        "frontend/react/src/controller/agentEvents.js",
+        'name === "run.cancelled"',
+        "projected cancellation event",
+    )
+    require(
+        "frontend/react/src/controller/agentEvents.js",
+        "cancelPendingAgentApprovals(next.approvals)",
+        "central terminal approval cleanup",
     )
     require(
         "frontend/react/src/controller/chatFlow.js",
-        'eventPayload.type === "cancelled"',
-        "reconnect cancellation event",
+        "projectAgentEvent(projection, event)",
+        "shared initial and reconnect event projection",
     )
-    if chat_flow.count("cancelPendingApprovals();") < 7:
-        raise AssertionError(
-            "initial and reconnected terminal events must clear pending approvals"
-        )
     require(
         "frontend/styles.css",
         ".agent-task-step-empty",

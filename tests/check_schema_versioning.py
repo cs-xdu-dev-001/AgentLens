@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 11, CURRENT_SCHEMA_VERSION
-    assert "cli browser device authorization" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 12, CURRENT_SCHEMA_VERSION
+    assert "agent run events" in row["description"].lower(), row
     model_columns = {item["name"] for item in fetch_all("PRAGMA table_info(model_config)")}
     assert "api_mode" in model_columns, model_columns
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
@@ -68,6 +68,18 @@ def main() -> None:
         "title",
         "status",
     }.issubset(step_columns), step_columns
+    event_columns = {
+        item["name"]
+        for item in fetch_all("PRAGMA table_info(agent_run_event)")
+    }
+    assert {
+        "id",
+        "run_id",
+        "event_sequence",
+        "event_name",
+        "payload_json",
+        "occurred_at",
+    }.issubset(event_columns), event_columns
     tool_columns = {
         item["name"]
         for item in fetch_all("PRAGMA table_info(agent_tool_call)")

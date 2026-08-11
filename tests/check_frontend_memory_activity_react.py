@@ -259,8 +259,8 @@ def main() -> None:
         "memory activity event bridge",
     )
     require(
-        flow,
-        "eventPayload.memoryActivity",
+        "frontend/react/src/controller/agentEvents.js",
+        "event?.memoryActivity",
         "stream completion memory state",
     )
     require(

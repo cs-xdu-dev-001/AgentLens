@@ -9,7 +9,13 @@ import {
   mergeCommands,
   resolveCommand,
 } from './commands.js';
-import {PROTOCOL_VERSION, redact, sanitizeTerminalText} from './protocol.js';
+import {
+  AGENT_EVENT_SCHEMA_VERSION,
+  PROTOCOL_VERSION,
+  agentEventName,
+  redact,
+  sanitizeTerminalText,
+} from './protocol.js';
 import {MarkdownText, stableMarkdownBoundary} from './markdown.jsx';
 
 const ACCENT = '#d97757';
@@ -18,7 +24,14 @@ const MUTED = '#8b8b8b';
 const SUCCESS = '#6fba82';
 const WARNING = '#d9a441';
 const ERROR = '#d96b6b';
-const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽'];
+const THINKING_FRAMES = {
+  connecting: ['⠁', '⠉', '⠙', '⠛', '⠟', '⠿', '⠟', '⠛', '⠙', '⠉'],
+  listening: ['⠁', '⠃', '⠇', '⠧', '⠷', '⠿', '⠷', '⠧', '⠇', '⠃'],
+  searching: ['⠂', '⠒', '⠲', '⠴', '⠤', '⠦', '⠖', '⠒'],
+  solving: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+  weaving: ['⠊', '⠒', '⠢', '⠤', '⠔', '⠒'],
+  working: ['·', '✢', '✳', '✶', '✻', '✽'],
+};
 const SGR_MOUSE_INPUT = /(?:\u001b)?\[<\d{1,3};\d{1,4};\d{1,4}[Mm]/g;
 const X10_MOUSE_INPUT = /(?:\u001b)?\[M[\x20-\x7f]{3}/g;
 const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
@@ -56,14 +69,30 @@ const PERMISSION_MODES = [
   {id: 'bypass', label: '完全访问', detail: '所有工具自动通过，请仅在可信目录使用'},
 ];
 
-function useSpinner(active) {
+export function thinkingStateForPhase(phase) {
+  const value = String(phase ?? '').toLowerCase();
+  if (/web[_ -]?(search|fetch)|联网|搜索/.test(value)) return 'searching';
+  if (/mcp|connect|连接/.test(value)) return 'connecting';
+  if (/memory|记忆|recall/.test(value)) return 'listening';
+  if (/skill|技能|激活/.test(value)) return 'weaving';
+  if (/workspace|sandbox|tool|工作区|沙箱|工具/.test(value)) return 'working';
+  return 'solving';
+}
+
+function useSpinner(active, phase) {
   const [frame, setFrame] = useState(0);
+  const state = thinkingStateForPhase(phase);
+  const frames = THINKING_FRAMES[state];
   useEffect(() => {
+    setFrame(0);
     if (!active) return undefined;
-    const timer = setInterval(() => setFrame(value => (value + 1) % SPINNER.length), 100);
+    const timer = setInterval(
+      () => setFrame(value => (value + 1) % frames.length),
+      120,
+    );
     return () => clearInterval(timer);
-  }, [active]);
-  return SPINNER[frame];
+  }, [active, frames]);
+  return frames[frame % frames.length];
 }
 
 function safeJson(value, limit = 1200) {
@@ -601,7 +630,7 @@ export function App({
   const historyDraftRef = useRef('');
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
-  const spinner = useSpinner(running && !approval);
+  const spinner = useSpinner(running && !approval, phase);
 
   useEffect(() => {
     if (!running) return undefined;
@@ -786,6 +815,12 @@ export function App({
           setPhase('协议不兼容');
           return;
         }
+        if (message.agentEventSchemaVersion !== AGENT_EVENT_SCHEMA_VERSION) {
+          appendItem('error', `Agent事件协议不兼容：需要v${AGENT_EVENT_SCHEMA_VERSION}，收到v${message.agentEventSchemaVersion ?? '未知'}`);
+          setReady(false);
+          setPhase('事件协议不兼容');
+          return;
+        }
         if (message.workspace) {
           setWorkspace(message.workspace);
           const warnings = Array.isArray(message.workspace.warnings) ? message.workspace.warnings.filter(Boolean) : [];
@@ -801,6 +836,12 @@ export function App({
           setPhase('协议不兼容');
           return;
         }
+        if (message.agentEventSchemaVersion !== AGENT_EVENT_SCHEMA_VERSION) {
+          appendItem('error', `Agent事件协议不兼容：需要v${AGENT_EVENT_SCHEMA_VERSION}，收到v${message.agentEventSchemaVersion ?? '未知'}`);
+          setReady(false);
+          setPhase('事件协议不兼容');
+          return;
+        }
         setReady(true);
         setModel(publicLabel(message.model, '默认模型', 120));
         setCommands(mergeCommands(message.commands));
@@ -813,43 +854,53 @@ export function App({
       }
       if (message.type === 'agent_event') {
         const event = message.event ?? {};
+        const eventName = agentEventName(event);
         if (event.runId) setCurrentRunId(String(event.runId));
-        if (event.type === 'run_started') {
+        if (eventName === 'run.started' || event.type === 'run_started') {
           const startedAt = Date.now();
           runStartedAtRef.current = startedAt;
           setRunClock(startedAt);
           setRunElapsedMs(0);
           setTaskExpanded(true);
-        } else if (event.type === 'text_delta') {
-          const delta = sanitizeTerminalText(event.text ?? event.delta ?? '');
+        } else if (eventName === 'message.completed') {
+          assistantDraftRef.current = sanitizeTerminalText(event.content ?? '');
+          scheduleDraftFlush();
+        } else if (eventName === 'message.delta' || event.type === 'text_delta') {
+          const delta = sanitizeTerminalText(event.text ?? event.delta ?? event.content ?? '');
           assistantDraftRef.current += delta;
           scheduleDraftFlush();
-        } else if (['tool_started', 'tool_progress', 'tool_result'].includes(event.type)) {
+        } else if (
+          ['tool.started', 'tool.progress', 'tool.completed', 'tool.failed', 'tool.cancelled'].includes(eventName)
+          || ['tool_started', 'tool_progress', 'tool_result'].includes(event.type)
+        ) {
           const nextActivities = activityFromEvent(activitiesRef.current, event);
           activitiesRef.current = nextActivities;
           setActivities(nextActivities);
           const toolName = publicLabel(event.toolName, '工具');
           setPhase(
-            event.type === 'tool_result'
-              ? event.status === 'failed'
+            ['tool.completed', 'tool.failed', 'tool.cancelled'].includes(eventName) || event.type === 'tool_result'
+              ? eventName === 'tool.failed' || event.status === 'failed'
                 ? `${toolName}执行失败`
                 : '整理结果'
               : `执行${toolName}`,
           );
-        } else if (event.type === 'context_compaction_started') {
+        } else if (eventName === 'context.compaction.started' || event.type === 'context_compaction_started') {
           setPhase('压缩早期会话');
-        } else if (event.type === 'context_compacted') {
+        } else if (eventName === 'context.compacted' || event.type === 'context_compacted') {
           appendItem('assistant', `上下文已自动压缩  ${event.originalTokens ?? 0} → ${event.compactedTokens ?? 0} tokens`);
           setPhase('上下文压缩完成');
-        } else if (event.type === 'context_compaction_failed') {
+        } else if (eventName === 'context.compaction.failed' || event.type === 'context_compaction_failed') {
           appendItem('error', event.message ?? '自动压缩失败，已保留原上下文。');
           setPhase('继续使用原上下文');
-        } else if (event.type === 'agent_step') {
+        } else if (
+          ['step.started', 'step.updated', 'step.completed', 'step.failed', 'step.cancelled', 'step.waiting'].includes(eventName)
+          || event.type === 'agent_step'
+        ) {
           const nextTraceSteps = traceStepFromEvent(traceStepsRef.current, event);
           traceStepsRef.current = nextTraceSteps;
           setTraceSteps(nextTraceSteps);
           setPhase(publicLabel(event.title ?? event.name, '分析任务'));
-        } else if (event.type === 'approval_required') {
+        } else if (eventName === 'approval.required' || event.type === 'approval_required') {
           const mode = permissionRef.current;
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));
           const autoEdit = mode === 'autoEdit'
@@ -861,9 +912,9 @@ export function App({
             setApproval(event);
             setPhase('等待确认');
           }
-        } else if (event.type === 'model_retry') {
+        } else if (eventName === 'model.retrying' || event.type === 'model_retry') {
           setPhase('模型请求重试');
-        } else if (event.type === 'memory_started') {
+        } else if (eventName === 'memory.started' || event.type === 'memory_started') {
           const nextActivities = activityFromEvent(activitiesRef.current, {
             ...event,
             type: 'tool_started',
@@ -873,7 +924,10 @@ export function App({
           activitiesRef.current = nextActivities;
           setActivities(nextActivities);
           setPhase('整理长期记忆');
-        } else if (event.type === 'memory_result') {
+        } else if (
+          ['memory.completed', 'memory.failed', 'memory.skipped', 'memory.cancelled'].includes(eventName)
+          || event.type === 'memory_result'
+        ) {
           const nextActivities = activityFromEvent(activitiesRef.current, {
             ...event,
             type: 'tool_result',

@@ -482,13 +482,13 @@ console.log(JSON.stringify({{ workspaceFields, sandboxFields, readable }}));
 
 def main() -> None:
     require(
-        "frontend/react/src/controller/chatFlow.js",
-        'eventPayload.type === "agent_step"',
-        "Agent SSE branch",
+        "frontend/react/src/controller/agentEvents.js",
+        'name.startsWith("step.")',
+        "Agent event projection branch",
     )
     require(
-        "frontend/react/src/controller/chatFlow.js",
-        "markTraceInterrupted",
+        "frontend/react/src/controller/agentEvents.js",
+        "markAgentTraceInterrupted",
         "interrupted run terminal state",
     )
     require(

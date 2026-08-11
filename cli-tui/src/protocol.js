@@ -4,6 +4,56 @@ import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 
 export const PROTOCOL_VERSION = 3;
+export const AGENT_EVENT_SCHEMA_VERSION = 1;
+
+const LEGACY_AGENT_EVENT_NAMES = {
+  run_started: 'run.started',
+  agent_step: 'step.updated',
+  tool_started: 'tool.started',
+  tool_progress: 'tool.progress',
+  tool_result: 'tool.completed',
+  tool: 'tool.completed',
+  approval_required: 'approval.required',
+  approval_resolved: 'approval.resolved',
+  approval_submitted: 'approval.resolved',
+  memory_started: 'memory.started',
+  memory_result: 'memory.completed',
+  model_retry: 'model.retrying',
+  done: 'run.completed',
+  cancelled: 'run.cancelled',
+  error: 'error.raised',
+  answer: 'message.delta',
+  message: 'message.delta',
+  text_delta: 'message.delta',
+  reference: 'artifact.created',
+  quality: 'run.quality_updated',
+};
+
+export function agentEventName(event) {
+  const explicit = String(event?.eventName ?? '').trim();
+  if (explicit) return explicit;
+  const legacy = String(event?.type ?? '').trim();
+  if (legacy === 'agent_step') {
+    if (['success', 'succeeded', 'completed'].includes(event?.status)) return 'step.completed';
+    if (event?.status === 'failed') return 'step.failed';
+    if (event?.status === 'cancelled') return 'step.cancelled';
+    if (['waiting', 'waiting_approval'].includes(event?.status)) return 'step.waiting';
+  }
+  if (['tool_result', 'tool'].includes(legacy)) {
+    if (event?.status === 'failed') return 'tool.failed';
+    if (event?.status === 'cancelled') return 'tool.cancelled';
+  }
+  if (legacy === 'memory_result') {
+    if (event?.status === 'failed') return 'memory.failed';
+    if (event?.status === 'skipped') return 'memory.skipped';
+    if (event?.status === 'cancelled') return 'memory.cancelled';
+  }
+  if (legacy === 'done' && event?.status === 'cancelled') return 'run.cancelled';
+  if (['answer', 'message', 'text_delta'].includes(legacy)) {
+    return event?.final ? 'message.completed' : 'message.delta';
+  }
+  return LEGACY_AGENT_EVENT_NAMES[legacy] ?? legacy.replaceAll('_', '.');
+}
 
 export function sanitizeTerminalText(value) {
   return stripAnsi(String(value ?? '')).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');

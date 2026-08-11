@@ -10,6 +10,7 @@ import {
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
+import { AgentThinkingOrb } from "./AgentThinkingOrb.jsx";
 
 const actionEvents = {
   copy: "knowflow:react-message-copy",
@@ -231,14 +232,7 @@ function MessageBubble({ message }) {
           </div>
         ) : null}
         {message.thinking ? (
-          <div
-            className={"thinking-indicator"}
-            aria-label={"模型正在处理"}
-          >
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+          <AgentThinkingOrb trace={message.trace} />
         ) : (
           <>
             <div

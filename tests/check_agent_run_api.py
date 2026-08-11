@@ -271,6 +271,50 @@ def main() -> None:
         completed["id"],
         "completed",
     )
+    from knowflow.services.agent_event_protocol import normalize_agent_event
+
+    runtime.agent_run_events.append(
+        completed["id"],
+        normalize_agent_event(
+            {
+                "type": "answer",
+                "content": "replayed answer",
+                "final": True,
+            },
+            run_id=completed["id"],
+            sequence=1,
+        ),
+    )
+    runtime.agent_run_events.append(
+        completed["id"],
+        normalize_agent_event(
+            {"type": "done", "status": "completed"},
+            run_id=completed["id"],
+            sequence=2,
+        ),
+    )
+    replay_response = alice.get(
+        f"/api/agent/runs/{completed['id']}/events"
+    )
+    assert replay_response.status_code == 200, replay_response.text
+    assert "id: 1" in replay_response.text
+    assert "replayed answer" in replay_response.text
+    resumed_response = alice.get(
+        f"/api/agent/runs/{completed['id']}/events",
+        headers={"Last-Event-ID": "1"},
+    )
+    assert resumed_response.status_code == 200, resumed_response.text
+    assert "replayed answer" not in resumed_response.text
+    assert "id: 2" in resumed_response.text
+    oversized_event_id = alice.get(
+        f"/api/agent/runs/{completed['id']}/events",
+        headers={"Last-Event-ID": "9" * 100},
+    )
+    assert oversized_event_id.status_code == 200
+    assert "replayed answer" in oversized_event_id.text
+    assert runtime.sse_event("done\nid: injected", {}).startswith(
+        "event: runtime_event\n"
+    )
     invalid_resume = alice.post(
         f"/api/agent/runs/{completed['id']}/resume"
     )

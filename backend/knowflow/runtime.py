@@ -42,6 +42,7 @@ from .services.tool_config import ToolConfigService
 from .services.mcp_config import McpConfigService
 from .services.mcp_oauth import McpOAuthCoordinator
 from .services.agent_run_coordinator import AgentRunCoordinator
+from .services.agent_event_store import AgentEventStore
 from .services.agent_run_store import AgentRunStore
 from .services.agent_tool_operations import AgentToolOperationStore
 from .services.langgraph_checkpoint import (
@@ -89,11 +90,12 @@ def mappings(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 db = Database(DB_URL)
 agent_runs = AgentRunStore(database=db)
+agent_run_events = AgentEventStore(database=db)
 agent_tool_operations = AgentToolOperationStore(
     database=db,
     approval_timeout_seconds=MCP_APPROVAL_TIMEOUT,
 )
-agent_run_coordinator = AgentRunCoordinator()
+agent_run_coordinator = AgentRunCoordinator(event_store=agent_run_events)
 langgraph_checkpoints = LangGraphCheckpointStore(
     LANGGRAPH_CHECKPOINT_DB
 )
@@ -1478,4 +1480,16 @@ def log_tool_call(
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    safe_event = str(event or "runtime_event")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", safe_event):
+        safe_event = "runtime_event"
+    try:
+        event_id = max(0, int(data.get("sequence")))
+    except (TypeError, ValueError):
+        event_id = None
+    id_line = f"id: {event_id}\n" if event_id is not None else ""
+    return (
+        f"event: {safe_event}\n"
+        f"{id_line}"
+        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+    )

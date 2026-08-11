@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Event
 from typing import Any, Callable
 
+from .agent_event_protocol import AgentEventNormalizer
 from .agent_execution import AgentEventSink, AgentExecution
 
 
@@ -69,9 +70,10 @@ class AgentApplicationService:
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
         events: list[dict[str, Any]] = []
+        normalize = AgentEventNormalizer()
 
         def emit(event: dict[str, Any]) -> None:
-            public = dict(event)
+            public = normalize(event)
             events.append(public)
             if event_sink is not None:
                 event_sink(public)
@@ -103,9 +105,10 @@ class AgentApplicationService:
         if operation is None or str(operation.get("runId")) != run_id:
             raise ValueError("Approval is unavailable for this Agent run.")
         events: list[dict[str, Any]] = []
+        normalize = AgentEventNormalizer(run_id)
 
         def emit(event: dict[str, Any]) -> None:
-            public = dict(event)
+            public = normalize(event)
             events.append(public)
             if event_sink is not None:
                 event_sink(public)
@@ -131,9 +134,10 @@ class AgentApplicationService:
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
         events: list[dict[str, Any]] = []
+        normalize = AgentEventNormalizer(run_id)
 
         def emit(event: dict[str, Any]) -> None:
-            public = dict(event)
+            public = normalize(event)
             events.append(public)
             if event_sink is not None:
                 event_sink(public)

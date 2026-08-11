@@ -6,6 +6,7 @@ import {
   mergeCommands,
   resolveCommand,
 } from '../src/commands.js';
+import {agentEventName} from '../src/protocol.js';
 
 test('commands merge dynamic entries and prefer exact or prefix matches', () => {
   const commands = mergeCommands([
@@ -26,4 +27,10 @@ test('dynamic commands become bounded natural-language tasks', () => {
     dynamicCommandTask('/tool:read-file', '读取README'),
     '使用工具read-file完成任务：读取README',
   );
+});
+
+test('agent events prefer the unified name and retain legacy fallbacks', () => {
+  assert.equal(agentEventName({eventName: 'tool.failed', type: 'tool_result'}), 'tool.failed');
+  assert.equal(agentEventName({type: 'tool_result', status: 'failed'}), 'tool.failed');
+  assert.equal(agentEventName({type: 'agent_step', status: 'success'}), 'step.completed');
 });

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_execution import AgentExecution  # noqa: E402
+from knowflow.services.agent_event_protocol import AGENT_EVENT_SCHEMA_VERSION  # noqa: E402
 from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: E402
 
 
@@ -186,9 +187,11 @@ def main() -> None:
     handshake = json.loads(ready_output.getvalue().splitlines()[0])
     assert handshake["type"] == "runtime_handshake"
     assert handshake["protocolVersion"] == PROTOCOL_VERSION
+    assert handshake["agentEventSchemaVersion"] == AGENT_EVENT_SCHEMA_VERSION
     assert handshake["workspace"]["branch"] == "main"
     ready = json.loads(ready_output.getvalue().splitlines()[1])
     assert ready["protocolVersion"] == PROTOCOL_VERSION
+    assert ready["agentEventSchemaVersion"] == AGENT_EVENT_SCHEMA_VERSION
     assert ready["workspace"]["branch"] == "main"
     assert ready["sessions"][0]["runId"] == "run_ink"
 
@@ -283,6 +286,7 @@ def main() -> None:
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
     assert "runtime_handshake" in app_source
+    assert "agentEventSchemaVersion" in app_source
 
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
 

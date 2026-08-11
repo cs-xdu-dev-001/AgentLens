@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import requests
 
+from .agent_event_protocol import AgentEventNormalizer
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
 from .agent_tooling import (
@@ -727,6 +728,7 @@ class LocalAgentRuntime:
             "",
         )
         events: list[dict[str, Any]] = []
+        normalize_event = AgentEventNormalizer(identifier)
         cancel_event = Event()
         with self._cancel_lock:
             self._cancel_events[identifier] = cancel_event
@@ -743,6 +745,7 @@ class LocalAgentRuntime:
         )
 
         def emit(event: dict[str, Any]) -> None:
+            event = normalize_event(event)
             if (
                 event.get("type") == "tool_progress"
                 and events

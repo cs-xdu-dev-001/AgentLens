@@ -23,14 +23,15 @@ def main() -> None:
     require(client, "body: { decision }", "approval decision body")
 
     flow = "frontend/react/src/controller/chatFlow.js"
-    require(flow, 'eventPayload.type === "approval_required"', "required SSE")
-    require(flow, 'eventPayload.type === "approval_resolved"', "resolved SSE")
-    require(flow, "markApprovalsCancelled", "terminal approval cleanup")
+    projection = "frontend/react/src/controller/agentEvents.js"
+    require(projection, 'name === "approval.required"', "required SSE")
+    require(projection, 'name === "approval.resolved"', "resolved SSE")
+    require(projection, "cancelPendingAgentApprovals", "terminal approval cleanup")
     require(flow, "renderAgentApprovals", "approval render bridge")
     require(flow, "knowflow:react-approval-local-state", "local decision reconciliation")
     require(flow, "handleLocalApprovalState", "local decision state handler")
     require(flow, "handleApprovalResume", "durable approval reconnect")
-    require(flow, "receivedPause", "paused stream preservation")
+    require(flow, "projection.paused", "paused stream preservation")
 
     events = "frontend/react/src/controller/messageEvents.js"
     require(events, "updateReactMessageApprovals", "message approval bridge")

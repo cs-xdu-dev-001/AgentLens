@@ -148,6 +148,14 @@ def main() -> None:
     )
     write_checkpoint(store, alice_id, alice_run["id"])
     write_checkpoint(store, bob_id, bob_run["id"])
+    runtime.agent_run_events.append(
+        alice_run["id"],
+        {"type": "done", "sequence": 1, "status": "completed"},
+    )
+    runtime.agent_run_events.append(
+        bob_run["id"],
+        {"type": "done", "sequence": 1, "status": "completed"},
+    )
 
     deleted = alice.delete(f"/api/sessions/{alice_session}")
     assert deleted.status_code == 200, deleted.text
@@ -168,6 +176,14 @@ def main() -> None:
     assert runtime.fetch_one(
         "SELECT id FROM agent_tool_operation WHERE id=:id",
         {"id": bob_operation["approvalId"]},
+    ) is not None
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_run_event WHERE run_id=:run_id",
+        {"run_id": alice_run["id"]},
+    ) is None
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_run_event WHERE run_id=:run_id",
+        {"run_id": bob_run["id"]},
     ) is not None
 
     retry_session = runtime.ensure_session(

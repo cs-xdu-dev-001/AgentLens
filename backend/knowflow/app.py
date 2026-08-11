@@ -19,7 +19,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="KnowFlow AI API",
-    version="0.3.0",
+    version="0.17.0",
     description=(
         "KnowFlow AI API for a personal knowledge workspace. "
         "Core workflows include model configuration, document ingestion, RAG retrieval debugging, chat, and session management."

@@ -4,15 +4,17 @@ from collections.abc import Callable, Iterable
 from queue import Empty
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from ..services.agent_event_protocol import normalize_agent_event
 from ..services.agent_run_store import (
     ACTIVE_RUN_STATUSES,
     AgentRunStoreError,
 )
 from ..runtime import (
     agent_run_coordinator,
+    agent_run_events,
     agent_runs,
     agent_tool_operations,
     api_success,
@@ -67,28 +69,31 @@ def _closed_run_event(
     if snapshot["status"] == "completed":
         return (
             "done",
-            {
+            normalize_agent_event({
                 "type": "done",
                 "runId": run_id,
                 "sessionId": snapshot.get("sessionId"),
                 "messageId": snapshot.get("assistantMessageId"),
                 "run": snapshot,
-            },
+            }, run_id=run_id),
         )
     if snapshot["status"] == "cancelled":
         return (
             "cancelled",
-            {"type": "cancelled", "run": snapshot},
+            normalize_agent_event(
+                {"type": "cancelled", "run": snapshot},
+                run_id=run_id,
+            ),
         )
     if snapshot["status"] == "failed":
         return (
             "error",
-            {
+            normalize_agent_event({
                 "type": "error",
                 "code": "agent_run_failed",
                 "message": "Agent run failed.",
                 "run": snapshot,
-            },
+            }, run_id=run_id),
         )
     return None
 
@@ -140,9 +145,18 @@ def read_agent_run(run_id: str, request: Request) -> dict[str, Any]:
 def stream_agent_run_events(
     run_id: str,
     request: Request,
+    after_sequence: int = Query(
+        0,
+        alias="afterSequence",
+        ge=0,
+        le=9_223_372_036_854_775_807,
+    ),
 ) -> StreamingResponse:
     user_id = current_user_id(request)
     snapshot = _snapshot_or_404(user_id, run_id)
+    header_event_id = str(request.headers.get("last-event-id") or "")
+    if header_event_id.isdigit() and len(header_event_id) <= 19:
+        after_sequence = max(after_sequence, int(header_event_id))
 
     def generate() -> Iterable[str]:
         subscriber = agent_run_coordinator.subscribe(run_id)
@@ -150,15 +164,65 @@ def stream_agent_run_events(
             agent_runs.get_snapshot(user_id, run_id)
             or snapshot
         )
+        last_sequence = after_sequence
+        latest_persisted = agent_run_events.latest_sequence(run_id)
+        terminal_seen = bool(
+            latest_persisted
+            and after_sequence >= latest_persisted
+            and current_snapshot.get("status") in {
+                "completed",
+                "failed",
+                "cancelled",
+            }
+        )
+        while True:
+            replay = agent_run_events.list_after(
+                user_id,
+                run_id,
+                after_sequence=last_sequence,
+                limit=500,
+            )
+            if not replay:
+                break
+            for event in replay:
+                sequence = int(event.get("sequence") or 0)
+                last_sequence = max(last_sequence, sequence)
+                event_name = str(event.get("eventName") or "")
+                terminal_seen = terminal_seen or event_name in {
+                    "run.completed",
+                    "run.cancelled",
+                    "run.failed",
+                    "error.raised",
+                }
+                yield sse_event(
+                    str(event.get("type") or "run_updated"),
+                    event,
+                )
+            if len(replay) < 500:
+                break
+        current_snapshot = (
+            agent_runs.get_snapshot(user_id, run_id)
+            or current_snapshot
+        )
         yield sse_event(
             "run_snapshot",
-            {"type": "run_snapshot", "run": current_snapshot},
+            normalize_agent_event(
+                {"type": "run_snapshot", "run": current_snapshot},
+                run_id=run_id,
+            ),
         )
         if subscriber is None:
-            terminal_event = _closed_run_event(user_id, run_id)
-            if terminal_event is not None:
+            terminal_event = (
+                None
+                if terminal_seen
+                else _closed_run_event(user_id, run_id)
+            )
+            if terminal_event:
                 event_type, event = terminal_event
-                yield sse_event(event_type, event)
+                yield sse_event(
+                    event_type,
+                    normalize_agent_event(event, run_id=run_id),
+                )
             return
         try:
             while True:
@@ -169,18 +233,40 @@ def stream_agent_run_events(
                     continue
                 event_type = str(event.get("type") or "run_updated")
                 if event_type == "stream_closed":
-                    terminal_event = _closed_run_event(user_id, run_id)
-                    if terminal_event is not None:
+                    terminal_event = (
+                        None
+                        if terminal_seen
+                        else _closed_run_event(user_id, run_id)
+                    )
+                    if terminal_event:
                         final_type, final_event = terminal_event
                         yield sse_event(final_type, final_event)
                     break
+                sequence = int(event.get("sequence") or 0)
+                if sequence and sequence <= last_sequence:
+                    continue
+                last_sequence = max(last_sequence, sequence)
+                event_name = str(event.get("eventName") or "")
+                terminal_seen = terminal_seen or event_name in {
+                    "run.completed",
+                    "run.cancelled",
+                    "run.failed",
+                    "error.raised",
+                }
                 yield sse_event(event_type, event)
                 if event_type in {"done", "error", "cancelled"}:
                     break
         finally:
             agent_run_coordinator.unsubscribe(run_id, subscriber)
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/agent/runs/{run_id}/start")

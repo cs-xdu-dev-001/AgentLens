@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "type": "run_started",
+      "eventId": "evt_fixture_1",
+      "runId": "run_fixture",
+      "sequence": 1,
+      "run": {"id": "run_fixture", "status": "running"}
+    },
+    {
+      "type": "agent_step",
+      "eventId": "evt_fixture_2",
+      "runId": "run_fixture",
+      "sequence": 2,
+      "stepId": "step_fixture",
+      "status": "success"
+    },
+    {
+      "type": "tool_started",
+      "eventId": "evt_fixture_3",
+      "runId": "run_fixture",
+      "sequence": 3,
+      "toolCallId": "call_fixture",
+      "toolName": "web_fetch",
+      "status": "running"
+    },
+    {
+      "type": "tool_result",
+      "eventId": "evt_fixture_4",
+      "runId": "run_fixture",
+      "sequence": 4,
+      "toolCallId": "call_fixture",
+      "toolName": "web_fetch",
+      "status": "success",
+      "normalizedStatus": "completed",
+      "output": {"title": "example"}
+    },
+    {
+      "type": "approval_required",
+      "eventId": "evt_fixture_5",
+      "runId": "run_fixture",
+      "sequence": 5,
+      "approvalId": "approval_fixture",
+      "status": "waiting"
+    },
+    {
+      "type": "approval_resolved",
+      "eventId": "evt_fixture_6",
+      "runId": "run_fixture",
+      "sequence": 6,
+      "approvalId": "approval_fixture",
+      "decision": "allow_once",
+      "status": "success"
+    },
+    {
+      "type": "answer",
+      "eventId": "evt_fixture_7",
+      "runId": "run_fixture",
+      "sequence": 7,
+      "content": "你"
+    },
+    {
+      "type": "answer",
+      "eventId": "evt_fixture_8",
+      "runId": "run_fixture",
+      "sequence": 8,
+      "content": "你好",
+      "final": true
+    },
+    {
+      "type": "reference",
+      "eventId": "evt_fixture_9",
+      "runId": "run_fixture",
+      "sequence": 9,
+      "artifactType": "reference",
+      "url": "https://example.com"
+    },
+    {
+      "type": "quality",
+      "eventId": "evt_fixture_10",
+      "runId": "run_fixture",
+      "sequence": 10,
+      "ragQuality": {"confidence": 0.8},
+      "retrievalRun": {"id": "retrieval_fixture"}
+    },
+    {
+      "type": "done",
+      "eventId": "evt_fixture_11",
+      "runId": "run_fixture",
+      "sequence": 11,
+      "sessionId": "session_fixture",
+      "status": "completed",
+      "run": {"id": "run_fixture", "status": "completed"},
+      "trace": [{"stepId": "step_fixture", "status": "success"}]
+    }
+  ],
+  "eventNames": [
+    "run.started",
+    "step.completed",
+    "tool.started",
+    "tool.completed",
+    "approval.required",
+    "approval.resolved",
+    "message.delta",
+    "message.completed",
+    "artifact.created",
+    "run.quality_updated",
+    "run.completed"
+  ],
+  "projection": {
+    "answer": "你好",
+    "terminal": "completed",
+    "lastSequence": 11,
+    "toolStatus": "completed",
+    "approvalStatus": "success",
+    "traceCount": 1,
+    "referenceCount": 1,
+    "sessionId": "session_fixture"
+  }
+}

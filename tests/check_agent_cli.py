@@ -169,6 +169,7 @@ def main() -> None:
             local=False,
             remote_mode=False,
             plain=False,
+            workspace=None,
         )
     assert len(tui_calls) == 1
     assert tui_calls[0][1] is False

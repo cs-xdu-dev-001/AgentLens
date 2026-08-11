@@ -3,10 +3,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
-import {App, resolveTerminalMode, sanitizeComposerInput, streamingPreview} from '../src/app.jsx';
+import {
+  App,
+  resolveTerminalMode,
+  sanitizeComposerInput,
+  streamingPreview,
+  thinkingStateForPhase,
+} from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('thinking animation follows the active Agent phase and defaults to solving', () => {
+  assert.equal(thinkingStateForPhase('模型正在分析'), 'solving');
+  assert.equal(thinkingStateForPhase('正在联网搜索'), 'searching');
+  assert.equal(thinkingStateForPhase('连接MCP服务'), 'connecting');
+  assert.equal(thinkingStateForPhase('整理长期记忆'), 'listening');
+  assert.equal(thinkingStateForPhase('正在激活Skill'), 'weaving');
+  assert.equal(thinkingStateForPhase('读取工作区文件'), 'working');
+});
 
 async function waitForFrame(view, pattern, timeoutMs = 1500) {
   const deadline = Date.now() + timeoutMs;
@@ -31,6 +46,7 @@ class FakeClient extends EventEmitter {
     const emitReady = () => this.emit('message', {
       type: 'ready',
       protocolVersion: 3,
+      agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
       workspace: {

@@ -37,6 +37,7 @@ def read_react_shell() -> str:
 def main() -> None:
     react_css = read("frontend/react/src/styles.css")
     react_shell = read_react_shell()
+    thinking_orb = read("frontend/react/src/components/AgentThinkingOrb.jsx")
     gitignore = read(".gitignore")
     package_json = read("frontend/package.json")
     sync_assets = read("frontend/scripts/sync-assets.mjs")
@@ -45,7 +46,13 @@ def main() -> None:
 
     assert "姝ｅ湪缁勭粐鍥炵瓟" not in react_css
     assert "streaming:empty" not in react_css
-    assert ".thinking-indicator" in react_css
+    assert ".agent-thinking-orb" in react_css
+    assert ".thinking-indicator" not in react_css
+    assert 'from "thinking-orbs"' in thinking_orb
+    assert 'return "solving"' in thinking_orb
+    assert 'state={state}' in thinking_orb
+    assert 'size={20}' in thinking_orb
+    assert '"thinking-orbs": "0.2.0"' in package_json
     assert ".message-row.thinking-row .message-actions" in react_css
     assert 'appendMessage("assistant", "", { thinking: true, streaming: true })' in controller_js
     assert "setMessageThinking" in controller_js
@@ -83,7 +90,7 @@ def main() -> None:
         assert "姝ｅ湪缁勭粐鍥炵瓟" not in dist_text
         assert "streaming:empty" not in dist_text
         assert "legacyApp.js" not in dist_text
-        assert "thinking-indicator" in dist_text
+        assert "agent-thinking-orb" in dist_text
         assert "thinking-row" in dist_text
         assert "auth-screen" in dist_text
         assert "app-shell" in dist_text
