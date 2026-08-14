@@ -427,6 +427,7 @@ class LocalAgentRuntime:
             checkpoint_db_path=(
                 self.data_root / "langgraph" / "checkpoints.sqlite3"
             ),
+            allow_volatile_checkpoint=True,
         )
         self._cancel_lock = Lock()
         self._cancel_events: dict[str, Event] = {}
@@ -610,7 +611,10 @@ class LocalAgentRuntime:
         return registry
 
     def sandbox_diagnostics(self, *, smoke: bool = True) -> list[dict[str, Any]]:
-        return SrtSandboxRunner(self._workspace()).diagnostics(smoke=smoke)
+        return [
+            self.engine.checkpoint_diagnostic(),
+            *SrtSandboxRunner(self._workspace()).diagnostics(smoke=smoke),
+        ]
 
     def tool_schemas(self) -> list[dict[str, Any]]:
         """Return the public tool catalog used by local interactive clients."""

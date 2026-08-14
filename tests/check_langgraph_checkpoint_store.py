@@ -49,6 +49,9 @@ def main() -> None:
             )
 
         assert database.is_file()
+        healthy = store.diagnostic()
+        assert healthy["ready"] is True
+        assert healthy["name"] == "langgraph_checkpoint"
         if os.name != "nt":
             assert database.parent.stat().st_mode & 0o777 == 0o750
             assert database.stat().st_mode & 0o777 == 0o600
@@ -85,6 +88,40 @@ def main() -> None:
             except LangGraphCheckpointError as exc:
                 assert exc.code == "langgraph_checkpoint_unavailable"
                 assert "database unavailable" not in exc.message
+
+        original_connect = sqlite3.connect
+        fallback_events: list[LangGraphCheckpointError] = []
+
+        def permission_then_memory(path, *args, **kwargs):
+            if str(path) != ":memory:":
+                raise PermissionError("synthetic permission failure")
+            return original_connect(path, *args, **kwargs)
+
+        fallback_store = LangGraphCheckpointStore(
+            root / "readonly" / "checkpoints.sqlite3",
+            allow_volatile_fallback=True,
+        )
+        with patch(
+            "knowflow.services.langgraph_checkpoint.sqlite3.connect",
+            side_effect=permission_then_memory,
+        ):
+            with fallback_store.open(on_fallback=fallback_events.append) as saver:
+                assert saver is not None
+                saver.setup()
+        assert len(fallback_events) == 1
+        assert fallback_events[0].code == "langgraph_checkpoint_permission_denied"
+        assert "doctor --cli" in fallback_events[0].message
+        assert not fallback_store.path.exists()
+
+        strict_resume_store = LangGraphCheckpointStore(
+            root / "readonly" / "missing.sqlite3",
+            allow_volatile_fallback=True,
+        )
+        with strict_resume_store.open(create=False) as saver:
+            assert saver is None
+        missing_status = strict_resume_store.diagnostic()
+        assert missing_status["ready"] is True
+        assert "首次任务" in str(missing_status["detail"])
 
     print("LangGraph checkpoint store is lazy, strict, and disposable")
 

@@ -1915,6 +1915,9 @@ export function App({
           else if (event.shouldWarn || event.shouldAutoCompact) {
             setPhase(`上下文${Math.round(Number(event.usagePercent) || 0)}%`);
           }
+        } else if (eventName === 'runtime.warning') {
+          appendItem('assistant', `⚠ ${event.message ?? '运行时已降级，本轮任务仍会继续。'}`);
+          setPhase('临时模式运行');
         } else if (eventName === 'artifact.created' || eventName === 'artifact.updated') {
           setPhase('整理运行产物');
         } else if (eventName === 'error.raised' || eventName === 'run.failed') {

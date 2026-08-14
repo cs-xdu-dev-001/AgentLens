@@ -427,8 +427,9 @@ class ModelGateway:
         payload: dict[str, Any] = {
             "model": config["model_name"],
             "messages": messages,
-            "temperature": config.get("temperature") if config.get("temperature") is not None else 0.3,
         }
+        if config.get("temperature") is not None:
+            payload["temperature"] = float(config["temperature"])
         if config.get("top_p") is not None:
             payload["top_p"] = float(config["top_p"])
         if config.get("max_tokens") is not None:

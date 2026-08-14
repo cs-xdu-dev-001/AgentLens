@@ -111,6 +111,17 @@ def main() -> None:
     assert payload["tool_choice"] == "auto"
     assert payload["max_completion_tokens"] == 1000
 
+    default_sampling_config = dict(config)
+    default_sampling_config.pop("temperature")
+    default_sampling_config["max_tokens"] = None
+    gateway.complete(
+        [{"role": "user", "content": "ping"}],
+        default_sampling_config,
+    )
+    default_payload = calls[-1][2]
+    assert "temperature" not in default_payload
+    assert "top_p" not in default_payload
+
     retry_response = FakeStreamResponse(
         [],
         status_code=429,

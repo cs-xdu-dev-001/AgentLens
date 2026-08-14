@@ -96,6 +96,7 @@ class LangGraphAgentEngine:
         max_tool_rounds: int = 3,
         max_tool_concurrency: int = 4,
         max_context_tokens: int = 96_000,
+        allow_volatile_checkpoint: bool = False,
     ):
         self._gateway = gateway
         self._max_tool_rounds = max(0, max_tool_rounds)
@@ -107,7 +108,8 @@ class LangGraphAgentEngine:
                 "LangGraph checkpoint存储暂不可用。",
             )
         self._checkpoints = LangGraphCheckpointStore(
-            checkpoint_db_path
+            checkpoint_db_path,
+            allow_volatile_fallback=allow_volatile_checkpoint,
         )
         self._builder = StateGraph(
             LangGraphState,
@@ -134,6 +136,9 @@ class LangGraphAgentEngine:
             {"tools": "tools", "model": "model", "end": END},
         )
         self._graph = self._builder.compile()
+
+    def checkpoint_diagnostic(self) -> dict[str, object]:
+        return self._checkpoints.diagnostic()
 
     @staticmethod
     def _append_retrieval_context(
@@ -1089,11 +1094,27 @@ class LangGraphAgentEngine:
             memory_recall=memory_recall,
             retrieval_context=retrieval_context,
         )
+        checkpoint_warnings: list[LangGraphCheckpointError] = []
         with self._checkpoints.open(
-            create=not resume_from_checkpoint
+            create=not resume_from_checkpoint,
+            on_fallback=checkpoint_warnings.append,
         ) as saver:
             if saver is None:
                 raise self._checkpoint_not_found()
+            if checkpoint_warnings and tool_event_callback is not None:
+                warning = checkpoint_warnings[-1]
+                tool_event_callback(
+                    {
+                        "type": "runtime_warning",
+                        "runId": run_id,
+                        "status": "warning",
+                        "errorCode": warning.code,
+                        "message": (
+                            f"{warning.message} 本轮已改用临时checkpoint，"
+                            "任务可以继续，但退出后不能恢复本轮进度。"
+                        ),
+                    }
+                )
             graph = self._builder.compile(checkpointer=saver)
             if resume_from_checkpoint:
                 snapshot = graph.get_state(graph_config)
