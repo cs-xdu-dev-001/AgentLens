@@ -6,6 +6,7 @@ import sys
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..responses import api_success
 from ..runtime import (
@@ -16,13 +17,27 @@ from ..runtime import (
     WORKSPACE_DIR,
     WORKSPACE_ENABLED,
     WORKSPACE_MAX_FILE_BYTES,
+    agent_run_events,
+    agent_runs,
     current_user_id,
 )
-from ..services.workspace_runtime import WorkspaceRuntime, WorkspaceRuntimeError
+from ..services.agent_event_protocol import normalize_agent_event
+from ..services.agent_trace import sanitize_trace_value
+from ..services.workspace_runtime import (
+    WorkspaceRuntime,
+    WorkspaceRuntimeError,
+    tracked_workspace_runtime,
+)
 
 
 router = APIRouter()
 WORKSPACE_TAGS = ["Workspace"]
+
+
+class WorkspaceUndoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    runId: str = Field(min_length=1, max_length=200)
+    operationId: str = Field(min_length=1, max_length=200)
 
 
 def _runtime(request: Request) -> WorkspaceRuntime:
@@ -35,8 +50,32 @@ def _runtime(request: Request) -> WorkspaceRuntime:
     )
 
 
+def _tracked_runtime(user_id: int, run_id: str | None = None) -> WorkspaceRuntime:
+    if not WORKSPACE_ENABLED:
+        raise HTTPException(status_code=409, detail="Workspace功能尚未启用。")
+    return tracked_workspace_runtime(
+        WORKSPACE_DIR,
+        user_id=user_id,
+        max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+        run_id=run_id,
+    )
+
+
+def _owned_run(user_id: int, run_id: str) -> dict:
+    snapshot = agent_runs.get_snapshot(user_id, run_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Agent运行不存在。")
+    return snapshot
+
+
 def _raise_workspace_error(exc: WorkspaceRuntimeError) -> None:
-    status = 404 if exc.code.endswith("missing") else 400
+    status = (
+        404
+        if exc.code.endswith("missing")
+        else 409
+        if exc.code in {"workspace_undo_conflict", "workspace_undo_empty"}
+        else 400
+    )
     raise HTTPException(
         status_code=status,
         detail={"code": exc.code, "message": str(exc)},
@@ -65,6 +104,85 @@ def workspace_status(request: Request) -> dict:
             "maxFileBytes": WORKSPACE_MAX_FILE_BYTES,
         }
     )
+
+
+@router.get("/api/workspace/changes", tags=WORKSPACE_TAGS)
+def read_workspace_changes(
+    request: Request,
+    run_id: str,
+    path: str | None = None,
+) -> dict:
+    user_id = current_user_id(request)
+    _owned_run(user_id, run_id)
+    try:
+        result = _tracked_runtime(user_id, run_id).context.diff(
+            path or None,
+            run_id=run_id,
+        )
+    except WorkspaceRuntimeError as exc:
+        _raise_workspace_error(exc)
+    result["patch"] = sanitize_trace_value(
+        result.get("patch") or "",
+        max_chars=100_000,
+    ) or ""
+    return api_success(result)
+
+
+@router.post("/api/workspace/changes/undo", tags=WORKSPACE_TAGS)
+def undo_workspace_change(
+    payload: WorkspaceUndoRequest,
+    request: Request,
+) -> dict:
+    user_id = current_user_id(request)
+    snapshot = _owned_run(user_id, payload.runId)
+    if snapshot.get("status") not in {"completed", "failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Agent仍在运行，结束后才能撤销变更。")
+    try:
+        result = _tracked_runtime(user_id, payload.runId).context.undo_file(
+            operation_id=payload.operationId,
+            run_id=payload.runId,
+        )
+    except WorkspaceRuntimeError as exc:
+        _raise_workspace_error(exc)
+    artifact_id = f"file:{result.get('path') or ''}"
+    existing = next(
+        (
+            item
+            for item in agent_run_events.artifacts_for_run(user_id, payload.runId)
+            if item.get("artifactId") == artifact_id
+        ),
+        {},
+    )
+    existing_artifact = {
+        key: existing[key]
+        for key in (
+            "operation",
+            "sourceTool",
+            "toolCallId",
+            "writtenBytes",
+            "addedLines",
+            "removedLines",
+            "diffAvailable",
+        )
+        if existing.get(key) is not None
+    }
+    event = normalize_agent_event(
+        {
+            **existing_artifact,
+            "type": "artifact_updated",
+            "artifactId": artifact_id,
+            "artifactType": "file",
+            "title": result.get("path"),
+            "path": result.get("path"),
+            "operationId": result.get("operationId"),
+            "reverted": True,
+            "changeStatus": "reverted",
+        },
+        run_id=payload.runId,
+        sequence=agent_run_events.latest_sequence(payload.runId) + 1,
+    )
+    agent_run_events.append(payload.runId, event)
+    return api_success({**result, "artifact": event})
 
 
 @router.get("/api/workspace/files", tags=WORKSPACE_TAGS)

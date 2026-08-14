@@ -1,183 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
-import { traceStepTitle } from "./AgentTraceView.jsx";
-import {
-  currentRunStep,
-  runProgress,
-  traceStepWaitState,
-} from "../controller/agentRunState.js";
+import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
+import { buildAgentRunPresentation } from "./agentRunPresentation.js";
 
-
-const terminalStatuses = new Set([
-  "cancelled",
-  "completed",
-  "failed",
-  "skipped",
-  "success",
-]);
-
-const kindLabels = {
-  agent: "Agent",
-  approval: "确认",
-  memory: "记忆",
-  mcp: "MCP",
-  model: "模型",
-  plan: "计划",
-  skill: "Skill",
-  tool: "工具",
-};
-
-const stepStatusLabels = {
-  cancelled: "已取消",
-  completed: "已完成",
-  failed: "失败",
-  interrupted: "已中断",
-  pending: "等待",
-  planning: "规划中",
-  running: "运行中",
-  skipped: "已跳过",
-  success: "已完成",
-  waiting: "等待",
-  waiting_approval: "等待确认",
-  waiting_start: "等待开始",
-};
-
-function currentStep(trace) {
-  const safeTrace = Array.isArray(trace) ? trace : [];
-  return (
-    [...safeTrace].reverse().find(
-      (step) => step.status === "waiting" && step.kind === "approval",
-    )
-    || [...safeTrace].reverse().find((step) => step.status === "running")
-    || [...safeTrace].reverse().find(Boolean)
-    || null
-  );
-}
-
-function parseSummary(value) {
-  if (value && typeof value === "object") return value;
-  if (typeof value !== "string") return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function estimatedTokens(trace) {
-  return trace.reduce((total, step) => {
-    if (step.kind !== "model") return total;
-    const summary = parseSummary(step.inputSummary);
-    return total + Math.max(0, Number(summary.estimatedTokenCount) || 0);
-  }, 0);
-}
-
-function formatTokens(value) {
-  const tokens = Math.max(0, Number(value) || 0);
-  if (!tokens) return "";
-  if (tokens < 1000) return `~${Math.round(tokens)} tokens`;
-  const compact = (tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0);
-  return `~${compact.replace(/\.0$/, "")}k tokens`;
-}
-
-function formatElapsed(milliseconds) {
-  const value = Math.max(0, Number(milliseconds) || 0);
-  if (value < 1000) return `${Math.round(value)}ms`;
-  if (value < 60_000) return `${Math.round(value / 1000)}s`;
-  const minutes = Math.floor(value / 60_000);
-  const seconds = Math.floor((value % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
-}
-
-function runRows(run, trace) {
-  const planSteps = Array.isArray(run?.steps) ? run.steps : [];
-  if (planSteps.length) {
-    return planSteps.map((step) => {
-      const relatedTrace = [...trace].reverse().find((item) => (
-        item.details?.planStepId === step.id
-        || item.planStepId === step.id
-      ));
-      return {
-        durationMs: relatedTrace?.durationMs,
-        id: step.id,
-        kind: step.kind || relatedTrace?.kind || "plan",
-        status: step.status,
-        title: step.title,
-      };
-    });
-  }
-  return trace
-    .filter((step) => step.name !== "agent_run")
-    .map((step) => ({
-      durationMs: step.durationMs,
-      id: step.stepId,
-      kind: step.kind,
-      status: step.status,
-      title: traceStepTitle(step),
-    }));
-}
-
-function rowMeta(row) {
-  const duration = row.durationMs == null
-    ? ""
-    : formatElapsed(row.durationMs);
+function artifactChangeMeta(artifact) {
+  const added = Math.max(0, Number(artifact?.addedLines) || 0);
+  const removed = Math.max(0, Number(artifact?.removedLines) || 0);
+  const bytes = Math.max(0, Number(artifact?.writtenBytes) || 0);
   return [
-    kindLabels[row.kind] || row.kind || "步骤",
-    stepStatusLabels[row.status] || row.status,
-    duration,
+    added ? `+${added}` : "",
+    removed ? `−${removed}` : "",
+    bytes ? `${bytes} B` : "",
   ].filter(Boolean).join(" · ");
 }
 
-function statusPresentation(run, step, waitState) {
-  const status = run?.status || step?.status || "waiting";
-  if (waitState.background) {
-    return {
-      className: "running",
-      detail: "后台整理中，不影响继续对话",
-      label: "后台整理中",
-    };
-  }
-  if (waitState.approval || status === "waiting_approval") {
-    return { className: "waiting", label: "等待确认" };
-  }
-  if (["failed", "interrupted"].includes(status)) {
-    return { className: "failed", label: status === "failed" ? "失败" : "已中断" };
-  }
-  if (status === "cancelled") return { className: "cancelled", label: "已取消" };
-  if (["planning", "running"].includes(status)) {
-    return { className: "running", label: status === "planning" ? "规划中" : "执行中" };
-  }
-  if (["completed", "success"].includes(status)) {
-    return { className: "success", label: "已完成" };
-  }
-  return { className: "waiting", label: "等待开始" };
-}
-
 export function AgentTraceStrip({
+  interactionPending = false,
   messageId,
   trace = [],
   approvals = [],
+  toolCalls = [],
   run = null,
 }) {
   const safeTrace = Array.isArray(trace) ? trace : [];
-  const durableStep = currentRunStep(run);
-  const liveStep = currentStep(safeTrace);
-  const liveWaitState = traceStepWaitState(liveStep);
-  const step = (
-    liveWaitState.approval
-    || liveWaitState.background
-    || liveStep?.status === "running"
-  ) ? liveStep : (durableStep || liveStep);
-  const rows = useMemo(() => runRows(run, safeTrace), [run, safeTrace]);
-  const waitState = traceStepWaitState(step);
-  const status = statusPresentation(run, step, waitState);
-  const active = status.className === "running" || status.className === "waiting";
-  const [expanded, setExpanded] = useState(active);
   const [now, setNow] = useState(() => Date.now());
+  const presentation = useMemo(
+    () => buildAgentRunPresentation({ run, trace: safeTrace, now }),
+    [now, run, safeTrace],
+  );
+  const active = Boolean(presentation?.active);
+  const status = presentation?.status || { className: "waiting", label: "等待开始" };
+  const [expanded, setExpanded] = useState(active);
 
   useEffect(() => {
-    setExpanded(active);
-  }, [active, run?.id]);
+    setExpanded(active || status.className === "failed");
+  }, [active, run?.id, status.className]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -185,53 +41,29 @@ export function AgentTraceStrip({
     return () => window.clearInterval(timer);
   }, [active]);
 
-  if (!step) return null;
+  if (!presentation) return null;
+  const {
+    activeRow,
+    artifacts,
+    completed: progressCompleted,
+    context,
+    hasPlan,
+    headline,
+    metrics,
+    operations,
+    processSummary,
+    progressPercent,
+    rows,
+    total: progressTotal,
+  } = presentation;
 
-  const rootStep = safeTrace.find((item) => item.name === "agent_run") || safeTrace[0];
-  const startedAt = Date.parse(run?.startedAt || rootStep?.startedAt || "");
-  const finishedAt = Date.parse(run?.finishedAt || run?.updatedAt || "");
-  const elapsedMs = rootStep?.durationMs != null
-    ? rootStep.durationMs
-    : Number.isFinite(startedAt)
-      ? ((active || !Number.isFinite(finishedAt) ? now : finishedAt) - startedAt)
-      : safeTrace.reduce((total, item) => total + (Number(item.durationMs) || 0), 0);
-  const progress = runProgress(run, rows);
-  const completed = rows.filter((item) => terminalStatuses.has(item.status)).length;
-  const progressCompleted = progress.total ? progress.completed : completed;
-  const progressTotal = progress.total || rows.length;
-  const tokenLabel = formatTokens(estimatedTokens(safeTrace));
-  const metrics = [
-    formatElapsed(elapsedMs),
-    tokenLabel,
-    progressTotal ? `${progressCompleted}/${progressTotal}` : "",
-  ].filter(Boolean).join(" · ");
-  const activeRow = (
-    [...rows].reverse().find((item) => [
-      "running",
-      "planning",
-      "waiting",
-      "waiting_approval",
-    ].includes(item.status))
-    || [...rows].reverse().find(Boolean)
-  );
-  const answerRow = [...rows].reverse().find((item) => item.kind === "answer");
-  const headline = (
-    active
-      ? activeRow?.title
-      : answerRow?.title || rows.at(-1)?.title
-  ) || "本次任务";
-  const progressPercent = progressTotal
-    ? Math.min(100, Math.round((progressCompleted / progressTotal) * 100))
-    : 0;
-  const processSummary = active
-    ? status.detail || `当前：${headline}`
-    : `${progressCompleted}个步骤已结束`;
-
-  const handleOpen = () => {
+  const handleOpen = (activeTab = "trace", focusStepId = "") => {
     window.dispatchEvent(new CustomEvent("knowflow:react-agent-trace-open", {
-      detail: { messageId, trace: safeTrace, approvals, run },
+      detail: { messageId, trace: safeTrace, approvals, toolCalls, run, activeTab, focusStepId },
     }));
-    window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open"));
+    window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open", {
+      detail: { focus: true },
+    }));
   };
 
   return (
@@ -285,26 +117,130 @@ export function AgentTraceStrip({
                 className={`${item.status}${item.id === activeRow?.id && active ? " current" : ""}`}
                 key={item.id}
               >
-                <span className={"agent-task-capsule-step-icon"} aria-hidden={"true"}></span>
-                <span className={"agent-task-capsule-step-copy"}>
-                  <strong>{item.title}</strong>
-                  <small>{rowMeta(item)}</small>
-                </span>
+                <button
+                  className={"agent-task-capsule-step-button"}
+                  type={"button"}
+                  onClick={() => handleOpen("trace", item.id)}
+                  aria-label={`查看步骤：${item.title}`}
+                  tabIndex={expanded ? 0 : -1}
+                >
+                  <span className={"agent-task-capsule-step-icon"} aria-hidden={"true"}></span>
+                  <span className={"agent-task-capsule-step-copy"}>
+                    <strong>{item.title}</strong>
+                    <small>{item.meta}</small>
+                  </span>
+                  <span className={"agent-task-capsule-step-open"} aria-hidden={"true"}>↗</span>
+                </button>
               </li>
             ))}
           </ol>
           {rows.length > 8 ? (
             <span className={"agent-task-capsule-more"}>{`另有${rows.length - 8}个步骤`}</span>
           ) : null}
-          <button
-            className={"agent-task-capsule-detail"}
-            type={"button"}
-            onClick={handleOpen}
-            tabIndex={expanded ? 0 : -1}
-          >
-            {"查看运行详情"}
-            <span aria-hidden={"true"}>↗</span>
-          </button>
+          {operations.length && hasPlan ? (
+            <div className={"agent-task-capsule-operations"}>
+              <div className={"agent-task-capsule-section-head"}>
+                <strong>{"操作记录"}</strong>
+                <span>{`${operations.length}项`}</span>
+              </div>
+              <ol className={"agent-task-capsule-steps"}>
+                {operations.slice(0, 6).map((item) => (
+                  <li
+                    className={`${item.status}${active && ["planning", "running", "waiting"].includes(item.status) ? " current" : ""}`}
+                    key={`operation-${item.id}`}
+                  >
+                    <button
+                      className={"agent-task-capsule-step-button"}
+                      type={"button"}
+                      onClick={() => handleOpen("trace", item.id)}
+                      aria-label={`查看操作：${item.title}`}
+                      tabIndex={expanded ? 0 : -1}
+                    >
+                      <span className={"agent-task-capsule-step-icon"} aria-hidden={"true"}></span>
+                      <span className={"agent-task-capsule-step-copy"}>
+                        <strong>{item.title}</strong>
+                        {item.meta ? <small>{item.meta}</small> : null}
+                      </span>
+                      <span className={"agent-task-capsule-step-open"} aria-hidden={"true"}>↗</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              {operations.length > 6 ? (
+                <span className={"agent-task-capsule-more"}>{`另有${operations.length - 6}项操作`}</span>
+              ) : null}
+            </div>
+          ) : null}
+          {context ? (
+            <div className={`agent-context-pressure${context.trimmed ? " trimmed" : ""}`}>
+              <div>
+                <strong>{context.label}</strong>
+                <span>{context.detail}</span>
+              </div>
+              <span className={"agent-context-pressure-track"} aria-hidden={"true"}>
+                <i style={{ transform: `scaleX(${context.percent / 100})` }}></i>
+              </span>
+            </div>
+          ) : null}
+          {active && artifacts.length ? (
+            <div className={"agent-task-capsule-artifacts"}>
+              <div className={"agent-task-capsule-section-head"}>
+                <strong>{`${artifacts.length}个产物`}</strong>
+                <span>{"已保存"}</span>
+              </div>
+              <ul>
+                {artifacts.slice(0, 5).map((artifact, index) => {
+                  const target = artifact.path || artifact.url || artifact.title || "运行产物";
+                  return (
+                    <li key={artifact.artifactId || `${target}-${index}`}>
+                      <button
+                        type={"button"}
+                        onClick={() => handleOpen("artifacts")}
+                        aria-label={`查看变更：${target}`}
+                        tabIndex={expanded ? 0 : -1}
+                      >
+                        <span aria-hidden={"true"}>◆</span>
+                        <strong title={target}>{target}</strong>
+                        <small>{artifactChangeMeta(artifact)}</small>
+                        <span aria-hidden={"true"}>↗</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {artifacts.length > 5 ? (
+                <span className={"agent-task-capsule-more"}>{`另有${artifacts.length - 5}个产物`}</span>
+              ) : null}
+            </div>
+          ) : null}
+          <AgentRecoveryPanel
+            compact
+            interactive={!interactionPending}
+            messageId={messageId}
+            run={run}
+          />
+          <div className={"agent-task-capsule-actions"}>
+            <button
+              className={"agent-task-capsule-detail"}
+              type={"button"}
+              onClick={() => handleOpen("trace")}
+              tabIndex={expanded ? 0 : -1}
+            >
+              {"查看完整过程"}
+              <span aria-hidden={"true"}>↗</span>
+            </button>
+            {artifacts.length ? (
+              <button
+                className={"agent-task-capsule-detail"}
+                type={"button"}
+                onClick={() => handleOpen("artifacts")}
+                tabIndex={expanded ? 0 : -1}
+              >
+                {"查看变更"}
+                <span aria-hidden={"true"}>↗</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

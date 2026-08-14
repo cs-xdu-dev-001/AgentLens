@@ -305,12 +305,18 @@ def main() -> None:
         if message["id"] == done["messageId"]
     )
     assert assistant["trace"] == done["trace"]
+    assert assistant["toolCalls"]
+    assert all(
+        item.get("toolCallId")
+        for item in assistant["toolCalls"]
+    )
     legacy = next(
         message
         for message in history
         if message["content"] == "Legacy answer"
     )
     assert legacy["trace"] == []
+    assert legacy["toolCalls"] == []
     serialized = json.dumps(
         assistant["trace"],
         ensure_ascii=False,

@@ -1,16 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  hasPendingBackgroundStep,
-  runProgress,
-} from "../controller/agentRunState.js";
-
-const terminalStatuses = new Set(["success", "failed", "cancelled"]);
-
-function formatDuration(milliseconds) {
-  const value = Math.max(0, Number(milliseconds) || 0);
-  if (value < 1000) return `${Math.round(value)}ms`;
-  return `${(value / 1000).toFixed(2)}s`;
-}
+import { buildAgentRunPresentation } from "./agentRunPresentation.js";
 
 function shortRunId(runId) {
   const value = String(runId || "");
@@ -23,132 +12,56 @@ function shortRunId(runId) {
 
 export function AgentRunSummary({ trace = [], run = null }) {
   const safeTrace = Array.isArray(trace) ? trace : [];
-  const rootStep = (
-    safeTrace.find((step) => step.name === "agent_run")
-    || safeTrace[0]
-  );
-  const durableStatus = run?.status || "";
-  const running = durableStatus
-    ? ["planning", "running"].includes(durableStatus)
-    : rootStep?.status === "running";
-  const failed = durableStatus
-    ? durableStatus === "failed"
-    : rootStep?.status === "failed";
-  const cancelled = durableStatus
-    ? durableStatus === "cancelled"
-    : rootStep?.status === "cancelled";
-  const approvalWaiting = safeTrace.some(
-    (step) =>
-      step.status === "waiting" &&
-      step.kind === "approval",
-  ) || durableStatus === "waiting_approval";
-  const backgroundPending = hasPendingBackgroundStep(safeTrace);
   const [now, setNow] = useState(() => Date.now());
+  const presentation = useMemo(
+    () => buildAgentRunPresentation({ run, trace: safeTrace, now }),
+    [now, run, safeTrace],
+  );
+  const running = Boolean(presentation?.active);
 
   useEffect(() => {
     if (!running) return undefined;
     setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [running]);
 
-  const metrics = useMemo(() => {
-    const startedAt = Date.parse(
-      run?.startedAt || rootStep?.startedAt || "",
+  if (!presentation) {
+    return (
+      <section className={"agent-run-summary idle"} aria-label={"运行工作台"}>
+        <div className={"agent-run-summary-head"}>
+          <div className={"agent-run-summary-copy"}>
+            <h2>{"运行工作台"}</h2>
+            <span>{"等待任务"}</span>
+          </div>
+          <strong className={"agent-run-status waiting"}>{"就绪"}</strong>
+        </div>
+      </section>
     );
-    const finishedAt = Date.parse(run?.finishedAt || "");
-    const elapsedMs = rootStep?.durationMs != null
-      ? rootStep.durationMs
-      : Number.isFinite(finishedAt) && Number.isFinite(startedAt)
-        ? finishedAt - startedAt
-      : Number.isFinite(startedAt)
-        ? now - startedAt
-        : 0;
-    const progress = runProgress(run);
-    return {
-      completed: progress.total
-        ? progress.completed
-        : safeTrace.filter((step) =>
-          terminalStatuses.has(step.status),
-        ).length,
-      elapsed: formatDuration(elapsedMs),
-      runId: shortRunId(run?.id || rootStep?.runId),
-      toolCalls: safeTrace.filter(
-        (step) =>
-          step.kind === "tool" || step.kind === "mcp",
-      ).length,
-      total: progress.total || safeTrace.length,
-      progressPercent: (progress.total || safeTrace.length)
-        ? Math.min(
-            100,
-            Math.round(
-              ((progress.total
-                ? progress.completed
-                : safeTrace.filter((step) => terminalStatuses.has(step.status)).length)
-              / (progress.total || safeTrace.length)) * 100,
-            ),
-          )
-        : 0,
-    };
-  }, [now, rootStep, run, safeTrace]);
-
-  const status = durableStatus || (!safeTrace.length
-    ? "waiting"
-    : approvalWaiting
-      ? "waiting"
-      : running
-      ? "running"
-      : failed
-        ? "failed"
-        : cancelled
-          ? "cancelled"
-          : "success");
-  const statusLabel = durableStatus === "completed" && backgroundPending
-    ? "回答已完成"
-    : ({
-        cancelled: "已取消",
-        completed: "已完成",
-        failed: "失败",
-        interrupted: "已中断",
-        planning: "规划中",
-        running: "执行中",
-        success: "已完成",
-        waiting: approvalWaiting ? "等待确认" : "等待运行",
-        waiting_approval: "等待确认",
-        waiting_start: "等待开始",
-      }[status]);
-  const freshness = backgroundPending
-    ? "后台处理中"
-    : running
-      ? approvalWaiting
-        ? "等待确认"
-        : "实时"
-      : ["waiting", "waiting_start", "waiting_approval"].includes(status)
-        ? "等待"
-        : "已保存";
-  const currentStep = (
-    [...safeTrace].reverse().find(
-      (step) => step.status === "waiting" && step.kind === "approval",
-    )
-    || [...safeTrace].reverse().find((step) => step.status === "running")
-  );
-  const currentTitle = (
-    run?.steps?.find((step) => step.id === run?.currentStepId)?.title
-    || currentStep?.title
-    || currentStep?.name
-    || "记录Agent在本轮任务中的执行状态"
-  );
+  }
+  const {
+    completed,
+    elapsed,
+    headline,
+    processSummary,
+    progressPercent,
+    runId,
+    status,
+    tokenLabel,
+    toolCalls,
+    total,
+  } = presentation;
 
   return (
     <section className={"agent-run-summary"} aria-label={"本次运行概览"}>
       <div className={"agent-run-summary-head"}>
         <div className={"agent-run-summary-copy"}>
-          <h2>{"本次运行"}</h2>
-          <span>{metrics.runId}{" · "}{freshness}</span>
-          <p>{currentTitle}</p>
+          <h2 title={headline}>{headline}</h2>
+          <span>{shortRunId(runId)}{" · "}{status.freshness}</span>
+          <p>{processSummary}</p>
         </div>
-        <strong className={`agent-run-status ${status}`}>
-          {statusLabel}
+        <strong className={`agent-run-status ${status.className}`}>
+          {status.label}
         </strong>
       </div>
       <div
@@ -156,23 +69,27 @@ export function AgentRunSummary({ trace = [], run = null }) {
         role={"progressbar"}
         aria-label={"本次运行进度"}
         aria-valuemin={0}
-        aria-valuemax={metrics.total || 1}
-        aria-valuenow={metrics.completed}
+        aria-valuemax={total || 1}
+        aria-valuenow={completed}
       >
-        <span style={{ transform: `scaleX(${metrics.progressPercent / 100})` }}></span>
+        <span style={{ transform: `scaleX(${progressPercent / 100})` }}></span>
       </div>
       <div className={"agent-run-metrics"}>
         <div>
           <span>{"当前进度"}</span>
-          <strong>{metrics.completed}{" / "}{metrics.total}</strong>
+          <strong>{completed}{" / "}{total}</strong>
         </div>
         <div>
           <span>{"已用时间"}</span>
-          <strong>{metrics.elapsed}</strong>
+          <strong>{elapsed}</strong>
         </div>
         <div>
           <span>{"工具调用"}</span>
-          <strong>{metrics.toolCalls}{"次"}</strong>
+          <strong>{toolCalls}{"次"}</strong>
+        </div>
+        <div>
+          <span>{"Tokens"}</span>
+          <strong>{tokenLabel || "—"}</strong>
         </div>
       </div>
     </section>

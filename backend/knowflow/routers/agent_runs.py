@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from ..services.agent_event_protocol import normalize_agent_event
 from ..services.agent_run_store import (
@@ -25,6 +26,12 @@ from ..runtime import (
 
 router = APIRouter()
 _run_executor: Callable[..., None] | None = None
+
+
+class AgentQuestionAnswer(BaseModel):
+    questionId: str = Field(min_length=1, max_length=160)
+    answer: str = Field(min_length=1, max_length=4000)
+    selectedOptions: list[str] = Field(default_factory=list, max_length=4)
 
 
 @router.get("/api/agent/runs")
@@ -57,7 +64,10 @@ def _closed_run_event(
     run_id: str,
 ) -> tuple[str, dict[str, Any]] | None:
     snapshot = _snapshot_or_404(user_id, run_id)
-    if snapshot["status"] in ACTIVE_RUN_STATUSES:
+    if snapshot["status"] in ACTIVE_RUN_STATUSES - {
+        "waiting_approval",
+        "waiting_input",
+    }:
         try:
             snapshot = agent_runs.transition_run(
                 user_id,
@@ -104,6 +114,7 @@ def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
         "start": {"waiting_start"},
         "replan": {"waiting_start"},
         "resume": {"interrupted", "failed", "waiting_approval"},
+        "answer": {"waiting_input"},
         "restart": {"planning"},
     }[action]
     if snapshot["status"] not in allowed:
@@ -136,9 +147,10 @@ def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
 
 @router.get("/api/agent/runs/{run_id}")
 def read_agent_run(run_id: str, request: Request) -> dict[str, Any]:
-    return api_success(
-        _snapshot_or_404(current_user_id(request), run_id)
-    )
+    user_id = current_user_id(request)
+    snapshot = _snapshot_or_404(user_id, run_id)
+    snapshot.update(agent_run_events.metadata_for_run(user_id, run_id))
+    return api_success(snapshot)
 
 
 @router.get("/api/agent/runs/{run_id}/events")
@@ -288,6 +300,40 @@ def resume_agent_run(run_id: str, request: Request) -> dict[str, Any]:
     return api_success(
         _launch(current_user_id(request), run_id, "resume")
     )
+
+
+@router.post("/api/agent/runs/{run_id}/answer")
+def answer_agent_question(
+    run_id: str,
+    payload: AgentQuestionAnswer,
+    request: Request,
+) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    answer_text = payload.answer.strip()
+    if not answer_text:
+        raise HTTPException(status_code=422, detail="Answer cannot be empty.")
+    if _run_executor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent run executor is unavailable.",
+        )
+    try:
+        answer = agent_runs.resolve_question(
+            user_id,
+            run_id,
+            question_id=payload.questionId,
+            answer=answer_text,
+            selected_options=[
+                value.strip()[:120]
+                for value in payload.selectedOptions
+                if value.strip()
+            ],
+        )
+    except AgentRunStoreError as exc:
+        status_code = 404 if exc.code == "agent_run_not_found" else 409
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    launched = _launch(user_id, run_id, "answer")
+    return api_success({"run": launched, "answer": answer})
 
 
 @router.post("/api/agent/runs/{run_id}/restart")

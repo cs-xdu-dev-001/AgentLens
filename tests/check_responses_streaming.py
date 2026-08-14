@@ -128,6 +128,37 @@ def main() -> None:
     }
     assert accumulator.finish()["content"] == "Hello"
 
+    usage_accumulator = ResponsesStreamAccumulator()
+    usage_events = usage_accumulator.feed(
+        {
+            "type": "response.completed",
+            "response": {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "ok"}],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 9,
+                    "output_tokens": 4,
+                    "total_tokens": 13,
+                },
+            },
+        }
+    )
+    assert usage_events[0] == {
+        "type": "usage_updated",
+        "usage": {
+            "input_tokens": 9,
+            "output_tokens": 4,
+            "total_tokens": 13,
+        },
+    }
+    assert usage_events[-1]["type"] == "completed"
+
     tool_accumulator = ResponsesStreamAccumulator()
     tool_events = [
         {

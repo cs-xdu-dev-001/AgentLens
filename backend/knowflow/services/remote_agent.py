@@ -368,6 +368,19 @@ class RemoteAgentClient:
             self.request("POST", f"/api/agent/runs/{run_id}/resume")
         return self.watch_run(run_id, event_sink)
 
+    def answer_question(
+        self,
+        run_id: str,
+        answer: dict[str, Any],
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> AgentExecution:
+        self.request(
+            "POST",
+            f"/api/agent/runs/{run_id}/answer",
+            body=answer,
+        )
+        return self.watch_run(run_id, event_sink)
+
     @staticmethod
     def _collect(
         source: Iterable[dict[str, Any]],
@@ -387,7 +400,7 @@ class RemoteAgentClient:
             event_type = str(event.get("type") or "")
             if event_type in {"message", "answer"}:
                 answer.append(str(event.get("content") or ""))
-            if event_type == "approval_required":
+            if event_type in {"approval_required", "user_question_required"}:
                 paused = True
             snapshot = event.get("run")
             if isinstance(snapshot, dict):
@@ -395,7 +408,9 @@ class RemoteAgentClient:
                 result["runId"] = snapshot.get("id") or run_id
                 result["sessionId"] = snapshot.get("sessionId")
                 result["messageId"] = snapshot.get("assistantMessageId")
-                paused = snapshot.get("status") == "waiting_approval"
+                paused = snapshot.get("status") in {
+                    "waiting_approval", "waiting_input",
+                }
                 cancelled = snapshot.get("status") == "cancelled"
             for key in ("runId", "sessionId", "messageId", "memoryActivity"):
                 if event.get(key) is not None:

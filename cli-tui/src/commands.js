@@ -1,10 +1,10 @@
 import Fuse from 'fuse.js';
 
 export const BUILTIN_COMMANDS = [
-  {value: '/help', description: '查看命令与快捷键', source: 'builtin'},
+  {value: '/help', description: '查看命令与快捷键', source: 'builtin', aliases: ['/?']},
   {value: '/new', description: '开始新会话', source: 'builtin'},
   {value: '/clear', description: '清空终端显示', source: 'builtin'},
-  {value: '/model', description: '查看当前模型', source: 'builtin'},
+  {value: '/model', description: '选择本轮对话使用的模型', source: 'builtin', argumentHint: '[list | use <ID> | config]'},
   {value: '/status', description: '查看会话状态', source: 'builtin'},
   {value: '/context', description: '查看模型上下文占用', source: 'builtin'},
   {value: '/compact', description: '压缩早期会话并保留结构化摘要', source: 'builtin', argumentHint: '[补充要求]'},
@@ -14,8 +14,9 @@ export const BUILTIN_COMMANDS = [
   {value: '/diff', description: '查看本轮文件改动', source: 'builtin'},
   {value: '/undo', description: '安全撤销最近一次文件操作', source: 'builtin'},
   {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin'},
+  {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', argumentHint: '[关键词 | clear]'},
   {value: '/continue', description: '从最近失败点继续', source: 'builtin'},
-  {value: '/permissions', description: '切换权限模式', source: 'builtin'},
+  {value: '/permissions', description: '切换权限模式', source: 'builtin', aliases: ['/allowed-tools']},
   {value: '/tools', description: '查看本地工具状态', source: 'builtin'},
   {value: '/tools:configure', description: '查看联网搜索配置方法', source: 'builtin'},
   {value: '/mcp', description: '查看MCP连接与工具', source: 'builtin'},
@@ -26,7 +27,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/memory', description: '查看Mem0状态', source: 'builtin'},
   {value: '/memory:configure', description: '查看Mem0配置方法', source: 'builtin'},
   {value: '/doctor', description: '检查SRT沙箱依赖', source: 'builtin'},
-  {value: '/tasks', description: '查看排队任务', source: 'builtin'},
+  {value: '/tasks', description: '查看和调整排队任务', source: 'builtin', argumentHint: '[list | add <now|next|later> <任务> | remove <序号> | priority <序号> <级别> | clear]'},
   {value: '/retry', description: '选择重试工具或整轮任务', source: 'builtin'},
   {value: '/fix', description: '让Agent分析最近的工具错误并继续', source: 'builtin'},
   {value: '/exit', description: '退出KnowFlow', source: 'builtin', aliases: ['/quit']},
@@ -91,6 +92,14 @@ export function resolveCommand(input, commands) {
   const normalized = rawName.toLowerCase();
   const command = commands.find(item => item.value === normalized || item.aliases?.includes(normalized));
   return command ? {command, args: rest.join(' ')} : null;
+}
+
+export function commandArgumentHint(input, commands) {
+  const value = String(input ?? '');
+  if (!value.endsWith(' ')) return '';
+  const resolved = resolveCommand(value, commands);
+  if (!resolved || resolved.args) return '';
+  return String(resolved.command.argumentHint ?? '').trim();
 }
 
 export function dynamicCommandTask(value, args) {

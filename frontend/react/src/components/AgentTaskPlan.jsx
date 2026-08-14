@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   currentRunStep,
   isActiveRun,
   traceForPlanStep,
 } from "../controller/agentRunState.js";
 import { AgentTraceView } from "./AgentTraceView.jsx";
+import {
+  matchesFocusScope,
+  nextTraceStepId,
+  resolveTreeSelectionId,
+} from "./agentTraceNavigation.js";
 
 
 const statusLabels = {
@@ -17,6 +22,7 @@ const statusLabels = {
   running: "执行中",
   skipped: "已跳过",
   waiting_approval: "等待确认",
+  waiting_input: "等待回答",
   waiting_start: "等待开始",
 };
 
@@ -37,36 +43,186 @@ export function AgentTaskPlan({
   run = null,
   trace = [],
   compact = false,
+  focusStepId = "",
+  focusScope = "message",
 }) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
   const current = currentRunStep(run);
   const [selectedStepId, setSelectedStepId] = useState(
     current?.id || steps[0]?.id || "",
   );
-
-  useEffect(() => {
-    if (
-      current?.id
-      && ["running", "waiting_approval"].includes(current.status)
-    ) {
-      setSelectedStepId(current.id);
-    }
-  }, [current?.id, current?.status]);
+  const [focusedStepId, setFocusedStepId] = useState(
+    current?.id || steps[0]?.id || "",
+  );
+  const planTreeRef = useRef(null);
+  const pendingTraceFocusRef = useRef(false);
+  const focusedStepIdRef = useRef(focusedStepId);
+  const preferredPlanStepIdRef = useRef("");
+  const userSelectedRef = useRef(false);
+  const runIdRef = useRef(run?.id || "");
 
   const selectedTrace = useMemo(
     () => traceForPlanStep(trace, selectedStepId),
     [selectedStepId, trace],
   );
+  const focusedPlanStepId = useMemo(() => {
+    if (!focusStepId) return "";
+    return steps.find((step) => (
+      traceForPlanStep(trace, step.id).some((item) => item.stepId === focusStepId)
+    ))?.id || "";
+  }, [focusStepId, steps, trace]);
+  const preferredPlanStepId = current?.id
+    || focusedPlanStepId
+    || selectedStepId
+    || steps[0]?.id
+    || "";
+  const stepIds = steps.map((step) => step.id);
+  const stepIdsKey = stepIds.join("\u001f");
+
+  focusedStepIdRef.current = focusedStepId;
+  preferredPlanStepIdRef.current = preferredPlanStepId;
+
+  const focusPlanStep = (stepId) => {
+    if (!stepId) return;
+    focusedStepIdRef.current = stepId;
+    setFocusedStepId(stepId);
+    window.requestAnimationFrame(() => {
+      planTreeRef.current
+        ?.querySelector(`[data-plan-step-id="${CSS.escape(stepId)}"]`)
+        ?.focus();
+    });
+  };
+
+  useEffect(() => {
+    const nextRunId = run?.id || "";
+    if (runIdRef.current !== nextRunId) {
+      runIdRef.current = nextRunId;
+      userSelectedRef.current = false;
+      setSelectedStepId(preferredPlanStepId);
+      setFocusedStepId(preferredPlanStepId);
+      return;
+    }
+    if (focusStepId && steps.some((step) => step.id === focusStepId)) {
+      userSelectedRef.current = true;
+      setSelectedStepId(focusStepId);
+    } else if (focusedPlanStepId) {
+      userSelectedRef.current = true;
+      setSelectedStepId(focusedPlanStepId);
+    } else {
+      setSelectedStepId((selected) => {
+        if (
+          userSelectedRef.current
+          && selected
+          && !stepIds.includes(selected)
+        ) {
+          userSelectedRef.current = false;
+        }
+        return resolveTreeSelectionId(
+          stepIds,
+          selected,
+          preferredPlanStepId,
+          userSelectedRef.current,
+        );
+      });
+    }
+  }, [focusStepId, focusedPlanStepId, preferredPlanStepId, run?.id, stepIdsKey]);
+
+  useEffect(() => {
+    if (focusedStepId && steps.some((step) => step.id === focusedStepId)) return;
+    setFocusedStepId(preferredPlanStepId);
+  }, [focusedStepId, preferredPlanStepId, steps]);
+
+  useEffect(() => {
+    if (!pendingTraceFocusRef.current || !selectedTrace.length) return;
+    pendingTraceFocusRef.current = false;
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("knowflow:react-trace-focus", {
+        detail: { scope: focusScope },
+      }));
+    });
+  }, [selectedStepId, selectedTrace.length]);
+
+  useEffect(() => {
+    const handlePlanFocus = (event) => {
+      if (!matchesFocusScope(event.detail?.scope, focusScope)) return;
+      const nextId = focusedStepIdRef.current || preferredPlanStepIdRef.current;
+      if (!nextId) return;
+      focusedStepIdRef.current = nextId;
+      setFocusedStepId(nextId);
+      window.requestAnimationFrame(() => {
+        planTreeRef.current
+          ?.querySelector(`[data-plan-step-id="${CSS.escape(nextId)}"]`)
+          ?.focus();
+      });
+    };
+    window.addEventListener("knowflow:react-plan-focus", handlePlanFocus);
+    return () => window.removeEventListener("knowflow:react-plan-focus", handlePlanFocus);
+  }, [focusScope]);
 
   if (!run?.id || !steps.length) return null;
 
   const active = isActiveRun(run);
+  const handlePlanStepKeyDown = (event, step) => {
+    if (event.key === "Escape" && selectedStepId) {
+      event.preventDefault();
+      event.stopPropagation();
+      userSelectedRef.current = true;
+      setSelectedStepId("");
+      focusPlanStep(step.id);
+      return;
+    }
+    if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      focusPlanStep(nextTraceStepId(
+        steps.map((item) => item.id),
+        step.id,
+        event.key,
+      ));
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      const childTrace = traceForPlanStep(trace, step.id);
+      userSelectedRef.current = true;
+      setSelectedStepId(step.id);
+      if (childTrace.length) {
+        pendingTraceFocusRef.current = true;
+        if (selectedStepId === step.id) {
+          window.requestAnimationFrame(() => {
+            pendingTraceFocusRef.current = false;
+            window.dispatchEvent(new CustomEvent("knowflow:react-trace-focus", {
+              detail: { scope: focusScope },
+            }));
+          });
+        }
+      }
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      if (selectedStepId !== step.id) return;
+      event.preventDefault();
+      userSelectedRef.current = true;
+      setSelectedStepId("");
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      userSelectedRef.current = true;
+      setSelectedStepId((selected) => selected === step.id ? "" : step.id);
+    }
+  };
+
   return (
     <section
       className={`agent-task-plan${compact ? " compact" : ""}`}
       aria-label={"任务计划"}
     >
-      <ol className={"agent-task-steps"}>
+      <ol
+        ref={planTreeRef}
+        className={"agent-task-steps"}
+        role={"tree"}
+        aria-label={"任务步骤"}
+      >
         {steps.map((step) => {
           const selected = step.id === selectedStepId;
           const isCurrent = step.id === current?.id;
@@ -74,14 +230,24 @@ export function AgentTaskPlan({
             <li
               className={`agent-task-step ${step.status}${selected ? " selected" : ""}`}
               key={step.id}
-              aria-current={isCurrent ? "step" : undefined}
+              role={"none"}
             >
               <button
                 type={"button"}
-                onClick={() => setSelectedStepId(
-                  selected ? "" : step.id,
-                )}
+                role={"treeitem"}
+                aria-level={1}
+                aria-selected={focusedStepId === step.id}
+                aria-current={isCurrent ? "step" : undefined}
                 aria-expanded={selected}
+                data-plan-step-id={step.id}
+                tabIndex={focusedStepId === step.id ? 0 : -1}
+                onClick={() => {
+                  userSelectedRef.current = true;
+                  setFocusedStepId(step.id);
+                  setSelectedStepId(selected ? "" : step.id);
+                }}
+                onFocus={() => setFocusedStepId(step.id)}
+                onKeyDown={(event) => handlePlanStepKeyDown(event, step)}
               >
                 <span
                   className={"agent-task-step-marker"}
@@ -100,6 +266,14 @@ export function AgentTaskPlan({
                     <AgentTraceView
                       messageId={messageId}
                       trace={selectedTrace}
+                      focusStepId={focusStepId}
+                      focusScope={focusScope}
+                      onExitTree={() => focusPlanStep(step.id)}
+                      onDismiss={() => {
+                        userSelectedRef.current = true;
+                        setSelectedStepId("");
+                        focusPlanStep(step.id);
+                      }}
                     />
                   ) : (
                     <p className={"agent-task-step-empty"} role={"status"}>

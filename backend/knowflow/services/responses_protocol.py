@@ -225,7 +225,11 @@ class ResponsesStreamAccumulator:
             }
             self._message = parse_responses_message(payload)
             self._completed = True
-            return [{"type": "completed", "message": self._message}]
+            events: list[dict[str, Any]] = []
+            if isinstance(response.get("usage"), dict):
+                events.append({"type": "usage_updated", "usage": response["usage"]})
+            events.append({"type": "completed", "message": self._message})
+            return events
         if event_type == "response.failed":
             response = event.get("response")
             error = response.get("error") if isinstance(response, dict) else {}

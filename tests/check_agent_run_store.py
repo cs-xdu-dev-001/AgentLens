@@ -166,6 +166,75 @@ def main() -> None:
     assert waiting_after_restart["status"] == "waiting_approval"
     assert waiting_after_restart["steps"][0]["status"] == "waiting_approval"
 
+    question_run = store.create_run(
+        user_id=1,
+        session_id="session-question",
+        user_message_id=20,
+        goal_summary="等待用户选择",
+        trigger_mode="auto",
+        request_payload={"question": "部署应用"},
+        run_id="run_waiting_question",
+    )
+    question_steps = store.replace_plan(
+        1,
+        question_run["id"],
+        [
+            {"title": "确认环境", "kind": "reasoning"},
+            {"title": "继续部署", "kind": "answer"},
+        ],
+    )
+    store.transition_run(1, question_run["id"], "running")
+    store.transition_step(
+        1,
+        question_run["id"],
+        question_steps[0]["id"],
+        "running",
+    )
+    store.set_request_metadata(
+        1,
+        question_run["id"],
+        _pendingQuestion={
+            "questionId": "question-1",
+            "question": "部署到哪个环境？",
+        },
+    )
+    store.transition_step(
+        1,
+        question_run["id"],
+        question_steps[0]["id"],
+        "waiting_input",
+    )
+    store.transition_run(1, question_run["id"], "waiting_input")
+    waiting_question_snapshot = store.get_snapshot(1, question_run["id"])
+    assert waiting_question_snapshot is not None
+    assert waiting_question_snapshot["pendingQuestion"]["questionId"] == "question-1"
+    resolved = store.resolve_question(
+        1,
+        question_run["id"],
+        question_id="question-1",
+        answer="测试环境",
+        selected_options=["staging"],
+    )
+    assert resolved["answer"] == "测试环境"
+    assert store.load_request(1, question_run["id"])["_questionAnswer"] == {
+        "questionId": "question-1",
+        "answer": "测试环境",
+        "selectedOptions": ["staging"],
+    }
+    resolved_snapshot = store.get_snapshot(1, question_run["id"])
+    assert resolved_snapshot is not None
+    assert resolved_snapshot["pendingQuestion"] is None
+    expect_code(
+        "agent_question_conflict",
+        lambda: store.resolve_question(
+            1,
+            question_run["id"],
+            question_id="question-1",
+            answer="生产环境",
+            selected_options=[],
+        ),
+    )
+
     expect_code(
         "agent_run_not_found",
         lambda: store.transition_run(2, run["id"], "cancelled"),

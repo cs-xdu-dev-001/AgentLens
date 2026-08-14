@@ -8,8 +8,10 @@ import {
   appendReactMessage,
   dispatchReactMessagesReset,
   updateReactMessageApprovals,
+  updateReactMessageQuestions,
   updateReactMessageContent,
   updateReactMessageThinking,
+  updateReactMessageToolCalls,
   updateReactMessageTrace,
   updateReactMessageRun,
   updateReactMessageMemoryActivity,
@@ -54,8 +56,13 @@ function renderRagQuality(ragQuality, retrievalRun) {
   dispatchReactEvent("knowflow:react-rag-quality-updated", { ragQuality, retrievalRun });
 }
 
-function renderToolTimeline(calls) {
-  dispatchReactEvent("knowflow:react-tool-timeline-updated", { toolCalls: calls });
+function renderToolTimeline(message, calls) {
+  const toolCalls = Array.isArray(calls) ? calls : [];
+  updateReactMessageToolCalls(message, toolCalls);
+  dispatchReactEvent("knowflow:react-tool-timeline-updated", {
+    messageId: message?.messageId || "",
+    toolCalls,
+  });
 }
 
 function renderAgentTrace(message, trace) {
@@ -80,8 +87,18 @@ function renderAgentApprovals(message, approvals) {
   );
 }
 
+function renderAgentQuestions(message, questions) {
+  updateReactMessageQuestions(message, questions);
+}
+
 function renderAgentRun(message, run) {
   updateReactMessageRun(message, run);
+  const runId = String(run?.id || run?.runId || "");
+  const active = ["planning", "running", "waiting_approval", "waiting_input"].includes(run?.status);
+  if (active && runId && state.autoOpenedRunId !== runId) {
+    state.autoOpenedRunId = runId;
+    dispatchReactEvent("knowflow:react-drawer-open");
+  }
   dispatchReactEvent(
     "knowflow:react-agent-run-updated",
     {
@@ -163,6 +180,7 @@ const chatFlow = createChatFlow({
   setSending,
   renderActiveSession,
   renderAgentApprovals,
+  renderAgentQuestions,
   renderAgentRun,
   renderAgentTrace,
   renderMemoryActivity,
@@ -187,6 +205,8 @@ function bindEvents() {
     refresh: catalogSync.refresh,
     refreshModels: catalogSync.refreshModels,
     removeChatAttachment: attachmentFlow.removeChatAttachment,
+    removeQueuedChat: chatFlow.removeQueuedChat,
+    reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
     renderActiveSession,
     renderCurrentUser: authFlow.renderCurrentUser,
     requestComposerMenuClose,
@@ -194,9 +214,12 @@ function bindEvents() {
     resolveChatModelConfigId: catalogSync.resolveChatModelConfigId,
     resolveKnowledgeBaseId: catalogSync.resolveKnowledgeBaseId,
     retryAnswer: chatFlow.retryAnswer,
+    resumeQueuedChats: chatFlow.resumeQueuedChats,
     showAppScreen: authFlow.showAppScreen,
     showAuthScreen: authFlow.showAuthScreen,
     startNewChat: chatFlow.startNewChat,
+    clearQueuedChats: chatFlow.clearQueuedChats,
+    stopChatGeneration: chatFlow.stopChatGeneration,
     submitChat: chatFlow.submitChat,
     syncKnowledgeBasesFromReact: catalogSync.syncKnowledgeBasesFromReact,
     syncKnowledgeSelectionFromReact: catalogSync.syncKnowledgeSelectionFromReact,

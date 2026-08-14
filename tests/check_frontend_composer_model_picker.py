@@ -45,7 +45,11 @@ def main() -> None:
     require(component, "管理模型", "model settings action")
     require(component, "aria-activedescendant", "active option semantics")
     require(composer, "ComposerModelPicker", "composer model picker mount")
-    require(composer, "disabled={sending}", "sending state lock")
+    require(
+        composer,
+        "disabled={sending || switchingSession}",
+        "sending and session-switch state lock",
+    )
 
     require(sidebar, "chat_model_config_id", "saved session model field")
     require(sidebar, "chatModelConfigId", "session model event payload")

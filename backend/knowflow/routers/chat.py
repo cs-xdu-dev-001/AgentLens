@@ -1,5 +1,7 @@
 from queue import Empty, Queue
 from threading import Event, Thread
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -10,6 +12,84 @@ router = APIRouter()
 
 CHAT_TAGS = ["Chat"]
 SESSION_TAGS = ["Sessions"]
+
+
+def _session_run_duration_ms(row: dict[str, Any]) -> int:
+    def timestamp(value: Any) -> float | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(
+                str(value).strip().replace("Z", "+00:00")
+            )
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+
+    started = timestamp(row.get("started_at") or row.get("created_at"))
+    if started is None:
+        return 0
+    finished = timestamp(row.get("finished_at"))
+    if finished is None and str(row.get("status") or "") not in {
+        "planning",
+        "running",
+        "waiting_approval",
+        "waiting_input",
+    }:
+        finished = timestamp(row.get("updated_at"))
+    end = finished if finished is not None else datetime.now(timezone.utc).timestamp()
+    return max(0, int((end - started) * 1000))
+
+
+def _latest_session_runs(user_id: int) -> dict[str, dict[str, Any]]:
+    rows = fetch_all(
+        """
+        SELECT current.id, current.session_id, current.goal_summary,
+               current.status, current.started_at, current.finished_at,
+               current.created_at, current.updated_at,
+               (
+                 SELECT COUNT(*) FROM agent_run_step step
+                 WHERE step.run_id=current.id
+               ) AS total_steps,
+               (
+                 SELECT COUNT(*) FROM agent_run_step step
+                 WHERE step.run_id=current.id AND step.status='completed'
+               ) AS completed_steps
+        FROM agent_run current
+        WHERE current.user_id=:user_id
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_run newer
+            WHERE newer.user_id=current.user_id
+              AND newer.session_id=current.session_id
+              AND (
+                newer.created_at > current.created_at
+                OR (
+                  newer.created_at = current.created_at
+                  AND newer.id > current.id
+                )
+              )
+          )
+        """,
+        {"user_id": user_id},
+    )
+    return {
+        str(row["session_id"]): {
+            "id": row["id"],
+            "goalSummary": row.get("goal_summary") or "Agent task",
+            "status": row.get("status") or "planning",
+            "startedAt": row.get("started_at"),
+            "finishedAt": row.get("finished_at"),
+            "updatedAt": row.get("updated_at"),
+            "durationMs": _session_run_duration_ms(row),
+            "progress": {
+                "completed": int(row.get("completed_steps") or 0),
+                "total": int(row.get("total_steps") or 0),
+            },
+        }
+        for row in rows
+    }
 
 
 def should_route_to_agent(payload: ChatRequest) -> bool:
@@ -343,6 +423,9 @@ def list_sessions(request: Request) -> dict[str, Any]:
         """,
         {"user_id": user_id},
     )
+    latest_runs = _latest_session_runs(user_id)
+    for row in rows:
+        row["latest_run"] = latest_runs.get(str(row["id"]))
     return api_success(rows)
 
 
@@ -394,6 +477,30 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
             if run_row
             else None
         )
+        if message["run"] is not None:
+            message["run"].update(
+                agent_run_events.metadata_for_run(
+                    user_id, str(run_row["id"])
+                )
+            )
+            message["approvals"] = agent_tool_operations.get_for_run(
+                user_id,
+                str(run_row["id"]),
+                statuses={"waiting"},
+            )
+            pending_question = message["run"].get("pendingQuestion")
+            message["questions"] = (
+                [pending_question]
+                if isinstance(pending_question, dict)
+                else []
+            )
+            message["toolCalls"] = list(
+                message["run"].get("toolCalls") or []
+            )
+        else:
+            message["approvals"] = []
+            message["questions"] = []
+            message["toolCalls"] = []
         message["memoryActivity"] = memory_activities.get(
             int(row["id"])
         )
@@ -427,6 +534,7 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
         "waiting_start",
         "running",
         "waiting_approval",
+        "waiting_input",
     }
     for run_row in run_rows:
         managed_run = agent_run_coordinator.is_active(run_row["id"])

@@ -12,11 +12,15 @@ from uuid import uuid4
 
 import requests
 
-from .agent_event_protocol import AgentEventNormalizer
+from .agent_event_protocol import (
+    AgentEventNormalizer,
+    artifact_event_from_tool_execution,
+)
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
 from .agent_tooling import (
     register_mcp_tools,
+    register_user_question_tool,
     register_web_fetch_tool,
     register_web_search_tool,
 )
@@ -465,8 +469,19 @@ class LocalAgentRuntime:
     def workspace_diff(self, path: str | None = None) -> dict[str, Any]:
         return self.workspace.diff(path or None)
 
-    def workspace_undo(self) -> dict[str, Any]:
-        result = self.workspace.undo_last()
+    def workspace_undo(
+        self,
+        operation_id: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        result = (
+            self.workspace.undo_file(
+                operation_id=operation_id,
+                run_id=run_id,
+            )
+            if operation_id and run_id
+            else self.workspace.undo()
+        )
         return {**result, "workspace": self.workspace.status()}
 
     def _session_workspace_fields(self) -> dict[str, Any]:
@@ -510,6 +525,7 @@ class LocalAgentRuntime:
         mcp_pool: McpRunSessionPool | None = None,
     ) -> ToolRegistry:
         registry = ToolRegistry()
+        register_user_question_tool(registry)
         if not tools:
             return registry
         workspace = self._workspace()
@@ -687,7 +703,9 @@ class LocalAgentRuntime:
                 "editing, use tools when needed, and report results concisely. "
                 "Use web_fetch for a specific URL and web_search to discover "
                 "URLs. Never turn a failed search or fetch into unsupported "
-                "claims about availability, indexing, SEO, or page quality."
+                "claims about availability, indexing, SEO, or page quality. "
+                "When a consequential requirement is genuinely missing, use "
+                "ask_user_question with 2 to 4 concise options instead of guessing."
             ),
         }
 
@@ -701,6 +719,7 @@ class LocalAgentRuntime:
         tools: bool = True,
         run_id: str | None = None,
         approval_decision: str | None = None,
+        resume_value: Any = None,
         resume_from_checkpoint: bool = False,
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
@@ -854,9 +873,21 @@ class LocalAgentRuntime:
                     ),
                 }
             )
+            artifact = artifact_event_from_tool_execution(
+                tool_name=execution.tool_name,
+                status=execution.status,
+                output=output,
+                tool_call_id=execution.call_id,
+            )
+            if artifact is not None:
+                emit(artifact)
 
         memory_provider = self.extensions.memory_provider()
-        emit({"type": "run_started", "runId": identifier})
+        emit({
+            "type": "run_started",
+            "runId": identifier,
+            "goalSummary": title,
+        })
         try:
             with self._mcp_pool() as mcp_pool:
                 registry = self._registry(
@@ -904,9 +935,12 @@ class LocalAgentRuntime:
                     tool_event_callback=tool_lifecycle_event,
                     cancel_check=cancel_event.is_set,
                     resume_from_checkpoint=(
-                        resume_from_checkpoint or approval_decision is not None
+                        resume_from_checkpoint
+                        or approval_decision is not None
+                        or resume_value is not None
                     ),
                     approval_decision=approval_decision,
+                    resume_value=resume_value,
                     skill_restore=restore_skill,
                     memory_enabled=memory_provider is not None,
                     memory_recall=(
@@ -969,33 +1003,59 @@ class LocalAgentRuntime:
             tool_call_id = str(
                 interrupt.get("toolCallId") or uuid4().hex
             )
-            emit(
-                {
-                    "type": "approval_required",
-                    "approvalId": tool_call_id,
+            if interrupt.get("type") == "user_question":
+                question_event = {
+                    "type": "user_question_required",
+                    "questionId": str(
+                        interrupt.get("questionId") or tool_call_id
+                    ),
                     "toolCallId": tool_call_id,
                     "runId": identifier,
-                    "toolName": interrupt.get("toolName") or "工具调用",
-                    "serverName": interrupt.get("serverName") or "本地工具",
-                    "risk": interrupt.get("risk") or "unknown",
-                    "readOnly": bool(interrupt.get("readOnly")),
-                    "destructive": bool(interrupt.get("destructive")),
-                    "inputSummary": interrupt.get("inputSummary"),
+                    "header": interrupt.get("header") or "需要确认",
+                    "question": interrupt.get("question") or "请选择下一步。",
+                    "options": interrupt.get("options") or [],
+                    "allowCustom": bool(interrupt.get("allowCustom", True)),
                 }
-            )
-            self.sessions.save(
-                identifier,
-                status="waiting_approval",
-                **self._session_workspace_fields(),
-                messages=transcript_messages,
-                contextMessages=messages,
-                compaction=dict(context_metadata or {}),
-                pendingApproval={
-                    "approvalId": tool_call_id,
-                    "toolName": interrupt.get("toolName") or "工具调用",
-                    "risk": interrupt.get("risk") or "unknown",
-                },
-            )
+                emit(question_event)
+                self.sessions.save(
+                    identifier,
+                    status="waiting_input",
+                    **self._session_workspace_fields(),
+                    messages=transcript_messages,
+                    contextMessages=messages,
+                    compaction=dict(context_metadata or {}),
+                    pendingQuestion=question_event,
+                    pendingApproval=None,
+                )
+            else:
+                emit(
+                    {
+                        "type": "approval_required",
+                        "approvalId": tool_call_id,
+                        "toolCallId": tool_call_id,
+                        "runId": identifier,
+                        "toolName": interrupt.get("toolName") or "工具调用",
+                        "serverName": interrupt.get("serverName") or "本地工具",
+                        "risk": interrupt.get("risk") or "unknown",
+                        "readOnly": bool(interrupt.get("readOnly")),
+                        "destructive": bool(interrupt.get("destructive")),
+                        "inputSummary": interrupt.get("inputSummary"),
+                    }
+                )
+                self.sessions.save(
+                    identifier,
+                    status="waiting_approval",
+                    **self._session_workspace_fields(),
+                    messages=transcript_messages,
+                    contextMessages=messages,
+                    compaction=dict(context_metadata or {}),
+                    pendingApproval={
+                        "approvalId": tool_call_id,
+                        "toolName": interrupt.get("toolName") or "工具调用",
+                        "risk": interrupt.get("risk") or "unknown",
+                    },
+                    pendingQuestion=None,
+                )
         else:
             if memory_provider is not None and memory_task and result.answer:
                 emit(
@@ -1048,6 +1108,7 @@ class LocalAgentRuntime:
                 contextMessages=stored_messages,
                 compaction=dict(context_metadata or {}),
                 pendingApproval=None,
+                pendingQuestion=None,
                 **self._session_workspace_fields(),
                 changes=self.workspace.diff(run_id=identifier).get("files", []),
             )
@@ -1069,6 +1130,7 @@ class LocalAgentRuntime:
         run_id: str,
         *,
         approval_decision: str | None = None,
+        resume_value: Any = None,
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
         session = self.load_session(run_id)
@@ -1092,7 +1154,10 @@ class LocalAgentRuntime:
                 },
                 events=[],
             )
-        if status not in {"failed", "interrupted", "waiting_approval", "cancelled", "running"}:
+        if status not in {
+            "failed", "interrupted", "waiting_approval", "waiting_input",
+            "cancelled", "running",
+        }:
             raise ValueError("This local session cannot be resumed.")
         return self.run(
             "",
@@ -1105,6 +1170,7 @@ class LocalAgentRuntime:
             context_metadata=dict(session.get("compaction") or {}),
             run_id=run_id,
             approval_decision=approval_decision,
+            resume_value=resume_value,
             resume_from_checkpoint=True,
             event_sink=event_sink,
         )

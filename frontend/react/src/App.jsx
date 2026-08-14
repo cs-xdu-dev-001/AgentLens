@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPage } from "./components/ChatPage.jsx";
@@ -53,12 +53,38 @@ function readInitialPage() {
   return page === "tools" || pageKeys.has(page) ? page : "chat";
 }
 
+function currentFocusOutsideWorkbench() {
+  if (typeof document === "undefined" || typeof HTMLElement === "undefined") return null;
+  const element = document.activeElement;
+  if (
+    !(element instanceof HTMLElement)
+    || element === document.body
+    || element.closest("#evidence-drawer")
+  ) return null;
+  return element;
+}
+
+function restoreWorkbenchOrigin(element) {
+  window.requestAnimationFrame(() => {
+    if (element?.isConnected && typeof element.focus === "function") {
+      element.focus();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("knowflow:react-composer-focus"));
+  });
+}
+
 function WorkbenchShell() {
   const { authenticated, loading } = useAuth();
   const [activePage, setActivePage] = useState(readInitialPage);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readInitialSidebarCollapsed);
   const [drawerCollapsed, setDrawerCollapsed] = useState(() => readStoredBoolean("knowflow.drawerCollapsed", true));
+  const pendingWorkbenchFocusRef = useRef(false);
+  const drawerCollapsedRef = useRef(drawerCollapsed);
+  const drawerFocusOriginRef = useRef(null);
   const shellLocked = loading || !authenticated;
+
+  drawerCollapsedRef.current = drawerCollapsed;
 
   useEffect(() => {
     const handlePageEvent = (event) => {
@@ -76,6 +102,40 @@ function WorkbenchShell() {
   }, []);
 
   useEffect(() => {
+    const handleWorkbenchShortcut = (event) => {
+      if (event.repeat) return;
+      const key = String(event.key || "").toLowerCase();
+      const webShortcut = event.altKey && event.key.toLowerCase() === "t"
+        && !event.ctrlKey && !event.metaKey;
+      const desktopShortcut = event.ctrlKey && key === "t"
+        && !event.altKey && !event.metaKey;
+      if (!webShortcut && !desktopShortcut) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
+
+      const workbench = document.getElementById("evidence-drawer");
+      const hasWorkbenchContent = workbench?.dataset.hasRun === "true";
+      if (drawerCollapsed && !hasWorkbenchContent) return;
+
+      event.preventDefault();
+      const nextCollapsed = activePage === "chat" ? !drawerCollapsed : false;
+      if (nextCollapsed) {
+        const origin = drawerFocusOriginRef.current;
+        drawerFocusOriginRef.current = null;
+        restoreWorkbenchOrigin(origin);
+      } else {
+        drawerFocusOriginRef.current = currentFocusOutsideWorkbench();
+        pendingWorkbenchFocusRef.current = true;
+      }
+      drawerCollapsedRef.current = nextCollapsed;
+      writeStoredBoolean("knowflow.drawerCollapsed", nextCollapsed);
+      setDrawerCollapsed(nextCollapsed);
+      setActivePage("chat");
+    };
+    window.addEventListener("keydown", handleWorkbenchShortcut);
+    return () => window.removeEventListener("keydown", handleWorkbenchShortcut);
+  }, [activePage, drawerCollapsed]);
+
+  useEffect(() => {
     document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
     return () => document.body.classList.remove("sidebar-collapsed");
   }, [sidebarCollapsed]);
@@ -86,6 +146,14 @@ function WorkbenchShell() {
   }, [drawerCollapsed]);
 
   useEffect(() => {
+    if (drawerCollapsed || !pendingWorkbenchFocusRef.current) return;
+    pendingWorkbenchFocusRef.current = false;
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("knowflow:react-workbench-focus"));
+    });
+  }, [activePage, drawerCollapsed]);
+
+  useEffect(() => {
     const toggleSidebar = () => {
       setSidebarCollapsed((current) => {
         const next = !current;
@@ -93,18 +161,43 @@ function WorkbenchShell() {
         return next;
       });
     };
-    const toggleDrawer = () => {
-      setDrawerCollapsed((current) => {
-        const next = !current;
-        writeStoredBoolean("knowflow.drawerCollapsed", next);
-        return next;
-      });
+    const toggleDrawer = (event) => {
+      const next = !drawerCollapsedRef.current;
+      drawerCollapsedRef.current = next;
+      if (next) {
+        const origin = drawerFocusOriginRef.current;
+        drawerFocusOriginRef.current = null;
+        if (event.detail?.restoreFocus !== false) restoreWorkbenchOrigin(origin);
+      } else if (event.detail?.focus) {
+        drawerFocusOriginRef.current = currentFocusOutsideWorkbench();
+        pendingWorkbenchFocusRef.current = true;
+      }
+      writeStoredBoolean("knowflow.drawerCollapsed", next);
+      setDrawerCollapsed(next);
     };
-    const closeDrawer = () => {
+    const closeDrawer = (event) => {
+      drawerCollapsedRef.current = true;
       writeStoredBoolean("knowflow.drawerCollapsed", true);
       setDrawerCollapsed(true);
+      if (event.detail?.restoreFocus) {
+        const origin = drawerFocusOriginRef.current;
+        drawerFocusOriginRef.current = null;
+        restoreWorkbenchOrigin(origin);
+      }
     };
-    const openDrawer = () => {
+    const openDrawer = (event) => {
+      const wasCollapsed = drawerCollapsedRef.current;
+      drawerCollapsedRef.current = false;
+      if (event.detail?.focus) {
+        drawerFocusOriginRef.current = currentFocusOutsideWorkbench();
+        if (wasCollapsed) {
+          pendingWorkbenchFocusRef.current = true;
+        } else {
+          window.requestAnimationFrame(() => {
+            window.dispatchEvent(new CustomEvent("knowflow:react-workbench-focus"));
+          });
+        }
+      }
       writeStoredBoolean("knowflow.drawerCollapsed", false);
       setDrawerCollapsed(false);
     };
@@ -130,7 +223,10 @@ function WorkbenchShell() {
         <div className="app-shell" id="app-shell">
           <Sidebar activePage={activePage} collapsed={sidebarCollapsed} />
           <main className="main-stage" id="main-stage" tabIndex={-1}>
-            <ChatPage active={activePage === "chat"} />
+            <ChatPage
+              active={activePage === "chat"}
+              drawerCollapsed={drawerCollapsed}
+            />
             <KnowledgePage active={activePage === "knowledge"} />
             <SkillsPage active={activePage === "skills"} />
             <WorkbenchPage active={activePage === "workspace"} />

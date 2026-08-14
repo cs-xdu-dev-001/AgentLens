@@ -148,6 +148,8 @@ def main() -> None:
             b'{"name":"web_search","arguments":"{\\"query\\":\\""}}]}}]}\n\n',
             b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
             b'"function":{"arguments":"news\\"}"}}]}}]}\n\n',
+            b'data: {"choices":[],"usage":{"prompt_tokens":12,'
+            b'"completion_tokens":5,"total_tokens":17}}\n\n',
             b"data: [DONE]\n\n",
         ]
     )
@@ -183,10 +185,18 @@ def main() -> None:
         "maxRetries": 2,
         "retryInMs": 0,
     }
-    assert [event.get("text") for event in public_events[1:]] == [
+    assert [event.get("text") for event in public_events[1:] if event.get("type") == "text_delta"] == [
         "正在",
         "处理",
     ]
+    assert public_events[-1] == {
+        "type": "usage_updated",
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+        },
+    }
     assert streamed["content"] == "正在处理"
     assert streamed["tool_calls"] == [
         {

@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from ..runtime import *
 from ..services.agent_event_protocol import (
     AgentEventNormalizer,
+    artifact_event_from_tool_execution,
     normalize_agent_event,
 )
 from ..services.agent_engine import build_agent_engine
@@ -22,6 +23,7 @@ from ..services.agent_loop import ToolRegistry
 from ..services.agent_tooling import (
     McpToolConfigurationError,
     register_mcp_tools,
+    register_user_question_tool,
     register_web_fetch_tool,
     register_web_search_tool,
 )
@@ -50,6 +52,7 @@ from ..services.workspace_runtime import (
     SrtSandboxRunner,
     WorkspaceRuntime,
     register_workspace_tools,
+    tracked_workspace_runtime,
 )
 
 router = APIRouter()
@@ -260,6 +263,7 @@ def build_tool_registry(
         ),
         default_max_result_size_chars=TOOL_RESULT_CONTEXT_CHARS,
     )
+    register_user_question_tool(registry)
     config = (
         tool_configs.secret(
             user_id,
@@ -286,10 +290,19 @@ def build_tool_registry(
         )
         registered_names.add("web_fetch")
     if enable_tools and WORKSPACE_ENABLED:
-        workspace = WorkspaceRuntime(
-            WORKSPACE_DIR,
-            user_id=user_id,
-            max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+        workspace = (
+            tracked_workspace_runtime(
+                WORKSPACE_DIR,
+                user_id=user_id,
+                max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+                run_id=run_id,
+            )
+            if run_id
+            else WorkspaceRuntime(
+                WORKSPACE_DIR,
+                user_id=user_id,
+                max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+            )
         )
         sandbox = (
             SrtSandboxRunner(
@@ -382,6 +395,7 @@ def execute_agent_chat(
     existing_run_id: str | None = None,
     run_action: str | None = None,
     approval_decision: str | None = None,
+    resume_value: Any = None,
 ) -> dict[str, Any]:
     command_mode, normalized_question = parse_execution_mode(
         payload.question
@@ -567,17 +581,35 @@ def execute_agent_chat(
                     )
                 ),
             )
+    if resume_value is not None:
+        question_trace_step = next(
+            (
+                str(step["stepId"])
+                for step in reversed(trace.snapshot())
+                if step.get("name") == "user_question_required"
+                and step.get("status") == "waiting"
+            ),
+            None,
+        )
+        if question_trace_step is not None:
+            trace.finish_step(
+                question_trace_step,
+                status="success",
+                title="Answer received",
+                output_summary={"answered": True},
+            )
     calls: list[dict[str, Any]] = []
     retrieval_run: dict[str, Any] | None = None
     rag_quality: dict[str, Any] = {"enabled": False}
     chunks: list[dict[str, Any]] = []
     current_plan_step_id: str | None = (
         str(durable_snapshot.get("currentStepId"))
-        if approval_decision
+        if (approval_decision is not None or resume_value is not None)
         and durable_snapshot.get("currentStepId")
         else None
     )
     execution_records: list[tuple[Any, str | None]] = []
+    artifacts: dict[str, dict[str, Any]] = {}
     plan_snapshot: dict[str, Any] | None = None
     run_failed = False
     try:
@@ -698,6 +730,13 @@ def execute_agent_chat(
                 attachments=payload.attachments,
                 memories=memories if memory_active else None,
             )
+            if base_messages and "ask_user_question" in registry.names():
+                base_messages[0]["content"] = (
+                    f"{base_messages[0].get('content', '')}\n\n"
+                    "When a consequential requirement is genuinely missing, "
+                    "call ask_user_question once with 2 to 4 concise options. "
+                    "Do not guess, and do not ask for routine confirmation."
+                )
 
             def retrieve_langgraph_context() -> dict[str, Any]:
                 if not use_rag or not payload.knowledgeBaseId:
@@ -841,8 +880,43 @@ def execute_agent_chat(
                 execution_records.append(
                     (execution, current_plan_step_id)
                 )
+                artifact = artifact_event_from_tool_execution(
+                    tool_name=execution.tool_name,
+                    status=execution.status,
+                    output=execution.public_output(),
+                    tool_call_id=execution.call_id,
+                )
+                if artifact is not None:
+                    artifacts[str(artifact["artifactId"])] = artifact
+                    emit_named("artifact_created", artifact)
 
             def forward_model_event(event: dict[str, Any]) -> None:
+                if event.get("type") == "context_usage_updated":
+                    emit_named(
+                        "context_usage_updated",
+                        {
+                            key: event.get(key)
+                            for key in (
+                                "usedTokens",
+                                "originalTokens",
+                                "maxTokens",
+                                "remainingTokens",
+                                "usageRatio",
+                                "usagePercent",
+                                "warningAtPercent",
+                                "shouldWarn",
+                                "contextTrimmed",
+                                "messageCount",
+                            )
+                        },
+                    )
+                    return
+                if event.get("type") == "usage_updated":
+                    emit_named(
+                        "usage_updated",
+                        {"usage": dict(event.get("usage") or {})},
+                    )
+                    return
                 if (
                     event.get("type") == "text_delta"
                     and event.get("text")
@@ -974,6 +1048,82 @@ def execute_agent_chat(
                     "memoryActivity": None,
                 }
 
+            def pause_for_question(result) -> dict[str, Any]:
+                nonlocal current_plan_step_id
+                interrupt_value = result.interrupt or {}
+                question_id = str(
+                    interrupt_value.get("questionId")
+                    or interrupt_value.get("toolCallId")
+                    or ""
+                )
+                question = str(interrupt_value.get("question") or "").strip()
+                options = interrupt_value.get("options") or []
+                if not question_id or not question or not isinstance(options, list):
+                    raise RuntimeError("LangGraph user question interrupt is invalid.")
+                public_question = {
+                    "type": "user_question_required",
+                    "questionId": question_id,
+                    "runId": durable_run_id,
+                    "header": str(interrupt_value.get("header") or "Confirmation required")[:40],
+                    "question": question[:500],
+                    "options": options[:4],
+                    "allowCustom": bool(interrupt_value.get("allowCustom", True)),
+                }
+                question_step_id = trace.start_step(
+                    kind="question",
+                    name="user_question_required",
+                    title="Waiting for your answer",
+                    parent_id=run_parent_step,
+                    status="waiting",
+                    details=public_question,
+                )
+                public_question["stepId"] = question_step_id
+                agent_runs.set_request_metadata(
+                    user_id,
+                    durable_run_id,
+                    _pendingQuestion=public_question,
+                    _questionAnswer=None,
+                )
+                snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
+                if current_plan_step_id:
+                    current_step = next(
+                        (
+                            item for item in (snapshot or {}).get("steps", [])
+                            if item["id"] == current_plan_step_id
+                        ),
+                        None,
+                    )
+                    if current_step and current_step["status"] == "running":
+                        agent_runs.transition_step(
+                            user_id,
+                            durable_run_id,
+                            current_plan_step_id,
+                            "waiting_input",
+                        )
+                snapshot = agent_runs.get_snapshot(user_id, durable_run_id)
+                if snapshot and snapshot["status"] in {"planning", "running"}:
+                    agent_runs.transition_run(
+                        user_id,
+                        durable_run_id,
+                        "waiting_input",
+                    )
+                emit_named("user_question_required", public_question)
+                paused_snapshot = publish_snapshot("run_updated")
+                return {
+                    "paused": True,
+                    "sessionId": session_id,
+                    "messageId": None,
+                    "answer": "",
+                    "references": [],
+                    "toolCalls": [],
+                    "ragQuality": rag_quality,
+                    "retrievalRun": retrieval_run,
+                    "trace": trace.snapshot(),
+                    "runId": durable_run_id,
+                    "run": paused_snapshot,
+                    "memoryActivity": None,
+                }
+
             def engine_run(**kwargs):
                 nonlocal chunks, memories, memory_recall_completed
                 nonlocal rag_quality, retrieval_run, base_messages
@@ -981,6 +1131,7 @@ def execute_agent_chat(
                     **kwargs,
                     tool_operation_store=agent_tool_operations,
                     approval_decision=approval_decision,
+                    resume_value=resume_value,
                     skill_restore=restore_langgraph_skill,
                     memory_recall=(
                         (
@@ -1021,6 +1172,8 @@ def execute_agent_chat(
                         )
                     memory_recall_completed = True
                 if result.paused:
+                    if (result.interrupt or {}).get("type") == "user_question":
+                        return pause_for_question(result)
                     return pause_for_approval(result)
                 return result
 
@@ -1521,6 +1674,7 @@ def execute_agent_chat(
             "answer": answer,
             "references": refs,
             "toolCalls": calls,
+            "artifacts": list(artifacts.values()),
             "ragQuality": rag_quality,
             "retrievalRun": retrieval_run,
             "trace": trace_snapshot,
@@ -1613,6 +1767,7 @@ def _agent_done_payload(result: dict[str, Any]) -> dict[str, Any]:
         "trace": result["trace"],
         "run": result.get("run"),
         "memoryActivity": result.get("memoryActivity"),
+        "artifacts": result.get("artifacts") or [],
     }, run_id=str(result.get("runId") or "") or None)
 
 
@@ -1631,6 +1786,8 @@ def _publish_agent_result(
     }))
     for reference in result.get("references", []):
         publish(normalize_agent_event({"type": "reference", **reference}))
+    for artifact in result.get("artifacts", []):
+        publish(normalize_agent_event(artifact))
     if result.get("ragQuality", {}).get("enabled"):
         publish(
             normalize_agent_event({
@@ -1650,6 +1807,7 @@ def execute_persisted_agent_run(
     publish: Callable[[dict[str, Any]], None],
 ) -> None:
     approval_decision = None
+    resume_value = None
     approval_operation = None
     if action.startswith("approval:"):
         approval_id = action.split(":", 1)[1]
@@ -1671,6 +1829,24 @@ def execute_persisted_agent_run(
                 detail="Approval cannot resume this Agent run.",
             )
         approval_decision = approval_operation["decision"]
+        action = "resume"
+    elif action == "answer":
+        request_state = agent_runs.load_request(user_id, run_id) or {}
+        answer_state = request_state.get("_questionAnswer")
+        if not isinstance(answer_state, dict) or not str(
+            answer_state.get("answer") or ""
+        ).strip():
+            raise HTTPException(
+                status_code=409,
+                detail="Agent question has not been answered.",
+            )
+        resume_value = {
+            "questionId": str(answer_state.get("questionId") or "")[:160],
+            "answer": str(answer_state.get("answer") or "")[:4000],
+            "selectedOptions": list(
+                answer_state.get("selectedOptions") or []
+            )[:4],
+        }
         action = "resume"
     elif action == "resume":
         run_snapshot = agent_runs.get_snapshot(user_id, run_id)
@@ -1699,6 +1875,8 @@ def execute_persisted_agent_run(
     persisted_engine_name = str(
         request_payload.pop("_agentEngine", "") or ""
     ).strip().lower()
+    request_payload.pop("_pendingQuestion", None)
+    request_payload.pop("_questionAnswer", None)
     unsafe_legacy_resume = bool(
         persisted_engine_name == "current"
         and (
@@ -1736,12 +1914,28 @@ def execute_persisted_agent_run(
                 ),
             }
         )
+    if resume_value is not None:
+        publish(
+            {
+                "type": "user_question_resolved",
+                "runId": run_id,
+                "questionId": resume_value.get("questionId"),
+                "status": "success",
+                "answered": True,
+            }
+        )
+        agent_runs.set_request_metadata(
+            user_id,
+            run_id,
+            _questionAnswer=None,
+        )
     result = execute_agent_chat(
         payload,
         user_id,
         existing_run_id=run_id,
         run_action=action,
         approval_decision=approval_decision,
+        resume_value=resume_value,
         cancel_event=cancel_event,
         event_emit=lambda name, value: publish(
             {"type": name, **value}

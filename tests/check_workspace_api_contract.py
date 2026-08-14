@@ -21,9 +21,13 @@ def main() -> None:
     assert "current_user_id(request)" in router
     assert '"/api/workspace/files"' in router
     assert '"/api/workspace/files/{path:path}"' in router
+    assert '"/api/workspace/changes"' in router
+    assert '"/api/workspace/changes/undo"' in router
+    assert "operation_id=payload.operationId" in router
     assert "WorkspaceRuntime(" in router
     assert "workspace_router" in registry
     assert "workspaceApi" in client
+    assert "undoChange" in client and "workspace/changes" in client
     assert "工作区" in page and "Linux沙箱可用" in page
 
     print("workspace API and frontend preserve authenticated user isolation")

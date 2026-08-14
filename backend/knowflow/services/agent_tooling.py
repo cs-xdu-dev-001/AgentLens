@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from .agent_loop import ToolRegistry
 from .web_fetch import WebFetchArguments, WebFetchProvider
 from .web_search import WebSearchArguments, WebSearchProvider
@@ -10,6 +12,54 @@ from .web_search import WebSearchArguments, WebSearchProvider
 
 class McpToolConfigurationError(RuntimeError):
     code = "mcp_tool_configuration_invalid"
+
+
+ASK_USER_QUESTION_TOOL = "ask_user_question"
+
+
+class UserQuestionOption(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=240)
+    value: str = Field(default="", max_length=120)
+
+
+class AskUserQuestionArguments(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    header: str = Field(default="需要确认", max_length=40)
+    options: list[UserQuestionOption] = Field(
+        default_factory=list,
+        min_length=2,
+        max_length=4,
+    )
+    allow_custom: bool = True
+
+
+def register_user_question_tool(registry: ToolRegistry) -> None:
+    """Expose LangGraph's user-input interrupt as a model tool."""
+
+    def unreachable(_args: AskUserQuestionArguments) -> dict[str, Any]:
+        raise RuntimeError(
+            "ask_user_question must be handled by the LangGraph runtime."
+        )
+
+    registry.register(
+        name=ASK_USER_QUESTION_TOOL,
+        description=(
+            "Pause and ask the user one concise multiple-choice question when "
+            "a consequential requirement is genuinely missing. Prefer making "
+            "safe progress without asking. Do not use for routine updates."
+        ),
+        arguments_model=AskUserQuestionArguments,
+        handler=unreachable,
+        read_only=True,
+        engine_names={"langgraph"},
+        trace_kind="question",
+        risk="read",
+        internal=True,
+        concurrency_safe=False,
+        interrupt_behavior="block",
+        always_load=True,
+    )
 
 
 def mcp_tool_risk(tool: dict[str, Any]) -> str:

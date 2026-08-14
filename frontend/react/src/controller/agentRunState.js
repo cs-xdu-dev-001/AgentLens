@@ -2,6 +2,7 @@ const activeStatuses = new Set([
   "planning",
   "running",
   "waiting_approval",
+  "waiting_input",
 ]);
 
 const completedStepStatuses = new Set([
@@ -20,7 +21,7 @@ export function isActiveRun(run) {
 }
 
 export function traceStepWaitState(step) {
-  const waiting = ["waiting", "waiting_approval"].includes(
+  const waiting = ["waiting", "waiting_approval", "waiting_input"].includes(
     step?.status,
   );
   return {
@@ -49,7 +50,7 @@ export function currentRunStep(run) {
   return (
     steps.find((step) => step.id === run?.currentStepId)
     || steps.find((step) =>
-      ["running", "waiting_approval"].includes(step.status),
+      ["running", "waiting_approval", "waiting_input"].includes(step.status),
     )
     || steps.find((step) => step.status === "pending")
     || steps.at(-1)

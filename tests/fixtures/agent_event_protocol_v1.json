@@ -85,10 +85,45 @@
       "retrievalRun": {"id": "retrieval_fixture"}
     },
     {
-      "type": "done",
+      "eventName": "usage.updated",
       "eventId": "evt_fixture_11",
       "runId": "run_fixture",
       "sequence": 11,
+      "usage": {"inputTokens": 120, "outputTokens": 30, "totalTokens": 150}
+    },
+    {
+      "eventName": "artifact.created",
+      "eventId": "evt_fixture_12",
+      "artifactId": "artifact_fixture",
+      "artifactType": "file",
+      "title": "report.md",
+      "path": "reports/report.md",
+      "operation": "write",
+      "writtenBytes": 512,
+      "addedLines": 12,
+      "removedLines": 2,
+      "runId": "run_fixture",
+      "sequence": 12
+    },
+    {
+      "type": "context_usage_updated",
+      "eventId": "evt_fixture_13",
+      "runId": "run_fixture",
+      "sequence": 13,
+      "usedTokens": 72000,
+      "originalTokens": 80000,
+      "maxTokens": 96000,
+      "remainingTokens": 24000,
+      "usagePercent": 75,
+      "warningAtPercent": 75,
+      "shouldWarn": true,
+      "contextTrimmed": true
+    },
+    {
+      "type": "done",
+      "eventId": "evt_fixture_14",
+      "runId": "run_fixture",
+      "sequence": 14,
       "sessionId": "session_fixture",
       "status": "completed",
       "run": {"id": "run_fixture", "status": "completed"},
@@ -106,16 +141,23 @@
     "message.completed",
     "artifact.created",
     "run.quality_updated",
+    "usage.updated",
+    "artifact.created",
+    "context.usage_updated",
     "run.completed"
   ],
   "projection": {
     "answer": "你好",
     "terminal": "completed",
-    "lastSequence": 11,
+    "lastSequence": 14,
     "toolStatus": "completed",
     "approvalStatus": "success",
     "traceCount": 1,
     "referenceCount": 1,
-    "sessionId": "session_fixture"
+    "sessionId": "session_fixture",
+    "totalTokens": 150,
+    "artifactCount": 2,
+    "contextUsagePercent": 75,
+    "contextTrimmed": true
   }
 }

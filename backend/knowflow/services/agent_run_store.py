@@ -14,6 +14,7 @@ RUN_TRANSITIONS: dict[str, set[str]] = {
     "planning": {
         "waiting_start",
         "waiting_approval",
+        "waiting_input",
         "running",
         "failed",
         "cancelled",
@@ -21,12 +22,19 @@ RUN_TRANSITIONS: dict[str, set[str]] = {
     "waiting_start": {"planning", "running", "cancelled"},
     "running": {
         "waiting_approval",
+        "waiting_input",
         "interrupted",
         "completed",
         "failed",
         "cancelled",
     },
     "waiting_approval": {
+        "running",
+        "interrupted",
+        "failed",
+        "cancelled",
+    },
+    "waiting_input": {
         "running",
         "interrupted",
         "failed",
@@ -42,11 +50,17 @@ STEP_TRANSITIONS: dict[str, set[str]] = {
     "pending": {"running", "skipped", "cancelled"},
     "running": {
         "waiting_approval",
+        "waiting_input",
         "completed",
         "failed",
         "cancelled",
     },
     "waiting_approval": {
+        "running",
+        "failed",
+        "cancelled",
+    },
+    "waiting_input": {
         "running",
         "failed",
         "cancelled",
@@ -61,6 +75,7 @@ ACTIVE_RUN_STATUSES = {
     "planning",
     "running",
     "waiting_approval",
+    "waiting_input",
 }
 OPEN_RUN_STATUSES = ACTIVE_RUN_STATUSES | {"waiting_start"}
 
@@ -124,6 +139,12 @@ class AgentRunStore:
         steps: list[dict[str, Any]],
     ) -> dict[str, Any]:
         trace = _json_value(row.get("trace_json"), [])
+        request_payload = _json_value(row.get("request_json"), {})
+        pending_question = (
+            request_payload.get("_pendingQuestion")
+            if isinstance(request_payload, dict)
+            else None
+        )
         return {
             "id": row["id"],
             "sessionId": row["session_id"],
@@ -134,6 +155,11 @@ class AgentRunStore:
             "status": row["status"],
             "currentStepId": row.get("current_step_id"),
             "trace": trace,
+            "pendingQuestion": (
+                pending_question
+                if isinstance(pending_question, dict)
+                else None
+            ),
             "failure": recovery_from_snapshot(
                 str(row["status"]),
                 steps,
@@ -218,7 +244,8 @@ class AgentRunStore:
                         'planning',
                         'waiting_start',
                         'running',
-                        'waiting_approval'
+                        'waiting_approval',
+                        'waiting_input'
                       )
                     LIMIT 1
                     """
@@ -294,7 +321,8 @@ class AgentRunStore:
                         'planning',
                         'waiting_start',
                         'running',
-                        'waiting_approval'
+                        'waiting_approval',
+                        'waiting_input'
                       )
                     ORDER BY created_at DESC
                     LIMIT 1
@@ -322,6 +350,98 @@ class AgentRunStore:
             return None
         value = _json_value(row.get("request_json"), {})
         return value if isinstance(value, dict) else {}
+
+    def set_request_metadata(
+        self,
+        user_id: int,
+        run_id: str,
+        **updates: Any,
+    ) -> dict[str, Any]:
+        now = _now()
+        with self.database.engine.begin() as conn:
+            row = self._run_row(conn, user_id, run_id)
+            if row is None:
+                raise AgentRunStoreError(
+                    "agent_run_not_found",
+                    "Agent run was not found.",
+                )
+            payload = _json_value(row.get("request_json"), {})
+            payload = dict(payload) if isinstance(payload, dict) else {}
+            payload.update(updates)
+            conn.execute(
+                text(
+                    """
+                    UPDATE agent_run
+                    SET request_json=:request_json, version=version + 1,
+                        updated_at=:updated_at
+                    WHERE id=:run_id AND user_id=:user_id
+                    """
+                ),
+                {
+                    "request_json": json.dumps(payload, ensure_ascii=False),
+                    "updated_at": now,
+                    "run_id": run_id,
+                    "user_id": user_id,
+                },
+            )
+        return payload
+
+    def resolve_question(
+        self,
+        user_id: int,
+        run_id: str,
+        *,
+        question_id: str,
+        answer: str,
+        selected_options: list[str],
+    ) -> dict[str, Any]:
+        now = _now()
+        with self.database.engine.begin() as conn:
+            row = self._run_row(conn, user_id, run_id)
+            if row is None:
+                raise AgentRunStoreError(
+                    "agent_run_not_found",
+                    "Agent run was not found.",
+                )
+            if row.get("status") != "waiting_input":
+                raise AgentRunStoreError(
+                    "agent_question_not_waiting",
+                    "Agent run is not waiting for an answer.",
+                )
+            payload = _json_value(row.get("request_json"), {})
+            payload = dict(payload) if isinstance(payload, dict) else {}
+            pending = payload.get("_pendingQuestion")
+            if (
+                not isinstance(pending, dict)
+                or str(pending.get("questionId") or "") != question_id
+            ):
+                raise AgentRunStoreError(
+                    "agent_question_conflict",
+                    "Agent question is no longer pending.",
+                )
+            payload["_pendingQuestion"] = None
+            payload["_questionAnswer"] = {
+                "questionId": question_id,
+                "answer": answer,
+                "selectedOptions": selected_options,
+            }
+            conn.execute(
+                text(
+                    """
+                    UPDATE agent_run
+                    SET request_json=:request_json, version=version + 1,
+                        updated_at=:updated_at
+                    WHERE id=:run_id AND user_id=:user_id
+                    """
+                ),
+                {
+                    "request_json": json.dumps(payload, ensure_ascii=False),
+                    "updated_at": now,
+                    "run_id": run_id,
+                    "user_id": user_id,
+                },
+            )
+        return payload["_questionAnswer"]
 
     def restart_run(
         self,
@@ -671,7 +791,7 @@ class AgentRunStore:
                     "run_id": run_id,
                 },
             )
-            if status in {"running", "waiting_approval"}:
+            if status in {"running", "waiting_approval", "waiting_input"}:
                 conn.execute(
                     text(
                         """

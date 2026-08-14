@@ -38,6 +38,8 @@ def main() -> None:
     react_css = read("frontend/react/src/styles.css")
     react_shell = read_react_shell()
     thinking_orb = read("frontend/react/src/components/AgentThinkingOrb.jsx")
+    vite_config = read("frontend/vite.config.js")
+    jsx_runtime = read("frontend/react/src/vendor/reactJsxRuntimeGlobal.js")
     gitignore = read(".gitignore")
     package_json = read("frontend/package.json")
     sync_assets = read("frontend/scripts/sync-assets.mjs")
@@ -49,6 +51,10 @@ def main() -> None:
     assert ".agent-thinking-orb" in react_css
     assert ".thinking-indicator" not in react_css
     assert 'from "thinking-orbs"' in thinking_orb
+    assert 'find: /^react\\/jsx-runtime$/' in vite_config
+    assert 'find: /^react\\/jsx-dev-runtime$/' in vite_config
+    assert 'React.createElement' in jsx_runtime
+    assert 'export const jsx = createElement' in jsx_runtime
     assert 'return "solving"' in thinking_orb
     assert 'state={state}' in thinking_orb
     assert 'size={20}' in thinking_orb

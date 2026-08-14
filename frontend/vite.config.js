@@ -169,6 +169,8 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      { find: /^react\/jsx-runtime$/, replacement: modulePath("./react/src/vendor/reactJsxRuntimeGlobal.js") },
+      { find: /^react\/jsx-dev-runtime$/, replacement: modulePath("./react/src/vendor/reactJsxRuntimeGlobal.js") },
       { find: /^react$/, replacement: modulePath("./react/src/vendor/reactGlobal.js") },
       { find: /^react-dom$/, replacement: modulePath("./react/src/vendor/reactDomGlobal.js") },
       { find: /^react-dom\/client$/, replacement: modulePath("./react/src/vendor/reactDomClientGlobal.js") },

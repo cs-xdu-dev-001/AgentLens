@@ -238,10 +238,68 @@ def main() -> None:
         diff = context.diff()
         assert diff["files"] == [{"path": "report.md", "added": 1, "removed": 0}]
         assert "+new" in diff["patch"]
+        outside = root / "outside.txt"
+        outside.write_text("outside\n", encoding="utf-8")
+        tampered_change = {
+            "id": "tampered_change",
+            "runId": "run_workspace",
+            "path": str(outside),
+            "displayPath": "outside.txt",
+            "operation": "write",
+            "beforeHash": None,
+            "afterHash": context._digest(outside.read_bytes()),
+            "beforeSnapshot": None,
+            "created": True,
+            "undone": False,
+        }
+        context._append_record(tampered_change)
+        expect_error(
+            "workspace_diff_denied",
+            lambda: context.diff(run_id="run_workspace"),
+        )
+        context._append_record({**tampered_change, "undone": True})
+        snapshot_target = project / "snapshot-target.txt"
+        snapshot_target.write_text("current\n", encoding="utf-8")
+        tampered_snapshot = {
+            "id": "tampered_snapshot",
+            "runId": "run_workspace",
+            "path": str(snapshot_target),
+            "displayPath": "snapshot-target.txt",
+            "operation": "edit",
+            "beforeHash": context._digest(b"outside\n"),
+            "afterHash": context._digest(snapshot_target.read_bytes()),
+            "beforeSnapshot": "../../outside.txt",
+            "created": False,
+            "undone": False,
+        }
+        context._append_record(tampered_snapshot)
+        expect_error(
+            "workspace_snapshot_denied",
+            lambda: context.diff(run_id="run_workspace"),
+        )
+        context._append_record({**tampered_snapshot, "undone": True})
         assert context.undo_last()["path"] == "report.md"
         assert (project / "report.md").read_text(encoding="utf-8") == "old\n"
+        latest_change = context.changes("run_workspace")[-1]
         (project / "report.md").write_text("user change\n", encoding="utf-8")
         expect_error("workspace_undo_conflict", context.undo_last)
+        expect_error(
+            "workspace_undo_conflict",
+            lambda: context.undo(
+                operation_id=latest_change["id"],
+                run_id="run_workspace",
+            ),
+        )
+        (project / "multi.md").write_text("old\n", encoding="utf-8")
+        workspace.edit_text("multi.md", "old", "middle", replace_all=False)
+        workspace.edit_text("multi.md", "middle", "final", replace_all=False)
+        report_change = context.changes("run_workspace")[-1]
+        reverted = context.undo_file(
+            operation_id=report_change["id"],
+            run_id="run_workspace",
+        )
+        assert len(reverted["operationIds"]) == 2
+        assert (project / "multi.md").read_text(encoding="utf-8") == "old\n"
         added = context.add_directory(str(extra))
         assert str(extra) in added["allowedDirectories"]
         protected = extra / ".git"
@@ -260,6 +318,13 @@ def main() -> None:
         context.change_directory(str(extra))
         workspace.write_text("note.md", "ok\n", overwrite=False)
         assert (extra / "note.md").is_file()
+        note_change = context.changes("run_workspace")[-1]
+        undone = context.undo(
+            operation_id=note_change["id"],
+            run_id="run_workspace",
+        )
+        assert undone["reverted"] is True
+        assert not (extra / "note.md").exists()
         oversized = extra / "oversized.txt"
         oversized.write_bytes(b"x" * (workspace.max_file_bytes + 1))
         expect_error(

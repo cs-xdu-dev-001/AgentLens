@@ -219,9 +219,9 @@ def main() -> None:
         "poll budget reset only for a new memory operation",
     )
     require(
-        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "后台整理中，不影响继续对话",
-        "non-blocking memory wait copy",
+        "shared non-blocking memory wait copy",
     )
     require(
         messages,

@@ -24,6 +24,7 @@ class TuiBackend:
         self.tools = tools
         self.model_id = model_id
         self.skill_id = skill_id
+        self._model_label: str | None = None
         self.session_id: str | None = None
         self.conversation: list[dict[str, Any]] = []
         self.transcript: list[dict[str, Any]] = []
@@ -32,6 +33,8 @@ class TuiBackend:
 
     @property
     def model_label(self) -> str:
+        if self._model_label:
+            return self._model_label
         if self.remote_client is not None:
             return f"模型 {self.model_id}" if self.model_id else "默认模型"
         if self.local_agent is None:
@@ -41,6 +44,78 @@ class TuiBackend:
             return str(value.get("model_name") or "默认模型")
         except Exception:
             return "默认模型"
+
+    def model_catalog(self) -> list[dict[str, Any]]:
+        """Return chat models that can be selected without exposing credentials."""
+        if self.remote_client is None:
+            if self.local_agent is None:
+                return []
+            value = self.local_agent.config_store.load()
+            name = str(value.get("model_name") or "默认模型")
+            self._model_label = name
+            return [
+                {
+                    "id": "local",
+                    "name": name,
+                    "modelName": name,
+                    "provider": str(value.get("provider") or "custom"),
+                    "apiMode": str(value.get("api_mode") or "responses"),
+                    "selected": True,
+                    "switchable": False,
+                }
+            ]
+
+        payload = self.remote_client.request(
+            "GET",
+            "/api/model-configs",
+            params={"modelType": "chat"},
+        )
+        rows = payload if isinstance(payload, list) else []
+        selected_id = self.model_id
+        if selected_id is None:
+            default = next((row for row in rows if row.get("isDefault")), None)
+            selected_id = default.get("id") if default else None
+        models: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("modelType") not in {None, "chat"}:
+                continue
+            identifier = row.get("id")
+            selected = identifier == selected_id
+            name = str(row.get("name") or row.get("modelName") or f"模型 {identifier}")
+            models.append(
+                {
+                    "id": identifier,
+                    "name": name,
+                    "modelName": str(row.get("modelName") or ""),
+                    "provider": str(row.get("provider") or ""),
+                    "apiMode": str(row.get("apiMode") or "chat_completions"),
+                    "selected": selected,
+                    "switchable": True,
+                }
+            )
+            if selected:
+                self._model_label = name
+        return models
+
+    def select_model(self, model_id: Any) -> dict[str, Any]:
+        if self.remote_client is None:
+            models = self.model_catalog()
+            if models and str(model_id) in {"", "local", str(models[0]["id"])}:
+                return models[0]
+            raise RuntimeError("本地CLI只有当前配置；请运行knowflow configure修改模型。")
+        try:
+            identifier = int(model_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("请选择有效的模型配置。") from exc
+        models = self.model_catalog()
+        selected = next((item for item in models if item.get("id") == identifier), None)
+        if selected is None:
+            raise ValueError("模型配置不存在或不可用。")
+        self.model_id = identifier
+        self._model_label = str(selected.get("name") or selected.get("modelName") or f"模型 {identifier}")
+        for item in models:
+            item["selected"] = item.get("id") == identifier
+        return {**selected, "selected": True, "label": self._model_label}
 
     def reset(self) -> None:
         self.session_id = None
@@ -209,10 +284,14 @@ class TuiBackend:
             raise RuntimeError("远程模式暂不支持本地Diff视图。")
         return dict(self.local_agent.workspace_diff(path))
 
-    def workspace_undo(self) -> dict[str, Any]:
+    def workspace_undo(
+        self,
+        operation_id: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
         if self.remote_client is not None:
             raise RuntimeError("远程模式暂不支持本地文件撤销。")
-        return dict(self.local_agent.workspace_undo())
+        return dict(self.local_agent.workspace_undo(operation_id, run_id))
 
     def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         if self.remote_client is not None:
@@ -344,6 +423,29 @@ class TuiBackend:
                 },
                 events=[],
             )
+        if status == "waiting_input":
+            pending = session.get("pendingQuestion")
+            if not isinstance(pending, dict):
+                raise RuntimeError("等待回答的会话缺少问题状态。")
+            self.conversation = list(
+                session.get("contextMessages") or session.get("messages") or []
+            )
+            self.transcript = list(session.get("messages") or [])
+            self.context_metadata = dict(session.get("compaction") or {})
+            event = {**pending, "type": "user_question_required", "runId": run_id}
+            event_sink(event)
+            return AgentExecution(
+                result={
+                    "paused": True,
+                    "runId": run_id,
+                    "answer": "",
+                    "messages": self.conversation,
+                    "transcriptMessages": self.transcript,
+                    "compaction": self.context_metadata,
+                    "status": status,
+                },
+                events=[event],
+            )
         execution = self.local_agent.resume_session(
             run_id,
             event_sink=event_sink,
@@ -421,6 +523,58 @@ class TuiBackend:
                 tools=self.tools,
                 run_id=run_id,
                 approval_decision=decision,
+                event_sink=event_sink,
+            )
+        self._finish(resolved)
+        return resolved
+
+    def answer_question(
+        self,
+        execution: AgentExecution,
+        answer: dict[str, Any],
+        event_sink: AgentEventSink,
+    ) -> AgentExecution:
+        run_id = str(execution.result.get("runId") or "")
+        question_id = execution.question_id
+        if not run_id or not question_id:
+            raise RuntimeError("Agent问题状态不完整。")
+        payload = {
+            "questionId": question_id,
+            "answer": str(answer.get("answer") or "").strip()[:4000],
+            "selectedOptions": [
+                str(value)[:120]
+                for value in (answer.get("selectedOptions") or [])
+                if str(value).strip()
+            ][:4],
+        }
+        if not payload["answer"]:
+            raise ValueError("请先选择或输入回答。")
+        if self.remote_client is not None:
+            resolved = self.remote_client.answer_question(
+                run_id,
+                payload,
+                event_sink,
+            )
+        else:
+            if self.local_agent is None:
+                raise RuntimeError("本地Agent尚未初始化。")
+            resolved = self.local_agent.run(
+                "",
+                history=list(execution.result.get("messages") or []),
+                transcript=list(
+                    execution.result.get("transcriptMessages")
+                    or self.transcript
+                    or execution.result.get("messages")
+                    or []
+                ),
+                context_metadata=dict(
+                    execution.result.get("compaction")
+                    or self.context_metadata
+                ),
+                tools=self.tools,
+                run_id=run_id,
+                resume_value=payload,
+                resume_from_checkpoint=True,
                 event_sink=event_sink,
             )
         self._finish(resolved)

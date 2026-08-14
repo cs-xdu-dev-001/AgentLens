@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const failureLabels = {
   agent_run_cancelled: {
     title: "任务已停止",
@@ -67,11 +69,13 @@ function fallbackFailure(run) {
   };
 }
 
-function dispatchRunAction(run, messageId) {
+function dispatchRunAction(run, messageId, action, failure, failedStep) {
   window.dispatchEvent(
     new CustomEvent("knowflow:react-agent-run-action", {
       detail: {
-        action: "resume",
+        action,
+        failedStepTitle: failedStep?.title || "",
+        failureCode: failure?.code || "agent_run_failed",
         messageId,
         runId: run.id,
       },
@@ -79,17 +83,20 @@ function dispatchRunAction(run, messageId) {
   );
 }
 
-function dispatchFullRetry(run, messageId) {
-  window.dispatchEvent(
-    new CustomEvent("knowflow:react-agent-run-action", {
-      detail: {
-        action: "restart",
-        messageId,
-        runId: run.id,
-      },
-    }),
-  );
-}
+const actionLabels = {
+  continue: "从失败步骤继续",
+  retry: "重新运行本轮",
+  fix: "让Agent分析错误",
+};
+
+const pendingActionLabels = {
+  continue: "正在从失败位置继续…",
+  retry: "正在重新运行…",
+  fix: "正在提交分析任务…",
+};
+
+const actionMap = { continue: "resume", retry: "restart", fix: "fix" };
+const restartAction = { action: "restart" };
 
 function openTarget(target) {
   window.dispatchEvent(
@@ -99,7 +106,45 @@ function openTarget(target) {
   );
 }
 
-export function AgentRecoveryPanel({ messageId = "", run = null }) {
+export function AgentRecoveryPanel({
+  compact = false,
+  interactive = true,
+  messageId = "",
+  run = null,
+}) {
+  const [actionState, setActionState] = useState({
+    action: "",
+    message: "",
+    status: "idle",
+  });
+
+  useEffect(() => {
+    setActionState({ action: "", message: "", status: "idle" });
+  }, [run?.id, run?.status]);
+
+  useEffect(() => {
+    function handleActionState(event) {
+      const detail = event.detail || {};
+      if (
+        String(detail.runId || "") !== String(run?.id || "")
+        || String(detail.messageId || "") !== String(messageId || "")
+      ) return;
+      setActionState({
+        action: detail.action || "",
+        message: detail.message || "",
+        status: detail.status || "idle",
+      });
+    }
+    window.addEventListener(
+      "knowflow:react-agent-run-action-state",
+      handleActionState,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-agent-run-action-state",
+      handleActionState,
+    );
+  }, [messageId, run?.id]);
+
   if (!run?.id || !["failed", "interrupted", "cancelled"].includes(run.status)) {
     return null;
   }
@@ -112,11 +157,28 @@ export function AgentRecoveryPanel({ messageId = "", run = null }) {
     && Array.isArray(run.steps)
     && run.steps.length > 0;
   const target = failure.target;
+  const recoveryActions = Array.isArray(run.recoveryActions) && run.recoveryActions.length
+    ? run.recoveryActions.filter((action) => actionMap[action])
+    : [canResume ? "continue" : null, messageId ? "retry" : null].filter(Boolean);
+  const actionPending = actionState.status === "pending";
+
+  function requestRecovery(action) {
+    if (!interactive) return;
+    setActionState({ action, message: "", status: "pending" });
+    dispatchRunAction(
+      run,
+      messageId,
+      action === "retry" ? restartAction.action : actionMap[action],
+      failure,
+      failedStep,
+    );
+  }
 
   return (
     <section
-      className={`agent-recovery-panel ${failure.retryable ? "retryable" : "needs-config"}`}
+      className={`agent-recovery-panel ${failure.retryable ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
       aria-label={"运行恢复"}
+      aria-busy={actionPending}
       role={"status"}
     >
       <div className={"agent-recovery-heading"}>
@@ -126,43 +188,65 @@ export function AgentRecoveryPanel({ messageId = "", run = null }) {
           <p>{copy.summary}</p>
         </div>
       </div>
-      <div className={"agent-recovery-meta"}>
-        <code className={"agent-recovery-code"}>{failure.code}</code>
-        {failedStep ? (
-          <span>
-            {failedStep.title}
-            {attemptCount ? ` · 已尝试${attemptCount}次` : ""}
-          </span>
-        ) : null}
-      </div>
+      {!compact ? (
+        <div className={"agent-recovery-meta"}>
+          <code className={"agent-recovery-code"}>{failure.code}</code>
+          {failedStep ? (
+            <span>
+              {failedStep.title}
+              {attemptCount ? ` · 已尝试${attemptCount}次` : ""}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {interactive ? (
       <div className={"agent-recovery-actions"}>
         {target ? (
           <button
             className={!failure.retryable ? "primary" : ""}
+            disabled={actionPending}
             type={"button"}
             onClick={() => openTarget(target)}
           >
             {targetLabels[target] || "检查配置"}
           </button>
         ) : null}
-        {canResume ? (
+        {recoveryActions.map((action, index) => (
           <button
-            className={!target ? "primary" : ""}
+            className={!target && index === 0 ? "primary" : ""}
+            disabled={actionPending || actionState.status === "succeeded"}
+            key={action}
             type={"button"}
-            onClick={() => dispatchRunAction(run, messageId)}
+            onClick={() => requestRecovery(action)}
           >
-            {"从失败步骤继续"}
+            {actionPending && actionState.action === action
+              ? pendingActionLabels[action]
+              : actionLabels[action]}
           </button>
-        ) : null}
-        {messageId ? (
-          <button
-            type={"button"}
-            onClick={() => dispatchFullRetry(run, messageId)}
-          >
-            {"重新运行本轮"}
-          </button>
-        ) : null}
+        ))}
       </div>
+      ) : (
+        <button
+          className="agent-recovery-jump"
+          type="button"
+          onClick={() => window.dispatchEvent(
+            new CustomEvent("knowflow:react-agent-interaction-focus"),
+          )}
+        >
+          先处理当前请求
+        </button>
+      )}
+      {actionState.status !== "idle" ? (
+        <p
+          className={`agent-recovery-feedback ${actionState.status}`}
+          role={actionState.status === "failed" ? "alert" : "status"}
+          aria-live={"polite"}
+        >
+          {actionState.status === "pending"
+            ? pendingActionLabels[actionState.action]
+            : actionState.message}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -59,6 +59,41 @@ def main() -> None:
             "final": True,
         }))
         delivered.append(publish({
+            "type": "artifact_created",
+            "artifactId": "file:reports/report.md",
+            "artifactType": "file",
+            "title": "reports/report.md",
+            "path": "reports/report.md",
+            "operation": "write",
+            "writtenBytes": 512,
+            "secret": "SHOULD_NOT_SURVIVE",
+            "content": "private body",
+        }))
+        delivered.append(publish({
+            "type": "usage_updated",
+            "usage": {"inputTokens": 120, "outputTokens": 30, "totalTokens": 150},
+        }))
+        delivered.append(publish({
+            "type": "context_usage_updated",
+            "usedTokens": 72000,
+            "originalTokens": 80000,
+            "maxTokens": 96000,
+            "remainingTokens": 24000,
+            "usagePercent": 75,
+            "warningAtPercent": 75,
+            "shouldWarn": True,
+            "contextTrimmed": True,
+        }))
+        delivered.append(publish({
+            "type": "tool_result",
+            "toolCallId": "call_verify",
+            "toolName": "run_sandbox_command",
+            "status": "success",
+            "latencyMs": 1200,
+            "arguments": {"command": "npm test -- --token secret-value-123456"},
+            "output": {"exit_code": 0, "stdout": "38 passed"},
+        }))
+        delivered.append(publish({
             "type": "done",
             "status": "completed",
         }))
@@ -71,13 +106,50 @@ def main() -> None:
     assert [item["eventName"] for item in replay] == [
         "run.started",
         "message.completed",
+        "artifact.created",
+        "usage.updated",
+        "context.usage_updated",
+        "tool.completed",
         "run.completed",
     ]
-    assert [item["sequence"] for item in replay] == [1, 3, 4]
+    assert [item["sequence"] for item in replay] == [1, 3, 4, 5, 6, 7, 8]
     assert [item["eventId"] for item in replay] == [
-        delivered[index]["eventId"] for index in (0, 2, 3)
+        delivered[index]["eventId"] for index in (0, 2, 3, 4, 5, 6, 7)
     ]
+    assert replay[-2]["verification"] == {
+        "id": "verification:call_verify",
+        "kind": "test",
+        "tool": "npm_test",
+        "status": "passed",
+        "exitCode": 0,
+        "durationMs": 1200,
+    }
+    assert events.artifacts_for_run(1, "run_event_store")[0]["path"] == (
+        "reports/report.md"
+    )
+    assert "secret" not in events.artifacts_for_run(1, "run_event_store")[0]
+    assert "content" not in events.artifacts_for_run(1, "run_event_store")[0]
+    metadata = events.metadata_for_run(1, "run_event_store")
+    assert metadata["artifacts"][0]["writtenBytes"] == 512
+    assert metadata["usage"]["totalTokens"] == 150
+    assert metadata["context"]["usagePercent"] == 75
+    assert metadata["context"]["contextTrimmed"] is True
+    assert metadata["runSummary"]["runId"] == "run_event_store"
+    assert metadata["runSummary"]["status"] == "completed"
+    assert metadata["runSummary"]["artifactCount"] == 1
+    assert metadata["runSummary"]["toolCalls"] == 1
+    assert metadata["runSummary"]["totalTokens"] == 150
+    assert len(metadata["toolCalls"]) == 1
+    assert metadata["toolCalls"][0]["toolCallId"] == "call_verify"
+    assert metadata["toolCalls"][0]["status"] == "completed"
+    assert "secret-value" not in str(metadata["toolCalls"])
     assert "secret-value" not in str(replay)
+    artifact_event = next(
+        event for event in replay if event.get("eventName") == "artifact.created"
+    )
+    assert "secret" not in artifact_event
+    assert "content" not in artifact_event
+    assert "SHOULD_NOT_SURVIVE" not in str(replay)
     assert events.list_after(2, "run_event_store") == []
     assert events.list_after(
         1,
@@ -97,7 +169,7 @@ def main() -> None:
     wait_finished(coordinator, "run_event_store")
     replay = events.list_after(1, "run_event_store")
     assert replay[-1]["eventName"] == "approval.required"
-    assert replay[-1]["sequence"] == 5
+    assert replay[-1]["sequence"] == 9
 
     runs.create_run(
         user_id=1,

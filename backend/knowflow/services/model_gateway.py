@@ -27,11 +27,18 @@ class ChatCompletionsStreamAccumulator:
         self.role = "assistant"
         self.content: list[str] = []
         self.tool_calls: dict[int, dict[str, Any]] = {}
+        self.usage: dict[str, Any] = {}
 
-    def feed(self, event: dict[str, Any]) -> list[dict[str, str]]:
+    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            self.usage = dict(usage)
+            usage_event = {"type": "usage_updated", "usage": self.usage}
+        else:
+            usage_event = None
         choices = event.get("choices")
         if not isinstance(choices, list) or not choices:
-            return []
+            return [usage_event] if usage_event else []
         choice = choices[0]
         if not isinstance(choice, dict):
             raise ResponsesProtocolError(
@@ -42,7 +49,7 @@ class ChatCompletionsStreamAccumulator:
             return []
         if delta.get("role"):
             self.role = str(delta["role"])
-        public_events: list[dict[str, str]] = []
+        public_events: list[dict[str, Any]] = []
         content = delta.get("content")
         if isinstance(content, str) and content:
             self.content.append(content)
@@ -77,6 +84,8 @@ class ChatCompletionsStreamAccumulator:
                         call["function"]["arguments"] += str(
                             function["arguments"]
                         )
+        if usage_event:
+            public_events.append(usage_event)
         return public_events
 
     def finish(self) -> dict[str, Any]:

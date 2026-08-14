@@ -101,7 +101,21 @@ def main() -> None:
     assert len(result.executions) == 1
     assert result.executions[0].tool_name == "echo"
     assert executions[0][0] == result.executions[0]
-    assert model_events == [{"type": "text_delta", "text": "done"}]
+    context_events = [
+        event
+        for event in model_events
+        if event.get("type") == "context_usage_updated"
+    ]
+    text_events = [
+        event
+        for event in model_events
+        if event.get("type") == "text_delta"
+    ]
+    assert len(context_events) == 2
+    assert all(event["maxTokens"] == 96_000 for event in context_events)
+    assert context_events[0]["messageCount"] == 1
+    assert context_events[1]["messageCount"] == 3
+    assert text_events == [{"type": "text_delta", "text": "done"}]
     assert result.trace == trace.snapshot()
     assert [step["kind"] for step in result.trace] == [
         "model",

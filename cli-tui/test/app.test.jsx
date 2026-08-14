@@ -5,14 +5,155 @@ import React from 'react';
 import {render} from 'ink-testing-library';
 import {
   App,
+  expandPastedTextRefs,
+  enqueueWaitingInteraction,
+  formatPastedTextRef,
+  pastedTextLineCount,
+  resolveInteractionFocus,
+  removeWaitingInteraction,
   resolveTerminalMode,
+  runtimeStatusFromEvent,
   sanitizeComposerInput,
+  settleRuntimeRows,
+  shouldAnimateRuntimeStatus,
+  shouldCollapsePaste,
   streamingPreview,
   thinkingStateForPhase,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('interaction focus resolves to one highest-priority input owner', () => {
+  assert.equal(resolveInteractionFocus({suggestionsLength: 2}), 'commands');
+  assert.equal(resolveInteractionFocus({modelPicker: true, permissionPicker: true}), 'models');
+  assert.equal(resolveInteractionFocus({toolDetailOpen: true, taskNavigationOpen: true}), 'toolDetail');
+  assert.equal(resolveInteractionFocus({approval: {}, modelPicker: true}), 'approval');
+  assert.equal(resolveInteractionFocus({question: {}, approval: {}}), 'question');
+});
+
+test('runtime spinner stops once useful progress is visible', () => {
+  assert.equal(shouldAnimateRuntimeStatus({running: true}), true);
+  assert.equal(shouldAnimateRuntimeStatus({running: true, hasVisibleStream: true}), false);
+  assert.equal(shouldAnimateRuntimeStatus({running: true, hasVisibleWork: true}), false);
+  assert.equal(shouldAnimateRuntimeStatus({running: true, blocked: true}), false);
+  assert.equal(shouldAnimateRuntimeStatus({running: true, cancelPending: true}), false);
+  assert.equal(shouldAnimateRuntimeStatus({running: false}), false);
+});
+
+test('unified event names settle tool and step status even without legacy status fields', () => {
+  assert.equal(runtimeStatusFromEvent({eventName: 'tool.completed'}), 'completed');
+  assert.equal(runtimeStatusFromEvent({eventName: 'tool.failed'}), 'failed');
+  assert.equal(runtimeStatusFromEvent({eventName: 'step.cancelled'}), 'cancelled');
+  assert.equal(runtimeStatusFromEvent({type: 'tool_result', status: 'failed'}), 'failed');
+});
+
+test('terminal turns settle only unfinished runtime rows', () => {
+  const rows = new Map([
+    ['running', {status: 'running', title: '执行命令'}],
+    ['waiting', {status: 'waiting', title: '等待确认'}],
+    ['done', {status: 'completed', title: '已完成'}],
+  ]);
+  const settled = settleRuntimeRows(rows, 'failed');
+  assert.notEqual(settled, rows);
+  assert.equal(settled.get('running').status, 'failed');
+  assert.equal(settled.get('waiting').status, 'failed');
+  assert.equal(settled.get('done').status, 'completed');
+});
+
+test('waiting interactions keep arrival order, deduplicate, and resolve by identity', () => {
+  const approval = {kind: 'approval', event: {runId: 'run-1', approvalId: 'approval-1'}};
+  const question = {kind: 'question', event: {runId: 'run-1', questionId: 'question-1'}};
+  const queued = enqueueWaitingInteraction(enqueueWaitingInteraction([], approval), question);
+  assert.deepEqual(enqueueWaitingInteraction(queued, approval), queued);
+  assert.deepEqual(removeWaitingInteraction(queued, 'approval', approval.event), [question]);
+});
+
+test('task queue manager changes priority and retrieves a task for editing', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('先执行任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('稍后检查日志');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /接下来 1/);
+
+  view.stdin.write('\u0014');
+  await tick();
+  assert.match(view.lastFrame(), /任务队列/);
+  assert.match(view.lastFrame(), /\[接下来\] 稍后检查日志/);
+
+  view.stdin.write('\u001b[D');
+  await tick();
+  assert.match(view.lastFrame(), /\[稍后\] 稍后检查日志/);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /已取回任务，可修改后重新提交/);
+  assert.match(view.lastFrame(), /稍后检查日志/);
+  assert.doesNotMatch(view.lastFrame(), /接下来 1/);
+});
+
+test('empty Escape retrieves the most recently queued prompt', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  for (const task of ['正在执行', '排队任务B', '排队任务C']) {
+    view.stdin.write(task);
+    view.stdin.write('\r');
+    await tick();
+  }
+  assert.match(view.lastFrame(), /接下来 2/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /已取回最近排队任务/);
+  assert.match(view.lastFrame(), /排队任务C/);
+  assert.match(view.lastFrame(), /接下来 1/);
+  assert.equal(client.sent.filter(item => item.type === 'submit').length, 1);
+});
+
+test('now priority interrupts the active request and ignores its late terminal event', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('当前任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('立即任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('\u0014');
+  await tick();
+  view.stdin.write('\u001b[C');
+  await tick();
+
+  assert.deepEqual(client.sent.at(-1), {type: 'cancel'});
+  assert.match(view.lastFrame(), /\[现在\] 立即任务/);
+  assert.match(view.lastFrame(), /正在切换到立即任务/);
+
+  client.emit('message', {type: 'cancel_requested', requestId: 'turn-1', runId: 'run-A', accepted: true});
+  client.emit('message', {type: 'turn_completed', requestId: 'turn-1', runId: 'run-A', cancelled: true, answer: ''});
+  await tick();
+  await tick();
+  const submits = client.sent.filter(item => item.type === 'submit');
+  assert.equal(submits.length, 2);
+  assert.equal(submits[1].text, '立即任务');
+  assert.equal(submits[1].requestId, 'turn-2');
+
+  client.emit('message', {type: 'turn_failed', requestId: 'turn-1', runId: 'run-A', message: '迟到错误'});
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /迟到错误|队列已暂停/);
+});
 
 test('thinking animation follows the active Agent phase and defaults to solving', () => {
   assert.equal(thinkingStateForPhase('模型正在分析'), 'solving');
@@ -21,6 +162,14 @@ test('thinking animation follows the active Agent phase and defaults to solving'
   assert.equal(thinkingStateForPhase('整理长期记忆'), 'listening');
   assert.equal(thinkingStateForPhase('正在激活Skill'), 'weaving');
   assert.equal(thinkingStateForPhase('读取工作区文件'), 'working');
+});
+
+test('large paste references preserve the original text', () => {
+  const original = '第一行\n第二行\n第三行';
+  const reference = formatPastedTextRef(7, pastedTextLineCount(original));
+  assert.equal(reference, '[粘贴内容 #7 +3行]');
+  assert.equal(shouldCollapsePaste(original), true);
+  assert.equal(expandPastedTextRefs(`检查：${reference}`, {7: original}), `检查：${original}`);
 });
 
 async function waitForFrame(view, pattern, timeoutMs = 1500) {
@@ -45,7 +194,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 3,
+      protocolVersion: 6,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -59,6 +208,11 @@ class FakeClient extends EventEmitter {
         changedFiles: 0,
       },
       sessions: [],
+      history: [],
+      models: [
+        {id: 1, name: 'deepseek-chat', modelName: 'deepseek-chat', provider: 'deepseek', apiMode: 'chat_completions', selected: true, switchable: true},
+        {id: 2, name: 'GPT 5.5', modelName: 'gpt-5.5', provider: 'openai', apiMode: 'responses', selected: false, switchable: true},
+      ],
     });
     if (this.readyDelay > 0) setTimeout(emitReady, this.readyDelay);
     else queueMicrotask(emitReady);
@@ -70,6 +224,17 @@ class FakeClient extends EventEmitter {
   }
 
   close() {}
+}
+
+class ClosingClient extends FakeClient {
+  constructor(options) {
+    super(options);
+    this.closed = 0;
+  }
+
+  close() {
+    this.closed += 1;
+  }
 }
 
 test('Ink app renders command suggestions and streamed tool progress', async () => {
@@ -136,6 +301,634 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
   view.unmount();
 });
 
+test('command completion reveals the selected command argument contract', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/mo');
+  await tick();
+  assert.match(view.lastFrame(), /\/model/);
+  view.stdin.write('\t');
+  await tick();
+  assert.match(view.lastFrame(), /list \| use <ID> \| config/);
+  assert.equal(client.sent.filter(item => item.type === 'submit').length, 0);
+
+  view.stdin.write('use 2');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /list \| use <ID> \| config/);
+  view.unmount();
+});
+
+test('Enter executes the highlighted slash command while Tab only completes it', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/he');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /命令浏览/);
+  assert.match(view.lastFrame(), /快捷键 \d+/);
+  assert.equal(client.sent.filter(item => item.type === 'submit').length, 0);
+
+  view.stdin.write('\u001b');
+  await tick();
+
+  view.stdin.write('/mo');
+  await tick();
+  view.stdin.write('\t');
+  await tick();
+  assert.match(view.lastFrame(), /参数\s+\[list \| use <ID> \| config\]/);
+  assert.equal(client.sent.filter(item => item.type === 'models').length, 0);
+});
+
+test('/help browses builtin and dynamic commands, searches, and returns a command to the composer', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/help');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /命令浏览/);
+  assert.match(view.lastFrame(), /扩展命令 1/);
+
+  view.stdin.write('\t');
+  view.stdin.write('\t');
+  view.stdin.write('read');
+  await tick();
+  assert.match(view.lastFrame(), /搜索：read/);
+  assert.match(view.lastFrame(), /\/tool:read-file/);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /已取用命令，可补充参数后执行/);
+  assert.match(view.lastFrame(), /\/tool:read-file/);
+  assert.doesNotMatch(view.lastFrame(), /命令浏览\s+搜索/);
+  assert.equal(client.sent.filter(item => item.type === 'submit').length, 0);
+});
+
+test('running cancellation gives immediate feedback and ignores repeated Ctrl+C', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('长任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('\x03');
+  await tick();
+  assert.match(view.lastFrame(), /正在请求取消/);
+  assert.match(view.lastFrame(), /取消中/);
+  assert.equal(client.sent.filter(item => item.type === 'cancel').length, 1);
+
+  view.stdin.write('\x03');
+  await tick();
+  assert.equal(client.sent.filter(item => item.type === 'cancel').length, 1);
+
+  client.emit('message', {type: 'cancel_requested', accepted: true});
+  await tick();
+  assert.match(view.lastFrame(), /正在取消/);
+  client.emit('message', {type: 'turn_completed', cancelled: true, answer: ''});
+  await tick();
+  assert.match(view.lastFrame(), /已取消/);
+  assert.doesNotMatch(view.lastFrame(), /取消中/);
+});
+
+test('the active overlay exclusively owns rendering and command navigation', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('当前任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('排队任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('/he');
+  await tick();
+  assert.match(view.lastFrame(), /查看命令与快捷键/);
+
+  view.stdin.write('\u0014');
+  await tick();
+  assert.match(view.lastFrame(), /任务队列/);
+  assert.doesNotMatch(view.lastFrame(), /查看命令与快捷键/);
+  assert.match(view.lastFrame(), /任务队列 · ↑↓选择/);
+});
+
+test('Ink app answers a structured Agent question and resumes the same run', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'user_question_required',
+      questionId: 'question-1',
+      runId: 'run-1',
+      header: '选择部署方式',
+      question: '这次要部署到哪个环境？',
+      options: [
+        {label: '测试环境', value: 'staging', description: '先做安全验收'},
+        {label: '生产环境', value: 'production', description: '直接上线'},
+      ],
+      allowCustom: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /选择部署方式/);
+  assert.match(view.lastFrame(), /测试环境/);
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'answer_question',
+    questionId: 'question-1',
+    answer: 'staging',
+    selectedOptions: ['staging'],
+  });
+  view.unmount();
+});
+
+test('Ink app searches and switches models from the composer', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.18.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/model');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'models', action: 'list'});
+
+  client.emit('message', {
+    type: 'model_list',
+    model: 'deepseek-chat',
+    models: [
+      {id: 1, name: 'deepseek-chat', modelName: 'deepseek-chat', provider: 'deepseek', apiMode: 'chat_completions', selected: true, switchable: true},
+      {id: 2, name: 'GPT 5.5', modelName: 'gpt-5.5', provider: 'openai', apiMode: 'responses', selected: false, switchable: true},
+    ],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /选择模型/);
+  view.stdin.write('gpt');
+  await tick();
+  assert.match(view.lastFrame(), /搜索：gpt/);
+  assert.match(view.lastFrame(), /GPT 5\.5/);
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'models', action: 'use', modelId: 2});
+
+  client.emit('message', {
+    type: 'model_changed',
+    model: 'GPT 5.5',
+    selected: {id: 2, name: 'GPT 5.5'},
+  });
+  await tick();
+  assert.match(view.lastFrame(), /已切换到GPT 5\.5/);
+  view.unmount();
+});
+
+test('Alt+P opens the model picker without entering composer text', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.18.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('\u001bp');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'models', action: 'list'});
+  assert.doesNotMatch(view.lastFrame(), /❯ p/);
+  view.unmount();
+});
+
+test('opening a new picker replaces the previous keyboard owner', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/permissions');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /权限模式/);
+
+  client.emit('message', {
+    type: 'model_list',
+    model: 'deepseek-chat',
+    models: [
+      {id: 1, name: 'deepseek-chat', modelName: 'deepseek-chat', provider: 'deepseek', apiMode: 'chat_completions', selected: true, switchable: true},
+      {id: 2, name: 'GPT 5.5', modelName: 'gpt-5.5', provider: 'openai', apiMode: 'responses', selected: false, switchable: true},
+    ],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /选择模型 · ↑↓选择 · Enter切换 · Esc关闭/);
+  assert.doesNotMatch(view.lastFrame(), /选择权限模式/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /输入任务 · 输入任务，\/查看命令/);
+});
+
+test('approval takes keyboard focus and closes transient pickers', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'model_list',
+    model: 'deepseek-chat',
+    models: [{id: 1, name: 'deepseek-chat', selected: true, switchable: true}],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /选择模型/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      toolName: 'write_workspace_file',
+      risk: 'write',
+      destructive: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /权限确认 · ←→选择 · Enter确认 · Esc拒绝/);
+  assert.doesNotMatch(view.lastFrame(), /选择模型/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'deny'});
+});
+
+test('approval and structured questions wait in arrival order without being overwritten', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      runId: 'run-queue',
+      approvalId: 'approval-queue',
+      toolName: 'write_workspace_file',
+      risk: 'write',
+      destructive: true,
+    },
+  });
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'user_question_required',
+      runId: 'run-queue',
+      questionId: 'question-queue',
+      header: '确认范围',
+      question: '继续处理哪些文件？',
+      options: [{label: '当前文件', value: 'current'}],
+      allowCustom: false,
+    },
+  });
+  await tick();
+
+  assert.match(view.lastFrame(), /需要确认：write_workspace_file/);
+  assert.match(view.lastFrame(), /待处理 1\/2/);
+  assert.doesNotMatch(view.lastFrame(), /继续处理哪些文件/);
+
+  view.stdin.write('y');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+  assert.match(view.lastFrame(), /继续处理哪些文件/);
+  assert.match(view.lastFrame(), /回答问题 · ↑↓选择 · Enter确认/);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'answer_question',
+    questionId: 'question-queue',
+    answer: 'current',
+    selectedOptions: ['current'],
+  });
+  assert.doesNotMatch(view.lastFrame(), /待处理 1\/2/);
+});
+
+test('Ink app searches prompt history, stashes drafts, and restores killed text', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查应用日志');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'turn_completed', answer: '日志正常'});
+  await tick();
+  view.stdin.write('核对发布版本');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'turn_completed', answer: '版本正常'});
+  await tick();
+
+  view.stdin.write('日志');
+  view.stdin.write('\x12');
+  await tick();
+  assert.match(view.lastFrame(), /搜索历史/);
+  assert.match(view.lastFrame(), /检查应用日志/);
+  view.stdin.write('\r');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /搜索历史/);
+  assert.match(view.lastFrame(), /检查应用日志/);
+
+  view.stdin.write('\x13');
+  await tick();
+  assert.match(view.lastFrame(), /草稿已暂存/);
+  view.stdin.write('\x13');
+  await tick();
+  assert.match(view.lastFrame(), /草稿已恢复/);
+  assert.match(view.lastFrame(), /检查应用日志/);
+
+  view.stdin.write('\x15');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /❯ 检查应用日志/);
+  view.stdin.write('\x19');
+  await tick();
+  assert.match(view.lastFrame(), /检查应用日志/);
+  view.unmount();
+});
+
+test('Ink app collapses multiline paste but submits the full content', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  const pasted = '错误一\n错误二\n错误三';
+  view.stdin.write(`\x1b[200~${pasted}\x1b[201~`);
+  await tick();
+  assert.match(view.lastFrame(), /粘贴内容 #1 \+3行/);
+  assert.match(view.lastFrame(), /提交时自动展开/);
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).type, 'submit');
+  assert.equal(client.sent.at(-1).text, pasted);
+  view.unmount();
+});
+
+test('collapsed paste survives stash restore and queued execution', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('先执行当前任务');
+  view.stdin.write('\r');
+  await tick();
+
+  const pasted = '日志一\n日志二\n日志三\n日志四';
+  view.stdin.write(`\x1b[200~${pasted}\x1b[201~`);
+  await tick();
+  view.stdin.write('\x13');
+  await tick();
+  assert.match(view.lastFrame(), /草稿已暂存/);
+  view.stdin.write('\x13');
+  await tick();
+  assert.match(view.lastFrame(), /粘贴内容 #1 \+4行/);
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /接下来 1/);
+  assert.match(view.lastFrame(), /粘贴内容 #1 \+4行/);
+
+  client.emit('message', {type: 'turn_completed', answer: '第一轮完成'});
+  await waitForFrame(view, /第一轮完成/);
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && client.sent.at(-1)?.text !== pasted) await tick();
+  assert.equal(client.sent.at(-1).type, 'submit');
+  assert.equal(client.sent.at(-1).text, pasted);
+  view.unmount();
+});
+
+test('Ink app loads workspace history and clears it through the runtime', async () => {
+  const client = new FakeClient();
+  client.start = () => queueMicrotask(() => client.emit('message', {
+    type: 'ready',
+    protocolVersion: 6,
+    agentEventSchemaVersion: 1,
+    model: 'deepseek-chat',
+    commands: [],
+    workspace: {projectRoot: '/workspace', cwd: '/workspace'},
+    sessions: [],
+    history: ['上次检查发布状态', '上次查看服务日志'],
+  }));
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('\x12');
+  await tick();
+  assert.match(view.lastFrame(), /上次查看服务日志/);
+  view.stdin.write('\x1b');
+  await tick();
+  view.stdin.write('/history clear');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'history', action: 'clear'});
+  client.emit('message', {
+    type: 'history_result',
+    action: 'clear',
+    history: [],
+    message: '本工作区的输入历史已清空。',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /输入历史已清空/);
+  view.stdin.write('\x12');
+  await tick();
+  assert.match(view.lastFrame(), /还没有可搜索的历史输入/);
+  view.unmount();
+});
+
+test('Ink app exposes queued follow-ups and lets users clear them', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('先检查服务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('再检查日志');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /接下来 1/);
+  assert.match(view.lastFrame(), /再检查日志/);
+
+  view.stdin.write('/tasks clear');
+  view.stdin.write('\r');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /接下来 1/);
+  assert.match(view.lastFrame(), /待发送任务已清空/);
+  view.unmount();
+});
+
+test('queued follow-ups honor now, next and later priorities', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('当前任务');
+  view.stdin.write('\r');
+  await tick();
+
+  for (const command of [
+    '/tasks add later 稍后任务',
+    '/tasks add next 普通任务',
+    '/tasks add now 优先任务',
+  ]) {
+    view.stdin.write(command);
+    view.stdin.write('\r');
+    await tick();
+  }
+  view.stdin.write('/tasks list');
+  view.stdin.write('\r');
+  await tick();
+  const frame = view.lastFrame();
+  assert.ok(frame.lastIndexOf('优先任务') < frame.lastIndexOf('普通任务'), frame);
+  assert.ok(frame.lastIndexOf('普通任务') < frame.lastIndexOf('稍后任务'), frame);
+
+  client.emit('message', {type: 'turn_completed', answer: '当前任务完成'});
+  const expected = ['优先任务', '普通任务', '稍后任务'];
+  for (const task of expected) {
+    const deadline = Date.now() + 1000;
+    while (
+      Date.now() < deadline
+      && client.sent.filter(message => message.type === 'submit').at(-1)?.text !== task
+    ) await tick();
+    assert.equal(client.sent.filter(message => message.type === 'submit').at(-1)?.text, task);
+    client.emit('message', {type: 'turn_completed', answer: `${task}完成`});
+  }
+});
+
+test('runtime send failures pause and preserve the prompt for retry', async t => {
+  const client = new FakeClient();
+  const send = client.send.bind(client);
+  let failNextSubmit = true;
+  client.send = message => {
+    if (message.type === 'submit' && failNextSubmit) {
+      failNextSubmit = false;
+      return false;
+    }
+    return send(message);
+  };
+  const view = render(<App client={client} version="0.17.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('不能丢失的任务');
+  view.stdin.write('\r');
+  await waitForFrame(view, /队列已暂停/);
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  assert.match(view.lastFrame(), /不能丢失的任务/);
+
+  view.stdin.write('/continue');
+  view.stdin.write('\r');
+  const deadline = Date.now() + 1000;
+  while (
+    Date.now() < deadline
+    && client.sent.filter(message => message.type === 'submit').at(-1)?.text !== '不能丢失的任务'
+  ) await tick();
+  assert.equal(client.sent.filter(message => message.type === 'submit').at(-1)?.text, '不能丢失的任务');
+});
+
+test('failed runs keep new follow-ups paused and resume them in FIFO order', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('任务A');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('任务B');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => message.text),
+    ['任务A'],
+  );
+
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'run-A',
+    message: '任务A失败',
+  });
+  await waitForFrame(view, /待发送已暂停/);
+
+  view.stdin.write('任务C');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => message.text),
+    ['任务A'],
+  );
+  assert.match(view.lastFrame(), /待发送已暂停/);
+  assert.match(view.lastFrame(), /任务B/);
+  assert.match(view.lastFrame(), /任务C/);
+
+  view.stdin.write('/continue');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'resume_session',
+    requestId: 'resume-2',
+    runId: 'run-A',
+  });
+
+  client.emit('message', {type: 'turn_completed', runId: 'run-A', answer: '任务A恢复完成'});
+  const firstDeadline = Date.now() + 1000;
+  while (
+    Date.now() < firstDeadline
+    && client.sent.filter(message => message.type === 'submit').at(-1)?.text !== '任务B'
+  ) await tick();
+  assert.equal(client.sent.filter(message => message.type === 'submit').at(-1)?.text, '任务B');
+
+  client.emit('message', {type: 'turn_completed', answer: '任务B完成'});
+  const secondDeadline = Date.now() + 1000;
+  while (
+    Date.now() < secondDeadline
+    && client.sent.filter(message => message.type === 'submit').at(-1)?.text !== '任务C'
+  ) await tick();
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => message.text),
+    ['任务A', '任务B', '任务C'],
+  );
+  view.unmount();
+});
+
+test('retry turn bypasses a paused failure queue instead of enqueueing itself', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查失败任务');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'run-retry',
+    message: '上游暂时不可用',
+  });
+  await waitForFrame(view, /队列已暂停/);
+
+  view.stdin.write('/retry turn');
+  view.stdin.write('\r');
+  const deadline = Date.now() + 1000;
+  while (
+    Date.now() < deadline
+    && client.sent.filter(message => message.type === 'submit').length < 2
+  ) await tick();
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => message.text),
+    ['检查失败任务', '检查失败任务'],
+  );
+  assert.doesNotMatch(view.lastFrame(), /接下来1/);
+  view.unmount();
+});
+
 test('Ink app renders a live task summary and collapses it after completion', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.16.0" />);
@@ -170,12 +963,101 @@ test('Ink app renders a live task summary and collapses it after completion', as
     },
   });
   await tick();
-  assert.match(view.lastFrame(), /本次运行/);
+  assert.match(view.lastFrame(), /检查服务状态/);
   assert.match(view.lastFrame(), /~637 tokens/);
   assert.match(view.lastFrame(), /0\/2/);
   assert.match(view.lastFrame(), /模型正在分析/);
   assert.match(view.lastFrame(), /正在读取网页/);
   assert.match(view.lastFrame(), /[├└]/);
+  assert.doesNotMatch(view.lastFrame(), /Ctrl\+G文件变更/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      eventName: 'artifact.created',
+      artifactId: 'file:reports/report.md',
+      artifactType: 'file',
+      title: 'reports/report.md',
+      path: 'reports/report.md',
+      operation: 'write',
+      writtenBytes: 512,
+      addedLines: 12,
+      removedLines: 2,
+      operationId: 'edit_report',
+      diffAvailable: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /1个产物/);
+  assert.match(view.lastFrame(), /reports\/report\.md/);
+  assert.match(view.lastFrame(), /\+12 · -2 · 512B/);
+  assert.match(view.lastFrame(), /Ctrl\+G文件变更/);
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'reference',
+      eventId: 'reference-report',
+      artifactType: 'reference',
+      url: 'https://example.com/report?token=SECRET#private',
+      score: 0.91,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /1个来源/);
+  assert.match(view.lastFrame(), /example\.com\/report/);
+  assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
+  view.stdin.write('\u0005');
+  await tick();
+  assert.match(view.lastFrame(), /引用来源/);
+  assert.match(view.lastFrame(), /匹配度 91%/);
+  assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
+  view.stdin.write('\u001b');
+  await tick();
+  view.stdin.write('\u0007');
+  await tick();
+  assert.match(view.lastFrame(), /文件变更/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /按Enter查看diff/);
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'diff',
+    path: 'reports/report.md',
+  });
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'diff',
+    result: {patch: '+new line', files: [{path: 'reports/report.md', added: 1, removed: 0}]},
+  });
+  await tick();
+  assert.match(view.lastFrame(), /\+new line/);
+  view.stdin.write('\u0007');
+  await tick();
+
+  // 撤销结果必须更新统一运行投影；即使结果返回时变更面板已关闭，
+  // 再次打开仍应显示最终的已撤销状态。
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'undo',
+    result: {
+      operationId: 'edit_report',
+      path: 'reports/report.md',
+      reverted: true,
+    },
+  });
+  await tick();
+  view.stdin.write('\u0007');
+  await tick();
+  assert.match(view.lastFrame(), /reports\/report\.md/);
+  assert.match(view.lastFrame(), /已撤销/);
+  view.stdin.write('\u0007');
+  await tick();
 
   client.emit('message', {
     type: 'agent_event',
@@ -186,7 +1068,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   });
   await new Promise(resolve => setTimeout(resolve, 180));
   const runningFrame = view.lastFrame();
-  assert.ok(runningFrame.indexOf('本次运行') < runningFrame.indexOf('回答第一段。'));
+  assert.ok(runningFrame.indexOf('检查服务状态') < runningFrame.indexOf('回答第一段。'));
 
   for (const [stepId, title] of [['step-model', '模型分析完成'], ['step-tool', '网页读取完成']]) {
     client.emit('message', {
@@ -210,20 +1092,181 @@ test('Ink app renders a live task summary and collapses it after completion', as
     type: 'turn_completed',
     runId: 'run-live-summary',
     answer: '检查完成。',
+    changes: [{path: 'reports/report.md', added: 12, removed: 2}],
   });
   await tick();
   const completedFrame = view.lastFrame();
-  assert.match(completedFrame, /2\/2/);
+  assert.match(completedFrame, /1\/1/);
   assert.match(completedFrame, /已完成/);
-  assert.ok(completedFrame.indexOf('本次运行') < completedFrame.indexOf('回答第一段。'));
+  assert.match(completedFrame, /已完成并保存1个产物/);
+  assert.match(completedFrame, /本轮交付/);
+  assert.match(completedFrame, /1个文件已更改/);
+  assert.doesNotMatch(completedFrame, /本轮修改/);
+  assert.ok(completedFrame.indexOf('回答第一段。') < completedFrame.indexOf('本轮交付'));
+  assert.ok(completedFrame.indexOf('检查服务状态') < completedFrame.indexOf('回答第一段。'));
   assert.doesNotMatch(completedFrame, /模型分析完成/);
 
   view.stdin.write('\u000f');
   await tick();
   view.stdin.write('\u0014');
   await tick();
-  assert.match(view.lastFrame(), /模型分析完成/);
-  assert.match(view.lastFrame(), /网页读取完成/);
+  assert.doesNotMatch(view.lastFrame(), /模型分析完成/);
+  assert.match(view.lastFrame(), /已读取网页/);
+  view.unmount();
+});
+
+test('Ctrl+T turns the task summary into a navigable view and opens the selected tool', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查网页');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_started',
+      toolCallId: 'call-web-fetch',
+      toolName: 'web_fetch',
+      status: 'running',
+      arguments: {url: 'https://example.com'},
+    },
+  });
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      stepId: 'step-web-fetch',
+      toolCallId: 'call-web-fetch',
+      kind: 'tool',
+      name: 'web_fetch',
+      title: '正在读取 example.com',
+      status: 'running',
+    },
+  });
+  await tick();
+
+  view.stdin.write('\u0014');
+  await tick();
+  assert.match(view.lastFrame(), /任务步骤/);
+  assert.match(view.lastFrame(), /↑↓选择 · Enter查看 · Esc返回/);
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /工具详情/);
+  assert.match(view.lastFrame(), /web_fetch/);
+  assert.match(view.lastFrame(), /example\.com/);
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /任务步骤/);
+  view.stdin.write('\u001b');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /任务步骤\s+1\/1/);
+  view.unmount();
+});
+
+test('Ctrl+T exposes failed verification and opens its matching tool details', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('构建项目');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_started',
+      toolCallId: 'call-build',
+      toolName: 'run_sandbox_command',
+      status: 'running',
+      arguments: {command: 'npm run build'},
+    },
+  });
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      stepId: 'step-build',
+      toolCallId: 'call-build',
+      kind: 'sandbox',
+      name: 'run_sandbox_command',
+      title: '构建项目',
+      status: 'failed',
+      errorCode: 'build_failed',
+      verification: {
+        id: 'verification:call-build',
+        kind: 'build',
+        tool: 'npm_build',
+        status: 'failed',
+        exitCode: 2,
+        durationMs: 900,
+      },
+    },
+  });
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_result',
+      toolCallId: 'call-build',
+      toolName: 'run_sandbox_command',
+      status: 'failed',
+      errorCode: 'build_failed',
+      errorMessage: 'build failed',
+    },
+  });
+  await tick();
+
+  view.stdin.write('\u0014');
+  await tick();
+  assert.match(view.lastFrame(), /任务步骤/);
+  assert.match(view.lastFrame(), /构建 · 失败/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /工具详情/);
+  assert.match(view.lastFrame(), /run_sandbox_command/);
+  assert.match(view.lastFrame(), /build failed/);
+});
+
+test('Ink app preserves a failed run summary before partial output', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.16.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('执行一个会失败的任务');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      runId: 'run-failed-summary',
+      stepId: 'step-model',
+      kind: 'model',
+      name: 'model_completion',
+      title: '模型正在分析',
+      status: 'success',
+    },
+  });
+  client.emit('message', {type: 'agent_event', event: {type: 'text_delta', text: '部分输出。'}});
+  await new Promise(resolve => setTimeout(resolve, 180));
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'run-failed-summary',
+    message: '工具调用失败',
+  });
+  await tick();
+
+  view.stdin.write('\u000f');
+  await tick();
+  const frame = view.lastFrame();
+  assert.match(frame, /执行一个会失败的任务/);
+  assert.match(frame, /失败/);
+  assert.ok(frame.indexOf('执行一个会失败的任务') < frame.indexOf('部分输出。'));
+  assert.match(frame, /R重试本轮|F分析错误|C继续执行/);
   view.unmount();
 });
 
@@ -282,6 +1325,21 @@ test('context commands inspect usage and compact with optional instructions', as
   });
   await tick();
   assert.match(view.lastFrame(), /1200\/96000 tokens/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'context_usage_updated',
+      usedTokens: 78000,
+      maxTokens: 96000,
+      remainingTokens: 18000,
+      usagePercent: 81.2,
+      warningAtPercent: 75,
+      shouldWarn: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /上下文81%/);
 
   view.stdin.write('/compact 保留工作区边界');
   await tick();
@@ -342,11 +1400,53 @@ test('workspace commands and resume picker use the runtime as source of truth', 
     sessions: [{runId: 'run_restore', title: '恢复测试', status: 'failed'}],
   });
   await tick();
-  assert.match(view.lastFrame(), /恢复测试 · 失败，可继续/);
+  assert.match(view.lastFrame(), /恢复测试[\s\S]*失败，可继续/);
   view.stdin.write('\r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
   assert.equal(client.sent.at(-1).runId, 'run_restore');
+  view.unmount();
+});
+
+test('resume picker filters sessions, previews context and retries loading in place', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/resume');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).limit, 100);
+  assert.match(view.lastFrame(), /正在读取当前工作区的会话/);
+
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [
+      {runId: 'run_alpha', title: '修复登录', status: 'completed', updatedAt: Date.now() / 1000 - 120, answer: '登录流程已修复'},
+      {runId: 'run_beta', title: '检查部署', status: 'failed', updatedAt: Date.now() / 1000 - 7200, answer: '部署门禁失败'},
+    ],
+  });
+  await tick();
+  view.stdin.write('部署');
+  await tick();
+  assert.match(view.lastFrame(), /搜索：部署/);
+  assert.match(view.lastFrame(), /检查部署/);
+  assert.doesNotMatch(view.lastFrame(), /修复登录/);
+  assert.match(view.lastFrame(), /部署门禁失败/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  view.stdin.write('/resume');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'sessions_failed', message: '会话目录暂不可读'});
+  await tick();
+  assert.match(view.lastFrame(), /会话目录暂不可读/);
+  view.stdin.write('r');
+  await tick();
+  assert.equal(client.sent.at(-1).type, 'sessions');
   view.unmount();
 });
 
@@ -460,8 +1560,8 @@ test('failed tool details expose recovery actions that really retry or ask the a
       stderr: 'No such file',
     },
   });
-  client.emit('message', {type: 'turn_completed', answer: '读取失败'});
-  await tick();
+  client.emit('message', {type: 'turn_failed', runId: 'run-missing', message: '读取失败'});
+  await waitForFrame(view, /队列已暂停/);
   assert.match(view.lastFrame(), /Ctrl\+E查看错误与恢复操作/);
 
   view.stdin.write('\u0005');
@@ -470,8 +1570,8 @@ test('failed tool details expose recovery actions that really retry or ask the a
   assert.match(view.lastFrame(), /missing path/);
   assert.match(view.lastFrame(), /--password=\[已隐藏\]/);
   assert.doesNotMatch(view.lastFrame(), /hunter2|forged-title/);
-  assert.match(view.lastFrame(), /R重试本轮/);
-  assert.match(view.lastFrame(), /F让Agent分析错误并继续/);
+  assert.match(view.lastFrame(), /R重新运行本轮/);
+  assert.match(view.lastFrame(), /F分析错误并继续/);
 
   view.stdin.write('f');
   await tick();
@@ -544,4 +1644,80 @@ test('composer owns editing keys without leaking global shortcuts into text', as
   await tick();
   assert.equal(client.sent.at(-1).text, 'aXb');
   view.unmount();
+});
+
+test('composer undo restores edits, command completion and collapsed paste', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查日志');
+  view.stdin.write('\x15');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /❯ 检查日志/);
+  view.stdin.write('\x1a');
+  await tick();
+  assert.match(view.lastFrame(), /检查日志/);
+
+  view.stdin.write('\x03');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /❯ 检查日志/);
+  view.stdin.write('\x1a');
+  await tick();
+  assert.match(view.lastFrame(), /检查日志/);
+
+  view.stdin.write('\x15');
+  view.stdin.write('/he');
+  await tick();
+  view.stdin.write('\t');
+  await tick();
+  assert.match(view.lastFrame(), /❯ \/help/);
+  view.stdin.write('\x1a');
+  await tick();
+  assert.match(view.lastFrame(), /❯ \/he/);
+
+  view.stdin.write('\x15');
+  const pasted = '堆栈一\n堆栈二\n堆栈三';
+  view.stdin.write(`\x1b[200~${pasted}\x1b[201~`);
+  await tick();
+  assert.match(view.lastFrame(), /粘贴内容 #1 \+3行/);
+  view.stdin.write('\x1a');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /粘贴内容 #1 \+3行/);
+  view.unmount();
+});
+
+test('composer supports multiline prompts and line-aware cursor movement', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('abc');
+  view.stdin.write('\x1b[13;2u');
+  view.stdin.write('xy');
+  await tick();
+  assert.match(view.lastFrame(), /abc/);
+  assert.match(view.lastFrame(), /xy/);
+
+  view.stdin.write('\x1b[A');
+  view.stdin.write('X');
+  view.stdin.write('\x1b[F');
+  view.stdin.write('<');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.at(-1).text, 'abXc<\nxy');
+  view.unmount();
+});
+
+test('empty Ctrl+C requires confirmation before exiting', async () => {
+  const client = new ClosingClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('\x03');
+  await tick();
+  assert.match(view.lastFrame(), /再按一次Ctrl\+C退出/);
+  assert.equal(client.closed, 0);
+  view.stdin.write('\x03');
+  await tick();
+  assert.equal(client.closed, 1);
 });

@@ -24,6 +24,7 @@ from knowflow.services.task_planner import register_task_planner
 from knowflow.database import Database
 from knowflow.services.agent_run_store import AgentRunStore
 from knowflow.services.agent_tool_operations import AgentToolOperationStore
+from knowflow.services.agent_tooling import register_user_question_tool
 
 
 class FakeGateway:
@@ -77,6 +78,7 @@ def run_engine(
     model_event_callback=None,
     tool_operation_store=None,
     approval_decision=None,
+    resume_value=None,
     skill_snapshot=None,
     skill_restore=None,
     memory_recall=None,
@@ -96,6 +98,7 @@ def run_engine(
         model_event_callback=model_event_callback,
         tool_operation_store=tool_operation_store,
         approval_decision=approval_decision,
+        resume_value=resume_value,
         skill_snapshot=skill_snapshot,
         skill_restore=skill_restore,
         memory_recall=memory_recall,
@@ -339,7 +342,11 @@ def main() -> None:
         assert len(gateway.calls) == 2
         assert gateway.calls[-1]["config"] is config
         assert gateway.calls[-1]["tools"] is None
-        assert model_events == [{"type": "text_delta", "text": "hello"}]
+        assert model_events[0]["type"] == "context_usage_updated"
+        assert model_events[0]["maxTokens"] == 96000
+        assert model_events[0]["usedTokens"] > 0
+        assert model_events[0]["contextTrimmed"] is False
+        assert model_events[1:] == [{"type": "text_delta", "text": "hello"}]
         assert second_trace.snapshot()[0]["details"] == {
             "modelName": "gpt-test",
             "apiMode": "responses",
@@ -815,6 +822,70 @@ def main() -> None:
         assert blocked_result.interrupt["toolName"] == "dangerous_write"
         assert blocked_result.executions == []
         assert unsafe_calls == []
+
+        question_registry = ToolRegistry()
+        register_user_question_tool(question_registry)
+        question_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "ask_user_question",
+                        json.dumps(
+                            {
+                                "header": "选择环境",
+                                "question": "部署到哪个环境？",
+                                "options": [
+                                    {"label": "测试", "value": "staging"},
+                                    {"label": "生产", "value": "production"},
+                                ],
+                                "allow_custom": True,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        "call_question_1",
+                    )
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "Will deploy to staging.",
+                "tool_calls": [],
+            },
+        )
+        question_engine = LangGraphAgentEngine(
+            gateway=question_gateway,
+            checkpoint_db_path=root / "question.sqlite3",
+        )
+        question_pause = run_engine(
+            question_engine,
+            question_registry,
+            run_id="run_question",
+            messages=[{"role": "user", "content": "Deploy"}],
+        )
+        assert question_pause.paused is True
+        assert question_pause.interrupt["type"] == "user_question"
+        assert question_pause.interrupt["questionId"] == "call_question_1"
+        assert question_pause.interrupt["options"][0]["value"] == "staging"
+        question_result = run_engine(
+            question_engine,
+            question_registry,
+            run_id="run_question",
+            resume=True,
+            resume_value={
+                "questionId": "call_question_1",
+                "answer": "staging",
+                "selectedOptions": ["staging"],
+            },
+        )
+        assert question_result.answer == "Will deploy to staging."
+        question_execution = next(
+            execution
+            for execution in question_result.executions
+            if execution.tool_name == "ask_user_question"
+        )
+        assert question_execution.output["answer"] == "staging"
 
         shadow_calls: list[dict] = []
         shadow_registry = ToolRegistry()

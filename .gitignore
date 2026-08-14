@@ -41,6 +41,7 @@ data/workspaces/
 backend/data/skills/
 backend/data/skill-imports/
 data/test-uploads/
+data/test-workspace-changes/
 logs/
 *.log
 

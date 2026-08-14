@@ -18,6 +18,7 @@ TRACE_KINDS = {
     "agent",
     "system",
     "approval",
+    "question",
     "memory",
     "sandbox",
     "workspace",
@@ -75,6 +76,11 @@ def _scrub_trace_value(value: Any) -> Any:
     return value
 
 
+def sanitize_trace_payload(value: Any) -> Any:
+    """Return a JSON-safe shape with recursive secret redaction."""
+    return _scrub_trace_value(value)
+
+
 def sanitize_trace_value(
     value: Any,
     *,
@@ -87,7 +93,7 @@ def sanitize_trace_value(
             value = json.loads(value)
         except json.JSONDecodeError:
             pass
-    safe = _scrub_trace_value(value)
+    safe = sanitize_trace_payload(value)
     if isinstance(safe, (dict, list, tuple)):
         text_value = json.dumps(
             safe,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -20,9 +21,12 @@ from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: 
 class FakeBackend:
     model_label = "deepseek-chat"
 
-    def __init__(self) -> None:
+    def __init__(self, workspace_root: str = "/workspace") -> None:
         self.cancelled = False
         self.reset_count = 0
+        self.workspace_root = workspace_root
+        self.selected_model_id = 1
+        self.workspace_undo_args = None
 
     def command_catalog(self):
         return [
@@ -32,6 +36,34 @@ class FakeBackend:
                 "source": "tool",
             }
         ]
+
+    def model_catalog(self):
+        return [
+            {
+                "id": 1,
+                "name": "deepseek-chat",
+                "modelName": "deepseek-chat",
+                "provider": "deepseek",
+                "apiMode": "chat_completions",
+                "selected": self.selected_model_id == 1,
+                "switchable": True,
+            },
+            {
+                "id": 2,
+                "name": "GPT 5.5",
+                "modelName": "gpt-5.5",
+                "provider": "openai",
+                "apiMode": "responses",
+                "selected": self.selected_model_id == 2,
+                "switchable": True,
+            },
+        ]
+
+    def select_model(self, model_id):
+        self.selected_model_id = int(model_id)
+        selected = next(item for item in self.model_catalog() if item["id"] == self.selected_model_id)
+        self.model_label = selected["name"]
+        return selected
 
     def run(self, question, event_sink):
         event_sink({"type": "text_delta", "text": "回答"})
@@ -65,9 +97,9 @@ class FakeBackend:
 
     def workspace_status(self):
         return {
-            "projectRoot": "/workspace",
-            "cwd": "/workspace",
-            "allowedDirectories": ["/workspace"],
+            "projectRoot": self.workspace_root,
+            "cwd": self.workspace_root,
+            "allowedDirectories": [self.workspace_root],
             "protectedPatterns": [".git", ".env*"],
             "branch": "main",
             "dirty": False,
@@ -83,11 +115,25 @@ class FakeBackend:
     def workspace_change_directory(self, path):
         return {**self.workspace_status(), "cwd": path}
 
-    def workspace_undo(self):
-        return {"path": "file.txt", "workspace": self.workspace_status()}
+    def workspace_undo(self, operation_id=None, run_id=None):
+        self.workspace_undo_args = (operation_id, run_id)
+        return {
+            "operationId": operation_id,
+            "path": "file.txt",
+            "workspace": self.workspace_status(),
+        }
 
     def list_sessions(self, limit=20):
-        return [{"runId": "run_ink", "title": "测试会话", "status": "completed"}]
+        return [
+            {
+                "runId": "run_ink",
+                "title": "测试会话",
+                "status": "completed",
+                "updatedAt": 1_700_000_000,
+                "cwd": "/workspace",
+                "answer": "恢复后的回答预览",
+            }
+        ]
 
     def restore_session(self, run_id, event_sink):
         return AgentExecution(
@@ -161,6 +207,10 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 
 def main() -> None:
+    history_root = ROOT / ".tmp-check-cli-ink-history"
+    os.environ["XDG_DATA_HOME"] = str(history_root)
+    if history_root.exists():
+        shutil.rmtree(history_root)
     output = StringIO()
     backend = FakeBackend()
     bridge = InkRuntimeBridge(
@@ -194,13 +244,61 @@ def main() -> None:
     assert ready["agentEventSchemaVersion"] == AGENT_EVENT_SCHEMA_VERSION
     assert ready["workspace"]["branch"] == "main"
     assert ready["sessions"][0]["runId"] == "run_ink"
+    assert ready["history"] == ["你好"]
+    assert ready["models"][0]["selected"] is True
+
+    ready_bridge.handle({"type": "models", "action": "list"})
+    model_rows = wait_for(ready_output, "model_list")
+    assert len(model_rows[-1]["models"]) == 2
+    ready_bridge.handle({"type": "models", "action": "use", "modelId": 2})
+    model_rows = wait_for(ready_output, "model_changed")
+    assert model_rows[-1]["model"] == "GPT 5.5"
+    assert backend.selected_model_id == 2
+
+    isolated_output = StringIO()
+    isolated_bridge = InkRuntimeBridge(
+        FakeBackend("/other-workspace"),
+        input_stream=StringIO(""),
+        output_stream=isolated_output,
+    )
+    isolated_bridge.run()
+    isolated_ready = json.loads(isolated_output.getvalue().splitlines()[1])
+    assert isolated_ready["history"] == []
+
+    ready_bridge.handle({"type": "history", "action": "list"})
+    history_rows = wait_for(ready_output, "history_result")
+    assert history_rows[-1]["history"] == ["你好"]
+    ready_bridge.handle({"type": "history", "action": "clear"})
+    history_rows = wait_for(ready_output, "history_result")
+    assert history_rows[-1]["action"] == "clear"
+    assert history_rows[-1]["history"] == []
 
     ready_bridge.handle({"type": "workspace", "action": "status"})
     workspace_rows = wait_for(ready_output, "workspace_result")
     assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace"
+    ready_bridge.handle(
+        {
+            "type": "workspace",
+            "action": "undo",
+            "operationId": "edit_report",
+            "runId": "run_ink",
+        }
+    )
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert backend.workspace_undo_args == ("edit_report", "run_ink")
+    assert workspace_rows[-1]["result"]["operationId"] == "edit_report"
     ready_bridge.handle({"type": "sessions", "limit": 10})
     session_rows = wait_for(ready_output, "session_list")
     assert session_rows[-1]["sessions"][0]["title"] == "测试会话"
+    assert session_rows[-1]["sessions"][0]["answer"] == "恢复后的回答预览"
+    assert set(session_rows[-1]["sessions"][0]) == {
+        "runId",
+        "title",
+        "status",
+        "updatedAt",
+        "cwd",
+        "answer",
+    }
     ready_bridge.handle({"type": "context", "action": "status"})
     context_rows = wait_for(ready_output, "context_status")
     assert context_rows[-1]["status"]["usedTokens"] == 1200
@@ -282,12 +380,17 @@ def main() -> None:
     assert "flexShrink={1}" in app_source
     assert "if (!fullscreenEnabled)" in app_source
     assert "终端滚轮选择复制" in app_source
-    assert "R重试本轮  F让Agent分析错误并继续" in app_source
+    assert "actions.has('retry') ? 'R重新运行本轮'" in app_source
+    assert "actions.has('fix') ? 'F分析错误并继续'" in app_source
+    assert "Array.isArray(row.recoveryActions)" in app_source
+    assert "<QueuePreview items={queue}" in app_source
+    assert "/tasks remove <序号>" in app_source
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source
 
+    shutil.rmtree(history_root, ignore_errors=True)
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")
 
 

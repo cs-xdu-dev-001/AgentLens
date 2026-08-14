@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,9 @@ def main() -> None:
     require(messages, "AgentApprovalPrompt", "chat approval prompt")
     require(messages, "message.approvals", "message approval state")
     require(messages, "knowflow:react-message-approvals", "message approval listener")
+    require(messages, "activeAgentInteractionOwner", "single transcript interaction owner")
+    require(messages, 'data-interaction-active={ownsInteraction ? "true" : "false"}', "visible inactive requests")
+    require(messages, "interactionPending={Boolean(interactionOwner)}", "recovery interaction lock")
 
     prompt = "frontend/react/src/components/AgentApprovalPrompt.jsx"
     require(prompt, "approvalApi.resolve(", "approval submission")
@@ -54,13 +58,18 @@ def main() -> None:
     require(prompt, "knowflow:react-agent-approval-resume", "resume dispatch")
     require(prompt, "scheduleLocalStateCleanup", "bounded shared state cleanup")
     require(prompt, "pendingApprovalIds.delete", "successful request lock release")
+    require(prompt, "interactive = true", "single interactive approval owner")
+    require(prompt, "knowflow:react-agent-interaction-focus", "approval focus request")
+    require(prompt, "queuedCount", "pending interaction count")
     require(prompt, "error?.status === 404", "expired approval")
     require(prompt, "审批已失效", "expired copy")
     forbid(prompt, "dangerouslySetInnerHTML", "unsafe approval summary rendering")
 
-    strip = "frontend/react/src/components/AgentTraceStrip.jsx"
-    require(strip, 'step.status === "waiting"', "waiting step priority")
-    require(strip, 'step.kind === "approval"', "approval step priority")
+    run_presentation = "frontend/react/src/components/agentRunPresentation.js"
+    require(run_presentation, "pendingAgentInteractionOwners", "cross-message interaction queue")
+    require(run_presentation, "activeAgentInteractionOwner", "active interaction projection")
+    require(run_presentation, 'step.status === "waiting"', "waiting step priority")
+    require(run_presentation, 'step.kind === "approval"', "approval step priority")
 
     presentation = (
         "frontend/react/src/components/agentTracePresentation.js"
@@ -72,18 +81,61 @@ def main() -> None:
     require(presentation, "risk", "risk detail")
     require(presentation, "decision", "decision detail")
 
-    summary = "frontend/react/src/components/AgentRunSummary.jsx"
-    require(summary, 'step.kind === "tool" || step.kind === "mcp"', "MCP tool count")
-    require(summary, '"等待确认"', "waiting approval summary")
+    require(
+        run_presentation,
+        '["tool", "mcp", "sandbox", "workspace"].includes(item.kind)',
+        "MCP and workspace tool count",
+    )
+    require(run_presentation, '"等待确认"', "waiting approval summary")
 
     drawer = "frontend/react/src/components/ChatEvidenceDrawer.jsx"
     require(drawer, "AgentApprovalPrompt", "drawer approval prompt")
+    require(drawer, "interactive={false}", "read-only drawer approval mirror")
     require(drawer, "knowflow:react-agent-approvals-updated", "drawer approval event")
 
     styles = "frontend/styles.css"
     require(styles, ".agent-approval-prompt", "approval card style")
     require(styles, ".agent-trace-strip.waiting", "waiting strip style")
     require(styles, "prefers-reduced-motion", "reduced motion")
+
+    question_prompt = "frontend/react/src/components/AgentQuestionPrompt.jsx"
+    require(question_prompt, "interactive = true", "single interactive question owner")
+    require(question_prompt, "前往当前请求", "inactive question handoff")
+
+    script = r'''import {
+  activeAgentInteractionOwner,
+  pendingAgentInteractionOwners,
+} from "./frontend/react/src/components/agentRunPresentation.js";
+
+const messages = [
+  {
+    id: "older",
+    approvals: [{approvalId: "a1", status: "waiting", sequence: 2}],
+    questions: [],
+  },
+  {
+    id: "newer",
+    approvals: [],
+    questions: [{questionId: "q1", status: "waiting", sequence: 1}],
+  },
+];
+const owners = pendingAgentInteractionOwners(messages);
+if (owners.length !== 2) throw new Error("pending interactions were lost");
+const active = activeAgentInteractionOwner(messages);
+if (active.messageId !== "older" || active.interaction.value.approvalId !== "a1") {
+  throw new Error("cross-message arrival order changed");
+}
+if (active.queuedCount !== 1) throw new Error("queued interaction count is wrong");
+'''
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        raise AssertionError(result.stderr or result.stdout)
     print("MCP approval UI contract is complete")
 
 

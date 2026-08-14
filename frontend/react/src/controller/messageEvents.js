@@ -14,6 +14,8 @@ export function appendReactMessage(role, content, options = {}) {
     retryable: message.retryable,
     trace: Array.isArray(options.trace) ? options.trace : [],
     approvals: Array.isArray(options.approvals) ? options.approvals : [],
+    questions: Array.isArray(options.questions) ? options.questions : [],
+    toolCalls: Array.isArray(options.toolCalls) ? options.toolCalls : [],
     run: options.run || null,
     memoryActivity: options.memoryActivity || null,
   };
@@ -83,12 +85,55 @@ export function updateReactMessageApprovals(message, approvals) {
   return Boolean(detail.handled);
 }
 
+export function updateReactMessageQuestions(message, questions) {
+  const messageId = message?.messageId || "";
+  if (!messageId) return false;
+  const detail = {
+    messageId,
+    questions: Array.isArray(questions) ? questions : [],
+  };
+  window.dispatchEvent(
+    new CustomEvent("knowflow:react-message-questions", { detail }),
+  );
+  return Boolean(detail.handled);
+}
+
 export function updateReactMessageRun(message, run) {
   const messageId = message?.messageId || "";
   if (!messageId) return false;
   const detail = { messageId, run: run || null };
   window.dispatchEvent(
     new CustomEvent("knowflow:react-message-run", { detail }),
+  );
+  return Boolean(detail.handled);
+}
+
+export function publishReactAgentArtifactsUpdated({
+  messageId = "",
+  runId = "",
+  artifacts = [],
+} = {}) {
+  const detail = {
+    messageId: String(messageId || ""),
+    runId: String(runId || ""),
+    artifacts: Array.isArray(artifacts) ? artifacts : [],
+  };
+  window.dispatchEvent(new CustomEvent(
+    "knowflow:react-agent-artifacts-updated",
+    { detail },
+  ));
+  return Boolean(detail.handled);
+}
+
+export function updateReactMessageToolCalls(message, toolCalls) {
+  const messageId = message?.messageId || "";
+  if (!messageId) return false;
+  const detail = {
+    messageId,
+    toolCalls: Array.isArray(toolCalls) ? toolCalls : [],
+  };
+  window.dispatchEvent(
+    new CustomEvent("knowflow:react-message-tool-calls", { detail }),
   );
   return Boolean(detail.handled);
 }

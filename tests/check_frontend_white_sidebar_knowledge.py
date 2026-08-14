@@ -21,8 +21,13 @@ def forbid(source: str, needle: str, label: str) -> None:
 def main() -> None:
     sidebar = read("frontend/react/src/components/Sidebar.jsx")
     require(sidebar, 'className={"sidebar-search-row"}', "compact search row")
-    require(sidebar, 'className={"sidebar-refresh-button"}', "session refresh action")
-    require(sidebar, 'aria-label={"刷新会话"}', "refresh action label")
+    require(
+        sidebar,
+        'className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"}',
+        "session refresh action and loading state",
+    )
+    require(sidebar, 'aria-label={"刷新任务"}', "refresh action label")
+    require(sidebar, "onClick={loadSessions}", "refresh action behavior")
     forbid(sidebar, 'className={"sidebar-heading-row"}', "redundant history heading")
 
     for stylesheet in (

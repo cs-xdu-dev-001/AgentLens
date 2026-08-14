@@ -226,6 +226,39 @@ class WorkspaceContext:
     def _digest(payload: bytes | None) -> str | None:
         return hashlib.sha256(payload).hexdigest() if payload is not None else None
 
+    def _read_snapshot(
+        self,
+        snapshot_name: object,
+        *,
+        expected_hash: object = None,
+    ) -> bytes:
+        if self._snapshot_root is None or not snapshot_name:
+            raise WorkspaceRuntimeError(
+                "workspace_snapshot_unavailable",
+                "The change snapshot is unavailable.",
+            )
+        snapshot_root = self._snapshot_root.resolve(strict=False)
+        candidate = self._snapshot_root / str(snapshot_name)
+        snapshot = candidate.resolve(strict=False)
+        if candidate.is_symlink() or not self._inside(snapshot, snapshot_root):
+            raise WorkspaceRuntimeError(
+                "workspace_snapshot_denied",
+                "The change snapshot no longer resolves safely inside the state directory.",
+            )
+        try:
+            payload = snapshot.read_bytes()
+        except OSError as exc:
+            raise WorkspaceRuntimeError(
+                "workspace_snapshot_unavailable",
+                "The change snapshot is unavailable.",
+            ) from exc
+        if expected_hash is not None and self._digest(payload) != expected_hash:
+            raise WorkspaceRuntimeError(
+                "workspace_snapshot_conflict",
+                "The change snapshot no longer matches its recorded digest.",
+            )
+        return payload
+
     def _append_record(self, record: dict[str, Any]) -> None:
         if self._journal_path is None:
             return
@@ -322,13 +355,20 @@ class WorkspaceContext:
         files: list[dict[str, Any]] = []
         for key, record in latest.items():
             target = Path(key)
+            resolved = target.resolve(strict=False)
+            if target.is_symlink() or not self.contains(resolved):
+                raise WorkspaceRuntimeError(
+                    "workspace_diff_denied",
+                    "The changed path no longer resolves safely inside the workspace.",
+                )
             initial = first[key]
             before = b""
             snapshot_name = initial.get("beforeSnapshot")
-            if snapshot_name and self._snapshot_root is not None:
-                snapshot = self._snapshot_root / str(snapshot_name)
-                if snapshot.is_file():
-                    before = snapshot.read_bytes()
+            if snapshot_name:
+                before = self._read_snapshot(
+                    snapshot_name,
+                    expected_hash=initial.get("beforeHash"),
+                )
             after = target.read_bytes() if target.is_file() else b""
             try:
                 before_text = before.decode("utf-8").splitlines(keepends=True)
@@ -355,8 +395,17 @@ class WorkspaceContext:
             "patch": "\n".join(chunks)[:100_000],
         }
 
-    def undo_last(self) -> dict[str, Any]:
+    def undo(
+        self,
+        *,
+        operation_id: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
         records = self._active_records()
+        if run_id:
+            records = [item for item in records if item.get("runId") == run_id]
+        if operation_id:
+            records = [item for item in records if item.get("id") == operation_id]
         record = records[-1] if records else None
         if record is None:
             raise WorkspaceRuntimeError("workspace_undo_empty", "There is no file change to undo.")
@@ -376,13 +425,84 @@ class WorkspaceContext:
         snapshot_name = record.get("beforeSnapshot")
         if record.get("created"):
             target.unlink(missing_ok=True)
-        elif snapshot_name and self._snapshot_root is not None:
-            before = (self._snapshot_root / str(snapshot_name)).read_bytes()
+        elif snapshot_name:
+            before = self._read_snapshot(
+                snapshot_name,
+                expected_hash=record.get("beforeHash"),
+            )
             target.write_bytes(before)
         else:
             raise WorkspaceRuntimeError("workspace_undo_unavailable", "The snapshot is unavailable.")
         self._append_record({**record, "undone": True, "undoneAt": time.time()})
-        return {"path": record.get("displayPath"), "operationId": record.get("id")}
+        return {
+            "path": record.get("displayPath"),
+            "operation": record.get("operation"),
+            "operationId": record.get("id"),
+            "runId": record.get("runId"),
+            "reverted": True,
+        }
+
+    def undo_last(self) -> dict[str, Any]:
+        return self.undo()
+
+    def undo_file(
+        self,
+        *,
+        operation_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        records = self.changes(run_id)
+        selected = next(
+            (item for item in records if item.get("id") == operation_id),
+            None,
+        )
+        if selected is None:
+            raise WorkspaceRuntimeError(
+                "workspace_undo_empty",
+                "There is no matching file change to undo.",
+            )
+        target_path = str(selected.get("path") or "")
+        records = [item for item in records if item.get("path") == target_path]
+        first = records[0]
+        latest = records[-1]
+        target = Path(target_path)
+        resolved = target.resolve(strict=False)
+        if target.is_symlink() or not self.contains(resolved):
+            raise WorkspaceRuntimeError(
+                "workspace_undo_denied",
+                "The changed path no longer resolves safely inside the workspace.",
+            )
+        current = target.read_bytes() if target.is_file() else None
+        if self._digest(current) != latest.get("afterHash"):
+            raise WorkspaceRuntimeError(
+                "workspace_undo_conflict",
+                "The file changed after this operation; undo was not applied.",
+            )
+        snapshot_name = first.get("beforeSnapshot")
+        if first.get("created"):
+            target.unlink(missing_ok=True)
+        elif snapshot_name:
+            before = self._read_snapshot(
+                snapshot_name,
+                expected_hash=first.get("beforeHash"),
+            )
+            target.write_bytes(before)
+        else:
+            raise WorkspaceRuntimeError(
+                "workspace_undo_unavailable",
+                "The snapshot is unavailable.",
+            )
+        undone_at = time.time()
+        for record in records:
+            self._append_record({**record, "undone": True, "undoneAt": undone_at})
+        return {
+            "path": latest.get("displayPath"),
+            "operation": latest.get("operation"),
+            "operationId": latest.get("id"),
+            "operationIds": [item.get("id") for item in records],
+            "runId": run_id,
+            "reverted": True,
+        }
 
 
 class WorkspaceRuntime:
@@ -673,6 +793,7 @@ class WorkspaceRuntime:
         content: str,
         *,
         overwrite: bool,
+        _operation: str = "write",
     ) -> ToolHandlerResult:
         encoded = str(content).encode("utf-8")
         if len(encoded) > self.max_file_bytes:
@@ -711,7 +832,7 @@ class WorkspaceRuntime:
                 target,
                 before=before,
                 after=encoded,
-                operation="write",
+                operation=_operation,
             )
         diff = self.context.diff(path) if self.context is not None else {"files": []}
         file_summary = next((item for item in diff.get("files", []) if item.get("path") == path), None)
@@ -754,7 +875,38 @@ class WorkspaceRuntime:
                 "The requested text occurs more than once; provide more context or enable replace_all.",
             )
         updated = content.replace(old_text, new_text, -1 if replace_all else 1)
-        return self.write_text(path, updated, overwrite=True)
+        return self.write_text(
+            path,
+            updated,
+            overwrite=True,
+            _operation="edit",
+        )
+
+
+def tracked_workspace_runtime(
+    root: Path,
+    *,
+    user_id: int,
+    max_file_bytes: int = 1_000_000,
+    run_id: str | None = None,
+) -> WorkspaceRuntime:
+    """Create the durable per-user workspace used by Agent runs and change review."""
+    base = Path(root).expanduser().resolve()
+    namespace = hashlib.sha256(
+        f"workspace\0{int(user_id)}".encode("utf-8")
+    ).hexdigest()[:32]
+    context = WorkspaceContext(
+        base / namespace,
+        state_root=base / ".knowflow-state" / namespace,
+    )
+    if run_id:
+        context.begin_turn(run_id)
+    return WorkspaceRuntime(
+        base,
+        user_id=user_id,
+        max_file_bytes=max_file_bytes,
+        context=context,
+    )
 
 
 class SrtSandboxRunner:

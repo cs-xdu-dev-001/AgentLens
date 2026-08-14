@@ -10,7 +10,8 @@ FRONTEND_PATHS = [
 
 MOJIBAKE_TOKENS = ["鏂", "浼", "鍒", "鎼", "鐭", "妯", "瀵", "绠", "澶", "涓", "鍚", "杩", "榛", "瑙", "璇", "�"]
 MIXED_VISIBLE_COPY = [
-    "Workspace",
+    '"Workspace"',
+    "'Workspace'",
     'content: "Info"',
     "Model正在思考",
     "本地备用Model",

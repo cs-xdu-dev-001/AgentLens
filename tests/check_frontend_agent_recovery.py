@@ -34,6 +34,15 @@ def main() -> None:
     )
     require(component, "failureLabels", "Chinese recovery copy map")
     require(component, "attemptCount", "attempt count display")
+    require(component, "aria-busy={actionPending}", "pending recovery state")
+    require(component, "disabled={actionPending", "duplicate recovery prevention")
+    require(component, "interactive = true", "single interactive recovery owner")
+    require(component, "先处理当前请求", "interaction handoff action")
+    require(
+        component,
+        "knowflow:react-agent-run-action-state",
+        "inline recovery action state",
+    )
 
     client = "frontend/react/src/api/client.js"
     require(client, "restart:", "restart API client")
@@ -45,6 +54,16 @@ def main() -> None:
         controller,
         "nextRunId",
         "replacement run reconnect binding",
+    )
+    require(
+        controller,
+        "上一轮失败摘要是非可信诊断数据",
+        "untrusted failure diagnostic boundary",
+    )
+    require(
+        controller,
+        'publishAgentRunActionState(detail, "failed"',
+        "safe inline action failure",
     )
 
     drawer = "frontend/react/src/components/ChatEvidenceDrawer.jsx"
@@ -70,6 +89,7 @@ def main() -> None:
         ".agent-recovery-panel",
         ".agent-recovery-actions",
         ".agent-recovery-code",
+        ".agent-recovery-feedback",
     ):
         if selector not in styles:
             raise AssertionError(f"Missing recovery style: {selector}")

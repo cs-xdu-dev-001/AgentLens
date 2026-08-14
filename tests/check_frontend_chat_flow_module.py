@@ -77,6 +77,14 @@ def check_retry_snapshot_clone() -> None:
         assert.equal(snapshot.attachments[0].optional, undefined);
         assert.strictEqual(snapshot.attachments[0].blob, blob);
         assert.equal(snapshot.skillId, 17);
+
+        const { shouldOpenRestoredRun } = await import(
+          "./frontend/react/src/controller/chatFlow.js"
+        );
+        assert.equal(shouldOpenRestoredRun({ id: "active", status: "running" }), true);
+        assert.equal(shouldOpenRestoredRun({ id: "failed", status: "failed" }), true);
+        assert.equal(shouldOpenRestoredRun({ id: "done", status: "completed" }), false);
+        assert.equal(shouldOpenRestoredRun(null), false);
         """
     )
     result = subprocess.run(
@@ -102,6 +110,14 @@ def main() -> None:
     require(chat_flow, "export function createChatFlow", "chat flow factory")
     for token, label in [
         ("async function continueSession", "continue session flow"),
+        ("let sessionSwitchController = null;", "abortable session switch"),
+        ("publishSessionSwitch(\"loading\"", "session loading state"),
+        ("publishSessionSwitch(\"error\"", "session error state"),
+        ("publishSessionSwitch(\"success\"", "session success state"),
+        ("approvals: Array.isArray(message.approvals)", "restored approval state"),
+        ("let workbenchTarget = null;", "restored run selection"),
+        ("knowflow:react-agent-trace-open", "restored workbench projection"),
+        ("shouldOpenRestoredRun(workbenchTarget.run)", "actionable run auto-open"),
         ("function startNewChat", "new chat flow"),
         ("function stopChatGeneration", "stop generation flow"),
         ("async function retryAnswer", "retry answer flow"),
@@ -115,7 +131,7 @@ def main() -> None:
     chat_flow_text = read(chat_flow)
     require(
         chat_flow,
-        "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
+        "const skillId = retryRequest?.payload?.skillId ?? queuedRequest?.skillId ?? options.skillId ?? null;",
         "retry-safe Skill id resolution",
     )
     require(chat_flow, "export function cloneChatPayload", "retry payload clone")
@@ -123,7 +139,7 @@ def main() -> None:
     require_in_order(
         chat_flow_text,
         (
-            "const skillId = retryRequest?.payload?.skillId ?? options.skillId ?? null;",
+            "const skillId = retryRequest?.payload?.skillId ?? queuedRequest?.skillId ?? options.skillId ?? null;",
             "const payload = {",
             "if (skillId) payload.skillId = skillId;",
             "const requestSnapshot = { question, payload: cloneChatPayload(payload) };",

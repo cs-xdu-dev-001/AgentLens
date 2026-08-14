@@ -16,7 +16,12 @@ export const state = {
   activeRunReconnectController: null,
   activeRunId: null,
   activeRunMessageId: null,
+  autoOpenedRunId: null,
   lastChatRequest: null,
+  chatQueue: [],
+  chatQueuePaused: false,
+  chatQueueBlockReason: "",
+  chatQueueSequence: 0,
 };
 
 export const messageRetryRequests = new Map();

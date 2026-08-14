@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
@@ -8,9 +8,16 @@ import {
   publishMemoryActivity,
 } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
+import { AgentQuestionPrompt } from "./AgentQuestionPrompt.jsx";
+import { AgentDeliveryCard } from "./AgentDeliveryCard.jsx";
+import { AgentEvidenceStrip } from "./AgentEvidenceStrip.jsx";
 import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 import { AgentThinkingOrb } from "./AgentThinkingOrb.jsx";
+import {
+  activeAgentInteractionOwner,
+  pendingAgentInteractions,
+} from "./agentRunPresentation.js";
 
 const actionEvents = {
   copy: "knowflow:react-message-copy",
@@ -144,7 +151,9 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
       }),
     );
     window.dispatchEvent(
-      new CustomEvent("knowflow:react-drawer-open"),
+      new CustomEvent("knowflow:react-drawer-open", {
+        detail: { focus: true },
+      }),
     );
   };
   const retry = async () => {
@@ -187,7 +196,36 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
   );
 }
 
-function MessageBubble({ message }) {
+const AgentTurnRunBlock = memo(function AgentTurnRunBlock({
+  approvals,
+  interactionPending,
+  messageId,
+  run,
+  toolCalls,
+  trace,
+}) {
+  return (
+    <div className={"agent-turn-run-block"}>
+      <AgentTraceStrip
+        interactionPending={interactionPending}
+        messageId={messageId}
+        trace={trace}
+        approvals={approvals}
+        toolCalls={toolCalls}
+        run={run}
+      />
+    </div>
+  );
+});
+
+function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 }) {
+  const pendingInteractions = pendingAgentInteractions(message);
+  const activeInteraction = pendingInteractions[0] || null;
+  const ownsInteraction = Boolean(
+    activeInteraction && interactionOwner?.messageId === String(message.id),
+  );
+  const resolvedApprovals = (Array.isArray(message.approvals) ? message.approvals : [])
+    .filter((approval) => approval?.status !== "waiting" || approval?.decision);
   const bubbleClassName = [
     "message",
     message.role,
@@ -207,31 +245,61 @@ function MessageBubble({ message }) {
   if (message.role === "assistant") {
     return (
       <div {...props}>
-        <AgentTraceStrip
+        <AgentTurnRunBlock
+          interactionPending={Boolean(interactionOwner)}
           messageId={message.id}
           trace={message.trace}
           approvals={message.approvals}
+          toolCalls={message.toolCalls}
           run={message.run}
         />
-        {message.run?.status === "waiting_start" ? (
+        <div className={"agent-turn-answer"}>
+          {message.run?.status === "waiting_start" ? (
           <AgentTaskPlan
             compact
             messageId={message.id}
             run={message.run}
             trace={message.trace}
           />
-        ) : null}
-        {message.approvals?.length ? (
+          ) : null}
+          {resolvedApprovals.length ? (
           <div className={"agent-approval-list"}>
-            {message.approvals.map((approval) => (
+            {resolvedApprovals.map((approval) => (
               <AgentApprovalPrompt
                 approval={approval}
                 key={approval.approvalId}
               />
             ))}
           </div>
-        ) : null}
-        {message.thinking ? (
+          ) : null}
+          {activeInteraction ? (
+            <div
+              className="agent-interaction-owner"
+              aria-current={ownsInteraction ? "true" : undefined}
+              data-interaction-active={ownsInteraction ? "true" : "false"}
+              data-interaction-kind={activeInteraction.kind}
+            >
+              {activeInteraction.kind === "approval" ? (
+                <AgentApprovalPrompt
+                  approval={activeInteraction.value}
+                  autoFocus={ownsInteraction}
+                  compact={!ownsInteraction}
+                  interactive={ownsInteraction}
+                  key={activeInteraction.value.approvalId}
+                  queuedCount={ownsInteraction ? pendingInteractionCount - 1 : 0}
+                />
+              ) : (
+                <AgentQuestionPrompt
+                  autoFocus={ownsInteraction}
+                  interactive={ownsInteraction}
+                  question={activeInteraction.value}
+                  key={activeInteraction.value.questionId}
+                  queuedCount={ownsInteraction ? pendingInteractionCount - 1 : 0}
+                />
+              )}
+            </div>
+          ) : null}
+          {message.thinking ? (
           <AgentThinkingOrb trace={message.trace} />
         ) : (
           <>
@@ -241,12 +309,25 @@ function MessageBubble({ message }) {
                 __html: renderMarkdown(redactEmailAddresses(message.rawContent)),
               }}
             />
+            <AgentDeliveryCard
+              messageId={message.id}
+              run={message.run}
+              trace={message.trace}
+              approvals={message.approvals}
+            />
+            <AgentEvidenceStrip
+              messageId={message.id}
+              run={message.run}
+              trace={message.trace}
+              approvals={message.approvals}
+            />
             <MemoryActivityStatus
               initialActivity={message.memoryActivity}
               messageId={message.id}
             />
           </>
-        )}
+          )}
+        </div>
       </div>
     );
   }
@@ -258,14 +339,18 @@ function normalizeRawContent(value) {
   return String(value ?? "");
 }
 
-function MessageRow({ message }) {
+function MessageRow({ interactionOwner, message, pendingInteractionCount }) {
   const rowClassName = ["message-row", message.role, message.thinking ? "thinking-row" : ""]
     .filter(Boolean)
     .join(" ");
 
   return (
     <div className={rowClassName}>
-      <MessageBubble message={message} />
+      <MessageBubble
+        interactionOwner={interactionOwner}
+        message={message}
+        pendingInteractionCount={pendingInteractionCount}
+      />
       {message.role === "assistant" && !message.thinking && !message.streaming ? (
         <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
           <button type={"button"} data-message-action={"copy"} aria-label={"复制答案"} title={"复制答案"}>
@@ -299,6 +384,14 @@ export function ChatMessages() {
   const nextMessageIdRef = useRef(1);
   const [messages, setMessages] = useState([]);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [sessionSwitch, setSessionSwitch] = useState(null);
+  const interactionOwner = useMemo(
+    () => activeAgentInteractionOwner(messages),
+    [messages],
+  );
+  const pendingInteractionCount = interactionOwner
+    ? interactionOwner.queuedCount + 1
+    : 0;
   const findBubble = (messageId) =>
     messagesRef.current?.querySelector('[data-react-message-id="' + messageId + '"]') || null;
   const scrollToBottom = () => {
@@ -320,6 +413,8 @@ export function ChatMessages() {
       approvals: Array.isArray(payload.approvals)
         ? payload.approvals
         : [],
+      questions: Array.isArray(payload.questions) ? payload.questions : [],
+      toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : [],
       run: payload.run || null,
       memoryActivity: payload.memoryActivity || null,
     };
@@ -461,6 +556,18 @@ export function ChatMessages() {
       );
       detail.handled = result.handled;
     };
+    const handleQuestions = (event) => {
+      const detail = event.detail || {};
+      if (!detail.messageId) return;
+      const result = updateMessage(
+        detail.messageId,
+        (message) => ({
+          ...message,
+          questions: Array.isArray(detail.questions) ? detail.questions : [],
+        }),
+      );
+      detail.handled = result.handled;
+    };
     const handleRun = (event) => {
       const detail = event.detail || {};
       if (!detail.messageId) return;
@@ -469,6 +576,43 @@ export function ChatMessages() {
         (message) => ({
           ...message,
           run: detail.run || null,
+        }),
+      );
+      detail.handled = result.handled;
+    };
+    const handleArtifacts = (event) => {
+      const detail = event.detail || {};
+      const nextArtifacts = Array.isArray(detail.artifacts) ? detail.artifacts : [];
+      if (detail.messageId) {
+        const result = updateMessage(detail.messageId, (message) => ({
+          ...message,
+          run: message.run ? { ...message.run, artifacts: nextArtifacts } : message.run,
+        }));
+        detail.handled = result.handled;
+        return;
+      }
+      if (!detail.runId) return;
+      let didUpdate = false;
+      flushSync(() => {
+        setMessages((currentMessages) => currentMessages.map((message) => {
+          const runId = String(message.run?.id || message.run?.runId || "");
+          if (runId !== String(detail.runId)) return message;
+          didUpdate = true;
+          return { ...message, run: { ...message.run, artifacts: nextArtifacts } };
+        }));
+      });
+      detail.handled = didUpdate;
+    };
+    const handleToolCalls = (event) => {
+      const detail = event.detail || {};
+      if (!detail.messageId) return;
+      const result = updateMessage(
+        detail.messageId,
+        (message) => ({
+          ...message,
+          toolCalls: Array.isArray(detail.toolCalls)
+            ? detail.toolCalls
+            : [],
         }),
       );
       detail.handled = result.handled;
@@ -496,7 +640,10 @@ export function ChatMessages() {
     window.addEventListener("knowflow:react-message-thinking", handleThinking);
     window.addEventListener("knowflow:react-message-trace", handleTrace);
     window.addEventListener("knowflow:react-message-approvals", handleApprovals);
+    window.addEventListener("knowflow:react-message-questions", handleQuestions);
     window.addEventListener("knowflow:react-message-run", handleRun);
+    window.addEventListener("knowflow:react-agent-artifacts-updated", handleArtifacts);
+    window.addEventListener("knowflow:react-message-tool-calls", handleToolCalls);
     window.addEventListener(
       "knowflow:react-message-memory-activity",
       handleMemoryActivity,
@@ -508,7 +655,10 @@ export function ChatMessages() {
       window.removeEventListener("knowflow:react-message-thinking", handleThinking);
       window.removeEventListener("knowflow:react-message-trace", handleTrace);
       window.removeEventListener("knowflow:react-message-approvals", handleApprovals);
+      window.removeEventListener("knowflow:react-message-questions", handleQuestions);
       window.removeEventListener("knowflow:react-message-run", handleRun);
+      window.removeEventListener("knowflow:react-agent-artifacts-updated", handleArtifacts);
+      window.removeEventListener("knowflow:react-message-tool-calls", handleToolCalls);
       window.removeEventListener(
         "knowflow:react-message-memory-activity",
         handleMemoryActivity,
@@ -516,15 +666,68 @@ export function ChatMessages() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleSessionSwitchState = (event) => {
+      const detail = event.detail || {};
+      if (detail.status === "success") {
+        setSessionSwitch(null);
+        return;
+      }
+      setSessionSwitch({
+        status: detail.status === "error" ? "error" : "loading",
+        sessionId: detail.sessionId || "",
+        title: detail.title || "任务",
+        chatModelConfigId: detail.chatModelConfigId ?? null,
+      });
+    };
+    window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
+    return () => window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
+  }, []);
+
+  const retrySessionSwitch = () => {
+    if (!sessionSwitch?.sessionId) return;
+    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+      detail: sessionSwitch,
+    }));
+  };
+
   return (
-    <div className={"messages"} id={"chat-messages"} ref={messagesRef}>
+    <div
+      className={`messages${sessionSwitch?.status === "loading" ? " session-switching" : ""}`}
+      id={"chat-messages"}
+      ref={messagesRef}
+      aria-busy={sessionSwitch?.status === "loading"}
+    >
+      {sessionSwitch ? (
+        <div
+          className={`session-switch-state ${sessionSwitch.status}`}
+          role={sessionSwitch.status === "error" ? "alert" : "status"}
+        >
+          {sessionSwitch.status === "loading" ? (
+            <AgentThinkingOrb
+              state={"connecting"}
+              label={`正在打开「${sessionSwitch.title}」`}
+            />
+          ) : (
+            <>
+              <span>{`无法打开「${sessionSwitch.title}」`}</span>
+              <button type={"button"} onClick={retrySessionSwitch}>{"重试"}</button>
+            </>
+          )}
+        </div>
+      ) : null}
       {showWelcome ? (
         <div className={"welcome-card"}>
           <h2>{"有什么可以帮你？"}</h2>
         </div>
       ) : null}
       {messages.map((message) => (
-        <MessageRow key={message.id} message={message} />
+        <MessageRow
+          interactionOwner={interactionOwner}
+          key={message.id}
+          message={message}
+          pendingInteractionCount={pendingInteractionCount}
+        />
       ))}
     </div>
   );

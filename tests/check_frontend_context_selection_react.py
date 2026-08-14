@@ -40,7 +40,7 @@ def main() -> None:
         ("state.selectedChatModelConfigId = value", "chat model event updates state"),
         ("state.selectedChatKnowledgeBaseId = value", "chat knowledge event updates state"),
         ("state.selectedDocumentKnowledgeBaseId", "document knowledge state used for refresh"),
-        ("knowledgeBaseId = retryRequest?.payload?.knowledgeBaseId ??", "chat payload still supports retry snapshot"),
+        ("const knowledgeBaseId = retryRequest?.payload?.knowledgeBaseId", "chat payload still supports retry snapshot"),
         ("state.selectedChatKnowledgeBaseId ? Number(state.selectedChatKnowledgeBaseId) : null", "chat payload reads React-owned kb state"),
         ("state.selectedChatModelConfigId ? Number(state.selectedChatModelConfigId) : null", "chat payload reads React-owned model state"),
     ]:

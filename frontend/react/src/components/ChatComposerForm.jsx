@@ -5,6 +5,14 @@ import { SkillPicker } from "./SkillPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
+const queuePriorityLabels = Object.freeze({ now: "立即", next: "接下来", later: "稍后" });
+const queueBlockLabels = Object.freeze({
+  approval: "等待权限确认",
+  question: "等待你的回答",
+  run: "等待当前任务继续",
+  failed: "发送失败，队列已暂停",
+  cancelled: "已停止，待发送已暂停",
+});
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
   const wanted = valueOf(currentValue);
@@ -26,6 +34,10 @@ export function ChatComposerForm() {
   const [question, setQuestion] = useState("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [sending, setSending] = useState(false);
+  const [queuedChats, setQueuedChats] = useState([]);
+  const [queuePaused, setQueuePaused] = useState(false);
+  const [queueBlockReason, setQueueBlockReason] = useState("");
+  const [switchingSession, setSwitchingSession] = useState(false);
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
   const pickerOpenRef = useRef(false);
@@ -70,11 +82,27 @@ export function ChatComposerForm() {
   }, []);
 
   useEffect(() => {
+    const handleComposerFocus = () => {
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    };
+    window.addEventListener("knowflow:react-composer-focus", handleComposerFocus);
+    return () => window.removeEventListener("knowflow:react-composer-focus", handleComposerFocus);
+  }, []);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       requestGenerationRef.current += 1;
     };
+  }, []);
+
+  useEffect(() => {
+    const handleSessionSwitchState = (event) => {
+      setSwitchingSession(event.detail?.status === "loading");
+    };
+    window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
+    return () => window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
   }, []);
 
   useEffect(() => {
@@ -153,6 +181,16 @@ export function ChatComposerForm() {
     return () => window.removeEventListener("knowflow:react-sending-updated", handleSendingUpdated);
   }, []);
 
+  useEffect(() => {
+    const handleQueueUpdated = (event) => {
+      setQueuedChats(Array.isArray(event.detail?.items) ? event.detail.items : []);
+      setQueuePaused(Boolean(event.detail?.paused));
+      setQueueBlockReason(String(event.detail?.blockedReason || ""));
+    };
+    window.addEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
+    return () => window.removeEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
+  }, []);
+
   const handleComposerMenuToggle = (event) => {
     event.stopPropagation();
     setMenuOpen((current) => !current);
@@ -172,11 +210,23 @@ export function ChatComposerForm() {
 
   const handleChatSubmit = (event) => {
     event.preventDefault();
+    if (switchingSession) return;
     const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
       detail: { question: question.trim() },
     });
     submitEvent.detail.skillId = selectedSkill?.id ?? null;
     window.dispatchEvent(submitEvent);
+  };
+
+  const handleStopClick = (event) => {
+    event?.preventDefault();
+    window.dispatchEvent(new CustomEvent("knowflow:react-chat-stop"));
+  };
+
+  const handleQueueAction = (action, requestId = null, priority = null) => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-chat-queue-action", {
+      detail: { action, requestId, priority },
+    }));
   };
 
   const updateSkillPicker = (value, cursor) => {
@@ -320,6 +370,14 @@ export function ChatComposerForm() {
     pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
       ? `skill-option-${filteredSkills[activeIndex].id}`
       : undefined;
+  const queueHeading = queuePaused
+    ? queueBlockLabels[queueBlockReason] || "待发送已暂停"
+    : `接下来 ${queuedChats.length}`;
+  const canResumeQueue = queuePaused
+    && !["approval", "question", "run"].includes(queueBlockReason);
+  const queueInteractionBlocked = ["approval", "question", "run"].includes(
+    queueBlockReason,
+  );
 
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
@@ -332,6 +390,55 @@ export function ChatComposerForm() {
           onRetry={loadAvailableSkills}
           onManage={handleManageSkills}
         />
+      ) : null}
+      {queuedChats.length ? (
+        <div className={"composer-queue"} aria-live={"polite"}>
+          <div className={"composer-queue-heading"}>
+            <strong>{queueHeading}</strong>
+            <span>
+              {canResumeQueue ? (
+                <button type={"button"} onClick={() => handleQueueAction("resume")}>{"继续发送"}</button>
+              ) : null}
+              <button type={"button"} onClick={() => handleQueueAction("clear")}>{"清空"}</button>
+            </span>
+          </div>
+          <div className={"composer-queue-list"} role={"list"} aria-label={"待发送任务"}>
+          {queuedChats.slice(0, 3).map((item, index) => {
+            const priority = Object.prototype.hasOwnProperty.call(queuePriorityLabels, item.priority)
+              ? item.priority
+              : "next";
+            return (
+            <div className={"composer-queue-row"} key={item.id} role={"listitem"}>
+              <span aria-hidden={"true"}>{index + 1}</span>
+              <select
+                className={`composer-queue-priority priority-${priority}`}
+                aria-label={`设置任务优先级：${item.question}`}
+                title={priority === "now"
+                  ? queueInteractionBlocked
+                    ? "完成当前确认后优先执行"
+                    : "立即任务会停止当前运行并优先执行"
+                  : "设置待发送顺序"}
+                value={priority}
+                onChange={(event) => handleQueueAction("priority", item.id, event.target.value)}
+              >
+                <option value={"now"}>{queuePriorityLabels.now}</option>
+                <option value={"next"}>{queuePriorityLabels.next}</option>
+                <option value={"later"}>{queuePriorityLabels.later}</option>
+              </select>
+              <p>{item.question}</p>
+              <button
+                type={"button"}
+                aria-label={`移除待发送任务：${item.question}`}
+                onClick={() => handleQueueAction("remove", item.id)}
+              >
+                {"×"}
+              </button>
+            </div>
+            );
+          })}
+          </div>
+          {queuedChats.length > 3 ? <div className={"composer-queue-more"}>{`另有${queuedChats.length - 3}条`}</div> : null}
+        </div>
       ) : null}
       <div className={"attachment-tray"} id={"attachment-tray"}>
         {attachments.map((attachment) => {
@@ -365,7 +472,7 @@ export function ChatComposerForm() {
         })}
       </div>
       <div className={"composer-shell"}>
-        <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending}>
+        <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
             <path d={"M12 5v14M5 12h14"} />
           </svg>
@@ -426,9 +533,9 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={"有问题尽管问。输入 / 选择Skill"}
+            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择Skill"}
             value={question}
-            disabled={sending}
+            disabled={switchingSession}
             aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}
             aria-expanded={pickerOpen}
             aria-haspopup={"listbox"}
@@ -438,9 +545,17 @@ export function ChatComposerForm() {
             onPaste={handleChatPaste}
             onKeyDown={handleChatKeyDown}
           />
-          <ComposerModelPicker disabled={sending} inputRef={textareaRef} />
+          <ComposerModelPicker disabled={sending || switchingSession} inputRef={textareaRef} />
         </div>
-        <button className={"composer-send-button"} id={"chat-submit-btn"} type={"submit"} aria-label={sending ? "停止生成" : "发送消息"} title={sending ? "停止生成" : "发送消息"}>
+        <button
+          className={"composer-send-button"}
+          id={"chat-submit-btn"}
+          type={"submit"}
+          disabled={switchingSession}
+          aria-label={sending ? "停止生成" : "发送消息"}
+          title={sending ? "停止生成" : "发送消息"}
+          onClick={sending ? handleStopClick : undefined}
+        >
           {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
         </button>
       </div>

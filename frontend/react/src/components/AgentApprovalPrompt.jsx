@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { approvalApi } from "../api/client.js";
 
 const pendingApprovalIds = new Set();
@@ -60,11 +60,15 @@ function summaryText(value) {
 
 export function AgentApprovalPrompt({
   approval,
+  autoFocus = false,
   compact = false,
+  interactive = true,
+  queuedCount = 0,
 }) {
   const [busy, setBusy] = useState(false);
   const [localDecision, setLocalDecision] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const rootRef = useRef(null);
 
   useEffect(() => {
     const approvalId = approval?.approvalId;
@@ -98,11 +102,9 @@ export function AgentApprovalPrompt({
       );
   }, [approval?.approvalId, approval?.decision, approval?.status]);
 
-  if (!approval?.approvalId) return null;
-
-  const decision = approval.decision || localDecision;
-  const pending = approval.status === "waiting" && !decision;
-  const risk = riskLabels[approval.risk] || "需确认操作";
+  const decision = approval?.decision || localDecision;
+  const pending = approval?.status === "waiting" && !decision;
+  const risk = riskLabels[approval?.risk] || "需确认操作";
 
   const handleDecision = async (nextDecision) => {
     if (
@@ -170,6 +172,31 @@ export function AgentApprovalPrompt({
     return () => window.clearTimeout(timer);
   }, [approval?.approvalId, approval?.expiresAt, pending, busy]);
 
+  useEffect(() => {
+    if (!pending || !interactive) return undefined;
+    const focusPrompt = () => {
+      rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      rootRef.current
+        ?.querySelector("button:not(:disabled)")
+        ?.focus({ preventScroll: true });
+    };
+    const handleFocusRequest = () => focusPrompt();
+    window.addEventListener("knowflow:react-agent-interaction-focus", handleFocusRequest);
+    if (autoFocus) {
+      const frame = window.requestAnimationFrame(focusPrompt);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.removeEventListener("knowflow:react-agent-interaction-focus", handleFocusRequest);
+      };
+    }
+    return () => window.removeEventListener(
+      "knowflow:react-agent-interaction-focus",
+      handleFocusRequest,
+    );
+  }, [approval?.approvalId, autoFocus, interactive, pending]);
+
+  if (!approval?.approvalId) return null;
+
   const resolvedLabel =
     localDecision === "expired"
       ? "审批已失效"
@@ -184,6 +211,8 @@ export function AgentApprovalPrompt({
         pending ? "waiting" : "resolved",
       ].filter(Boolean).join(" ")}
       aria-label={`${approval.toolName || "工具"}操作确认`}
+      aria-busy={busy}
+      ref={rootRef}
     >
       <div className={"agent-approval-heading"}>
         <span className={"agent-approval-icon"} aria-hidden={"true"}>
@@ -197,6 +226,7 @@ export function AgentApprovalPrompt({
             {approval.toolName || "未知工具"}
             {" · "}
             {risk}
+            {queuedCount ? ` · 另有${queuedCount}项待处理` : ""}
           </span>
         </div>
       </div>
@@ -207,7 +237,7 @@ export function AgentApprovalPrompt({
         </pre>
       ) : null}
 
-      {pending ? (
+      {pending && interactive ? (
         <div className={"agent-approval-actions"}>
           <button
             className={"primary"}
@@ -227,8 +257,20 @@ export function AgentApprovalPrompt({
         </div>
       ) : null}
 
+      {pending && !interactive ? (
+        <button
+          className="agent-approval-jump"
+          type="button"
+          onClick={() => window.dispatchEvent(
+            new CustomEvent("knowflow:react-agent-interaction-focus"),
+          )}
+        >
+          前往对话处理请求
+        </button>
+      ) : null}
+
       {errorMessage ? (
-        <div className={"agent-approval-error"} role={"status"}>
+        <div className={"agent-approval-error"} role={"alert"}>
           {errorMessage}
         </div>
       ) : null}

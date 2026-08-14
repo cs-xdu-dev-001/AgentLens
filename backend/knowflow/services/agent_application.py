@@ -169,7 +169,10 @@ class AgentApplicationService:
             if event.get("type") == "answer"
         )
         result = {
-            "paused": snapshot.get("status") == "waiting_approval",
+            "paused": snapshot.get("status") in {
+                "waiting_approval",
+                "waiting_input",
+            },
             "runId": run_id,
             "sessionId": snapshot.get("sessionId"),
             "messageId": snapshot.get("assistantMessageId"),

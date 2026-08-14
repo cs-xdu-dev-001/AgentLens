@@ -19,17 +19,19 @@ from .agent_loop import (
     ToolExecution,
     ToolRegistry,
 )
+from .agent_tooling import ASK_USER_QUESTION_TOOL
 from .langgraph_checkpoint import (
     LangGraphCheckpointError,
     LangGraphCheckpointStore,
 )
-from .agent_trace import sanitize_trace_value
+from .agent_trace import sanitize_trace_payload, sanitize_trace_value
 from .memory import append_long_term_memory_context
 from .model_context_window import prepare_model_context
 
 
 LANGGRAPH_STATE_SCHEMA_VERSION = 2
 SUPPORTED_LANGGRAPH_STATE_SCHEMA_VERSIONS = frozenset({1, 2})
+CONTEXT_WARNING_RATIO = 0.75
 
 
 class LangGraphState(TypedDict):
@@ -343,6 +345,32 @@ class LangGraphAgentEngine:
             state["messages"],
             max_tokens=context.max_context_tokens,
         )
+        if context.model_event_callback is not None:
+            usage_ratio = (
+                model_context.sent_tokens / context.max_context_tokens
+            )
+            context.model_event_callback(
+                {
+                    "type": "context_usage_updated",
+                    "usedTokens": model_context.sent_tokens,
+                    "originalTokens": model_context.original_tokens,
+                    "maxTokens": context.max_context_tokens,
+                    "remainingTokens": max(
+                        0,
+                        context.max_context_tokens
+                        - model_context.sent_tokens,
+                    ),
+                    "usageRatio": usage_ratio,
+                    "usagePercent": round(usage_ratio * 100, 1),
+                    "warningAtPercent": round(
+                        CONTEXT_WARNING_RATIO * 100,
+                        1,
+                    ),
+                    "shouldWarn": usage_ratio >= CONTEXT_WARNING_RATIO,
+                    "contextTrimmed": model_context.trimmed,
+                    "messageCount": len(model_context.messages),
+                }
+            )
         model_step = (
             trace.start_step(
                 kind="model",
@@ -541,6 +569,7 @@ class LangGraphAgentEngine:
                     else prepared.arguments
                 ),
                 details={
+                    "toolCallId": prepared.call_id,
                     "readOnly": bool(definition and definition.read_only),
                     "destructive": bool(
                         definition and definition.destructive
@@ -763,6 +792,67 @@ class LangGraphAgentEngine:
         if (
             execution is None
             and definition is not None
+            and prepared.tool_name == ASK_USER_QUESTION_TOOL
+        ):
+            LangGraphAgentEngine._emit_tool_lifecycle(
+                context,
+                prepared,
+                "waiting",
+            )
+            arguments = dict(prepared.arguments)
+            answer_value = interrupt(
+                {
+                    "type": "user_question",
+                    "questionId": prepared.call_id,
+                    "toolCallId": prepared.call_id,
+                    "question": arguments.get("question"),
+                    "header": arguments.get("header") or "需要确认",
+                    "options": sanitize_trace_payload(
+                        arguments.get("options") or []
+                    ),
+                    "allowCustom": bool(arguments.get("allow_custom", True)),
+                }
+            )
+            if isinstance(answer_value, dict):
+                answer = str(answer_value.get("answer") or "").strip()
+                selected = [
+                    str(value)[:120]
+                    for value in (answer_value.get("selectedOptions") or [])
+                    if str(value).strip()
+                ][:4]
+            else:
+                answer = str(answer_value or "").strip()
+                selected = []
+            if not answer:
+                execution = context.registry._failure(
+                    prepared.call_id,
+                    prepared.tool_name,
+                    prepared.arguments,
+                    "user_question_unanswered",
+                    "The user did not provide an answer.",
+                    time.perf_counter(),
+                )
+            else:
+                execution = ToolExecution(
+                    call_id=prepared.call_id,
+                    tool_name=prepared.tool_name,
+                    arguments=prepared.arguments,
+                    output={
+                        "answer": answer[:4000],
+                        "selectedOptions": selected,
+                    },
+                    status="success",
+                    error_code=None,
+                    error_message=None,
+                    latency_ms=0,
+                    audit_output={
+                        "answered": True,
+                        "selectedOptions": selected,
+                    },
+                )
+        if (
+            execution is None
+            and definition is not None
             and definition.requires_approval
         ):
             LangGraphAgentEngine._emit_tool_lifecycle(
@@ -963,6 +1053,7 @@ class LangGraphAgentEngine:
         resume_from_checkpoint: bool = False,
         tool_operation_store=None,
         approval_decision: str | None = None,
+        resume_value: Any = None,
         skill_restore: Callable[[dict[str, Any]], None] | None = None,
         memory_recall: (
             Callable[[], list[dict[str, Any]]] | None
@@ -1012,10 +1103,15 @@ class LangGraphAgentEngine:
                 ):
                     raise self._checkpoint_not_found()
                 if snapshot.next:
+                    resume_payload = (
+                        resume_value
+                        if resume_value is not None
+                        else approval_decision
+                    )
                     output = graph.invoke(
                         (
-                            Command(resume=approval_decision)
-                            if approval_decision is not None
+                            Command(resume=resume_payload)
+                            if resume_payload is not None
                             else None
                         ),
                         graph_config,

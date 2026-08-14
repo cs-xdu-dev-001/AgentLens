@@ -312,6 +312,19 @@ def main() -> None:
         if item["id"] == snapshot["assistantMessageId"]
     )
     assert assistant["run"]["id"] == run_id
+    assert assistant["approvals"] == []
+    sessions = client.get("/api/sessions")
+    assert sessions.status_code == 200, sessions.text
+    projected_session = next(
+        item
+        for item in sessions.json()["data"]
+        if item["id"] == snapshot["sessionId"]
+    )
+    assert projected_session["latest_run"]["id"] == run_id
+    assert projected_session["latest_run"]["status"] == "completed"
+    assert projected_session["latest_run"]["goalSummary"] == snapshot["goalSummary"]
+    assert projected_session["latest_run"]["progress"] == {"completed": 2, "total": 2}
+    assert projected_session["latest_run"]["durationMs"] >= 0
     deleted = client.delete(
         f"/api/sessions/{snapshot['sessionId']}"
     )

@@ -107,8 +107,30 @@ console.log(JSON.stringify({
         ("AgentTraceView", "selected step trace"),
         ("暂无执行记录", "empty selected step feedback"),
         ('role={"status"}', "empty step live status"),
+        ("nextTraceStepId", "shared plan keyboard navigation"),
+        ("handlePlanStepKeyDown", "plan step keyboard handler"),
+        ('role={"tree"}', "plan tree semantics"),
+        ('role={"treeitem"}', "focusable plan step semantics"),
+        ('tabIndex={focusedStepId === step.id ? 0 : -1}', "plan roving tabindex"),
+        ("knowflow:react-plan-focus", "workbench plan focus event"),
+        ("pendingTraceFocusRef", "deferred child trace focus"),
+        ("onExitTree", "return focus from trace to plan"),
+        ("onDismiss", "Escape returns from nested trace to its plan step"),
+        ('event.key === "Escape"', "Escape collapses the selected plan layer"),
+        ("event.stopPropagation()", "nested Escape does not close the whole workbench"),
+        ("resolveTreeSelectionId", "stable plan selection policy"),
+        ("userSelectedRef", "user-pinned plan selection"),
+        ("preferredPlanStepIdRef", "stable plan focus event subscription"),
+        ("matchesFocusScope", "plan focus event isolation"),
+        ("focusScope", "plan focus scope propagation"),
     ):
         require(component, token, label)
+
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "knowflow:react-plan-focus",
+        "plan-first workbench focus routing",
+    )
 
     require(
         "frontend/react/src/components/AgentRecoveryPanel.jsx",
@@ -137,9 +159,9 @@ console.log(JSON.stringify({
         "expandable task capsule in the compact run strip",
     )
     require(
-        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "estimatedTokenCount",
-        "live estimated token metric",
+        "shared live estimated token metric",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
@@ -162,14 +184,14 @@ console.log(JSON.stringify({
         "progressive step metadata",
     )
     require(
-        "frontend/react/src/components/AgentRunSummary.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         '"回答已完成"',
-        "completed answer status while background work continues",
+        "shared completed answer status while background work continues",
     )
     require(
-        "frontend/react/src/components/AgentRunSummary.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         '"后台处理中"',
-        "background freshness status",
+        "shared background freshness status",
     )
     require(
         "frontend/react/src/controller/agentEvents.js",

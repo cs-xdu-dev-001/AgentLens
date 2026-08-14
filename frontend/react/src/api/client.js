@@ -44,6 +44,7 @@ export async function apiRequest(path, options = {}) {
       credentials: "include",
     });
   } catch (error) {
+    if (error?.name === "AbortError") throw error;
     if (path.startsWith("/api")) {
       throw new ApiError(BACKEND_UNAVAILABLE_MESSAGE, { status: 0, code: "BACKEND_UNAVAILABLE", data: { cause: error?.message || "fetch failed" } });
     }
@@ -154,6 +155,11 @@ export const agentRunApi = {
     apiRequest(`/api/agent/runs/${runId}/resume`, {
       method: "POST",
     }),
+  answer: (runId, payload) =>
+    apiRequest(`/api/agent/runs/${runId}/answer`, {
+      method: "POST",
+      body: payload,
+    }),
   restart: (runId) =>
     apiRequest(`/api/agent/runs/${runId}/restart`, {
       method: "POST",
@@ -178,6 +184,14 @@ function workspacePath(path) {
 
 export const workspaceApi = {
   status: () => apiRequest("/api/workspace"),
+  diff: ({ runId, path = "" }) => apiRequest(
+    `/api/workspace/changes?${new URLSearchParams({ run_id: runId, ...(path ? { path } : {}) })}`,
+  ),
+  undoChange: ({ runId, operationId }) =>
+    apiRequest("/api/workspace/changes/undo", {
+      method: "POST",
+      body: { runId, operationId },
+    }),
   list: (path = "") =>
     apiRequest(`/api/workspace/files?${new URLSearchParams({ path })}`),
   upload: (path, file, overwrite = false) => {

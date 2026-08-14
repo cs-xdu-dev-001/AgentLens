@@ -9,6 +9,7 @@ function currentThinkingStep(trace) {
       "running",
       "waiting",
       "waiting_approval",
+      "waiting_input",
     ].includes(String(step?.status || "")))
     || null
   );
@@ -43,9 +44,9 @@ const stateLabels = {
   working: "正在执行",
 };
 
-export function AgentThinkingOrb({ trace = [] }) {
-  const state = agentThinkingState(trace);
-  const label = stateLabels[state] || stateLabels.solving;
+export function AgentThinkingOrb({ trace = [], state: requestedState = "", label: requestedLabel = "" }) {
+  const state = requestedState || agentThinkingState(trace);
+  const label = requestedLabel || stateLabels[state] || stateLabels.solving;
   return (
     <div className={"agent-thinking-orb"} aria-live={"polite"}>
       <ThinkingOrb

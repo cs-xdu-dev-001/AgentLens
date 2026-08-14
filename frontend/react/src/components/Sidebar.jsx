@@ -7,10 +7,30 @@ import { sidebarTools } from "../data/navigation.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
 
 const sessionGroupLabels = [
+  ["active", "进行中"],
+  ["failed", "需要处理"],
   ["today", "今天"],
   ["recent", "最近 7 天"],
   ["earlier", "更早"],
 ];
+
+const activeRunStatuses = new Set([
+  "planning",
+  "running",
+  "waiting_approval",
+  "waiting_input",
+]);
+const failedRunStatuses = new Set(["failed", "interrupted"]);
+const runStatusLabels = {
+  planning: "正在规划",
+  running: "执行中",
+  waiting_approval: "等待确认",
+  waiting_input: "等待回答",
+  failed: "失败，可恢复",
+  interrupted: "已中断，可恢复",
+  cancelled: "已取消",
+  completed: "已完成",
+};
 
 const sessionMenuItems = [
   { action: "continue", icon: "message", label: "继续" },
@@ -135,9 +155,18 @@ function SessionMenuPopover({ anchor, onAction, sessionId }) {
 }
 
 function groupSessions(sessions) {
-  const groups = { today: [], recent: [], earlier: [] };
+  const groups = { active: [], failed: [], today: [], recent: [], earlier: [] };
   const now = new Date();
   sessions.forEach((session) => {
+    const runStatus = String(session.latest_run?.status || "");
+    if (activeRunStatuses.has(runStatus)) {
+      groups.active.push(session);
+      return;
+    }
+    if (failedRunStatuses.has(runStatus)) {
+      groups.failed.push(session);
+      return;
+    }
     const time = new Date(String(session.updated_at || session.created_at || "").replace(" ", "T"));
     if (Number.isNaN(time.getTime())) {
       groups.earlier.push(session);
@@ -151,11 +180,56 @@ function groupSessions(sessions) {
   return groups;
 }
 
+function formatRunDuration(value) {
+  const seconds = Math.max(0, Math.round(Number(value || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+function formatSessionAge(value) {
+  const timestamp = new Date(String(value || "").replace(" ", "T")).getTime();
+  if (!Number.isFinite(timestamp)) return "";
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 7 ? `${days}d` : "";
+}
+
+function sessionRunView(session) {
+  const run = session.latest_run;
+  if (!run) return null;
+  const completed = Math.max(0, Number(run.progress?.completed || 0));
+  const total = Math.max(completed, Number(run.progress?.total || 0));
+  const status = String(run.status || "planning");
+  return {
+    completed,
+    total,
+    status,
+    label: runStatusLabels[status] || "状态未知",
+    duration: formatRunDuration(run.durationMs),
+    recoverable: failedRunStatuses.has(status),
+  };
+}
+
+function sessionTitle(session) {
+  const title = String(session.title || "").trim();
+  if (title && title !== "新会话") return title;
+  return String(session.latest_run?.goalSummary || title || "新任务");
+}
+
 
 function SessionHistory() {
   const { authenticated } = useAuth();
   const [sessions, setSessions] = useState([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [switchingSessionId, setSwitchingSessionId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [openMenuSessionId, setOpenMenuSessionId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
@@ -163,21 +237,29 @@ function SessionHistory() {
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
   const historyRef = useRef(null);
+  const switchingSessionRef = useRef(null);
 
   const loadSessions = useCallback(async () => {
     if (!authenticated) {
       setSessions([]);
       setCurrentSessionId(null);
+      setLoadingSessions(false);
+      setSessionLoadFailed(false);
       return [];
     }
+    setLoadingSessions(true);
     try {
       const nextSessions = await sessionApi.list();
       const sessionList = Array.isArray(nextSessions) ? nextSessions : [];
       setSessions(sessionList);
+      setSessionLoadFailed(false);
       return sessionList;
     } catch (error) {
+      setSessionLoadFailed(true);
       notifyError(error, "刷新会话失败");
       return [];
+    } finally {
+      setLoadingSessions(false);
     }
   }, [authenticated]);
 
@@ -205,6 +287,40 @@ function SessionHistory() {
   }, []);
 
   useEffect(() => {
+    const handleSessionSwitchState = (event) => {
+      const detail = event.detail || {};
+      if (detail.status === "loading") {
+        switchingSessionRef.current = detail.sessionId || null;
+        setSwitchingSessionId(detail.sessionId || null);
+        return;
+      }
+      if (!detail.sessionId || switchingSessionRef.current === detail.sessionId) {
+        switchingSessionRef.current = null;
+      }
+      setSwitchingSessionId((current) => (
+        !detail.sessionId || current === detail.sessionId ? null : current
+      ));
+    };
+    window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
+    return () => window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
+  }, []);
+
+  useEffect(() => {
+    const handleAgentRunUpdated = (event) => {
+      const run = event.detail?.run;
+      const sessionId = String(run?.sessionId || "");
+      if (!sessionId || !run) return;
+      setSessions((current) => current.map((session) => (
+        String(session.id) === sessionId
+          ? { ...session, latest_run: { ...(session.latest_run || {}), ...run } }
+          : session
+      )));
+    };
+    window.addEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
+    return () => window.removeEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
+  }, []);
+
+  useEffect(() => {
     const closeMenu = (event) => {
       if (!historyRef.current?.contains(event.target)) {
         setOpenMenuSessionId(null);
@@ -221,11 +337,20 @@ function SessionHistory() {
   };
 
   const handleSessionContinue = (sessionId) => {
-    if (editingSessionId === sessionId) return;
+    if (editingSessionId === sessionId || switchingSessionRef.current === sessionId) return;
+    if (sessionId === currentSessionId) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-session-switch-state", {
+        detail: { status: "success", sessionId },
+      }));
+      return;
+    }
     const session = sessions.find((item) => item.id === sessionId);
+    switchingSessionRef.current = sessionId;
+    setSwitchingSessionId(sessionId);
     window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
       detail: {
         sessionId,
+        title: sessionTitle(session),
         chatModelConfigId: session?.chat_model_config_id ?? null,
       },
     }));
@@ -338,7 +463,7 @@ function SessionHistory() {
 
   const keyword = searchQuery.trim().toLowerCase();
   const filteredSessions = keyword
-    ? sessions.filter((session) => `${session.title || ""} ${session.id || ""} ${session.updated_at || ""}`.toLowerCase().includes(keyword))
+    ? sessions.filter((session) => `${session.title || ""} ${session.latest_run?.goalSummary || ""} ${session.id || ""} ${session.updated_at || ""}`.toLowerCase().includes(keyword))
     : sessions;
   const groups = groupSessions(filteredSessions);
 
@@ -346,10 +471,10 @@ function SessionHistory() {
     <section className={"chat-history-shell"} ref={historyRef}>
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
-          <span>{"搜索会话"}</span>
-          <input id={"sidebar-session-search"} placeholder={"搜索聊天"} value={searchQuery} onChange={handleSessionSearch} />
+          <span>{"搜索任务"}</span>
+          <input id={"sidebar-session-search"} placeholder={"搜索任务"} value={searchQuery} onChange={handleSessionSearch} />
         </label>
-        <button className={"sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新会话"} title={"刷新会话"} onClick={loadSessions}>
+        <button className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新任务"} title={"刷新任务"} aria-busy={loadingSessions} disabled={loadingSessions} onClick={loadSessions}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
             <path d={"M20 11a8 8 0 1 0-2.34 5.66"} />
             <path d={"M20 5v6h-6"} />
@@ -357,7 +482,16 @@ function SessionHistory() {
         </button>
       </div>
       <div className={"sidebar-list chat-history-list"} id={"session-list"}>
-        {sessionGroupLabels.some(([key]) => groups[key].length) ? (
+        {loadingSessions && !sessions.length ? (
+          <div className={"session-list-skeleton"} aria-label={"正在加载任务"}>
+            {[0, 1, 2].map((item) => <span key={item} />)}
+          </div>
+        ) : sessionLoadFailed && !sessions.length ? (
+          <div className={"session-list-feedback"}>
+            <span>{"任务加载失败"}</span>
+            <button type={"button"} onClick={loadSessions}>{"重试"}</button>
+          </div>
+        ) : sessionGroupLabels.some(([key]) => groups[key].length) ? (
           sessionGroupLabels
             .filter(([key]) => groups[key].length)
             .map(([key, label]) => (
@@ -365,10 +499,14 @@ function SessionHistory() {
                 <div className={"history-group-title"}>{label}</div>
                 {groups[key].map((session) => {
                   const isActive = session.id === currentSessionId;
+                  const isSwitching = session.id === switchingSessionId;
                   const isOpen = openMenuSessionId === session.id;
                   const isEditing = editingSessionId === session.id;
+                  const run = sessionRunView(session);
+                  const age = formatSessionAge(session.updated_at || session.created_at);
+                  const showIndeterminateProgress = run && activeRunStatuses.has(run.status) && !run.total;
                   return (
-                    <div className={["session-row", isActive ? "active" : "", isOpen ? "menu-open" : ""].filter(Boolean).join(" ")} key={session.id}>
+                    <div className={["session-row", isActive ? "active" : "", isSwitching ? "switching" : "", isOpen ? "menu-open" : "", run?.status || "chat"].filter(Boolean).join(" ")} key={session.id}>
                       {isEditing ? (
                         <input
                           autoFocus
@@ -381,9 +519,35 @@ function SessionHistory() {
                         />
                       ) : (
                         <>
-                          <button className={"sidebar-list-item"} type={"button"} onClick={() => handleSessionAction("continue", session.id)}>
-                            <span>{session.title || "新会话"}</span>
-                            <small>{session.updated_at || ""}</small>
+                          <button
+                            className={"sidebar-list-item"}
+                            type={"button"}
+                            aria-busy={isSwitching}
+                            aria-current={isActive ? "page" : undefined}
+                            disabled={isSwitching}
+                            onClick={() => handleSessionAction("continue", session.id)}
+                          >
+                            <span className={"session-title-row"}>
+                              <span className={"session-title"}>{sessionTitle(session)}</span>
+                              {age ? <time>{age}</time> : null}
+                            </span>
+                            {run ? (
+                              <span className={"session-run-summary"}>
+                                <span className={"session-run-status"}>
+                                  <i aria-hidden={"true"} />
+                                  {run.label}
+                                </span>
+                                <span className={"session-run-meta"}>
+                                  {run.total ? `${run.completed}/${run.total}` : "Agent"}
+                                  {run.duration ? ` · ${run.duration}` : ""}
+                                </span>
+                                {run.total || showIndeterminateProgress ? (
+                                  <span className={showIndeterminateProgress ? "session-run-progress indeterminate" : "session-run-progress"} aria-label={run.total ? `任务进度 ${run.completed}/${run.total}` : "任务正在启动"}>
+                                    <span style={run.total ? { width: `${Math.min(100, (run.completed / run.total) * 100)}%` } : undefined} />
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
                           </button>
                           <button className={"session-menu-button"} type={"button"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
                             <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
@@ -400,7 +564,7 @@ function SessionHistory() {
               </section>
             ))
         ) : (
-          <p className={"empty-state"}>{"暂无会话"}</p>
+          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : "新任务会显示在这里"}</p>
         )}
       </div>
       <SessionMenuPopover anchor={menuAnchor} sessionId={openMenuSessionId} onAction={handleSessionAction} />

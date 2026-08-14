@@ -6,6 +6,7 @@ async function copyAssistantMessageContent(content, toast) {
 export function bindReactControllerEvents({
   state,
   clearChatMessages,
+  clearQueuedChats,
   continueSession,
   handleComposerPaste,
   notifyReactKnowledgeSelectionUpdated,
@@ -13,6 +14,8 @@ export function bindReactControllerEvents({
   refresh,
   refreshModels,
   removeChatAttachment,
+  removeQueuedChat,
+  reprioritizeQueuedChat,
   renderActiveSession,
   renderCurrentUser,
   requestComposerMenuClose,
@@ -20,9 +23,11 @@ export function bindReactControllerEvents({
   resolveChatModelConfigId,
   resolveKnowledgeBaseId,
   retryAnswer,
+  resumeQueuedChats,
   showAppScreen,
   showAuthScreen,
   startNewChat,
+  stopChatGeneration,
   submitChat,
   syncKnowledgeBasesFromReact,
   syncKnowledgeSelectionFromReact,
@@ -44,6 +49,7 @@ export function bindReactControllerEvents({
     const detail = event.detail || {};
     state.currentUser = null;
     state.currentSessionId = null;
+    clearQueuedChats();
     renderActiveSession();
     clearChatMessages();
     showAuthScreen(state.oauthProviders);
@@ -104,14 +110,24 @@ export function bindReactControllerEvents({
   });
 
   window.addEventListener("knowflow:react-session-continue", (event) => {
+    const detail = event.detail || {};
     const modelId = resolveChatModelConfigId(
-      event.detail?.chatModelConfigId || "",
+      detail.chatModelConfigId || "",
     );
-    state.selectedChatModelConfigId = modelId;
-    notifyReactModelSelectionUpdated(modelId);
-    continueSession(event.detail?.sessionId).catch((error) =>
-      toast(error.message || "打开会话失败", 4200, "error"),
-    );
+    continueSession(detail.sessionId, {
+      title: detail.title,
+      chatModelConfigId: detail.chatModelConfigId ?? null,
+    })
+      .then((opened) => {
+        if (!opened) return;
+        state.selectedChatModelConfigId = modelId;
+        notifyReactModelSelectionUpdated(modelId);
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") {
+          toast(error.message || "打开任务失败", 4200, "error");
+        }
+      });
   });
 
   window.addEventListener("knowflow:react-models-refresh-request", () =>
@@ -132,6 +148,16 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-chat-enter-submit", (event) =>
     submitChat({ question: event.detail?.question, skillId: event.detail?.skillId }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
   );
+  window.addEventListener("knowflow:react-chat-stop", () => stopChatGeneration());
+  window.addEventListener("knowflow:react-chat-queue-action", (event) => {
+    const action = event.detail?.action;
+    if (action === "remove") removeQueuedChat(event.detail?.requestId);
+    if (action === "clear") clearQueuedChats();
+    if (action === "resume") resumeQueuedChats();
+    if (action === "priority") {
+      reprioritizeQueuedChat(event.detail?.requestId, event.detail?.priority);
+    }
+  });
 
   window.addEventListener("knowflow:react-attachment-remove", (event) => removeChatAttachment(event.detail?.attachmentId));
 }
