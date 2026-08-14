@@ -53,6 +53,7 @@ def main() -> None:
     assert 'from "thinking-orbs"' in thinking_orb
     assert 'find: /^react\\/jsx-runtime$/' in vite_config
     assert 'find: /^react\\/jsx-dev-runtime$/' in vite_config
+    assert 'include: ["parse-diff"]' in vite_config
     assert 'React.createElement' in jsx_runtime
     assert 'export const jsx = createElement' in jsx_runtime
     assert 'return "solving"' in thinking_orb

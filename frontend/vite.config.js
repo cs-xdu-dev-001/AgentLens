@@ -166,6 +166,7 @@ export default defineConfig({
   esbuild: false,
   optimizeDeps: {
     noDiscovery: true,
+    include: ["parse-diff"],
   },
   resolve: {
     alias: [
