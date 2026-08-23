@@ -272,7 +272,12 @@ def load_workspace_references(
             continue
         budget = min(per_file, remaining)
         truncated = len(content) > budget or source_truncated
-        content = content[:budget]
+        bounded_content = content[:budget]
+        if len(content) > budget:
+            last_line_end = bounded_content.rfind("\n")
+            if last_line_end >= 0:
+                bounded_content = bounded_content[: last_line_end + 1]
+        content = bounded_content
         if not content:
             skipped.append(
                 SkippedWorkspaceReference(
