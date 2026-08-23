@@ -94,6 +94,11 @@ class SessionUpdate(BaseModel):
     title: str = Field(min_length=1)
 
 
+class SessionBranchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, max_length=255)
+
+
 class SyncTaskIn(BaseModel):
     sourceType: str
     sourceUrl: str = ""

@@ -34,11 +34,33 @@ const runStatusLabels = {
 
 const sessionMenuItems = [
   { action: "continue", icon: "message", label: "继续" },
+  { action: "branch", icon: "branch", label: "创建分支" },
+  { action: "export", icon: "download", label: "导出对话" },
   { action: "rename", icon: "pencil", label: "重命名" },
   { action: "delete", icon: "trash", label: "删除", danger: true, divider: true },
 ];
 
 function SessionMenuIcon({ type }) {
+  if (type === "branch") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <circle cx={"6"} cy={"5"} r={"2"} />
+        <circle cx={"18"} cy={"7"} r={"2"} />
+        <circle cx={"18"} cy={"18"} r={"2"} />
+        <path d={"M6 7v5a6 6 0 0 0 6 6h4M8 7a6 6 0 0 0 6 6h2"} />
+      </svg>
+    );
+  }
+
+  if (type === "download") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"M12 4v10m-4-4 4 4 4-4"} />
+        <path d={"M5 18v2h14v-2"} />
+      </svg>
+    );
+  }
+
   if (type === "pencil") {
     return (
       <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
@@ -413,6 +435,46 @@ function SessionHistory() {
     }
   };
 
+  const handleSessionBranch = async (sessionId) => {
+    try {
+      const branch = await sessionApi.branch(sessionId);
+      notifyToast("已创建独立会话分支");
+      await loadSessions();
+      const branchId = String(branch?.id || "");
+      if (branchId) {
+        switchingSessionRef.current = branchId;
+        setSwitchingSessionId(branchId);
+        window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+          detail: {
+            sessionId: branchId,
+            title: branch?.title || "新会话（分支）",
+            chatModelConfigId: branch?.chat_model_config_id ?? null,
+          },
+        }));
+      }
+    } catch (error) {
+      notifyError(error, "创建分支失败");
+    }
+  };
+
+  const handleSessionExport = async (sessionId) => {
+    try {
+      const exported = await sessionApi.export(sessionId);
+      const blob = new Blob([String(exported?.content || "")], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = String(exported?.filename || "agentlens-session.md");
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      notifyToast(`已导出${Number(exported?.messageCount || 0)}条消息`);
+    } catch (error) {
+      notifyError(error, "导出对话失败");
+    }
+  };
+
   const handleSessionAction = (action, sessionId) => {
     setOpenMenuSessionId(null);
     setMenuAnchor(null);
@@ -422,6 +484,14 @@ function SessionHistory() {
     }
     if (action === "rename") {
       startSessionRename(sessionId);
+      return;
+    }
+    if (action === "branch") {
+      handleSessionBranch(sessionId);
+      return;
+    }
+    if (action === "export") {
+      handleSessionExport(sessionId);
       return;
     }
     if (action === "delete") {
@@ -440,7 +510,7 @@ function SessionHistory() {
 
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 214;
-    const menuHeight = 142;
+    const menuHeight = 218;
     const left = Math.max(12, Math.min(rect.right + 8, window.innerWidth - menuWidth - 12));
     const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - menuHeight - 12));
     setOpenMenuSessionId(sessionId);

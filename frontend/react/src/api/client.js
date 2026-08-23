@@ -236,6 +236,8 @@ export const memoryApi = {
 export const sessionApi = {
   list: () => apiRequest("/api/sessions"),
   messages: (id) => apiRequest(`/api/sessions/${id}/messages`),
+  branch: (id, payload = {}) => apiRequest(`/api/sessions/${id}/branch`, { method: "POST", body: payload }),
+  export: (id) => apiRequest(`/api/sessions/${id}/export`),
   update: (id, payload) => apiRequest(`/api/sessions/${id}`, { method: "PUT", body: payload }),
   delete: (id) => apiRequest(`/api/sessions/${id}`, { method: "DELETE" }),
 };

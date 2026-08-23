@@ -15,6 +15,8 @@ export const BUILTIN_COMMANDS = [
   {value: '/diff', description: '查看本轮文件改动', source: 'builtin', category: '工作区'},
   {value: '/undo', description: '安全撤销最近一次文件操作', source: 'builtin', category: '工作区'},
   {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin', category: '会话'},
+  {value: '/branch', description: '从当前会话创建独立分支', source: 'builtin', category: '会话', aliases: ['/fork'], argumentHint: '[名称]'},
+  {value: '/export', description: '把当前会话导出为Markdown', source: 'builtin', category: '会话', argumentHint: '[文件名]'},
   {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', category: '会话', argumentHint: '[关键词 | clear]'},
   {value: '/edit', description: '取回上一条任务继续修改', source: 'builtin', category: '会话'},
   {value: '/copy', description: '复制最近回答或其中的代码块', source: 'builtin', category: '会话', argumentHint: '[answer | code [序号]]'},

@@ -144,6 +144,30 @@ def main() -> None:
     assert "user_id" not in session, session
     assert bob.get("/api/sessions").json()["data"] == []
     assert bob.get(f"/api/sessions/{session_id}/messages").status_code == 404
+    assert bob.post(f"/api/sessions/{session_id}/branch", json={}).status_code == 404
+    assert bob.get(f"/api/sessions/{session_id}/export").status_code == 404
+
+    exported = alice.get(f"/api/sessions/{session_id}/export")
+    assert exported.status_code == 200, exported.text
+    export_data = exported.json()["data"]
+    assert export_data["filename"].endswith(".md"), export_data
+    assert "Summarize Alice note" in export_data["content"], export_data
+    assert "trace_json" not in export_data["content"], export_data
+
+    branched = alice.post(f"/api/sessions/{session_id}/branch", json={})
+    assert branched.status_code == 200, branched.text
+    branch_data = branched.json()["data"]
+    assert branch_data["id"] != session_id, branch_data
+    assert branch_data["sourceSessionId"] == session_id, branch_data
+    assert "分支" in branch_data["title"], branch_data
+    branch_messages = alice.get(
+        f"/api/sessions/{branch_data['id']}/messages"
+    )
+    assert branch_messages.status_code == 200, branch_messages.text
+    assert len(branch_messages.json()["data"]) == branch_data["messageCount"]
+    assert bob.get(
+        f"/api/sessions/{branch_data['id']}/messages"
+    ).status_code == 404
 
     sync_task = alice.post(
         "/api/sync/tasks",

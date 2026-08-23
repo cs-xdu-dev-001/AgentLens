@@ -6,6 +6,11 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..runtime import *
+from ..services.session_portability import (
+    render_session_markdown,
+    safe_export_filename,
+    unique_branch_title,
+)
 from ..services.workspace_references import has_workspace_references
 from .extensions import agent_chat, agent_chat_stream
 
@@ -513,6 +518,182 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
         )
         messages.append(message)
     return api_success(messages)
+
+
+@router.post(
+    "/api/sessions/{session_id}/branch",
+    tags=SESSION_TAGS,
+    summary="Branch a chat session",
+)
+def branch_session(
+    session_id: str,
+    payload: SessionBranchIn,
+    request: Request,
+) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    source = get_session_for_user(session_id, user_id)
+    active_run = fetch_one(
+        """
+        SELECT id
+        FROM agent_run
+        WHERE session_id=:session_id AND user_id=:user_id
+          AND status IN (
+            'planning', 'waiting_start', 'running',
+            'waiting_approval', 'waiting_input'
+          )
+        LIMIT 1
+        """,
+        {"session_id": session_id, "user_id": user_id},
+    )
+    if active_run:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_branch_active",
+                "message": "Wait for the active Agent run to finish before branching.",
+                "data": None,
+            },
+        )
+    existing_titles = fetch_all(
+        "SELECT title FROM chat_session WHERE user_id=:user_id",
+        {"user_id": user_id},
+    )
+    title = unique_branch_title(
+        str(source.get("title") or "New session"),
+        [str(row.get("title") or "") for row in existing_titles],
+        str(payload.title or ""),
+    )
+    new_session_id = f"session-{uuid.uuid4().hex[:16]}"
+    created_at = now_str()
+    source_messages = fetch_all(
+        """
+        SELECT * FROM chat_message
+        WHERE session_id=:session_id
+        ORDER BY id ASC
+        """,
+        {"session_id": session_id},
+    )
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO chat_session (
+                  id, user_id, title, knowledge_base_id,
+                  chat_model_config_id, created_at, updated_at
+                ) VALUES (
+                  :id, :user_id, :title, :knowledge_base_id,
+                  :chat_model_config_id, :created_at, :updated_at
+                )
+                """
+            ),
+            {
+                "id": new_session_id,
+                "user_id": user_id,
+                "title": title,
+                "knowledge_base_id": source.get("knowledge_base_id"),
+                "chat_model_config_id": source.get("chat_model_config_id"),
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        )
+        message_id_map: dict[int, int] = {}
+        for message in source_messages:
+            inserted = conn.execute(
+                text(
+                    """
+                    INSERT INTO chat_message (
+                      session_id, role, content, trace_json, skill_id,
+                      skill_slug, skill_version, skill_content_hash, created_at
+                    ) VALUES (
+                      :session_id, :role, :content, :trace_json, :skill_id,
+                      :skill_slug, :skill_version, :skill_content_hash, :created_at
+                    )
+                    """
+                ),
+                {
+                    "session_id": new_session_id,
+                    "role": message.get("role"),
+                    "content": message.get("content"),
+                    "trace_json": message.get("trace_json"),
+                    "skill_id": message.get("skill_id"),
+                    "skill_slug": message.get("skill_slug"),
+                    "skill_version": message.get("skill_version"),
+                    "skill_content_hash": message.get("skill_content_hash"),
+                    "created_at": message.get("created_at") or created_at,
+                },
+            )
+            message_id_map[int(message["id"])] = int(inserted.lastrowid)
+        for old_id, new_id in message_id_map.items():
+            references = conn.execute(
+                text(
+                    """
+                    SELECT document_id, chunk_id, score, created_at
+                    FROM message_reference WHERE message_id=:message_id
+                    """
+                ),
+                {"message_id": old_id},
+            ).mappings().all()
+            for reference in references:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO message_reference (
+                          message_id, document_id, chunk_id, score, created_at
+                        ) VALUES (
+                          :message_id, :document_id, :chunk_id, :score, :created_at
+                        )
+                        """
+                    ),
+                    {
+                        "message_id": new_id,
+                        "document_id": reference["document_id"],
+                        "chunk_id": reference["chunk_id"],
+                        "score": reference["score"],
+                        "created_at": reference["created_at"] or created_at,
+                    },
+                )
+    return api_success(
+        {
+            "id": new_session_id,
+            "title": title,
+            "knowledge_base_id": source.get("knowledge_base_id"),
+            "chat_model_config_id": source.get("chat_model_config_id"),
+            "created_at": created_at,
+            "updated_at": created_at,
+            "sourceSessionId": session_id,
+            "messageCount": len(source_messages),
+        }
+    )
+
+
+@router.get(
+    "/api/sessions/{session_id}/export",
+    tags=SESSION_TAGS,
+    summary="Export a chat session",
+)
+def export_session(session_id: str, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    session = get_session_for_user(session_id, user_id)
+    messages = fetch_all(
+        """
+        SELECT role, content FROM chat_message
+        WHERE session_id=:session_id
+        ORDER BY id ASC
+        """,
+        {"session_id": session_id},
+    )
+    title = str(session.get("title") or "AgentLens session")
+    return api_success(
+        {
+            "filename": safe_export_filename(title),
+            "content": render_session_markdown(title, messages),
+            "messageCount": sum(
+                1 for message in messages
+                if message.get("role") in {"user", "assistant"}
+                and str(message.get("content") or "").strip()
+            ),
+        }
+    )
 
 
 @router.put("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Rename a session")

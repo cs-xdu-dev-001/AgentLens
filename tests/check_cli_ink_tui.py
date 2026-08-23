@@ -175,6 +175,24 @@ class FakeBackend:
             }
         )
 
+    def branch_session(self, title=""):
+        return {
+            "runId": "run_branch",
+            "title": title or "测试会话（分支）",
+            "messageCount": 2,
+            "messages": [
+                {"role": "user", "content": "旧问题"},
+                {"role": "assistant", "content": "旧回答"},
+            ],
+        }
+
+    def export_session(self, filename=""):
+        return {
+            "path": f"/workspace/{filename or '测试会话.md'}",
+            "filename": filename or "测试会话.md",
+            "messageCount": 2,
+        }
+
     def context_status(self):
         return {
             "usedTokens": 1200,
@@ -386,6 +404,14 @@ def main() -> None:
         "cwd",
         "answer",
     }
+    ready_bridge.handle({"type": "branch_session", "title": "方案B"})
+    branch_rows = wait_for(ready_output, "session_branched")
+    assert branch_rows[-1]["result"]["runId"] == "run_branch"
+    assert branch_rows[-1]["result"]["title"] == "方案B"
+    ready_bridge.handle({"type": "export_session", "filename": "会话记录.md"})
+    export_rows = wait_for(ready_output, "session_exported")
+    assert export_rows[-1]["result"]["filename"] == "会话记录.md"
+    assert export_rows[-1]["result"]["messageCount"] == 2
     ready_bridge.handle({"type": "context", "action": "status"})
     context_rows = wait_for(ready_output, "context_status")
     assert context_rows[-1]["status"]["usedTokens"] == 1200

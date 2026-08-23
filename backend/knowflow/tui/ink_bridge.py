@@ -429,6 +429,48 @@ class InkRuntimeBridge:
         self._queued_decision = None
         self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
 
+    def _branch_session(self, message: dict[str, Any]) -> None:
+        if self._running:
+            self.send({"type": "busy", "message": "请等待当前任务结束后再创建分支。"})
+            return
+        try:
+            result = self.backend.branch_session(str(message.get("title") or ""))
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_branch_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_branched",
+                    "result": _public_value(result, max_chars=200_000),
+                }
+            )
+
+    def _export_session(self, message: dict[str, Any]) -> None:
+        if self._running:
+            self.send({"type": "busy", "message": "请等待当前任务结束后再导出会话。"})
+            return
+        try:
+            result = self.backend.export_session(str(message.get("filename") or ""))
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_export_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_exported",
+                    "result": _public_value(result, max_chars=4_000),
+                }
+            )
+
     def _context(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
         if action == "status":
@@ -594,6 +636,10 @@ class InkRuntimeBridge:
                 self.send({"type": "session_list", "sessions": _public_sessions(sessions)})
         elif message_type == "resume_session":
             self._resume_session(message)
+        elif message_type == "branch_session":
+            self._branch_session(message)
+        elif message_type == "export_session":
+            self._export_session(message)
         elif message_type == "context":
             self._context(message)
         elif message_type == "history":

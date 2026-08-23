@@ -2485,6 +2485,49 @@ export function App({
         appendItem('error', message.message ?? '读取能力状态失败。');
         return;
       }
+      if (message.type === 'session_branched') {
+        const result = message.result ?? {};
+        const messages = Array.isArray(result.messages) ? result.messages : [];
+        const latestQuestion = [...messages]
+          .reverse()
+          .find(item => item.role === 'user' && String(item.content ?? '').trim());
+        const latestAnswer = [...messages]
+          .reverse()
+          .find(item => item.role === 'assistant' && String(item.content ?? '').trim());
+        const latestQuestionText = String(latestQuestion?.content ?? '');
+        lastQuestionRef.current = latestQuestionText;
+        setLastQuestion(latestQuestionText);
+        lastAssistantAnswerRef.current = redact(
+          String(latestAnswer?.content ?? ''),
+          200_000,
+        ).trim();
+        setTranscript(messages.map((item, index) => ({
+          id: `branch-${index}`,
+          role: item.role,
+          content: String(item.content ?? ''),
+        })));
+        setCurrentRunId(String(result.runId || ''));
+        setTaskArchived(true);
+        appendItem('assistant', `已创建会话分支“${publicLabel(result.title, '新会话（分支）', 160)}”，后续任务不会改动原会话。`);
+        setPhase('分支已就绪');
+        return;
+      }
+      if (message.type === 'session_branch_failed') {
+        appendItem('error', message.message ?? '创建会话分支失败。');
+        setPhase('就绪');
+        return;
+      }
+      if (message.type === 'session_exported') {
+        const result = message.result ?? {};
+        appendItem('assistant', `已导出${Number(result.messageCount || 0)}条消息：${publicLabel(result.path, result.filename || '会话文件', 300)}`);
+        setPhase('导出完成');
+        return;
+      }
+      if (message.type === 'session_export_failed') {
+        appendItem('error', message.message ?? '导出会话失败。');
+        setPhase('就绪');
+        return;
+      }
       if (message.type === 'turn_completed') {
         setRunRecoveryOpen(false);
         settleCurrentRun(message.cancelled ? 'cancelled' : 'completed');
@@ -3292,6 +3335,20 @@ export function App({
         setSessionQuery(args);
         setSessionChoice(0);
         client.send({type: 'sessions', limit: 100});
+      }
+    } else if (command.value === '/branch') {
+      if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再创建分支。');
+      } else {
+        setPhase('创建会话分支');
+        client.send({type: 'branch_session', title: args});
+      }
+    } else if (command.value === '/export') {
+      if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再导出会话。');
+      } else {
+        setPhase('导出会话');
+        client.send({type: 'export_session', filename: args});
       }
     } else if (command.value === '/history') {
       const part = args.trim();

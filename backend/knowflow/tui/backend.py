@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 import re
 from typing import Any
 
 from ..services.agent_execution import AgentEventSink, AgentExecution
 from ..services.agent_trace import sanitize_trace_value
+from ..services.session_portability import (
+    available_export_path,
+    render_session_markdown,
+    safe_export_filename,
+)
 
 
 class TuiBackend:
@@ -342,6 +349,97 @@ class TuiBackend:
         if self.remote_client is not None:
             return []
         return list(self.local_agent.list_sessions(limit=limit))
+
+    def branch_session(self, title: str = "") -> dict[str, Any]:
+        if self.remote_client is not None:
+            if not self.session_id:
+                raise RuntimeError("当前没有可创建分支的远程会话。")
+            branch = self.remote_client.branch_session(self.session_id, title)
+            branch_id = str(branch.get("id") or "")
+            if not branch_id:
+                raise RuntimeError("服务器未返回新的会话分支。")
+            messages = self.remote_client.request(
+                "GET",
+                f"/api/sessions/{branch_id}/messages",
+            )
+            self.session_id = branch_id
+            self.current_run_id = None
+            self.conversation = [
+                {"role": item.get("role"), "content": item.get("content")}
+                for item in (messages if isinstance(messages, list) else [])
+                if item.get("role") in {"user", "assistant"}
+            ]
+            self.transcript = list(self.conversation)
+            self.context_metadata = {}
+            return {
+                "runId": "",
+                "sessionId": branch_id,
+                "title": branch.get("title"),
+                "messageCount": len(self.transcript),
+                "messages": self.transcript,
+            }
+        if self.local_agent is None or not self.current_run_id:
+            raise RuntimeError("当前没有可创建分支的本地会话。")
+        branch = self.local_agent.branch_session(self.current_run_id, title)
+        branch_id = str(branch.get("runId") or "")
+        self.current_run_id = branch_id or self.current_run_id
+        self.conversation = list(
+            branch.get("contextMessages") or branch.get("messages") or []
+        )
+        self.transcript = list(branch.get("messages") or self.conversation)
+        self.context_metadata = dict(branch.get("compaction") or {})
+        return {
+            "runId": branch_id,
+            "sessionId": "",
+            "title": branch.get("title"),
+            "messageCount": len(self.transcript),
+            "messages": self.transcript,
+        }
+
+    def export_session(self, filename: str = "") -> dict[str, Any]:
+        if not self.transcript and not self.session_id:
+            raise RuntimeError("当前没有可导出的会话。")
+        if self.remote_client is not None:
+            if not self.session_id:
+                raise RuntimeError("当前没有可导出的远程会话。")
+            exported = self.remote_client.export_session(self.session_id)
+            content = str(exported.get("content") or "")
+            default_filename = str(
+                exported.get("filename") or "agentlens-session.md"
+            )
+            message_count = int(exported.get("messageCount") or 0)
+            directory = Path.cwd()
+        else:
+            session = (
+                self.local_agent.load_session(self.current_run_id)
+                if self.local_agent is not None and self.current_run_id
+                else {}
+            )
+            title = str(session.get("title") or "AgentLens会话")
+            content = render_session_markdown(title, self.transcript)
+            default_filename = safe_export_filename(title)
+            message_count = sum(
+                1 for item in self.transcript
+                if item.get("role") in {"user", "assistant"}
+                and str(item.get("content") or "").strip()
+            )
+            workspace = self.workspace_status()
+            directory = Path(str(workspace.get("cwd") or Path.cwd()))
+        path = available_export_path(
+            directory,
+            safe_export_filename(filename or default_filename),
+        )
+        path.write_text(content, encoding="utf-8")
+        if os.name != "nt":
+            try:
+                path.chmod(0o600)
+            except OSError:
+                pass
+        return {
+            "path": str(path),
+            "filename": path.name,
+            "messageCount": message_count,
+        }
 
     def context_status(self) -> dict[str, Any]:
         if self.remote_client is not None:

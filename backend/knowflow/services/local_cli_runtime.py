@@ -53,6 +53,7 @@ from .workspace_references import (
     load_workspace_references,
     workspace_reference_trace_title,
 )
+from .session_portability import unique_branch_title
 
 
 LOCAL_USER_ID = 1
@@ -522,6 +523,33 @@ class LocalAgentRuntime:
         if cwd:
             self.workspace.change_directory(cwd)
         return session
+
+    def branch_session(self, run_id: str, title: str = "") -> dict[str, Any]:
+        source = self.load_session(run_id)
+        if str(source.get("status") or "") not in {"completed", "cancelled"}:
+            raise ValueError("请等待当前运行结束后再创建分支。")
+        existing = self.list_sessions(limit=100)
+        branch_title = unique_branch_title(
+            str(source.get("title") or "新会话"),
+            [str(item.get("title") or "") for item in existing],
+            title,
+            max_length=160,
+        )
+        branch_id = f"run_{uuid4().hex[:12]}"
+        messages = list(source.get("messages") or [])
+        context_messages = list(source.get("contextMessages") or messages)
+        payload = self.sessions.save(
+            branch_id,
+            title=branch_title,
+            status="completed",
+            parentRunId=run_id,
+            **self._session_workspace_fields(),
+            messages=messages,
+            contextMessages=context_messages,
+            compaction=dict(source.get("compaction") or {}),
+            answer=str(source.get("answer") or ""),
+        )
+        return payload
 
     def _registry(
         self,

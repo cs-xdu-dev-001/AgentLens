@@ -2042,6 +2042,43 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   view.unmount();
 });
 
+test('session branch and export commands stay inside the runtime protocol', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.26.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/branch 方案B');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'branch_session', title: '方案B'});
+  client.emit('message', {
+    type: 'session_branched',
+    result: {
+      runId: 'run_branch',
+      title: '方案B',
+      messageCount: 2,
+      messages: [
+        {role: 'user', content: '旧问题'},
+        {role: 'assistant', content: '旧回答'},
+      ],
+    },
+  });
+  await waitForFrame(view, /已创建会话分支“方案B”/);
+
+  view.stdin.write('/export review.md');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'export_session', filename: 'review.md'});
+  client.emit('message', {
+    type: 'session_exported',
+    result: {path: '/workspace/review.md', filename: 'review.md', messageCount: 2},
+  });
+  await waitForFrame(view, /已导出2条消息：.*review\.md/);
+  view.unmount();
+});
+
 test('resume picker filters sessions, previews context and retries loading in place', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.0" />);
