@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
+import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
+import {
+  composerCommandSuggestions,
+  resolveComposerCommand,
+} from "./composerCommands.js";
 import {
   applyWorkspaceMention,
   workspaceMentionAtCursor,
   workspaceMentionCommonPrefix,
   workspaceMentionSuggestions,
 } from "./composerMentions.js";
-import { SkillPicker } from "./SkillPicker.jsx";
 import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
@@ -313,6 +317,14 @@ export function ChatComposerForm() {
   const handleChatSubmit = (event) => {
     event.preventDefault();
     if (switchingSession) return;
+    const command = resolveComposerCommand(question);
+    if (command) {
+      setQuestion("");
+      closeSkillPicker();
+      runComposerCommand(command);
+      window.requestAnimationFrame(() => resizeTextarea());
+      return;
+    }
     const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
       detail: { question: question.trim() },
     });
@@ -335,6 +347,36 @@ export function ChatComposerForm() {
     window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open", {
       detail: { focus: true },
     }));
+  };
+
+  const runComposerCommand = (command) => {
+    const pageActions = new Set([
+      "knowledge",
+      "workspace",
+      "tools",
+      "skills",
+      "memory",
+      "settings",
+    ]);
+    if (pageActions.has(command.action)) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+        detail: { page: command.action },
+      }));
+      return;
+    }
+    if (command.action === "new-chat") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
+      return;
+    }
+    if (command.action === "model") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open"));
+      return;
+    }
+    if (command.action === "tasks") {
+      handleOpenAgentWorkbench();
+      return;
+    }
+    if (command.action === "stop") handleStopClick();
   };
 
   const updateSkillPicker = (value, cursor) => {
@@ -419,25 +461,32 @@ export function ChatComposerForm() {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setActiveIndex((current) => {
-          if (!filteredSkills.length) return -1;
-          return current < 0 ? 0 : (current + 1) % filteredSkills.length;
+          if (!slashOptions.length) return -1;
+          return current < 0 ? 0 : (current + 1) % slashOptions.length;
         });
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
         setActiveIndex((current) => {
-          if (!filteredSkills.length) return -1;
+          if (!slashOptions.length) return -1;
           return current < 0
-            ? filteredSkills.length - 1
-            : (current - 1 + filteredSkills.length) % filteredSkills.length;
+            ? slashOptions.length - 1
+            : (current - 1 + slashOptions.length) % slashOptions.length;
         });
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        if (activeIndex >= 0 && slashOptions[activeIndex]) {
+          completeSlashOption(slashOptions[activeIndex]);
+        }
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        if (activeIndex >= 0 && filteredSkills[activeIndex]) {
-          selectSkill(filteredSkills[activeIndex]);
+        if (activeIndex >= 0 && slashOptions[activeIndex]) {
+          selectSlashOption(slashOptions[activeIndex]);
         }
         return;
       }
@@ -454,6 +503,14 @@ export function ChatComposerForm() {
     }
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
+    const command = resolveComposerCommand(question);
+    if (command) {
+      setQuestion("");
+      closeSkillPicker();
+      runComposerCommand(command);
+      window.requestAnimationFrame(() => resizeTextarea());
+      return;
+    }
     const submitEvent = new CustomEvent("knowflow:react-chat-enter-submit", {
       detail: { question: question.trim() },
     });
@@ -471,21 +528,31 @@ export function ChatComposerForm() {
     );
   }, [availableSkills, pickerQuery]);
 
+  const filteredCommands = useMemo(
+    () => composerCommandSuggestions(pickerQuery, { sending }),
+    [pickerQuery, sending],
+  );
+
+  const slashOptions = useMemo(() => [
+    ...filteredCommands.map((command) => ({ kind: "command", command })),
+    ...filteredSkills.map((skill) => ({ kind: "skill", skill })),
+  ], [filteredCommands, filteredSkills]);
+
   const filteredMentionPaths = useMemo(
     () => workspaceMentionSuggestions(mentionPaths, mentionQuery),
     [mentionPaths, mentionQuery],
   );
 
   useEffect(() => {
-    if (!pickerOpen || !filteredSkills.length) {
+    if (!pickerOpen || !slashOptions.length) {
       setActiveIndex(-1);
       return;
     }
     setActiveIndex((current) => {
-      if (current < 0 || current >= filteredSkills.length) return 0;
+      if (current < 0 || current >= slashOptions.length) return 0;
       return current;
     });
-  }, [filteredSkills, pickerOpen]);
+  }, [pickerOpen, slashOptions]);
 
   useEffect(() => {
     if (!mentionOpen || !filteredMentionPaths.length) {
@@ -505,6 +572,51 @@ export function ChatComposerForm() {
     const cursor = slashRange.start;
     setQuestion(nextQuestion);
     setSelectedSkill(skill);
+    closeSkillPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const selectSlashOption = (option) => {
+    if (option?.kind === "skill") {
+      selectSkill(option.skill);
+      return;
+    }
+    if (!slashRange || option?.kind !== "command") return;
+    const nextQuestion =
+      question.slice(0, slashRange.start) +
+      question.slice(slashRange.end);
+    const cursor = slashRange.start;
+    setQuestion(nextQuestion);
+    closeSkillPicker();
+    window.requestAnimationFrame(() => {
+      runComposerCommand(option.command);
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const completeSlashOption = (option) => {
+    if (option?.kind === "skill") {
+      selectSkill(option.skill);
+      return;
+    }
+    if (!slashRange || option?.kind !== "command") return;
+    const completed = `${option.command.value} `;
+    const nextQuestion =
+      question.slice(0, slashRange.start) +
+      completed +
+      question.slice(slashRange.end);
+    const cursor = slashRange.start + completed.length;
+    setQuestion(nextQuestion);
     closeSkillPicker();
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
@@ -574,8 +686,10 @@ export function ChatComposerForm() {
   const activeOptionId =
     mentionOpen && mentionActiveIndex >= 0 && filteredMentionPaths[mentionActiveIndex]
       ? `workspace-mention-${mentionActiveIndex}`
-      : pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
-      ? `skill-option-${filteredSkills[activeIndex].id}`
+      : pickerOpen && activeIndex >= 0 && slashOptions[activeIndex]
+      ? slashOptions[activeIndex].kind === "command"
+        ? `composer-command-${slashOptions[activeIndex].command.value.slice(1)}`
+        : `skill-option-${slashOptions[activeIndex].skill.id}`
       : undefined;
   const queueHeading = queuePaused
     ? queueBlockLabels[queueBlockReason] || "待发送已暂停"
@@ -617,11 +731,11 @@ export function ChatComposerForm() {
         />
       ) : null}
       {pickerOpen ? (
-        <SkillPicker
-          skills={filteredSkills}
+        <ComposerSlashPicker
+          options={slashOptions}
           status={skillsStatus}
           activeIndex={activeIndex}
-          onSelect={selectSkill}
+          onSelect={selectSlashOption}
           onRetry={loadAvailableSkills}
           onManage={handleManageSkills}
         />
@@ -786,10 +900,10 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择Skill，@ 引用工作区文件"}
+            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择命令或Skill，@ 引用工作区文件"}
             value={question}
             disabled={switchingSession}
-            aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "skill-picker-listbox" : undefined}
+            aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}
             aria-expanded={mentionOpen || pickerOpen}
             aria-haspopup={"listbox"}
             aria-label={"消息"}

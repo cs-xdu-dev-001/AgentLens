@@ -5,6 +5,7 @@ import {ScrollView} from 'ink-scroll-view';
 import stripAnsi from 'strip-ansi';
 import {
   commandArgumentHint,
+  commandCategoryLabel,
   commandSuggestions,
   dynamicCommandTask,
   mergeCommands,
@@ -1046,19 +1047,25 @@ function CommandMenu({suggestions, selected}) {
   if (!suggestions.length) return null;
   const visible = suggestions.slice(Math.max(0, selected - 2), Math.max(0, selected - 2) + 6);
   const start = Math.max(0, selected - 2);
+  const activeCommand = suggestions[selected] ?? suggestions[0];
   return (
     <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+      <Box justifyContent="space-between">
+        <Text color={MUTED}>命令  {selected + 1}/{suggestions.length}</Text>
+        <Text color={MUTED}>{commandCategoryLabel(activeCommand)}</Text>
+      </Box>
       {visible.map((command, offset) => {
         const active = start + offset === selected;
-        const source = command.source === 'builtin' ? '' : ` [${command.source}]`;
+        const source = commandCategoryLabel(command);
         return (
           <Box key={`${command.source}:${command.value}`}>
             <Text color={active ? ACCENT : PRIMARY} bold={active}>{active ? '❯ ' : '  '}{command.value}</Text>
-            <Text color={MUTED}>  {command.description}{source}</Text>
+            <Text color={MUTED}>  {command.description}  </Text>
+            <Text color={active ? ACCENT : MUTED}>{source}</Text>
           </Box>
         );
       })}
-      {suggestions.length > visible.length ? <Text color={MUTED}>  {selected + 1}/{suggestions.length}</Text> : null}
+      <Text color={MUTED}>↑↓选择 · Enter执行 · Tab或→补全 · Esc关闭</Text>
     </Box>
   );
 }

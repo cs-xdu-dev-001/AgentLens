@@ -33,6 +33,8 @@ def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
 
 def main() -> None:
     picker = "frontend/react/src/components/SkillPicker.jsx"
+    slash_picker = "frontend/react/src/components/ComposerSlashPicker.jsx"
+    commands = "frontend/react/src/components/composerCommands.js"
     composer = "frontend/react/src/components/ChatComposerForm.jsx"
     styles = "frontend/styles.css"
 
@@ -60,6 +62,27 @@ def main() -> None:
     ]:
         require(picker, needle, label)
     forbid(picker, "dangerouslySetInnerHTML", "unsafe picker HTML")
+
+    for needle, label in [
+        ("export function ComposerSlashPicker", "unified slash picker component"),
+        ('id={"composer-slash-listbox"}', "unified slash listbox id"),
+        ('aria-label={"命令与Skills"}', "unified slash accessible name"),
+        ('{"↑↓选择 · Enter执行 · Tab补全 · Esc关闭"}', "keyboard instructions"),
+        ('option.kind === "command"', "command and Skill option discrimination"),
+    ]:
+        require(slash_picker, needle, label)
+    for needle, label in [
+        ("export const WEB_COMPOSER_COMMANDS", "Web command catalog"),
+        ('value: "/new"', "new session command"),
+        ('value: "/model"', "model command"),
+        ('value: "/tasks"', "task workbench command"),
+        ('value: "/mcp"', "MCP command"),
+        ('value: "/skills"', "Skills command"),
+        ('value: "/memory"', "memory command"),
+        ("composerCommandSuggestions", "command filtering"),
+        ("resolveComposerCommand", "typed command execution"),
+    ]:
+        require(commands, needle, label)
 
     composer_text = read(composer)
     for state in (
@@ -101,11 +124,11 @@ def main() -> None:
         ('className={"selected-skill-pill"}', "selected Skill pill"),
         ("removeSelectedSkill", "explicit selected Skill removal"),
         (".detail.skillId = selectedSkill?.id ?? null", "Skill id event payload"),
-        ('aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "skill-picker-listbox" : undefined}', "textarea picker controls"),
+        ('aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}', "textarea picker controls"),
         ("aria-expanded={mentionOpen || pickerOpen}", "textarea picker expanded state"),
         ('aria-label={"消息"}', "textarea accessible name"),
         ('aria-haspopup={"listbox"}', "textarea popup semantics"),
-        ("pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]", "active option aria guard"),
+        ("pickerOpen && activeIndex >= 0 && slashOptions[activeIndex]", "active option aria guard"),
         ("aria-activedescendant={activeOptionId}", "textarea active descendant"),
         ('detail: { page: "skills" }', "event-driven Skills navigation"),
     ]:
@@ -154,29 +177,31 @@ def main() -> None:
         composer_text,
         (
             'if (event.key === "ArrowDown") {',
-            "if (!filteredSkills.length) return -1;",
-            "return current < 0 ? 0 : (current + 1) % filteredSkills.length;",
+            "if (!slashOptions.length) return -1;",
+            "return current < 0 ? 0 : (current + 1) % slashOptions.length;",
             'if (event.key === "ArrowUp") {',
-            "if (!filteredSkills.length) return -1;",
+            "if (!slashOptions.length) return -1;",
             "return current < 0",
-            "? filteredSkills.length - 1",
-            ": (current - 1 + filteredSkills.length) % filteredSkills.length;",
+            "? slashOptions.length - 1",
+            ": (current - 1 + slashOptions.length) % slashOptions.length;",
+            'if (event.key === "Tab") {',
+            "completeSlashOption(slashOptions[activeIndex]);",
             'if (event.key === "Enter") {',
             "event.preventDefault();",
-            "if (activeIndex >= 0 && filteredSkills[activeIndex])",
+            "if (activeIndex >= 0 && slashOptions[activeIndex])",
         ),
         "empty-safe picker keyboard navigation and selection",
     )
     require_in_order(
         composer_text,
         (
-            "if (!pickerOpen || !filteredSkills.length) {",
+            "if (!pickerOpen || !slashOptions.length) {",
             "setActiveIndex(-1);",
             "return;",
             "setActiveIndex((current) => {",
-            "if (current < 0 || current >= filteredSkills.length) return 0;",
+            "if (current < 0 || current >= slashOptions.length) return 0;",
             "return current;",
-            "}, [filteredSkills, pickerOpen]);",
+            "}, [pickerOpen, slashOptions]);",
         ),
         "every filtered option set recomputes the active index",
     )
@@ -198,7 +223,7 @@ def main() -> None:
         (':root[data-theme="mono-dark"] .skill-picker', "dark picker surface"),
     ]:
         require(styles, needle, label)
-    for path in (picker, composer):
+    for path in (picker, slash_picker, commands, composer):
         forbid(path, "dangerouslySetInnerHTML", "unsafe HTML rendering")
         forbid(path, "stats-card", "statistics card")
 

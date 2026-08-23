@@ -11382,6 +11382,35 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-top: 1px solid var(--control-border);
 }
 
+.composer-slash-picker .skill-picker-options {
+  max-height: min(390px, 48dvh);
+}
+
+.composer-slash-picker .skill-picker-option {
+  min-height: 50px;
+}
+
+.composer-slash-footer {
+  align-items: center;
+}
+
+.composer-slash-footer > span {
+  margin-right: auto;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.skill-picker-loading {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 5px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .skill-picker-footer button {
   min-height: 34px;
   padding: 0 10px;
@@ -11505,6 +11534,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   .skill-picker-source {
     padding-inline: 6px;
+  }
+
+  .composer-slash-footer > span {
+    display: none;
   }
 }
 

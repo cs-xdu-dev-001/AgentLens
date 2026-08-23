@@ -101,6 +101,24 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   }, [closePicker, disabled, open]);
 
   useEffect(() => {
+    const handleOpenRequest = () => {
+      if (disabled) return;
+      if (!models.length) {
+        window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+          detail: { page: "settings" },
+        }));
+        return;
+      }
+      setOpen(true);
+    };
+    window.addEventListener("knowflow:react-composer-model-open", handleOpenRequest);
+    return () => window.removeEventListener(
+      "knowflow:react-composer-model-open",
+      handleOpenRequest,
+    );
+  }, [disabled, models.length]);
+
+  useEffect(() => {
     if (!open) return;
     const selectedIndex = models.findIndex(
       (model) => valueOf(model.id) === selectedModelId,

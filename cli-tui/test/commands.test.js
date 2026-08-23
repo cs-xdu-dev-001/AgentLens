@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   commandArgumentHint,
+  commandCategoryLabel,
   commandSuggestions,
   dynamicCommandTask,
   mergeCommands,
@@ -86,6 +87,8 @@ test('commands merge dynamic entries and prefer exact or prefix matches', () => 
   assert.equal(commands[0].value, '/tool:read-file');
   assert.equal(commandSuggestions('/perm', commands)[0].value, '/permissions');
   assert.equal(commandSuggestions('/read', commands)[0].value, '/tool:read-file');
+  assert.equal(commandCategoryLabel(commandSuggestions('/perm', commands)[0]), '安全');
+  assert.equal(commandCategoryLabel(commands[0]), '工具');
 });
 
 test('aliases resolve to canonical commands', () => {
