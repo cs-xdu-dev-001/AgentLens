@@ -47,6 +47,11 @@ def main() -> None:
     require(component, "knowflow:react-chat-reasoning-change", "reasoning change dispatch")
     require(component, 'role={"radiogroup"}', "reasoning radio semantics")
     require(component, "aria-activedescendant", "active option semantics")
+    require(component, 'import Fuse from "fuse.js"', "mature fuzzy search library")
+    require(component, "搜索模型、提供商或协议", "model search input")
+    require(component, 'aria-keyshortcuts={"Alt+P"}', "model shortcut semantics")
+    require(component, "agentlens.recentChatModels.v1", "recent model ordering")
+    require(component, "没有匹配", "empty model search state")
     require(composer, "ComposerModelPicker", "composer model picker mount")
     require(
         composer,
@@ -81,6 +86,8 @@ def main() -> None:
         ".composer-model-popover",
         ".composer-model-option",
         ".composer-model-option.selected",
+        ".composer-model-search",
+        ".composer-model-empty",
         ".composer-reasoning-section",
     ):
         if selector not in styles:

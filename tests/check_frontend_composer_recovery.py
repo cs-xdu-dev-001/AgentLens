@@ -63,6 +63,9 @@ if (feedback?.value !== "/feedback" || feedback?.action !== "feedback") {
 if (!composerCommandSuggestions("bug").some((item) => item.value === "/feedback")) {
   throw new Error("feedback alias is not searchable");
 }
+if (composerCommandSuggestions("renme")[0]?.value !== "/rename") {
+  throw new Error("fuzzy command search did not recover a typo");
+}
 const rename = parseComposerCommand("/rename 发布复盘");
 if (rename?.command?.value !== "/rename" || rename?.args !== "发布复盘") {
   throw new Error("session command arguments were not parsed");

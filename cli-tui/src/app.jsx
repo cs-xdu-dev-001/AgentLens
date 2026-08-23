@@ -3,6 +3,7 @@ import {Box, Static, Text, useApp, useInput, usePaste, useStdout} from 'ink';
 import {useOnWheel} from '@ink-tools/ink-mouse';
 import {ScrollView} from 'ink-scroll-view';
 import stripAnsi from 'strip-ansi';
+import Fuse from 'fuse.js';
 import {
   commandArgumentHint,
   commandCategoryLabel,
@@ -72,6 +73,28 @@ export function resolveTerminalMode(env = process.env) {
     fullscreenEnabled,
     mouseEnabled: fullscreenEnabled && envEnabled(env.KNOWFLOW_CLI_MOUSE),
   };
+}
+
+export function rankModelOptions(models = [], recentModelIds = [], query = '') {
+  const ranks = new Map(recentModelIds.map((id, index) => [String(id), index]));
+  const ordered = [...models].sort((left, right) => {
+    const selectedDelta = Number(Boolean(right.selected)) - Number(Boolean(left.selected));
+    if (selectedDelta) return selectedDelta;
+    return (ranks.get(String(left.id)) ?? Number.MAX_SAFE_INTEGER)
+      - (ranks.get(String(right.id)) ?? Number.MAX_SAFE_INTEGER);
+  });
+  const normalized = String(query ?? '').trim().toLowerCase();
+  if (!normalized) return ordered;
+  return new Fuse(ordered, {
+    threshold: 0.34,
+    ignoreLocation: true,
+    keys: [
+      {name: 'name', weight: 3},
+      {name: 'modelName', weight: 3},
+      {name: 'provider', weight: 1.5},
+      {name: 'apiMode', weight: 1},
+    ],
+  }).search(normalized).map(result => result.item);
 }
 
 export function sanitizeComposerInput(value) {
@@ -1759,6 +1782,7 @@ export function App({
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [models, setModels] = useState([]);
+  const [recentModelIds, setRecentModelIds] = useState([]);
   const [modelPicker, setModelPicker] = useState(false);
   const [modelChoice, setModelChoice] = useState(0);
   const [modelQuery, setModelQuery] = useState('');
@@ -2244,7 +2268,12 @@ export function App({
         setCommands(mergeCommands(message.commands));
         setWorkspace(message.workspace ?? null);
         setSessions(Array.isArray(message.sessions) ? message.sessions : []);
-        setModels(Array.isArray(message.models) ? message.models : []);
+        const readyModels = Array.isArray(message.models) ? message.models : [];
+        setModels(readyModels);
+        const readyModelId = readyModels.find(item => item.selected)?.id;
+        if (readyModelId !== undefined && readyModelId !== null) {
+          setRecentModelIds(current => [String(readyModelId), ...current.filter(id => id !== String(readyModelId))].slice(0, 5));
+        }
         setHistory(Array.isArray(message.history) ? message.history : []);
         const recoverable = (message.sessions ?? []).some(session => !['completed', 'cancelled'].includes(session.status));
         const warnings = Array.isArray(message.workspace?.warnings) ? message.workspace.warnings.filter(Boolean) : [];
@@ -2454,7 +2483,11 @@ export function App({
       if (message.type === 'model_list') {
         const values = Array.isArray(message.models) ? message.models : [];
         setModels(values);
-        setModelChoice(Math.max(0, values.findIndex(item => item.selected)));
+        const selectedId = values.find(item => item.selected)?.id;
+        if (selectedId !== undefined && selectedId !== null) {
+          setRecentModelIds(current => [String(selectedId), ...current.filter(id => id !== String(selectedId))].slice(0, 5));
+        }
+        setModelChoice(0);
         closeTransientSurfaces('models');
         setModelLoading(false);
         setModelError('');
@@ -2466,6 +2499,10 @@ export function App({
         const label = publicLabel(message.model || message.selected?.name || message.selected?.modelName, '默认模型', 120);
         setModel(label);
         setModels(values => values.map(item => ({...item, selected: String(item.id) === String(message.selected?.id)})));
+        if (message.selected?.id !== undefined && message.selected?.id !== null) {
+          const selectedId = String(message.selected.id);
+          setRecentModelIds(current => [selectedId, ...current.filter(id => id !== selectedId)].slice(0, 5));
+        }
         setModelLoading(false);
         setModelError('');
         setModelPicker(false);
@@ -2916,14 +2953,8 @@ export function App({
     });
   }, [currentRunId, sessionQuery, sessions]);
   const filteredModels = useMemo(() => {
-    const query = modelQuery.trim().toLowerCase();
-    return models.filter(item => !query || [
-      item.name,
-      item.modelName,
-      item.provider,
-      item.apiMode,
-    ].some(value => String(value ?? '').toLowerCase().includes(query)));
-  }, [modelQuery, models]);
+    return rankModelOptions(models, recentModelIds, modelQuery);
+  }, [modelQuery, models, recentModelIds]);
   const activeModel = useMemo(() => (
     models.find(item => item.selected)
     ?? models.find(item => [item.name, item.modelName].some(value => String(value ?? '') === model))

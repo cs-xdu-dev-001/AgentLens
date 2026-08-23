@@ -13,6 +13,7 @@ import {
   enqueueWaitingInteraction,
   formatPastedTextRef,
   pastedTextLineCount,
+  rankModelOptions,
   resolveInteractionFocus,
   removeWaitingInteraction,
   resolveTerminalMode,
@@ -42,6 +43,16 @@ import {
 } from '../src/terminalFeedback.js';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {
+  const models = [
+    {id: 1, name: 'DeepSeek Chat', modelName: 'deepseek-chat', provider: 'deepseek'},
+    {id: 2, name: 'GPT 5.5', modelName: 'gpt-5.5', provider: 'openai', selected: true},
+    {id: 3, name: 'Kimi K3', modelName: 'kimi-k3', provider: 'moonshot'},
+  ];
+  assert.deepEqual(rankModelOptions(models, ['3']).map(item => item.id), [2, 3, 1]);
+  assert.equal(rankModelOptions(models, [], 'kimk')[0]?.id, 3);
+});
 
 test('terminal feedback mirrors idle, running, waiting, and failed Agent states', () => {
   assert.deepEqual(terminalFeedbackState(), {
@@ -2044,7 +2055,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 
 test('session rename, branch and export commands stay inside the runtime protocol', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.27.0" />);
+  const view = render(<App client={client} version="0.28.0" />);
   await waitForFrame(view, /deepseek-chat/);
 
   view.stdin.write('/rename 发布复盘');

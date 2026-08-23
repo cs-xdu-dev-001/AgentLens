@@ -1,3 +1,5 @@
+import Fuse from "fuse.js";
+
 export const WEB_COMPOSER_COMMANDS = Object.freeze([
   {
     value: "/new",
@@ -145,20 +147,42 @@ export function composerCommandSuggestions(
 ) {
   const normalized = String(query || "").trim().toLocaleLowerCase();
   const recoverable = new Set(Array.isArray(recoveryActions) ? recoveryActions : []);
-  return WEB_COMPOSER_COMMANDS.filter((command) => {
+  const available = WEB_COMPOSER_COMMANDS.filter((command) => {
     if (command.when === "sending" && !sending) return false;
     if (command.when === "continue" && !recoverable.has("continue") && !queuePaused) return false;
     if (command.when === "retry" && !recoverable.has("retry")) return false;
-    if (!normalized) return true;
-    return [
-      command.value.slice(1),
-      ...(command.aliases || []).map((alias) => alias.slice(1)),
-      command.label,
-      command.description,
-      command.category,
-    ]
-      .some((value) => String(value).toLocaleLowerCase().includes(normalized));
+    return true;
   });
+  if (!normalized) return available;
+
+  const names = (command) => [command.value, ...(command.aliases || [])]
+    .map((value) => value.slice(1).toLocaleLowerCase());
+  const exact = available.filter((command) => names(command).includes(normalized));
+  const prefixed = available.filter((command) => (
+    !exact.includes(command)
+    && names(command).some((value) => value.startsWith(normalized))
+  ));
+  const remaining = available.filter((command) => (
+    !exact.includes(command) && !prefixed.includes(command)
+  ));
+  const fuse = new Fuse(remaining.map((command) => ({
+    ...command,
+    commandName: names(command).join(" "),
+    aliasesText: (command.aliases || []).join(" "),
+  })), {
+    threshold: 0.34,
+    location: 0,
+    distance: 100,
+    ignoreLocation: true,
+    keys: [
+      { name: "commandName", weight: 4 },
+      { name: "label", weight: 2 },
+      { name: "aliasesText", weight: 2 },
+      { name: "description", weight: 1 },
+      { name: "category", weight: 0.5 },
+    ],
+  });
+  return [...exact, ...prefixed, ...fuse.search(normalized).map((result) => result.item)];
 }
 
 export function resolveComposerCommand(value) {

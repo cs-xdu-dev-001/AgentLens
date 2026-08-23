@@ -5,11 +5,43 @@ import {
   useRef,
   useState,
 } from "react";
+import Fuse from "fuse.js";
 
 
 const valueOf = (value) => (
   value === undefined || value === null ? "" : String(value)
 );
+
+const RECENT_MODELS_KEY = "agentlens.recentChatModels.v1";
+const RECENT_MODELS_LIMIT = 5;
+
+function readRecentModelIds() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(RECENT_MODELS_KEY) || "[]");
+    return Array.isArray(value) ? value.map(valueOf).filter(Boolean).slice(0, RECENT_MODELS_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberModelId(modelId, current = []) {
+  const value = valueOf(modelId);
+  if (!value) return current;
+  const next = [value, ...current.filter((item) => valueOf(item) !== value)]
+    .slice(0, RECENT_MODELS_LIMIT);
+  try {
+    window.localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(next));
+  } catch {
+    // Model selection remains usable when storage is unavailable.
+  }
+  return next;
+}
+
+function protocolLabel(apiMode) {
+  return String(apiMode || "").toLocaleLowerCase() === "responses"
+    ? "Responses"
+    : "Chat Completions";
+}
 
 function pickModelId(models, preferredId = "") {
   const wanted = valueOf(preferredId);
@@ -20,7 +52,7 @@ function pickModelId(models, preferredId = "") {
 }
 
 function modelDescription(model) {
-  return [model?.provider, model?.modelName]
+  return [model?.provider, model?.modelName, protocolLabel(model?.apiMode)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -37,10 +69,40 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   const [models, setModels] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState("default");
+  const [recentModelIds, setRecentModelIds] = useState(readRecentModelIds);
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
+  const searchRef = useRef(null);
+
+  const orderedModels = useMemo(() => {
+    const rank = new Map(recentModelIds.map((id, index) => [valueOf(id), index]));
+    return [...models].sort((left, right) => {
+      const selectedDelta = Number(valueOf(right.id) === selectedModelId)
+        - Number(valueOf(left.id) === selectedModelId);
+      if (selectedDelta) return selectedDelta;
+      const leftRank = rank.get(valueOf(left.id)) ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = rank.get(valueOf(right.id)) ?? Number.MAX_SAFE_INTEGER;
+      return leftRank - rightRank;
+    });
+  }, [models, recentModelIds, selectedModelId]);
+
+  const visibleModels = useMemo(() => {
+    const normalized = query.trim();
+    if (!normalized) return orderedModels;
+    return new Fuse(orderedModels, {
+      threshold: 0.34,
+      ignoreLocation: true,
+      keys: [
+        { name: "name", weight: 3 },
+        { name: "modelName", weight: 3 },
+        { name: "provider", weight: 1.5 },
+        { name: "apiMode", weight: 1 },
+      ],
+    }).search(normalized).map((result) => result.item);
+  }, [orderedModels, query]);
 
   const selectedModel = useMemo(
     () => models.find(
@@ -51,11 +113,19 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
 
   const closePicker = useCallback((restoreInputFocus = false) => {
     setOpen(false);
+    setQuery("");
     setActiveIndex(-1);
     if (restoreInputFocus) {
       window.requestAnimationFrame(() => inputRef?.current?.focus());
     }
   }, [inputRef]);
+
+  const openSettings = useCallback(() => {
+    closePicker();
+    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+      detail: { page: "settings" },
+    }));
+  }, [closePicker]);
 
   useEffect(() => {
     const handleModelOptionsUpdated = (event) => {
@@ -145,24 +215,33 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   }, [disabled, models.length]);
 
   useEffect(() => {
+    const handleShortcut = (event) => {
+      if (disabled || event.defaultPrevented || !event.altKey || event.key.toLocaleLowerCase() !== "p") return;
+      event.preventDefault();
+      if (!models.length) {
+        openSettings();
+        return;
+      }
+      setOpen(true);
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [disabled, models.length, openSettings]);
+
+  useEffect(() => {
     if (!open) return;
-    const selectedIndex = models.findIndex(
+    const selectedIndex = visibleModels.findIndex(
       (model) => valueOf(model.id) === selectedModelId,
     );
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
-  }, [models, open, selectedModelId]);
-
-  const openSettings = () => {
-    closePicker();
-    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
-      detail: { page: "settings" },
-    }));
-  };
+    window.requestAnimationFrame(() => searchRef.current?.focus());
+  }, [open, selectedModelId, visibleModels]);
 
   const selectModel = (model) => {
     const value = valueOf(model?.id);
     if (!value || disabled) return;
     setSelectedModelId(value);
+    setRecentModelIds((current) => rememberModelId(value, current));
     window.dispatchEvent(new CustomEvent(
       "knowflow:react-chat-model-change",
       { detail: { value } },
@@ -185,7 +264,11 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
       openSettings();
       return;
     }
-    setOpen((current) => !current);
+    if (open) {
+      closePicker();
+      return;
+    }
+    setOpen(true);
   };
 
   const handleKeyDown = (event) => {
@@ -205,20 +288,20 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
       }
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActiveIndex((current) => {
-        if (!models.length) return -1;
+        if (!visibleModels.length) return -1;
         const start = current < 0 ? 0 : current;
-        return (start + direction + models.length) % models.length;
+        return (start + direction + visibleModels.length) % visibleModels.length;
       });
       return;
     }
     if (event.key === "Enter" && open && activeIndex >= 0) {
       event.preventDefault();
-      selectModel(models[activeIndex]);
+      selectModel(visibleModels[activeIndex]);
     }
   };
 
   const activeOptionId = open && activeIndex >= 0
-    ? `composer-model-option-${models[activeIndex]?.id}`
+    ? `composer-model-option-${activeIndex}`
     : undefined;
 
   return (
@@ -236,6 +319,7 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
         aria-expanded={open}
         aria-controls={open ? "composer-model-listbox" : undefined}
         aria-haspopup={"listbox"}
+        aria-keyshortcuts={"Alt+P"}
         onClick={togglePicker}
       >
         <span className={"composer-model-mark"} aria-hidden={"true"}>
@@ -256,6 +340,25 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
 
       {open ? (
         <div className={"composer-model-popover"}>
+          <div className={"composer-model-search"}>
+            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+              <circle cx={"8.5"} cy={"8.5"} r={"5.5"} />
+              <path d={"m13 13 4 4"} />
+            </svg>
+            <input
+              ref={searchRef}
+              type={"search"}
+              value={query}
+              placeholder={"搜索模型、提供商或协议"}
+              aria-label={"搜索聊天模型"}
+              role={"combobox"}
+              aria-controls={"composer-model-listbox"}
+              aria-expanded={true}
+              aria-activedescendant={activeOptionId}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <kbd>{"Alt P"}</kbd>
+          </div>
           <div
             className={"composer-model-list"}
             id={"composer-model-listbox"}
@@ -263,7 +366,7 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
             aria-label={"选择聊天模型"}
             aria-activedescendant={activeOptionId}
           >
-            {models.map((model, index) => {
+            {visibleModels.map((model, index) => {
               const selected = valueOf(model.id) === selectedModelId;
               const active = index === activeIndex;
               return (
@@ -273,7 +376,7 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
                     selected ? "selected" : "",
                     active ? "active" : "",
                   ].filter(Boolean).join(" ")}
-                  id={`composer-model-option-${model.id}`}
+                  id={`composer-model-option-${index}`}
                   key={model.id}
                   type={"button"}
                   role={"option"}
@@ -291,6 +394,11 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
                 </button>
               );
             })}
+            {!visibleModels.length ? (
+              <div className={"composer-model-empty"} role={"status"}>
+                {`没有匹配“${query.trim()}”的模型`}
+              </div>
+            ) : null}
           </div>
           <div className={"composer-reasoning-section"}>
             <strong>{"推理强度"}</strong>
