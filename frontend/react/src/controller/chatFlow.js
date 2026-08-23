@@ -154,7 +154,35 @@ function queueBlockReasonFromProjection(projection) {
   return "run";
 }
 
-export function composerAgentStateFromProjection(projection = {}) {
+const composerRecoveryActions = new Set(["continue", "retry", "fix"]);
+
+function composerRecoveryContext(projection = {}, context = {}) {
+  const failedStep = [...(Array.isArray(projection?.trace) ? projection.trace : [])]
+    .reverse()
+    .find((step) => ["failed", "error", "interrupted"].includes(
+      String(step?.status || "").toLowerCase(),
+    ));
+  return {
+    runId: String(projection?.run?.id || "").slice(0, 200),
+    messageId: String(context?.messageId || "").slice(0, 200),
+    recoveryActions: [...new Set(
+      (Array.isArray(projection?.recoveryActions) ? projection.recoveryActions : [])
+        .map(String)
+        .filter((action) => composerRecoveryActions.has(action)),
+    )],
+    failureCode: String(
+      projection?.error?.code || projection?.error?.errorCode || "",
+    ).replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 80),
+    failedStepTitle: String(failedStep?.title || failedStep?.name || "")
+      .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160),
+  };
+}
+
+export function composerAgentStateFromProjection(projection = {}, context = {}) {
+  const recovery = composerRecoveryContext(projection, context);
   const blockedReason = projection?.paused
     ? queueBlockReasonFromProjection(projection)
     : "";
@@ -164,6 +192,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "等待你的回答",
       detail: "回答当前问题后，Agent会从原位置继续",
       actionable: true,
+      ...recovery,
     };
   }
   if (blockedReason === "approval") {
@@ -172,6 +201,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "等待权限确认",
       detail: "审查工具操作并决定是否允许",
       actionable: true,
+      ...recovery,
     };
   }
 
@@ -186,6 +216,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "执行失败",
       detail: "打开运行详情查看错误与恢复操作",
       actionable: true,
+      ...recovery,
     };
   }
   if (projection?.paused) {
@@ -194,6 +225,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "任务已暂停",
       detail: "打开运行详情处理后继续",
       actionable: true,
+      ...recovery,
     };
   }
   if (projection?.terminal === "completed" || runStatus === "completed") {
@@ -202,6 +234,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "任务已完成",
       detail: "结果和验证信息已写入对话",
       actionable: false,
+      ...recovery,
     };
   }
   if (projection?.terminal === "cancelled" || runStatus === "cancelled") {
@@ -210,6 +243,7 @@ export function composerAgentStateFromProjection(projection = {}) {
       label: "任务已停止",
       detail: "输入新任务即可继续",
       actionable: false,
+      ...recovery,
     };
   }
 
@@ -227,12 +261,14 @@ export function composerAgentStateFromProjection(projection = {}) {
         label: "Agent正在工作",
         detail: "正在规划、调用工具或生成答案",
         actionable: false,
+        ...recovery,
       }
     : {
         mode: "idle",
         label: "就绪",
         detail: "",
         actionable: false,
+        ...recovery,
       };
 }
 
@@ -286,6 +322,21 @@ export function createChatFlow({
       label: String(detail.label || "就绪"),
       detail: String(detail.detail || ""),
       actionable: Boolean(detail.actionable),
+      runId: String(detail.runId || "").slice(0, 200),
+      messageId: String(detail.messageId || "").slice(0, 200),
+      recoveryActions: [...new Set(
+        (Array.isArray(detail.recoveryActions) ? detail.recoveryActions : [])
+          .map(String)
+          .filter((action) => composerRecoveryActions.has(action)),
+      )],
+      failureCode: String(detail.failureCode || "")
+        .replace(/[^A-Za-z0-9_.-]/g, "")
+        .slice(0, 80),
+      failedStepTitle: String(detail.failedStepTitle || "")
+        .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 160),
     };
     const key = JSON.stringify(next);
     if (key === composerStateKey) return;
@@ -532,7 +583,10 @@ export function createChatFlow({
         ? message.messageId
         : null;
     }
-    publishAgentComposerState(composerAgentStateFromProjection(projection));
+    publishAgentComposerState(composerAgentStateFromProjection(
+      projection,
+      { messageId: message.messageId },
+    ));
     return projection;
   }
 
@@ -1022,8 +1076,8 @@ export function createChatFlow({
           publishAgentComposerState(composerAgentStateFromProjection({
             ...projection,
             terminal: "failed",
-            error: { message: "reconnect_failed" },
-          }));
+            error: { code: "reconnect_failed", message: "reconnect_failed" },
+          }, { messageId: answer.messageId }));
         }
       } else {
         cancelPendingApprovals();
@@ -1041,8 +1095,8 @@ export function createChatFlow({
         publishAgentComposerState(composerAgentStateFromProjection({
           ...projection,
           terminal: "failed",
-          error: { message: "request_failed" },
-        }));
+          error: { code: "request_failed", message: "request_failed" },
+        }, { messageId: answer.messageId }));
       }
     } finally {
       window.removeEventListener(

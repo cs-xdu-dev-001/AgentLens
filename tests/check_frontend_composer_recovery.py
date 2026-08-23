@@ -1,0 +1,71 @@
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+commands = read("frontend/react/src/components/composerCommands.js")
+composer = read("frontend/react/src/components/ChatComposerForm.jsx")
+flow = read("frontend/react/src/controller/chatFlow.js")
+
+for needle in (
+    'value: "/continue"',
+    'value: "/retry"',
+    'when: "continue"',
+    'when: "retry"',
+):
+    assert needle in commands, f"missing contextual recovery command: {needle}"
+
+for needle in (
+    'knowflow:react-agent-run-action',
+    'action === "continue" ? "resume" : "restart"',
+    'handleQueueAction("resume")',
+    "agentState.recoveryActions",
+):
+    assert needle in composer, f"missing composer recovery bridge: {needle}"
+
+for needle in (
+    "composerRecoveryContext",
+    "projection?.recoveryActions",
+    "messageId: message.messageId",
+):
+    assert needle in flow, f"missing recovery projection context: {needle}"
+
+script = r'''
+import { composerCommandSuggestions } from "./frontend/react/src/components/composerCommands.js";
+
+const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
+const idle = values();
+if (idle.includes("/continue") || idle.includes("/retry")) {
+  throw new Error("idle composer exposed recovery commands");
+}
+const failed = values({ recoveryActions: ["continue", "retry"] });
+if (!failed.includes("/continue") || !failed.includes("/retry")) {
+  throw new Error("failed composer omitted recovery commands");
+}
+const queued = values({ queuePaused: true });
+if (!queued.includes("/continue") || queued.includes("/retry")) {
+  throw new Error("paused queue recovery commands are incorrect");
+}
+const retrySearch = composerCommandSuggestions("重新", { recoveryActions: ["retry"] });
+if (retrySearch.length !== 1 || retrySearch[0].value !== "/retry") {
+  throw new Error("localized recovery search failed");
+}
+'''
+
+result = subprocess.run(
+    ["node", "--input-type=module", "-e", script],
+    cwd=ROOT,
+    text=True,
+    capture_output=True,
+    check=False,
+)
+if result.returncode:
+    raise AssertionError(result.stderr or result.stdout)
+
+print("frontend composer recovery checks passed")

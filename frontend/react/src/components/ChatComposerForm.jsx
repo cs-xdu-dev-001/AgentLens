@@ -31,6 +31,11 @@ const idleAgentState = Object.freeze({
   label: "就绪",
   detail: "",
   actionable: false,
+  runId: "",
+  messageId: "",
+  recoveryActions: [],
+  failureCode: "",
+  failedStepTitle: "",
 });
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
@@ -266,12 +271,24 @@ export function ChatComposerForm() {
         label: String(detail.label || "就绪"),
         detail: String(detail.detail || ""),
         actionable: Boolean(detail.actionable),
+        runId: String(detail.runId || ""),
+        messageId: String(detail.messageId || ""),
+        recoveryActions: Array.isArray(detail.recoveryActions)
+          ? detail.recoveryActions.filter((action) => ["continue", "retry", "fix"].includes(action))
+          : [],
+        failureCode: String(detail.failureCode || ""),
+        failedStepTitle: String(detail.failedStepTitle || ""),
       };
       setAgentState((current) => (
         current.mode === next.mode
         && current.label === next.label
         && current.detail === next.detail
         && current.actionable === next.actionable
+        && current.runId === next.runId
+        && current.messageId === next.messageId
+        && current.recoveryActions.join(",") === next.recoveryActions.join(",")
+        && current.failureCode === next.failureCode
+        && current.failedStepTitle === next.failedStepTitle
           ? current
           : next
       ));
@@ -357,6 +374,31 @@ export function ChatComposerForm() {
     }));
   };
 
+  const handleRecoveryCommand = (action) => {
+    const advertised = new Set(agentState.recoveryActions);
+    if (action === "continue" && !advertised.has("continue") && queuePaused) {
+      handleQueueAction("resume");
+      return;
+    }
+    if (
+      !agentState.runId
+      || !agentState.messageId
+      || !advertised.has(action)
+    ) {
+      handleOpenAgentWorkbench();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-run-action", {
+      detail: {
+        action: action === "continue" ? "resume" : "restart",
+        failedStepTitle: agentState.failedStepTitle,
+        failureCode: agentState.failureCode || "agent_run_failed",
+        messageId: agentState.messageId,
+        runId: agentState.runId,
+      },
+    }));
+  };
+
   const runComposerCommand = (command) => {
     const pageActions = new Set([
       "knowledge",
@@ -386,6 +428,10 @@ export function ChatComposerForm() {
     }
     if (command.action === "tasks") {
       handleOpenAgentWorkbench();
+      return;
+    }
+    if (["continue", "retry"].includes(command.action)) {
+      handleRecoveryCommand(command.action);
       return;
     }
     if (command.action === "stop") handleStopClick();
@@ -548,8 +594,12 @@ export function ChatComposerForm() {
   }, [availableSkills, pickerQuery]);
 
   const filteredCommands = useMemo(
-    () => composerCommandSuggestions(pickerQuery, { sending }),
-    [pickerQuery, sending],
+    () => composerCommandSuggestions(pickerQuery, {
+      sending,
+      recoveryActions: agentState.recoveryActions,
+      queuePaused,
+    }),
+    [agentState.recoveryActions, pickerQuery, queuePaused, sending],
   );
 
   const slashOptions = useMemo(() => [

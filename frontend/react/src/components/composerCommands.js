@@ -28,6 +28,22 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "tasks",
   },
   {
+    value: "/continue",
+    label: "继续任务",
+    description: "从checkpoint继续失败任务或恢复待发送队列",
+    category: "恢复",
+    action: "continue",
+    when: "continue",
+  },
+  {
+    value: "/retry",
+    label: "重新运行本轮",
+    description: "从头重新执行失败的本轮任务",
+    category: "恢复",
+    action: "retry",
+    when: "retry",
+  },
+  {
     value: "/knowledge",
     label: "知识库",
     description: "管理文档与检索设置",
@@ -86,10 +102,16 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
   },
 ]);
 
-export function composerCommandSuggestions(query, { sending = false } = {}) {
+export function composerCommandSuggestions(
+  query,
+  { sending = false, recoveryActions = [], queuePaused = false } = {},
+) {
   const normalized = String(query || "").trim().toLocaleLowerCase();
+  const recoverable = new Set(Array.isArray(recoveryActions) ? recoveryActions : []);
   return WEB_COMPOSER_COMMANDS.filter((command) => {
     if (command.when === "sending" && !sending) return false;
+    if (command.when === "continue" && !recoverable.has("continue") && !queuePaused) return false;
+    if (command.when === "retry" && !recoverable.has("retry")) return false;
     if (!normalized) return true;
     return [command.value.slice(1), command.label, command.description, command.category]
       .some((value) => String(value).toLocaleLowerCase().includes(normalized));

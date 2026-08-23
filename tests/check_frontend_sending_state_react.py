@@ -91,6 +91,22 @@ for (const [projection, expected] of composerStates) {
     throw new Error(`composer state ${expected} projected as ${state.mode}`);
   }
 }
+const recoverable = composerAgentStateFromProjection({
+  terminal: "failed",
+  run: {id: "run-1", status: "failed"},
+  error: {code: "tool_failed", message: "boom"},
+  recoveryActions: ["continue", "retry", "unsafe"],
+  trace: [{status: "failed", title: "搜索网页"}],
+}, {messageId: "message-1"});
+if (
+  recoverable.runId !== "run-1"
+  || recoverable.messageId !== "message-1"
+  || recoverable.recoveryActions.join(",") !== "continue,retry"
+  || recoverable.failureCode !== "tool_failed"
+  || recoverable.failedStepTitle !== "搜索网页"
+) {
+  throw new Error("composer recovery context projection failed");
+}
 '''
     result = subprocess.run(
         ["node", "--input-type=module", "-e", script],
