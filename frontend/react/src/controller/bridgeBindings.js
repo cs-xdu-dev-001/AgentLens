@@ -51,11 +51,20 @@ export function bindReactControllerEvents({
     const detail = event.detail || {};
     state.currentUser = null;
     state.currentSessionId = null;
+    state.currentSessionTitle = "";
     clearQueuedChats();
     renderActiveSession();
     clearChatMessages();
     showAuthScreen(state.oauthProviders);
     if (detail.message) toast(detail.message);
+  });
+
+  window.addEventListener("knowflow:react-active-session-updated", (event) => {
+    const detail = event.detail || {};
+    if (String(detail.sessionId || "") !== String(state.currentSessionId || "")) return;
+    if (Object.prototype.hasOwnProperty.call(detail, "title")) {
+      state.currentSessionTitle = String(detail.title || "").trim();
+    }
   });
 
   window.addEventListener("knowflow:react-message-copy", (event) => {

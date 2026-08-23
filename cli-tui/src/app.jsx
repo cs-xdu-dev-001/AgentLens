@@ -1330,6 +1330,13 @@ function workspaceLabel(workspace) {
   return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
 }
 
+export function sessionTitleFromPrompt(value, fallback = '') {
+  const title = publicLabel(value, fallback, 160)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return title.length > 64 ? `${title.slice(0, 63).trimEnd()}…` : title;
+}
+
 function workspaceDiagnosticName(workspace) {
   const source = String(workspace?.cwd || workspace?.projectRoot || '').replace(/[\\/]+$/u, '');
   return publicLabel(source.split(/[\\/]/u).filter(Boolean).at(-1), '未识别', 80);
@@ -1869,6 +1876,7 @@ export function App({
   const [reasoningPicker, setReasoningPicker] = useState(false);
   const [reasoningChoice, setReasoningChoice] = useState(0);
   const [currentRunId, setCurrentRunId] = useState('');
+  const [currentSessionTitle, setCurrentSessionTitle] = useState('');
   const activeRequestIdRef = useRef('');
   const settledRequestIdsRef = useRef(new Set());
   const queueInterruptRequestRef = useRef('');
@@ -2634,6 +2642,15 @@ export function App({
           content: String(item.content ?? ''),
         })));
         setCurrentRunId(String(result.runId || ''));
+        setCurrentSessionTitle(sessionTitleFromPrompt(result.title, '新会话（分支）'));
+        setSessions(current => [
+          {
+            runId: String(result.runId || ''),
+            title: sessionTitleFromPrompt(result.title, '新会话（分支）'),
+            status: 'completed',
+          },
+          ...current.filter(item => item.runId !== String(result.runId || '')),
+        ].filter(item => item.runId));
         setTaskArchived(true);
         appendItem('assistant', `已创建会话分支“${publicLabel(result.title, '新会话（分支）', 160)}”，后续任务不会改动原会话。`);
         setPhase('分支已就绪');
@@ -2646,7 +2663,14 @@ export function App({
       }
       if (message.type === 'session_renamed') {
         const result = message.result ?? {};
-        appendItem('assistant', `当前会话已重命名为“${publicLabel(result.title, '未命名会话', 160)}”。`);
+        const nextTitle = sessionTitleFromPrompt(result.title, '未命名会话');
+        setCurrentSessionTitle(nextTitle);
+        setSessions(current => current.map(item => (
+          result.runId && item.runId === String(result.runId)
+            ? {...item, title: nextTitle}
+            : item
+        )));
+        appendItem('assistant', `当前会话已重命名为“${nextTitle}”。`);
         setPhase('重命名完成');
         return;
       }
@@ -2832,6 +2856,7 @@ export function App({
         sessionApprovals.current.clear();
         setPermissionMode('ask');
         setCurrentRunId('');
+        setCurrentSessionTitle('');
         activeRequestIdRef.current = '';
         settledRequestIdsRef.current.clear();
         queueInterruptRequestRef.current = '';
@@ -3275,6 +3300,9 @@ export function App({
       return;
     }
     activeRequestIdRef.current = requestId;
+    if (!currentRunId && !currentSessionTitle) {
+      setCurrentSessionTitle(sessionTitleFromPrompt(publicDisplayText, '新会话'));
+    }
     setRunning(true);
     setCancelPending(false);
     setRunRecoveryOpen(false);
@@ -3308,14 +3336,16 @@ export function App({
     setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
     appendItem('user', publicDisplayText);
-  }, [approval, appendItem, client, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, running]);
+  }, [approval, appendItem, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, running]);
 
-  const resumeRun = useCallback(runId => {
+  const resumeRun = useCallback((runId, title = '') => {
     const identifier = String(runId ?? '').trim();
     if (!identifier || running || approval || question) return;
     requestCounter.current += 1;
     const requestId = `resume-${requestCounter.current}`;
     activeRequestIdRef.current = requestId;
+    const knownTitle = title || sessions.find(item => item.runId === identifier)?.title;
+    setCurrentSessionTitle(sessionTitleFromPrompt(knownTitle, '恢复会话'));
     setRunning(true);
     setCancelPending(false);
     setSessionPicker(false);
@@ -3346,7 +3376,7 @@ export function App({
       requestId,
       runId: identifier,
     });
-  }, [approval, client, question, resetAssistantDraft, running]);
+  }, [approval, client, question, resetAssistantDraft, running, sessions]);
 
   const executeInput = useCallback(raw => {
     const text = String(raw ?? '').trim();
@@ -3445,7 +3475,7 @@ export function App({
         : '';
       const reasoningLabel = REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动';
       const contextStatus = contextIndicator(runProjection.context);
-      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · 推理${reasoningLabel} · ${contextStatus || '上下文待统计'} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
+      appendItem('assistant', `${running ? '执行中' : '就绪'} · 会话${currentSessionTitle || '新会话'} · ${modelStatus} · 推理${reasoningLabel} · ${contextStatus || '上下文待统计'} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
       client.send({type: 'workspace', action: 'status'});
       client.send({type: 'context', action: 'status'});
     } else if (command.value === '/context') {
@@ -3472,7 +3502,9 @@ export function App({
     } else if (command.value === '/undo') {
       client.send({type: 'workspace', action: 'undo'});
     } else if (command.value === '/resume') {
-      if (/^run_[A-Za-z0-9]+$/.test(args)) resumeRun(args);
+      if (/^run_[A-Za-z0-9]+$/.test(args)) {
+        resumeRun(args, sessions.find(item => item.runId === args)?.title);
+      }
       else {
         closeTransientSurfaces('sessions');
         setSessionPicker(true);
@@ -3711,7 +3743,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, version, workspace]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, version, workspace]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -4069,7 +4101,8 @@ export function App({
       } else if (key.downArrow && filteredSessions.length) {
         setSessionChoice(value => (value + 1) % filteredSessions.length);
       } else if (key.return) {
-        resumeRun(filteredSessions[sessionChoice]?.runId);
+        const selectedSession = filteredSessions[sessionChoice];
+        resumeRun(selectedSession?.runId, selectedSession?.title);
       } else if (key.backspace || key.delete) {
         setSessionQuery(value => value.slice(0, -1));
         setSessionChoice(0);
@@ -4656,6 +4689,11 @@ export function App({
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
   const narrow = (stdout.columns ?? 80) < 72;
+  const fullSessionLabel = sessionTitleFromPrompt(currentSessionTitle, '');
+  const sessionLabelLimit = narrow ? 8 : 12;
+  const currentSessionLabel = fullSessionLabel.length > sessionLabelLimit
+    ? `${fullSessionLabel.slice(0, sessionLabelLimit - 1).trimEnd()}…`
+    : fullSessionLabel;
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   const taskElapsedMs = runStartedAtRef.current
     ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
@@ -4682,6 +4720,9 @@ export function App({
       ? 'Shell模式 · 命令在SRT沙箱中运行 · Esc返回问答'
       : running ? '继续输入会加入队列' : '输入任务，/查看命令 · !进入Shell',
   }[interactionFocus];
+  const interactionStatus = interactionFocus === 'composer' || interactionFocus === 'commands'
+    ? interactionHint
+    : `${INTERACTION_FOCUS_LABELS[interactionFocus]} · ${interactionHint}`;
   const liveConversation = (
     <Box key="conversation" flexDirection="column" width="100%">
       {fullscreenEnabled ? (
@@ -4771,7 +4812,7 @@ export function App({
   );
   const transcriptFooter = (
     <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
-      <Text color={PRIMARY}>对话记录</Text>
+      <Text color={PRIMARY}>对话记录{currentSessionLabel ? <Text color={MUTED}> · {currentSessionLabel}</Text> : null}</Text>
       <Text color={MUTED}>
         {mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Ctrl+T任务 · Ctrl+O/Esc返回
       </Text>
@@ -4907,16 +4948,31 @@ export function App({
             </Box>
           </Box> : null}
           {composerNotice ? <Text color={ACCENT}>{composerNotice}</Text> : null}
-          <Box justifyContent="space-between" flexShrink={0}>
-            <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>
-              {INTERACTION_FOCUS_LABELS[interactionFocus]} · {interactionHint}
-            </Text>
-            {!narrow ? (
-              <Text color={MUTED}>
-                {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}
-              </Text>
-            ) : null}
-          </Box>
+          {currentSessionLabel ? (
+            <Box flexDirection="column" flexShrink={0}>
+              <Box justifyContent="space-between">
+                <Text color={PRIMARY}>会话 {currentSessionLabel}</Text>
+                {!narrow ? <Text color={MUTED}>{model || '连接中'} · {workspace?.branch || '工作区'}</Text> : null}
+              </Box>
+              <Box justifyContent="space-between">
+                <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
+                {!narrow ? (
+                  <Text color={MUTED}>
+                    {interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换${!fullscreenEnabled ? ' · 终端滚轮选择复制' : ''}` : 'Esc返回输入'}
+                  </Text>
+                ) : null}
+              </Box>
+            </Box>
+          ) : (
+            <Box justifyContent="space-between" flexShrink={0}>
+              <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
+              {!narrow ? (
+                <Text color={MUTED}>
+                  {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
+            </Box>
+          )}
         </>
       )}
     </>

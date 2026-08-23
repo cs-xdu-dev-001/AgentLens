@@ -356,7 +356,7 @@ function mergeAgentUsage(current, event) {
 const AGENT_ARTIFACT_TYPES = new Set(["file", "link", "reference"]);
 const AGENT_ARTIFACT_OPERATIONS = new Set(["edit", "write"]);
 
-function safeAgentText(value, maxLength = 1000) {
+export function safeAgentText(value, maxLength = 1000) {
   return String(value ?? "")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?[\u0007\u001b\\])|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "")

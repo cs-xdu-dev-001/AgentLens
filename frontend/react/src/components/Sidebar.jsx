@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { runtimeApi, sessionApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { sidebarTools } from "../data/navigation.js";
+import { safeAgentText } from "../controller/agentEvents.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
 
 const sessionGroupLabels = [
@@ -239,9 +240,9 @@ function sessionRunView(session) {
 }
 
 function sessionTitle(session) {
-  const title = String(session.title || "").trim();
+  const title = safeAgentText(session.title, 160);
   if (title && title !== "新会话") return title;
-  return String(session.latest_run?.goalSummary || title || "新任务");
+  return safeAgentText(session.latest_run?.goalSummary || title || "新任务", 160);
 }
 
 
@@ -344,6 +345,20 @@ function SessionHistory() {
   }, []);
 
   useEffect(() => {
+    if (!currentSessionId) return;
+    const currentSession = sessions.find(
+      (session) => String(session.id) === String(currentSessionId),
+    );
+    if (!currentSession) return;
+    window.dispatchEvent(new CustomEvent("knowflow:react-active-session-updated", {
+      detail: {
+        sessionId: currentSessionId,
+        title: sessionTitle(currentSession),
+      },
+    }));
+  }, [currentSessionId, sessions]);
+
+  useEffect(() => {
     const closeMenu = (event) => {
       if (!historyRef.current?.contains(event.target)) {
         setOpenMenuSessionId(null);
@@ -401,6 +416,11 @@ function SessionHistory() {
       setSavingRename(true);
       await sessionApi.update(sessionId, { title });
       notifyToast("会话已重命名");
+      if (sessionId === currentSessionId) {
+        window.dispatchEvent(new CustomEvent("knowflow:react-active-session-updated", {
+          detail: { sessionId, title },
+        }));
+      }
       setEditingSessionId(null);
       setRenameDraft("");
       await loadSessions();

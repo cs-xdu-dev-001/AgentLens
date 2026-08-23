@@ -2,6 +2,7 @@ export const state = {
   models: [],
   knowledgeBases: [],
   currentSessionId: null,
+  currentSessionTitle: "",
   selectedKnowledgeBaseId: null,
   selectedChatModelConfigId: "",
   selectedReasoningEffort: "default",

@@ -20,6 +20,7 @@ import {
   retryTurnRequest,
   runtimeStatusFromEvent,
   sanitizeComposerInput,
+  sessionTitleFromPrompt,
   shellActivityPreview,
   settleRuntimeRows,
   shouldAnimateRuntimeStatus,
@@ -45,6 +46,15 @@ import {
 } from '../src/terminalFeedback.js';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('session titles are compact and redact credential-shaped text', () => {
+  assert.equal(sessionTitleFromPrompt('  修复\n登录按钮  '), '修复 登录按钮');
+  assert.doesNotMatch(
+    sessionTitleFromPrompt('使用 sk-abcdefghijklmnopqrstuvwxyz1234567890 调试接口'),
+    /sk-[A-Za-z0-9]/,
+  );
+  assert.ok(sessionTitleFromPrompt('很长的任务说明'.repeat(20)).length <= 64);
+});
 
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {
   const models = [
@@ -952,7 +962,7 @@ test('opening a new picker replaces the previous keyboard owner', async t => {
 
   view.stdin.write('\u001b');
   await tick();
-  assert.match(view.lastFrame(), /输入任务 · 输入任务，\/查看命令/);
+  assert.match(view.lastFrame(), /输入任务，\/查看命令/);
 });
 
 test('approval takes keyboard focus and closes transient pickers', async t => {
@@ -2122,6 +2132,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
   assert.equal(client.sent.at(-1).runId, 'run_restore');
+  await waitForFrame(view, /会话 恢复测试/);
   view.unmount();
 });
 
@@ -2140,6 +2151,7 @@ test('session rename, branch and export commands stay inside the runtime protoco
     result: {runId: 'run_current', title: '发布复盘'},
   });
   await waitForFrame(view, /当前会话已重命名为“发布复盘”/);
+  assert.match(view.lastFrame(), /会话 发布复盘/);
 
   view.stdin.write('/branch 方案B');
   await tick();
@@ -2159,6 +2171,7 @@ test('session rename, branch and export commands stay inside the runtime protoco
     },
   });
   await waitForFrame(view, /已创建会话分支“方案B”/);
+  assert.match(view.lastFrame(), /会话 方案B/);
 
   view.stdin.write('/export review.md');
   await tick();

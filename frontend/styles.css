@@ -7459,6 +7459,31 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   letter-spacing: 0 !important;
 }
 
+#page-chat .chat-session-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(58vw, 680px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-chat .chat-session-switching {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 #page-chat .chat-topbar .topbar-actions,
 #page-chat .chat-topbar .chat-topbar-actions {
   align-items: center !important;
@@ -7577,6 +7602,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   #page-chat .chat-topbar h1 {
     font-size: 21px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: 48vw;
   }
 
   #page-chat .welcome-card {

@@ -117,7 +117,10 @@ function renderAttachmentTray() {
 }
 
 function renderActiveSession() {
-  dispatchReactEvent("knowflow:react-active-session-updated", { sessionId: state.currentSessionId || "" });
+  dispatchReactEvent("knowflow:react-active-session-updated", {
+    sessionId: state.currentSessionId || "",
+    title: state.currentSessionTitle || "",
+  });
 }
 
 function requestComposerMenuClose() {

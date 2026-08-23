@@ -11,11 +11,16 @@ import {
   markAgentTraceInterrupted,
   mergeAgentToolCall,
   projectAgentEvent,
+  safeAgentText,
   shouldProcessAgentEvent,
 } from "./agentEvents.js";
 import { isActiveRun } from "./agentRunState.js";
 
 export { mergeAgentToolCall as mergeToolCall } from "./agentEvents.js";
+
+function sessionTitleFromQuestion(question) {
+  return safeAgentText(question, 80);
+}
 
 async function readStreamError(response) {
   const fallback = response.status === 401 ? "请先登录。" : "请求失败，请稍后重试。";
@@ -606,7 +611,14 @@ export function createChatFlow({
       openRetrievalDrawerFromRun(projection.retrievalRun);
     }
     if (projection.sessionId) {
+      const sessionChanged = projection.sessionId !== state.currentSessionId;
       state.currentSessionId = projection.sessionId;
+      if (sessionChanged && !state.currentSessionTitle) {
+        state.currentSessionTitle = sessionTitleFromQuestion(
+          state.lastChatRequest?.question,
+        );
+      }
+      if (sessionChanged) renderActiveSession();
     }
     if (projection.terminal) {
       state.activeRunId = null;
@@ -720,6 +732,7 @@ export function createChatFlow({
       }
     });
     state.currentSessionId = nextSessionId;
+    state.currentSessionTitle = String(options.title || "").trim();
     renderActiveSession();
     requestReactSessionsRefresh();
     switchPage("chat");
@@ -776,6 +789,7 @@ export function createChatFlow({
     state.activeRunReconnectController?.abort();
     state.activeRunReconnectController = null;
     state.currentSessionId = null;
+    state.currentSessionTitle = "";
     renderActiveSession();
     clearChatMessages(true);
     renderReferences([]);
