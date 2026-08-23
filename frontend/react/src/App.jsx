@@ -10,6 +10,7 @@ import { SettingsPage } from "./components/SettingsPage.jsx";
 import { WorkbenchPage } from "./components/WorkbenchPage.jsx";
 import { CliDeviceAuthPage } from "./components/CliDeviceAuthPage.jsx";
 import { Toast } from "./components/Toast.jsx";
+import { AgentWindowFeedback } from "./components/AgentWindowFeedback.jsx";
 import { KnowFlowController } from "./components/KnowFlowController.jsx";
 import { useAuth } from "./auth/AuthProvider.jsx";
 
@@ -238,6 +239,7 @@ function WorkbenchShell() {
         </div>
       ) : null}
       <Toast />
+      <AgentWindowFeedback />
       <KnowFlowController />
     </>
   );

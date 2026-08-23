@@ -27,7 +27,10 @@ import {
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {
   sanitizeTerminalTitle,
+  shouldNotifyTerminalTransition,
+  supportsTerminalProgress,
   terminalFeedbackState,
+  terminalNotificationSequence,
   terminalProgressSequence,
   terminalTitleSequence,
 } from '../src/terminalFeedback.js';
@@ -47,6 +50,20 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.equal(sanitizeTerminalTitle('\u001b[31mAgentLens\u0007'), 'AgentLens');
   assert.equal(terminalTitleSequence('AgentLens'), '\u001b]0;AgentLens\u001b\\');
   assert.equal(terminalProgressSequence('running', 140), '\u001b]9;4;1;100\u001b\\');
+  assert.equal(supportsTerminalProgress({WT_SESSION: '1'}), false);
+  assert.equal(supportsTerminalProgress({ConEmuANSI: 'ON'}), true);
+  assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'ghostty', TERM_PROGRAM_VERSION: '1.2.0'}), true);
+  assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.6.5'}), false);
+  assert.equal(terminalNotificationSequence({}, {}).charCodeAt(0), 7);
+  assert.equal(shouldNotifyTerminalTransition({
+    previousKind: 'running', nextKind: 'idle', runStatus: 'completed', lastInteractionAt: 1000, now: 8000,
+  }), true);
+  assert.equal(shouldNotifyTerminalTransition({
+    previousKind: 'running', nextKind: 'idle', runStatus: 'cancelled', lastInteractionAt: 1000, now: 8000,
+  }), false);
+  assert.equal(shouldNotifyTerminalTransition({
+    previousKind: 'running', nextKind: 'waiting', lastInteractionAt: 5000, now: 8000,
+  }), false);
 });
 
 test('interaction focus resolves to one highest-priority input owner', () => {

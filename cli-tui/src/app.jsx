@@ -1734,6 +1734,7 @@ export function App({
   const [composerNotice, setComposerNotice] = useState('');
   const composerNoticeTimerRef = useRef(null);
   const exitConfirmUntilRef = useRef(0);
+  const lastTerminalInteractionAtRef = useRef(Date.now());
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
   useTerminalFeedback({
@@ -1741,6 +1742,8 @@ export function App({
     waiting: Boolean(activeInteraction),
     failed: !running && Boolean(runProjection.error),
     progressPercent: runProjection.runSummary?.progressPercent,
+    runStatus: runProjection.runSummary?.status,
+    lastInteractionAtRef: lastTerminalInteractionAtRef,
   });
   useEffect(() => {
     waitingInteractionsRef.current = waitingInteractions;
@@ -3391,6 +3394,7 @@ export function App({
   }, [appendItem, currentRunId, detailRows, lastFailedRunId, lastQuestion, resumeRun, running, startTurn, toolDetailIndex]);
 
   usePaste(rawText => {
+    lastTerminalInteractionAtRef.current = Date.now();
     let text = sanitizeComposerInput(rawText).replace(/\t/g, '    ');
     if (!text) return;
     if (composerModeRef.current === 'prompt' && !inputRef.current && text.startsWith('!')) {
@@ -3439,6 +3443,7 @@ export function App({
   });
 
   useInput((character, key) => {
+    lastTerminalInteractionAtRef.current = Date.now();
     if (interactionFocus === 'question' && question) {
       const options = Array.isArray(question.options) ? question.options : [];
       const count = options.length + (question.allowCustom === false ? 0 : 1);
