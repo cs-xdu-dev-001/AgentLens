@@ -277,6 +277,15 @@ def main() -> None:
         "Bearer browser-session"
     )
 
+    fake.responses.append(
+        FakeResponse({"code": 0, "data": {"id": "s1", "title": "发布复盘"}})
+    )
+    renamed = client.rename_session("s1", "发布复盘")
+    assert renamed["title"] == "发布复盘"
+    assert fake.calls[-1][0] == "PUT"
+    assert fake.calls[-1][1].endswith("/api/sessions/s1")
+    assert fake.calls[-1][2]["json"] == {"title": "发布复盘"}
+
     cancelled_execution = RemoteAgentClient._collect(
         iter(
             [

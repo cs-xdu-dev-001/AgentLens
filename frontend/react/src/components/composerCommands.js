@@ -7,6 +7,35 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "new-chat",
   },
   {
+    value: "/resume",
+    label: "恢复会话",
+    description: "搜索并打开历史任务",
+    category: "会话",
+    action: "session-resume",
+  },
+  {
+    value: "/rename",
+    label: "重命名会话",
+    description: "修改当前任务名称，可在命令后直接输入新名称",
+    category: "会话",
+    action: "session-rename",
+  },
+  {
+    value: "/branch",
+    aliases: ["/fork"],
+    label: "创建会话分支",
+    description: "复制当前上下文并在独立会话中继续",
+    category: "会话",
+    action: "session-branch",
+  },
+  {
+    value: "/export",
+    label: "导出会话",
+    description: "下载不含内部trace的Markdown记录",
+    category: "会话",
+    action: "session-export",
+  },
+  {
     value: "/model",
     label: "切换模型",
     description: "选择本轮对话使用的模型",
@@ -133,8 +162,16 @@ export function composerCommandSuggestions(
 }
 
 export function resolveComposerCommand(value) {
-  const normalized = String(value || "").trim().toLocaleLowerCase();
-  return WEB_COMPOSER_COMMANDS.find((command) => (
-    command.value === normalized || command.aliases?.includes(normalized)
-  )) || null;
+  return parseComposerCommand(value)?.command || null;
+}
+
+export function parseComposerCommand(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed.startsWith("/")) return null;
+  const [rawName, ...rest] = trimmed.split(/\s+/);
+  const normalized = rawName.toLocaleLowerCase();
+  const command = WEB_COMPOSER_COMMANDS.find((item) => (
+    item.value === normalized || item.aliases?.includes(normalized)
+  ));
+  return command ? { command, args: rest.join(" ").trim() } : null;
 }

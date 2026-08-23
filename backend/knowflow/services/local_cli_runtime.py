@@ -551,6 +551,17 @@ class LocalAgentRuntime:
         )
         return payload
 
+    def rename_session(self, run_id: str, title: str) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        next_title = " ".join(str(title or "").split())
+        if not next_title:
+            raise ValueError("请输入新的会话名称。")
+        return self.sessions.save(run_id, title=next_title[:160])
+
     def _registry(
         self,
         *,

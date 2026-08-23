@@ -350,6 +350,28 @@ class TuiBackend:
             return []
         return list(self.local_agent.list_sessions(limit=limit))
 
+    def rename_session(self, title: str) -> dict[str, Any]:
+        next_title = " ".join(str(title or "").split())
+        if not next_title:
+            raise ValueError("请输入新的会话名称。")
+        if self.remote_client is not None:
+            if not self.session_id:
+                raise RuntimeError("当前没有可重命名的远程会话。")
+            session = self.remote_client.rename_session(self.session_id, next_title)
+            return {
+                "runId": "",
+                "sessionId": self.session_id,
+                "title": session.get("title") or next_title,
+            }
+        if self.local_agent is None or not self.current_run_id:
+            raise RuntimeError("当前没有可重命名的本地会话。")
+        session = self.local_agent.rename_session(self.current_run_id, next_title)
+        return {
+            "runId": self.current_run_id,
+            "sessionId": "",
+            "title": session.get("title") or next_title,
+        }
+
     def branch_session(self, title: str = "") -> dict[str, Any]:
         if self.remote_client is not None:
             if not self.session_id:

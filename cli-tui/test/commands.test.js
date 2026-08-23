@@ -105,6 +105,7 @@ test('commands expose argument guidance only after selecting the command', () =>
   assert.equal(commandArgumentHint('/model ', commands), '[list | use <ID> | config]');
   assert.equal(commandArgumentHint('/model use', commands), '');
   assert.equal(commandArgumentHint('/copy ', commands), '[answer | code [序号]]');
+  assert.equal(commandArgumentHint('/rename ', commands), '<新名称>');
   assert.equal(commandArgumentHint('/branch ', commands), '[名称]');
   assert.equal(commandArgumentHint('/export ', commands), '[文件名]');
   assert.equal(commandArgumentHint('/help ', commands), '');

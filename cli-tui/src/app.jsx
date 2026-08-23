@@ -2517,6 +2517,17 @@ export function App({
         setPhase('就绪');
         return;
       }
+      if (message.type === 'session_renamed') {
+        const result = message.result ?? {};
+        appendItem('assistant', `当前会话已重命名为“${publicLabel(result.title, '未命名会话', 160)}”。`);
+        setPhase('重命名完成');
+        return;
+      }
+      if (message.type === 'session_rename_failed') {
+        appendItem('error', message.message ?? '重命名会话失败。');
+        setPhase('就绪');
+        return;
+      }
       if (message.type === 'session_exported') {
         const result = message.result ?? {};
         appendItem('assistant', `已导出${Number(result.messageCount || 0)}条消息：${publicLabel(result.path, result.filename || '会话文件', 300)}`);
@@ -3335,6 +3346,15 @@ export function App({
         setSessionQuery(args);
         setSessionChoice(0);
         client.send({type: 'sessions', limit: 100});
+      }
+    } else if (command.value === '/rename') {
+      if (!args.trim()) {
+        appendItem('error', '用法：/rename <新名称>');
+      } else if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再重命名会话。');
+      } else {
+        setPhase('重命名会话');
+        client.send({type: 'rename_session', title: args.trim()});
       }
     } else if (command.value === '/branch') {
       if (running || approval || question) {

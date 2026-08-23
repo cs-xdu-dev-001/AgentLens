@@ -162,6 +162,10 @@ function WorkbenchShell() {
         return next;
       });
     };
+    const openSidebar = () => {
+      writeStoredBoolean("knowflow.sidebarCollapsed", false);
+      setSidebarCollapsed(false);
+    };
     const toggleDrawer = (event) => {
       const next = !drawerCollapsedRef.current;
       drawerCollapsedRef.current = next;
@@ -203,11 +207,13 @@ function WorkbenchShell() {
       setDrawerCollapsed(false);
     };
     window.addEventListener("knowflow:react-sidebar-toggle", toggleSidebar);
+    window.addEventListener("knowflow:react-sidebar-open", openSidebar);
     window.addEventListener("knowflow:react-drawer-toggle", toggleDrawer);
     window.addEventListener("knowflow:react-drawer-close", closeDrawer);
     window.addEventListener("knowflow:react-drawer-open", openDrawer);
     return () => {
       window.removeEventListener("knowflow:react-sidebar-toggle", toggleSidebar);
+      window.removeEventListener("knowflow:react-sidebar-open", openSidebar);
       window.removeEventListener("knowflow:react-drawer-toggle", toggleDrawer);
       window.removeEventListener("knowflow:react-drawer-close", closeDrawer);
       window.removeEventListener("knowflow:react-drawer-open", openDrawer);

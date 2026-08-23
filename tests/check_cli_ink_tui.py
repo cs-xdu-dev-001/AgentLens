@@ -186,6 +186,9 @@ class FakeBackend:
             ],
         }
 
+    def rename_session(self, title=""):
+        return {"runId": "run_ink", "title": title}
+
     def export_session(self, filename=""):
         return {
             "path": f"/workspace/{filename or '测试会话.md'}",
@@ -408,6 +411,10 @@ def main() -> None:
     branch_rows = wait_for(ready_output, "session_branched")
     assert branch_rows[-1]["result"]["runId"] == "run_branch"
     assert branch_rows[-1]["result"]["title"] == "方案B"
+    ready_bridge.handle({"type": "rename_session", "title": "发布复盘"})
+    rename_rows = wait_for(ready_output, "session_renamed")
+    assert rename_rows[-1]["result"]["runId"] == "run_ink"
+    assert rename_rows[-1]["result"]["title"] == "发布复盘"
     ready_bridge.handle({"type": "export_session", "filename": "会话记录.md"})
     export_rows = wait_for(ready_output, "session_exported")
     assert export_rows[-1]["result"]["filename"] == "会话记录.md"

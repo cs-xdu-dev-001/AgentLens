@@ -5,7 +5,7 @@ import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
 import {
   composerCommandSuggestions,
-  resolveComposerCommand,
+  parseComposerCommand,
 } from "./composerCommands.js";
 import {
   clearApprovalSessionGrants,
@@ -347,11 +347,11 @@ export function ChatComposerForm() {
   const handleChatSubmit = (event) => {
     event.preventDefault();
     if (switchingSession) return;
-    const command = resolveComposerCommand(question);
-    if (command) {
+    const parsedCommand = parseComposerCommand(question);
+    if (parsedCommand) {
       setQuestion("");
       closeSkillPicker();
-      runComposerCommand(command);
+      runComposerCommand(parsedCommand.command, parsedCommand.args);
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }
@@ -404,7 +404,7 @@ export function ChatComposerForm() {
     }));
   };
 
-  const runComposerCommand = (command) => {
+  const runComposerCommand = (command, args = "") => {
     const pageActions = new Set([
       "knowledge",
       "workspace",
@@ -421,6 +421,15 @@ export function ChatComposerForm() {
     }
     if (command.action === "new-chat") {
       window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
+      return;
+    }
+    if (command.action.startsWith("session-")) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
+        detail: {
+          action: command.action.slice("session-".length),
+          args: String(args || "").trim(),
+        },
+      }));
       return;
     }
     if (command.action === "model") {
@@ -577,11 +586,11 @@ export function ChatComposerForm() {
     }
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
-    const command = resolveComposerCommand(question);
-    if (command) {
+    const parsedCommand = parseComposerCommand(question);
+    if (parsedCommand) {
       setQuestion("");
       closeSkillPicker();
-      runComposerCommand(command);
+      runComposerCommand(parsedCommand.command, parsedCommand.args);
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }

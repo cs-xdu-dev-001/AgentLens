@@ -74,6 +74,10 @@ def main() -> None:
     for needle, label in [
         ("export const WEB_COMPOSER_COMMANDS", "Web command catalog"),
         ('value: "/new"', "new session command"),
+        ('value: "/resume"', "resume session command"),
+        ('value: "/rename"', "rename session command"),
+        ('value: "/branch"', "branch session command"),
+        ('value: "/export"', "export session command"),
         ('value: "/model"', "model command"),
         ('value: "/tasks"', "task workbench command"),
         ('value: "/mcp"', "MCP command"),
@@ -81,6 +85,7 @@ def main() -> None:
         ('value: "/memory"', "memory command"),
         ("composerCommandSuggestions", "command filtering"),
         ("resolveComposerCommand", "typed command execution"),
+        ("parseComposerCommand", "typed command arguments"),
     ]:
         require(commands, needle, label)
 

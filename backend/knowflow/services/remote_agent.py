@@ -216,6 +216,14 @@ class RemoteAgentClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def rename_session(self, session_id: str, title: str) -> dict[str, Any]:
+        payload = self.request(
+            "PUT",
+            f"/api/sessions/{session_id}",
+            body={"title": title},
+        )
+        return payload if isinstance(payload, dict) else {}
+
     def export_session(self, session_id: str) -> dict[str, Any]:
         payload = self.request("GET", f"/api/sessions/{session_id}/export")
         return payload if isinstance(payload, dict) else {}

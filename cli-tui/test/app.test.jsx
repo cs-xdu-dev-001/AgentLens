@@ -2042,10 +2042,21 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   view.unmount();
 });
 
-test('session branch and export commands stay inside the runtime protocol', async () => {
+test('session rename, branch and export commands stay inside the runtime protocol', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.26.0" />);
+  const view = render(<App client={client} version="0.27.0" />);
   await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/rename 发布复盘');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'rename_session', title: '发布复盘'});
+  client.emit('message', {
+    type: 'session_renamed',
+    result: {runId: 'run_current', title: '发布复盘'},
+  });
+  await waitForFrame(view, /当前会话已重命名为“发布复盘”/);
 
   view.stdin.write('/branch 方案B');
   await tick();

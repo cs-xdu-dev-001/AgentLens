@@ -259,6 +259,7 @@ function SessionHistory() {
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
   const historyRef = useRef(null);
+  const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
 
   const loadSessions = useCallback(async () => {
@@ -390,8 +391,8 @@ function SessionHistory() {
     setRenameDraft("");
   };
 
-  const handleSessionRename = async (sessionId) => {
-    const title = renameDraft.trim();
+  const handleSessionRename = async (sessionId, requestedTitle = renameDraft) => {
+    const title = String(requestedTitle || "").trim();
     if (!title) {
       cancelSessionRename();
       return;
@@ -435,9 +436,9 @@ function SessionHistory() {
     }
   };
 
-  const handleSessionBranch = async (sessionId) => {
+  const handleSessionBranch = async (sessionId, title = "") => {
     try {
-      const branch = await sessionApi.branch(sessionId);
+      const branch = await sessionApi.branch(sessionId, { title: String(title || "").trim() || null });
       notifyToast("已创建独立会话分支");
       await loadSessions();
       const branchId = String(branch?.id || "");
@@ -499,6 +500,37 @@ function SessionHistory() {
     }
   };
 
+  useEffect(() => {
+    const handleSessionCommand = (event) => {
+      const action = String(event.detail?.action || "");
+      const args = String(event.detail?.args || "").trim();
+      if (action === "resume") {
+        window.dispatchEvent(new CustomEvent("knowflow:react-sidebar-open"));
+        setSearchQuery(args);
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => searchInputRef.current?.focus());
+        });
+        return;
+      }
+      if (!currentSessionId) {
+        notifyToast("请先打开一个会话");
+        return;
+      }
+      if (action === "rename") {
+        if (args) handleSessionRename(currentSessionId, args);
+        else startSessionRename(currentSessionId);
+        return;
+      }
+      if (action === "branch") {
+        handleSessionBranch(currentSessionId, args);
+        return;
+      }
+      if (action === "export") handleSessionExport(currentSessionId);
+    };
+    window.addEventListener("knowflow:react-session-command", handleSessionCommand);
+    return () => window.removeEventListener("knowflow:react-session-command", handleSessionCommand);
+  }, [currentSessionId, renameDraft, sessions]);
+
   const handleSessionMenuToggle = (event, sessionId) => {
     event.stopPropagation();
     const nextOpen = openMenuSessionId === sessionId ? null : sessionId;
@@ -542,7 +574,7 @@ function SessionHistory() {
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
           <span>{"搜索任务"}</span>
-          <input id={"sidebar-session-search"} placeholder={"搜索任务"} value={searchQuery} onChange={handleSessionSearch} />
+          <input ref={searchInputRef} id={"sidebar-session-search"} placeholder={"搜索任务"} value={searchQuery} onChange={handleSessionSearch} />
         </label>
         <button className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新任务"} title={"刷新任务"} aria-busy={loadingSessions} disabled={loadingSessions} onClick={loadSessions}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>

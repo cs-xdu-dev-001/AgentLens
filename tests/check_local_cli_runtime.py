@@ -219,6 +219,9 @@ def main() -> None:
         loaded = runtime.load_session(stored[0]["runId"])
         assert loaded["answer"] == "四轮检查完成。"
         assert loaded["projectRoot"] == str((root / "workspace").resolve())
+        renamed = runtime.rename_session(stored[0]["runId"], "  发布 复盘  ")
+        assert renamed["title"] == "发布 复盘"
+        assert runtime.load_session(stored[0]["runId"])["title"] == "发布 复盘"
         assert runtime.workspace_status()["cwd"] == str((root / "workspace").resolve())
         extra = root / "extra-workspace"
         extra.mkdir()

@@ -37,7 +37,7 @@ for needle in (
     assert needle in flow, f"missing recovery projection context: {needle}"
 
 script = r'''
-import { composerCommandSuggestions, resolveComposerCommand } from "./frontend/react/src/components/composerCommands.js";
+import { composerCommandSuggestions, parseComposerCommand, resolveComposerCommand } from "./frontend/react/src/components/composerCommands.js";
 
 const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
 const idle = values();
@@ -62,6 +62,14 @@ if (feedback?.value !== "/feedback" || feedback?.action !== "feedback") {
 }
 if (!composerCommandSuggestions("bug").some((item) => item.value === "/feedback")) {
   throw new Error("feedback alias is not searchable");
+}
+const rename = parseComposerCommand("/rename 发布复盘");
+if (rename?.command?.value !== "/rename" || rename?.args !== "发布复盘") {
+  throw new Error("session command arguments were not parsed");
+}
+const fork = parseComposerCommand("/fork 方案B");
+if (fork?.command?.value !== "/branch" || fork?.args !== "方案B") {
+  throw new Error("session command alias did not preserve arguments");
 }
 '''
 
