@@ -16,6 +16,7 @@ import {
   resolveInteractionFocus,
   removeWaitingInteraction,
   resolveTerminalMode,
+  retryTurnRequest,
   runtimeStatusFromEvent,
   sanitizeComposerInput,
   shellActivityPreview,
@@ -24,6 +25,7 @@ import {
   shouldCollapsePaste,
   streamingPreview,
   thinkingStateForPhase,
+  turnRequestSnapshot,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {
@@ -107,6 +109,21 @@ test('copy selection returns the latest answer or a requested Markdown code bloc
   });
   assert.match(terminalCopySelection('没有代码', 'code').message, /没有代码块/);
   assert.match(terminalCopySelection(answer, 'code 3').message, /共有2个代码块/);
+});
+
+test('retry request snapshots preserve mode, display text, and reasoning effort', () => {
+  const snapshot = turnRequestSnapshot(
+    '检查完整工作区',
+    '[粘贴内容 #1 +20行]',
+    {mode: 'prompt', reasoningEffort: 'high'},
+  );
+  assert.deepEqual(retryTurnRequest('检查完整工作区', snapshot, 'low'), snapshot);
+  assert.deepEqual(retryTurnRequest('!echo ok', snapshot, 'medium'), {
+    text: 'echo ok',
+    displayText: 'echo ok',
+    mode: 'shell',
+    reasoningEffort: 'medium',
+  });
 });
 
 test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
@@ -1228,6 +1245,104 @@ test('retry turn bypasses a paused failure queue instead of enqueueing itself', 
   );
   assert.doesNotMatch(view.lastFrame(), /接下来1/);
   view.unmount();
+});
+
+test('retry turn preserves the failed task reasoning effort after session settings change', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.23.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/reasoning high');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('检查复杂故障');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'run-retry-reasoning',
+    message: '上游暂时不可用',
+  });
+  await waitForFrame(view, /队列已暂停/);
+
+  view.stdin.write('/reasoning low');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('/retry turn');
+  view.stdin.write('\r');
+  const deadline = Date.now() + 1000;
+  while (
+    Date.now() < deadline
+    && client.sent.filter(message => message.type === 'submit').length < 2
+  ) await tick();
+
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => ({
+      text: message.text,
+      reasoningEffort: message.reasoningEffort,
+    })),
+    [
+      {text: '检查复杂故障', reasoningEffort: 'high'},
+      {text: '检查复杂故障', reasoningEffort: 'high'},
+    ],
+  );
+});
+
+test('retry turn preserves shell mode instead of sending the command to the model', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.23.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('!');
+  await tick();
+  view.stdin.write('echo retry-shell');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'shell-retry',
+    message: '沙箱暂时不可用',
+  });
+  await waitForFrame(view, /队列已暂停/);
+  view.stdin.write('/retry turn');
+  view.stdin.write('\r');
+  const deadline = Date.now() + 1000;
+  while (
+    Date.now() < deadline
+    && client.sent.filter(message => message.type === 'shell').length < 2
+  ) await tick();
+
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'shell').map(message => message.command),
+    ['echo retry-shell', 'echo retry-shell'],
+  );
+  assert.equal(client.sent.filter(message => message.type === 'submit').length, 0);
+});
+
+test('new sessions clear the previous retry target', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.23.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('旧会话任务');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'turn_completed', answer: '已完成'});
+  await waitForFrame(view, /已完成/);
+  view.stdin.write('/new');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'session_reset'});
+  await waitForFrame(view, /新会话/);
+  view.stdin.write('/retry turn');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.equal(client.sent.filter(message => message.type === 'submit').length, 1);
+  assert.match(view.lastFrame(), /没有可重试的问题/);
 });
 
 test('edit restores the previous task to the composer before resubmitting', async () => {
