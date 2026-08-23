@@ -12,6 +12,7 @@ def main() -> None:
     visible_surfaces = {
         "frontend/index.html": "<title>AgentLens</title>",
         "frontend/react/src/components/AuthScreen.jsx": "登录AgentLens",
+        "frontend/react/src/components/AppErrorBoundary.jsx": '>{"AgentLens"}<',
         "frontend/react/src/components/Sidebar.jsx": "AgentLens",
         "cli-tui/src/app.jsx": "AgentLens",
         "backend/knowflow/app.py": 'title="AgentLens API"',
@@ -25,6 +26,7 @@ def main() -> None:
 
     assert "knowflow-logo-k" not in read("frontend/react/src/components/KnowFlowLogo.jsx")
     assert "knowflow-logo-lens" in read("frontend/react/src/components/KnowFlowLogo.jsx")
+    assert "KNOWFLOW AI" not in read("frontend/react/src/components/AppErrorBoundary.jsx")
 
     compatibility_surfaces = {
         "backend/pyproject.toml": ['name = "knowflow-ai"', 'knowflow = "knowflow.cli:main"'],

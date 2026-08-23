@@ -1550,6 +1550,11 @@ def main() -> None:
         "failed verification is disclosed automatically",
     )
     require(
+        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "项已撤销",
+        "delivery summary reports reverted changes",
+    )
+    require(
         "frontend/react/src/components/AgentArtifactList.jsx",
         "return `${url.origin}${url.pathname}`",
         "artifact URL query redaction",

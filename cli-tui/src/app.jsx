@@ -1390,12 +1390,23 @@ const TranscriptRow = React.memo(function TranscriptRow({
           {added ? <Text color={SUCCESS}>  +{added}</Text> : null}
           {removed ? <Text color={ERROR}>  -{removed}</Text> : null}
         </Box>
-        {artifacts.slice(0, 4).map((artifact, index) => (
-          <Text key={artifact.artifactId || artifact.operationId || index} color={MUTED} wrap="truncate-end">
-            {'  ◇ '}<Text color={artifact.reverted ? MUTED : PRIMARY}>{artifact.path || artifact.url || artifact.title || '运行产物'}</Text>
-            {artifact.reverted ? <Text color={MUTED}>  已撤销</Text> : null}
-          </Text>
-        ))}
+        {artifacts.slice(0, 4).map((artifact, index) => {
+          const operation = artifact.reverted
+            ? '已撤销'
+            : ({edit: '已修改', write: '已写入'}[artifact.operation] || (/^https?:\/\//i.test(String(artifact.url || artifact.href || '')) ? '链接' : '已生成'));
+          const changes = [
+            artifact.addedLines ? `+${artifact.addedLines}` : '',
+            artifact.removedLines ? `-${artifact.removedLines}` : '',
+            artifact.writtenBytes ? `${artifact.writtenBytes}B` : '',
+          ].filter(Boolean).join(' · ');
+          return (
+            <Text key={artifact.artifactId || artifact.operationId || index} color={MUTED} wrap="truncate-end">
+              {'  ◇ '}<Text color={artifact.reverted ? MUTED : PRIMARY}>{operation}</Text>
+              <Text color={artifact.reverted ? MUTED : PRIMARY}>  {artifact.path || artifact.url || artifact.title || '运行产物'}</Text>
+              {changes ? <Text color={MUTED}>  {changes}</Text> : null}
+            </Text>
+          );
+        })}
         {artifacts.length > 4 ? <Text color={MUTED}>  另有{artifacts.length - 4}项</Text> : null}
         {verifications.length ? (
           <Box flexDirection="column" marginTop={1}>

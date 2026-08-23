@@ -25,7 +25,7 @@ export class AppErrorBoundary extends Component {
     return (
       <main className={"app-fatal-screen"} role={"alert"}>
         <section className={"app-fatal-card"}>
-          <span className={"eyebrow"}>{"KNOWFLOW AI"}</span>
+          <span className={"eyebrow"}>{"AgentLens"}</span>
           <h1>{"页面暂时不可用"}</h1>
           <p>{"刷新后通常可以恢复。"}</p>
           <code>{message}</code>

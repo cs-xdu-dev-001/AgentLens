@@ -35,9 +35,11 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
   const metrics = changeMetrics(artifacts);
   const externalCount = artifacts.filter((artifact) => /^https?:\/\//i.test(artifactTarget(artifact))).length;
   const fileCount = artifacts.length - externalCount;
+  const revertedCount = artifacts.filter((artifact) => artifact?.reverted).length;
   const summary = [
     fileCount ? `${fileCount}个文件已更改` : "",
     externalCount ? `${externalCount}个链接已生成` : "",
+    revertedCount ? `${revertedCount}项已撤销` : "",
     verifications.length
       ? `验证${verifications.filter((item) => item.status === "passed").length}/${verifications.length}`
       : "",
