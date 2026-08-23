@@ -216,6 +216,7 @@ function bindEvents() {
     reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
     renderActiveSession,
     renderCurrentUser: authFlow.renderCurrentUser,
+    requestComposerReset,
     requestComposerMenuClose,
     resolveChatKnowledgeBaseId: catalogSync.resolveChatKnowledgeBaseId,
     resolveChatModelConfigId: catalogSync.resolveChatModelConfigId,

@@ -25,6 +25,7 @@ import {
 
 const actionEvents = {
   copy: "knowflow:react-message-copy",
+  edit: "knowflow:react-message-edit",
   retry: "knowflow:react-message-retry",
 };
 const MEMORY_ACTIVITY_MAX_POLLS = 240;
@@ -355,6 +356,21 @@ function MessageRow({ interactionOwner, message, pendingInteractionCount }) {
         message={message}
         pendingInteractionCount={pendingInteractionCount}
       />
+      {message.role === "user" ? (
+        <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
+          <button
+            type={"button"}
+            data-message-action={"edit"}
+            aria-label={"编辑并重新发送"}
+            title={"编辑并重新发送"}
+          >
+            <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
+              <path d={"M12 20h9"}></path>
+              <path d={"M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"}></path>
+            </svg>
+          </button>
+        </div>
+      ) : null}
       {message.role === "assistant" && !message.thinking && !message.streaming ? (
         <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
           <button type={"button"} data-message-action={"copy"} aria-label={"复制答案"} title={"复制答案"}>
@@ -509,7 +525,7 @@ export function ChatMessages() {
       if (!button || !messagesNode.contains(button)) return;
       const eventName = actionEvents[button.dataset.messageAction];
       if (!eventName) return;
-      const bubble = button.closest(".message-row")?.querySelector(".message.assistant") || null;
+      const bubble = button.closest(".message-row")?.querySelector(".message") || null;
       event.preventDefault();
       window.dispatchEvent(
         new CustomEvent(eventName, {

@@ -631,7 +631,7 @@ test('Ink app answers a structured Agent question and resumes the same run', asy
 
 test('Ink app searches and switches models from the composer', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.18.0" />);
+  const view = render(<App client={client} version="0.19.0" />);
   await waitForFrame(view, /deepseek-chat/);
 
   view.stdin.write('/model');
@@ -1152,6 +1152,31 @@ test('retry turn bypasses a paused failure queue instead of enqueueing itself', 
     ['检查失败任务', '检查失败任务'],
   );
   assert.doesNotMatch(view.lastFrame(), /接下来1/);
+  view.unmount();
+});
+
+test('edit restores the previous task to the composer before resubmitting', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查工作区状态');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'turn_completed', answer: '检查完成'});
+  await waitForFrame(view, /检查完成/);
+
+  view.stdin.write('/edit');
+  view.stdin.write('\r');
+  await waitForFrame(view, /已恢复上一条任务/);
+  view.stdin.write('并给出风险');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.deepEqual(
+    client.sent.filter(message => message.type === 'submit').map(message => message.text),
+    ['检查工作区状态', '检查工作区状态并给出风险'],
+  );
   view.unmount();
 });
 

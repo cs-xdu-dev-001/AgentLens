@@ -94,6 +94,7 @@ test('commands merge dynamic entries and prefer exact or prefix matches', () => 
 test('aliases resolve to canonical commands', () => {
   const commands = mergeCommands();
   assert.equal(resolveCommand('/quit', commands).command.value, '/exit');
+  assert.equal(resolveCommand('/edit', commands).command.description, '取回上一条任务继续修改');
 });
 
 test('commands expose argument guidance only after selecting the command', () => {

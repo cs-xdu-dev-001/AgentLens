@@ -3098,6 +3098,15 @@ export function App({
         closeTransientSurfaces('history');
         setHistorySearchOpen(true);
       }
+    } else if (command.value === '/edit') {
+      if (!lastQuestion) {
+        appendItem('error', '没有可编辑的上一条任务。');
+      } else {
+        pushComposerUndo();
+        loadComposerText(lastQuestion);
+        setHistoryIndex(-1);
+        showComposerNotice('已恢复上一条任务，可修改后重新发送');
+      }
     } else if (command.value === '/continue') {
       const resumable = lastFailedRunId
         || sessions.find(item => !['completed', 'cancelled'].includes(item.status))?.runId;
@@ -3221,7 +3230,7 @@ export function App({
         ].join('\n'), undefined, {bypassQueuePause: true});
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, showComposerNotice, startTurn]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, showComposerNotice, startTurn]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];

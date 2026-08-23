@@ -16,6 +16,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/undo', description: '安全撤销最近一次文件操作', source: 'builtin', category: '工作区'},
   {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin', category: '会话'},
   {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', category: '会话', argumentHint: '[关键词 | clear]'},
+  {value: '/edit', description: '取回上一条任务继续修改', source: 'builtin', category: '会话'},
   {value: '/continue', description: '从最近失败点继续', source: 'builtin', category: '恢复'},
   {value: '/permissions', description: '切换权限模式', source: 'builtin', category: '安全', aliases: ['/allowed-tools']},
   {value: '/tools', description: '查看本地工具状态', source: 'builtin', category: '扩展'},

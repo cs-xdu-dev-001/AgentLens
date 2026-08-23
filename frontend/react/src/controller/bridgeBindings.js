@@ -19,6 +19,7 @@ export function bindReactControllerEvents({
   reprioritizeQueuedChat,
   renderActiveSession,
   renderCurrentUser,
+  requestComposerReset,
   requestComposerMenuClose,
   resolveChatKnowledgeBaseId,
   resolveChatModelConfigId,
@@ -60,6 +61,16 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-message-copy", (event) => {
     const content = event.detail?.rawContent || "";
     copyAssistantMessageContent(content, toast).catch(() => toast("复制失败，请重试", 4200, "error"));
+  });
+
+  window.addEventListener("knowflow:react-message-edit", (event) => {
+    const question = String(event.detail?.rawContent || "").trim();
+    if (!question) {
+      toast("这条消息没有可编辑的内容", 4200, "error");
+      return;
+    }
+    requestComposerReset({ focus: true, question });
+    toast("已放回输入框，可修改后重新发送");
   });
 
   window.addEventListener("knowflow:react-message-retry", (event) => {

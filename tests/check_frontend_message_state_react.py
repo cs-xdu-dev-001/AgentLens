@@ -37,6 +37,18 @@ def main() -> None:
     require(messages, "!message.streaming", "message actions wait for streaming to finish")
     require(messages, 'aria-label={"复制答案"}', "localized copy action label")
     require(messages, 'aria-label={"重新生成"}', "localized retry action label")
+    require(messages, 'aria-label={"编辑并重新发送"}', "localized user edit action label")
+    require(messages, 'edit: "knowflow:react-message-edit"', "user edit action event")
+    require(
+        "frontend/react/src/controller/bridgeBindings.js",
+        'window.addEventListener("knowflow:react-message-edit"',
+        "user message edit bridge",
+    )
+    require(
+        "frontend/react/src/controller/bridgeBindings.js",
+        'requestComposerReset({ focus: true, question })',
+        "user message edit restores composer",
+    )
     require(messages, 'from "../controller/markdown.js"', "React message component renders markdown internally")
     require(message_events, "retryable", "message bridge carries retry availability")
     require("frontend/styles.css", ".message-actions button svg", "bounded message action icons")
