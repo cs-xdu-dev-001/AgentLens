@@ -25,8 +25,29 @@ import {
   thinkingStateForPhase,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
+import {
+  sanitizeTerminalTitle,
+  terminalFeedbackState,
+  terminalProgressSequence,
+  terminalTitleSequence,
+} from '../src/terminalFeedback.js';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('terminal feedback mirrors idle, running, waiting, and failed Agent states', () => {
+  assert.deepEqual(terminalFeedbackState(), {
+    kind: 'idle', title: 'AgentLens', progressState: 'clear', progressPercent: 0,
+  });
+  assert.equal(terminalFeedbackState({running: true}).progressState, 'indeterminate');
+  assert.deepEqual(terminalFeedbackState({running: true, progressPercent: 40}), {
+    kind: 'running', title: 'AgentLens — 运行中', progressState: 'running', progressPercent: 40,
+  });
+  assert.equal(terminalFeedbackState({running: true, waiting: true}).kind, 'waiting');
+  assert.equal(terminalFeedbackState({failed: true}).progressState, 'error');
+  assert.equal(sanitizeTerminalTitle('\u001b[31mAgentLens\u0007'), 'AgentLens');
+  assert.equal(terminalTitleSequence('AgentLens'), '\u001b]0;AgentLens\u001b\\');
+  assert.equal(terminalProgressSequence('running', 140), '\u001b]9;4;1;100\u001b\\');
+});
 
 test('interaction focus resolves to one highest-priority input owner', () => {
   assert.equal(resolveInteractionFocus({suggestionsLength: 2}), 'commands');

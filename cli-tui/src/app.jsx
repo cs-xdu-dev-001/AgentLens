@@ -36,6 +36,7 @@ import {
   longestSuggestionPrefix,
   workspaceFileSuggestions,
 } from './fileSuggestions.js';
+import {useTerminalFeedback} from './terminalFeedback.js';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -1735,6 +1736,12 @@ export function App({
   const exitConfirmUntilRef = useRef(0);
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
+  useTerminalFeedback({
+    running,
+    waiting: Boolean(activeInteraction),
+    failed: !running && Boolean(runProjection.error),
+    progressPercent: runProjection.runSummary?.progressPercent,
+  });
   useEffect(() => {
     waitingInteractionsRef.current = waitingInteractions;
   }, [waitingInteractions]);
