@@ -1,8 +1,9 @@
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
 
-from backend.knowflow.services.mcp_security import validate_remote_url, validate_static_headers, resolve_remote_addresses
+from knowflow.services.mcp_security import validate_remote_url, validate_static_headers, resolve_remote_addresses
 
 def main():
     try: resolve_remote_addresses('x',443,lambda h,p: [])

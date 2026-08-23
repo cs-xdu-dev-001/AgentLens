@@ -93,6 +93,14 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "settings",
   },
   {
+    value: "/feedback",
+    aliases: ["/bug"],
+    label: "复制诊断",
+    description: "复制不含对话、工具参数和凭据的运行摘要",
+    category: "帮助",
+    action: "feedback",
+  },
+  {
     value: "/stop",
     label: "停止任务",
     description: "停止当前Agent运行",
@@ -113,12 +121,20 @@ export function composerCommandSuggestions(
     if (command.when === "continue" && !recoverable.has("continue") && !queuePaused) return false;
     if (command.when === "retry" && !recoverable.has("retry")) return false;
     if (!normalized) return true;
-    return [command.value.slice(1), command.label, command.description, command.category]
+    return [
+      command.value.slice(1),
+      ...(command.aliases || []).map((alias) => alias.slice(1)),
+      command.label,
+      command.description,
+      command.category,
+    ]
       .some((value) => String(value).toLocaleLowerCase().includes(normalized));
   });
 }
 
 export function resolveComposerCommand(value) {
   const normalized = String(value || "").trim().toLocaleLowerCase();
-  return WEB_COMPOSER_COMMANDS.find((command) => command.value === normalized) || null;
+  return WEB_COMPOSER_COMMANDS.find((command) => (
+    command.value === normalized || command.aliases?.includes(normalized)
+  )) || null;
 }

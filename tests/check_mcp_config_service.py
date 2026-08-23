@@ -1,8 +1,9 @@
 import json, sqlite3, sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'backend'))
 from cryptography.fernet import Fernet
-from backend.knowflow.services.mcp_config import McpConfigService
+from knowflow.services.mcp_config import McpConfigService
 
 class C:
  def __init__(self): self.f=Fernet(Fernet.generate_key())

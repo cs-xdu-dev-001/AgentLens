@@ -2923,6 +2923,24 @@ button.primary,
   gap: 10px;
 }
 
+.diagnostic-report-dialog {
+  width: min(640px, 100%);
+}
+
+.diagnostic-report-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 20px;
+}
+
+.diagnostic-report-body textarea {
+  min-height: 280px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .retrieval-drawer {
   position: absolute;
   z-index: 70;

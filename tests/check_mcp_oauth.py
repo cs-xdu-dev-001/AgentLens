@@ -11,10 +11,11 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 from cryptography.fernet import Fernet
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
 
-from backend.knowflow.services.mcp_config import McpConfigService
-from backend.knowflow.services.mcp_oauth import (
+from knowflow.services.mcp_config import McpConfigService
+from knowflow.services.mcp_oauth import (
     McpOAuthCoordinator,
     McpOAuthError,
     _PinnedSyncTransport,

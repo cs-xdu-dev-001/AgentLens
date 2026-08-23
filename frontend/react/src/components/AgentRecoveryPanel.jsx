@@ -229,6 +229,10 @@ export function AgentRecoveryPanel({
     );
   }
 
+  function copyDiagnostic() {
+    window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
+  }
+
   return (
     <section
       className={`agent-recovery-panel ${failure.retryable !== false ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
@@ -276,6 +280,12 @@ export function AgentRecoveryPanel({
       ) : null}
       {interactive ? (
       <div className={"agent-recovery-actions"} role={"group"} aria-label={"恢复操作"}>
+        <button
+          type={"button"}
+          onClick={copyDiagnostic}
+        >
+          复制诊断
+        </button>
         {target ? (
           <button
             className={!failure.retryable ? "primary" : ""}

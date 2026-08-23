@@ -430,6 +430,10 @@ export function ChatComposerForm() {
       handleOpenAgentWorkbench();
       return;
     }
+    if (command.action === "feedback") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
+      return;
+    }
     if (["continue", "retry"].includes(command.action)) {
       handleRecoveryCommand(command.action);
       return;

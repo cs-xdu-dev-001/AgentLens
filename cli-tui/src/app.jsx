@@ -36,7 +36,7 @@ import {
   longestSuggestionPrefix,
   workspaceFileSuggestions,
 } from './fileSuggestions.js';
-import {useTerminalFeedback} from './terminalFeedback.js';
+import {terminalClipboardSequence, useTerminalFeedback} from './terminalFeedback.js';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -321,6 +321,17 @@ function safeJson(value, limit = 1200) {
 function publicLabel(value, fallback, limit = 120) {
   const label = redact(String(value ?? ''), limit).replace(/\s+/g, ' ').trim();
   return label || fallback;
+}
+
+function publicIdentifier(value, fallback, limit = 120) {
+  const label = publicLabel(value, '', limit);
+  if (
+    !label
+    || label === '[已隐藏]'
+    || /[\\/]/u.test(label)
+    || /^[A-Za-z]:/u.test(label)
+  ) return fallback;
+  return label.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, limit) || fallback;
 }
 
 function shellOutputValue(row) {
@@ -1182,6 +1193,56 @@ function workspaceLabel(workspace) {
   const branch = workspace.branch ? ` · ${workspace.branch}` : '';
   const dirty = workspace.dirty ? ` · ${workspace.changedFiles ?? 0}个文件已修改` : '';
   return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
+}
+
+function workspaceDiagnosticName(workspace) {
+  const source = String(workspace?.cwd || workspace?.projectRoot || '').replace(/[\\/]+$/u, '');
+  return publicLabel(source.split(/[\\/]/u).filter(Boolean).at(-1), '未识别', 80);
+}
+
+export function buildTuiDiagnosticReport({
+  version = '',
+  model = '',
+  apiMode = '',
+  workspace = null,
+  permissionMode = 'ask',
+  runId = '',
+  runProjection = null,
+  toolCalls = 0,
+  queueSize = 0,
+  running = false,
+  now = Date.now(),
+} = {}) {
+  const summary = runProjection?.runSummary && typeof runProjection.runSummary === 'object'
+    ? runProjection.runSummary
+    : {};
+  const failure = runProjection?.error && typeof runProjection.error === 'object'
+    ? runProjection.error
+    : {};
+  const completed = Math.max(0, Number(summary.completedSteps) || 0);
+  const total = Math.max(completed, Number(summary.totalSteps) || 0);
+  const status = publicIdentifier(
+    summary.status || (failure.code ? 'failed' : running ? 'running' : 'idle'),
+    'idle',
+    40,
+  );
+  const permission = PERMISSION_MODES.find(item => item.id === permissionMode)?.label || permissionMode;
+  return [
+    'AgentLens脱敏诊断',
+    `客户端: CLI ${publicLabel(version, 'development', 40)}`,
+    `平台: ${process.platform} · Node ${process.versions.node}`,
+    `时间: ${new Date(now).toISOString()}`,
+    `模型: ${publicLabel(model, '未配置', 100)}${apiMode ? ` · ${publicLabel(apiMode, '', 40)}` : ''}`,
+    `工作区: ${workspaceDiagnosticName(workspace)}${workspace?.branch ? ` · ${publicLabel(workspace.branch, '', 80)}` : ''}${workspace?.dirty ? ` · ${Math.max(0, Number(workspace.changedFiles) || 0)}个文件已修改` : ''}`,
+    `权限: ${publicLabel(permission, '询问', 40)}`,
+    `状态: ${status}`,
+    `运行ID: ${publicIdentifier(summary.runId || runId, '无', 160)}`,
+    total ? `进度: ${completed}/${total}` : '',
+    `工具调用: ${Math.max(0, Number(summary.toolCalls ?? toolCalls) || 0)}`,
+    `队列: ${Math.max(0, Number(queueSize) || 0)}`,
+    `错误码: ${publicIdentifier(failure.code, '无', 100)}`,
+    '隐私: 已排除对话正文、工具输入输出、完整路径和凭据',
+  ].filter(Boolean).join('\n');
 }
 
 function workspaceText(workspace) {
@@ -3150,6 +3211,24 @@ export function App({
     } else if (command.value === '/doctor') {
       client.send({type: 'doctor'});
       setPhase('检查SRT沙箱');
+    } else if (command.value === '/feedback') {
+      const report = buildTuiDiagnosticReport({
+        version,
+        model,
+        apiMode: modelProtocolLabel(activeModel?.apiMode),
+        workspace,
+        permissionMode,
+        runId: currentRunId || lastFailedRunId,
+        runProjection,
+        toolCalls: activitiesRef.current.size,
+        queueSize: queue.length,
+        running,
+      });
+      if (stdout?.isTTY) stdout.write(terminalClipboardSequence(report));
+      appendItem(
+        'assistant',
+        `${report}\n\n${stdout?.isTTY ? '已发送终端剪贴板请求；若未生效，请选择上方内容复制。' : '当前终端不支持自动复制，请选择上方内容复制。'}`,
+      );
     } else if (command.value === '/tasks') {
       const [action, firstArg, ...restArgs] = args.trim().split(/\s+/).filter(Boolean);
       const ordered = orderedQueue(queue);
@@ -3247,7 +3326,7 @@ export function App({
         ].join('\n'), undefined, {bypassQueuePause: true});
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, showComposerNotice, startTurn]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, version, workspace]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];

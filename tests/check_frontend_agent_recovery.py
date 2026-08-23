@@ -41,6 +41,12 @@ def main() -> None:
     require(component, "disabled={actionPending", "duplicate recovery prevention")
     require(component, "interactive = true", "single interactive recovery owner")
     require(component, "先处理当前请求", "interaction handoff action")
+    require(component, "复制诊断", "redacted diagnostic copy action")
+    require(
+        component,
+        "knowflow:react-diagnostic-copy-request",
+        "diagnostic copy event",
+    )
     require(
         component,
         "knowflow:react-agent-run-action-state",
@@ -96,6 +102,7 @@ def main() -> None:
         ".agent-recovery-feedback",
         ".agent-recovery-metrics",
         ".agent-recovery-state",
+        ".diagnostic-report-dialog",
     ):
         if selector not in styles:
             raise AssertionError(f"Missing recovery style: {selector}")

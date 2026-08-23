@@ -22,6 +22,15 @@ export function terminalTitleSequence(title) {
   return `${OSC}0;${sanitizeTerminalTitle(title) || 'AgentLens'}${ST}`;
 }
 
+export function terminalClipboardSequence(value) {
+  const safeValue = stripAnsi(String(value ?? ''))
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu, '')
+    .trim()
+    .slice(0, 100_000);
+  if (!safeValue) return '';
+  return `${OSC}52;c;${Buffer.from(safeValue, 'utf8').toString('base64')}${ST}`;
+}
+
 function versionAtLeast(value, minimum) {
   const current = String(value ?? '').match(/\d+/gu)?.map(Number) ?? [];
   const target = String(minimum).match(/\d+/gu)?.map(Number) ?? [];

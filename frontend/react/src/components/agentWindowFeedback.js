@@ -1,3 +1,8 @@
+import {
+  buildAgentRunPresentation,
+  compactPublicText,
+} from "./agentRunPresentation.js";
+
 const RUNNING_STATUSES = new Set(["planning", "running"]);
 const WAITING_STATUSES = new Set(["waiting", "waiting_approval", "waiting_input", "paused"]);
 const COMPLETED_STATUSES = new Set(["completed", "success", "succeeded"]);
@@ -47,6 +52,78 @@ export function agentWindowFeedback(run) {
     ...FEEDBACK[state],
     runId: String(run?.id || run?.runId || run?.runSummary?.runId || ""),
   };
+}
+
+function publicScalar(value, limit = 120) {
+  return ["string", "number", "boolean"].includes(typeof value)
+    ? compactPublicText(value, limit)
+    : "";
+}
+
+function publicIdentifier(value, limit = 120) {
+  const text = publicScalar(value, limit);
+  if (
+    !text
+    || text === "[已隐藏]"
+    || /[\\/]/.test(text)
+    || /^[A-Za-z]:/.test(text)
+  ) return "";
+  const identifier = text.replace(/[^A-Za-z0-9._:-]/g, "");
+  return identifier.slice(0, limit);
+}
+
+export function buildAgentDiagnosticReport(run, {
+  surface = "Web",
+  version = "",
+  now = Date.now(),
+} = {}) {
+  const trace = Array.isArray(run?.trace) ? run.trace : [];
+  const presentation = buildAgentRunPresentation({ run, trace, now });
+  const summary = run?.runSummary && typeof run.runSummary === "object"
+    ? run.runSummary
+    : {};
+  const failure = run?.failure && typeof run.failure === "object"
+    ? run.failure
+    : {};
+  const status = publicIdentifier(
+    summary.status || run?.status || presentation?.status?.className || "idle",
+    40,
+  ) || "idle";
+  const runId = publicIdentifier(
+    summary.runId || run?.id || run?.runId || presentation?.runId,
+    160,
+  );
+  const errorCode = publicIdentifier(failure.code || run?.errorCode, 100);
+  const model = publicScalar(
+    summary.model || run?.modelName || (typeof run?.model === "string" ? run.model : ""),
+    100,
+  );
+  const completed = Math.max(
+    0,
+    Number(summary.completedSteps ?? presentation?.completed) || 0,
+  );
+  const total = Math.max(
+    completed,
+    Number(summary.totalSteps ?? presentation?.total) || 0,
+  );
+  const toolCalls = Math.max(
+    0,
+    Number(summary.toolCalls ?? presentation?.toolCalls) || 0,
+  );
+  const lines = [
+    "AgentLens脱敏诊断",
+    `客户端: ${publicScalar(surface, 40) || "Web"}`,
+    version ? `版本: ${publicScalar(version, 40)}` : "",
+    `时间: ${new Date(now).toISOString()}`,
+    `状态: ${status}`,
+    runId ? `运行ID: ${runId}` : "运行ID: 无",
+    model ? `模型: ${model}` : "",
+    total ? `进度: ${completed}/${total}` : "",
+    `工具调用: ${toolCalls}`,
+    errorCode ? `错误码: ${errorCode}` : "错误码: 无",
+    "隐私: 已排除对话正文、工具输入输出、完整路径和凭据",
+  ];
+  return lines.filter(Boolean).join("\n");
 }
 
 export function shouldNotifyAgentWindow(previous, next, {

@@ -8,6 +8,7 @@ import React from 'react';
 import {render} from 'ink-testing-library';
 import {
   App,
+  buildTuiDiagnosticReport,
   expandPastedTextRefs,
   enqueueWaitingInteraction,
   formatPastedTextRef,
@@ -30,6 +31,7 @@ import {
   shouldNotifyTerminalTransition,
   supportsTerminalProgress,
   terminalFeedbackState,
+  terminalClipboardSequence,
   terminalNotificationSequence,
   terminalProgressSequence,
   terminalTitleSequence,
@@ -49,6 +51,10 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.equal(terminalFeedbackState({failed: true}).progressState, 'error');
   assert.equal(sanitizeTerminalTitle('\u001b[31mAgentLens\u0007'), 'AgentLens');
   assert.equal(terminalTitleSequence('AgentLens'), '\u001b]0;AgentLens\u001b\\');
+  assert.equal(
+    terminalClipboardSequence('diagnostic'),
+    '\u001b]52;c;ZGlhZ25vc3RpYw==\u001b\\',
+  );
   assert.equal(terminalProgressSequence('running', 140), '\u001b]9;4;1;100\u001b\\');
   assert.equal(supportsTerminalProgress({WT_SESSION: '1'}), false);
   assert.equal(supportsTerminalProgress({ConEmuANSI: 'ON'}), true);
@@ -64,6 +70,38 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.equal(shouldNotifyTerminalTransition({
     previousKind: 'running', nextKind: 'waiting', lastInteractionAt: 5000, now: 8000,
   }), false);
+});
+
+test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
+  const report = buildTuiDiagnosticReport({
+    version: '0.21.0',
+    model: 'gpt-5.5',
+    apiMode: 'Responses协议',
+    workspace: {
+      cwd: '/home/alice/private-project',
+      branch: 'main',
+      dirty: true,
+      changedFiles: 2,
+    },
+    permissionMode: 'ask',
+    runId: 'run-safe',
+    runProjection: {
+      runSummary: {status: 'failed', completedSteps: 2, totalSteps: 3, toolCalls: 4},
+      error: {code: 'upstream_error', message: 'api_key=sk-do-not-copy'},
+    },
+    now: 0,
+  });
+  assert.match(report, /AgentLens脱敏诊断/);
+  assert.match(report, /工作区: private-project · main · 2个文件已修改/);
+  assert.match(report, /进度: 2\/3/);
+  assert.match(report, /错误码: upstream_error/);
+  assert.doesNotMatch(report, /\/home\/alice|sk-do-not-copy|api_key/);
+  const unsafeIdentifiers = buildTuiDiagnosticReport({
+    runId: '/home/alice/private/run-1',
+    runProjection: {error: {code: String.raw`C:\Users\alice\secret.txt`}},
+    now: 0,
+  });
+  assert.doesNotMatch(unsafeIdentifiers, /\/home\/alice|C:\\Users|secret\.txt/);
 });
 
 test('interaction focus resolves to one highest-priority input owner', () => {
@@ -1601,6 +1639,21 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
   view.stdin.write('\r');
   await tick();
   assert.match(view.lastFrame(), /未知命令/);
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  view.unmount();
+});
+
+test('/bug copies a redacted local diagnostic without sending a model request', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.21.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('/bug');
+  await tick();
+  view.stdin.write('\r');
+  const frame = await waitForFrame(view, /AgentLens脱敏诊断/);
+  assert.match(frame, /客户端: CLI 0.21.0/);
+  assert.match(frame, /隐私: 已排除对话正文、工具输入输出、完整路径和凭据/);
+  assert.match(frame, /已发送终端剪贴板请求|当前终端不支持自动复制/);
   assert.equal(client.sent.some(message => message.type === 'submit'), false);
   view.unmount();
 });

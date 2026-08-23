@@ -1,9 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  buildAgentDiagnosticReport,
   agentWindowFaviconDataUrl,
   agentWindowFeedback,
   shouldNotifyAgentWindow,
 } from "./agentWindowFeedback.js";
+import { notifyError, notifyToast } from "./errorFeedback.js";
 
 function findFavicon() {
   return document.querySelector('link[rel~="icon"]');
@@ -11,6 +13,9 @@ function findFavicon() {
 
 export function AgentWindowFeedback() {
   const feedbackRef = useRef(agentWindowFeedback(null));
+  const diagnosticRef = useRef(null);
+  const runRef = useRef(null);
+  const [fallbackReport, setFallbackReport] = useState("");
 
   useEffect(() => {
     const originalTitle = document.title || "AgentLens";
@@ -51,13 +56,27 @@ export function AgentWindowFeedback() {
     };
 
     const handleRunUpdated = (event) => {
-      const next = agentWindowFeedback(event.detail?.run);
+      runRef.current = event.detail?.run || null;
+      const next = agentWindowFeedback(runRef.current);
       const foreground = document.visibilityState === "visible" && document.hasFocus();
       applyFeedback(
         foreground && ["completed", "failed"].includes(next.state)
           ? agentWindowFeedback(null)
           : next,
       );
+    };
+    const handleDiagnosticCopy = async () => {
+      const report = buildAgentDiagnosticReport(runRef.current);
+      try {
+        if (!navigator.clipboard?.writeText) {
+          throw new Error("Clipboard API unavailable");
+        }
+        await navigator.clipboard.writeText(report);
+        notifyToast("脱敏诊断已复制");
+      } catch (error) {
+        setFallbackReport(report);
+        notifyError(error, "自动复制失败，已打开脱敏诊断。");
+      }
     };
     const acknowledgeTerminalState = () => {
       if (
@@ -68,10 +87,12 @@ export function AgentWindowFeedback() {
     };
 
     window.addEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+    window.addEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
     window.addEventListener("focus", acknowledgeTerminalState);
     document.addEventListener("visibilitychange", acknowledgeTerminalState);
     return () => {
       window.removeEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+      window.removeEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
       window.removeEventListener("focus", acknowledgeTerminalState);
       document.removeEventListener("visibilitychange", acknowledgeTerminalState);
       document.title = originalTitle;
@@ -79,5 +100,72 @@ export function AgentWindowFeedback() {
     };
   }, []);
 
-  return null;
+  useEffect(() => {
+    if (!fallbackReport) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setFallbackReport("");
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    window.requestAnimationFrame(() => {
+      diagnosticRef.current?.focus();
+      diagnosticRef.current?.select();
+    });
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [fallbackReport]);
+
+  if (!fallbackReport) return null;
+  return (
+    <div
+      className={"modal-backdrop diagnostic-report-backdrop"}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setFallbackReport("");
+      }}
+    >
+      <section
+        aria-labelledby={"diagnostic-report-title"}
+        aria-modal={"true"}
+        className={"modal-panel diagnostic-report-dialog"}
+        role={"dialog"}
+      >
+        <header className={"modal-head"}>
+          <h2 id={"diagnostic-report-title"}>{"脱敏诊断"}</h2>
+          <button
+            aria-label={"关闭脱敏诊断"}
+            className={"icon-button"}
+            onClick={() => setFallbackReport("")}
+            type={"button"}
+          >
+            {"×"}
+          </button>
+        </header>
+        <div className={"diagnostic-report-body"}>
+          <textarea
+            aria-label={"脱敏诊断内容"}
+            onFocus={(event) => event.currentTarget.select()}
+            readOnly
+            ref={diagnosticRef}
+            value={fallbackReport}
+          />
+          <div className={"modal-actions"}>
+            <button
+              onClick={() => {
+                diagnosticRef.current?.focus();
+                diagnosticRef.current?.select();
+              }}
+              type={"button"}
+            >
+              {"全选诊断"}
+            </button>
+            <button
+              className={"primary"}
+              onClick={() => setFallbackReport("")}
+              type={"button"}
+            >
+              {"关闭"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

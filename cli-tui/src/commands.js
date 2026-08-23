@@ -29,6 +29,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/memory', description: '查看Mem0状态', source: 'builtin', category: '扩展'},
   {value: '/memory:configure', description: '查看Mem0配置方法', source: 'builtin', category: '扩展'},
   {value: '/doctor', description: '检查SRT沙箱依赖', source: 'builtin', category: '安全'},
+  {value: '/feedback', description: '复制不含对话和凭据的诊断摘要', source: 'builtin', category: '帮助', aliases: ['/bug']},
   {value: '/tasks', description: '查看和调整排队任务', source: 'builtin', category: '运行', argumentHint: '[list | add <now|next|later> <任务> | remove <序号> | priority <序号> <级别> | clear]'},
   {value: '/retry', description: '选择重试工具或整轮任务', source: 'builtin', category: '恢复'},
   {value: '/fix', description: '让Agent分析最近的工具错误并继续', source: 'builtin', category: '恢复'},

@@ -37,7 +37,7 @@ for needle in (
     assert needle in flow, f"missing recovery projection context: {needle}"
 
 script = r'''
-import { composerCommandSuggestions } from "./frontend/react/src/components/composerCommands.js";
+import { composerCommandSuggestions, resolveComposerCommand } from "./frontend/react/src/components/composerCommands.js";
 
 const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
 const idle = values();
@@ -55,6 +55,13 @@ if (!queued.includes("/continue") || queued.includes("/retry")) {
 const retrySearch = composerCommandSuggestions("重新", { recoveryActions: ["retry"] });
 if (retrySearch.length !== 1 || retrySearch[0].value !== "/retry") {
   throw new Error("localized recovery search failed");
+}
+const feedback = resolveComposerCommand("/bug");
+if (feedback?.value !== "/feedback" || feedback?.action !== "feedback") {
+  throw new Error("feedback alias did not resolve to the local diagnostic action");
+}
+if (!composerCommandSuggestions("bug").some((item) => item.value === "/feedback")) {
+  throw new Error("feedback alias is not searchable");
 }
 '''
 
