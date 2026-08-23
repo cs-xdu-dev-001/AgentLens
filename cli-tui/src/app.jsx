@@ -36,7 +36,11 @@ import {
   longestSuggestionPrefix,
   workspaceFileSuggestions,
 } from './fileSuggestions.js';
-import {terminalClipboardSequence, useTerminalFeedback} from './terminalFeedback.js';
+import {
+  terminalClipboardSequence,
+  terminalCopySelection,
+  useTerminalFeedback,
+} from './terminalFeedback.js';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -1796,6 +1800,7 @@ export function App({
   const [queueManagerIndex, setQueueManagerIndex] = useState(0);
   const [lastQuestion, setLastQuestion] = useState('');
   const lastQuestionRef = useRef('');
+  const lastAssistantAnswerRef = useRef('');
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historyDraftRef = useRef('');
@@ -2422,6 +2427,13 @@ export function App({
         settleCurrentRun(message.cancelled ? 'cancelled' : 'completed');
         const projectedArtifactCount = runProjectionRef.current.artifacts.length;
         if (message.restored && Array.isArray(message.messages)) {
+          const restoredAnswer = [...message.messages]
+            .reverse()
+            .find(item => item.role === 'assistant' && String(item.content ?? '').trim());
+          lastAssistantAnswerRef.current = redact(
+            String(restoredAnswer?.content ?? ''),
+            200_000,
+          ).trim();
           setStaticEpoch(value => value + 1);
           setTranscript(message.messages.map((item, index) => ({
             id: `restored-${index}`,
@@ -2430,6 +2442,10 @@ export function App({
           })));
           setTaskArchived(true);
         } else {
+          lastAssistantAnswerRef.current = redact(
+            String(assistantDraftRef.current || message.answer || ''),
+            200_000,
+          ).trim();
           archiveCurrentTurn(
             assistantDraftRef.current || message.answer,
             message.cancelled ? '已取消' : '已完成',
@@ -2476,6 +2492,12 @@ export function App({
           return;
         }
         const publicFailure = userFacingErrorMessage(message.message);
+        if (assistantDraftRef.current.trim()) {
+          lastAssistantAnswerRef.current = redact(
+            assistantDraftRef.current,
+            200_000,
+          ).trim();
+        }
         settleCurrentRun('failed', publicFailure);
         archiveCurrentTurn(assistantDraftRef.current, '执行失败');
         if (message.runId) {
@@ -3061,8 +3083,10 @@ export function App({
     } else if (command.value === '/exit') {
       exit();
     } else if (command.value === '/new') {
+      lastAssistantAnswerRef.current = '';
       client.send({type: 'reset'});
     } else if (command.value === '/clear') {
+      lastAssistantAnswerRef.current = '';
       setStaticEpoch(value => value + 1);
       setTranscript([]);
       const emptyActivities = new Map();
@@ -3184,6 +3208,19 @@ export function App({
         loadComposerText(lastQuestion);
         setHistoryIndex(-1);
         showComposerNotice('已恢复上一条任务，可修改后重新发送');
+      }
+    } else if (command.value === '/copy') {
+      const selection = terminalCopySelection(
+        lastAssistantAnswerRef.current || assistantDraftRef.current,
+        args,
+      );
+      if (!selection.ok) {
+        appendItem('error', selection.message);
+      } else if (!stdout?.isTTY) {
+        appendItem('error', '当前终端不支持自动复制，请使用终端选择功能复制回答。');
+      } else {
+        stdout.write(terminalClipboardSequence(selection.text));
+        showComposerNotice(`已发送${selection.label}到终端剪贴板`);
       }
     } else if (command.value === '/continue') {
       const resumable = lastFailedRunId

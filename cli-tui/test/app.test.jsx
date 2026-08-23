@@ -32,6 +32,7 @@ import {
   supportsTerminalProgress,
   terminalFeedbackState,
   terminalClipboardSequence,
+  terminalCopySelection,
   terminalNotificationSequence,
   terminalProgressSequence,
   terminalTitleSequence,
@@ -72,9 +73,45 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   }), false);
 });
 
+test('copy selection returns the latest answer or a requested Markdown code block', () => {
+  const answer = [
+    '先执行检查。',
+    '',
+    '```bash',
+    'npm test',
+    '```',
+    '',
+    '```js',
+    'console.log("ok");',
+    '```',
+  ].join('\n');
+  assert.deepEqual(terminalCopySelection(answer), {
+    ok: true,
+    label: '最近回答',
+    text: answer,
+  });
+  assert.deepEqual(terminalCopySelection(answer, 'answer'), {
+    ok: true,
+    label: '最近回答',
+    text: answer,
+  });
+  assert.deepEqual(terminalCopySelection(answer, 'code 1'), {
+    ok: true,
+    label: '代码块1/2',
+    text: 'npm test',
+  });
+  assert.deepEqual(terminalCopySelection(answer, 'code'), {
+    ok: true,
+    label: '代码块2/2',
+    text: 'console.log("ok");',
+  });
+  assert.match(terminalCopySelection('没有代码', 'code').message, /没有代码块/);
+  assert.match(terminalCopySelection(answer, 'code 3').message, /共有2个代码块/);
+});
+
 test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
   const report = buildTuiDiagnosticReport({
-    version: '0.21.0',
+    version: '0.22.0',
     model: 'gpt-5.5',
     apiMode: 'Responses协议',
     workspace: {
@@ -1645,16 +1682,36 @@ test('Ink app rejects unknown slash commands instead of sending them to the mode
 
 test('/bug copies a redacted local diagnostic without sending a model request', async () => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.21.0" />);
+  const view = render(<App client={client} version="0.22.0" />);
   await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('/bug');
   await tick();
   view.stdin.write('\r');
   const frame = await waitForFrame(view, /AgentLens脱敏诊断/);
-  assert.match(frame, /客户端: CLI 0.21.0/);
+  assert.match(frame, /客户端: CLI 0.22.0/);
   assert.match(frame, /隐私: 已排除对话正文、工具输入输出、完整路径和凭据/);
   assert.match(frame, /已发送终端剪贴板请求|当前终端不支持自动复制/);
   assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  view.unmount();
+});
+
+test('/copy targets the completed Agent answer without sending another model request', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.22.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('生成示例');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_completed',
+    answer: '结果\n\n```bash\nnpm test\n```',
+  });
+  await tick();
+  view.stdin.write('/copy code');
+  view.stdin.write('\r');
+  const frame = await waitForFrame(view, /当前终端不支持自动复制/);
+  assert.doesNotMatch(frame, /还没有可复制/);
+  assert.equal(client.sent.filter(message => message.type === 'submit').length, 1);
   view.unmount();
 });
 

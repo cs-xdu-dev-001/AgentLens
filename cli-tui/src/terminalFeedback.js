@@ -31,6 +31,39 @@ export function terminalClipboardSequence(value) {
   return `${OSC}52;c;${Buffer.from(safeValue, 'utf8').toString('base64')}${ST}`;
 }
 
+export function terminalCopySelection(answer, args = '') {
+  const source = stripAnsi(String(answer ?? '')).trim();
+  if (!source) {
+    return {ok: false, message: '还没有可复制的Agent回答。'};
+  }
+  const parts = String(args ?? '').trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  const mode = parts[0] || 'answer';
+  if (mode === 'answer' && parts.length <= 1) {
+    return {ok: true, label: '最近回答', text: source};
+  }
+  if (mode !== 'code' || parts.length > 2) {
+    return {ok: false, message: '用法：/copy、/copy answer或/copy code [序号]'};
+  }
+  const blocks = [];
+  const pattern = /(?:^|\n)(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1(?=\n|$)/gu;
+  for (const match of source.matchAll(pattern)) {
+    const value = String(match[2] ?? '').trimEnd();
+    if (value) blocks.push(value);
+  }
+  if (!blocks.length) {
+    return {ok: false, message: '最近回答中没有代码块。'};
+  }
+  const requested = parts[1] ? Number(parts[1]) : blocks.length;
+  if (!Number.isInteger(requested) || requested < 1 || requested > blocks.length) {
+    return {ok: false, message: `最近回答中共有${blocks.length}个代码块，请输入1-${blocks.length}。`};
+  }
+  return {
+    ok: true,
+    label: `代码块${requested}/${blocks.length}`,
+    text: blocks[requested - 1],
+  };
+}
+
 function versionAtLeast(value, minimum) {
   const current = String(value ?? '').match(/\d+/gu)?.map(Number) ?? [];
   const target = String(minimum).match(/\d+/gu)?.map(Number) ?? [];
