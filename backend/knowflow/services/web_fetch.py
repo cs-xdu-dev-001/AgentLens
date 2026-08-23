@@ -292,7 +292,7 @@ class PublicWebFetcher:
         )
         headers = {
             "Accept": "text/html,application/xhtml+xml,text/plain,application/json;q=0.8,*/*;q=0.1",
-            "User-Agent": "KnowFlow-WebFetch/1.0",
+            "User-Agent": "AgentLens-WebFetch/1.0",
         }
         try:
             with httpx.Client(

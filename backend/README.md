@@ -1,10 +1,10 @@
-# KnowFlow AI CLI
+# AgentLens CLI
 
-KnowFlow CLI runs a local BYOK LangGraph Agent in a Linux terminal. The React/Ink
+AgentLens CLI runs a local BYOK LangGraph Agent in a Linux terminal. The React/Ink
 TUI streams model and tool progress, keeps native terminal scrollback by default,
 and discovers local tools, MCP servers, and Skills at runtime. `Shift+Tab` cycles
 permission modes; write, destructive, and unknown-risk calls still pass through
-the Agent approval boundary. Connecting to a KnowFlow server remains optional.
+the Agent approval boundary. Connecting to an AgentLens server remains optional.
 
 ## Install
 
@@ -44,7 +44,7 @@ important than the full-screen UI:
 knowflow chat --plain
 ```
 
-Connecting to a KnowFlow Web deployment is optional:
+Connecting to an AgentLens Web deployment is optional:
 
 ```bash
 knowflow auth login https://ai.example.com

@@ -37,7 +37,7 @@ def main() -> None:
         source = read(stylesheet)
         require(
             source,
-            "/* KnowFlow refinement: Codex white sidebar and knowledge */",
+            "/* AgentLens refinement: Codex white sidebar and knowledge */",
             "white sidebar and knowledge contract",
         )
         require(source, "--sidebar-width: 252px;", "expanded sidebar width")

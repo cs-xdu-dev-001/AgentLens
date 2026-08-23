@@ -39,7 +39,7 @@ def main() -> None:
         source = read(stylesheet)
         require(
             source,
-            "/* KnowFlow refinement: model settings workspace */",
+            "/* AgentLens refinement: model settings workspace */",
             "model settings refinement marker",
         )
         require(source, ".model-config-capabilities", "capability styling")

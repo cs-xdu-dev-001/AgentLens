@@ -1,4 +1,4 @@
-# KnowFlow AI 接口调试文档
+# AgentLens接口调试文档
 
 本文档用于配合 FastAPI 自动生成的 Swagger UI 调试接口，作用类似 Spring Boot 项目中的 Knife4j 页面。
 

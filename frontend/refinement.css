@@ -1,4 +1,4 @@
-/* KnowFlow refinement: foundation */
+/* AgentLens refinement: foundation */
 :root {
   --kf-type-page: 28px;
   --kf-type-title: 18px;
@@ -19,7 +19,7 @@
   --kf-transition: 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* KnowFlow refinement: shell and controls */
+/* AgentLens refinement: shell and controls */
 html {
   color-scheme: light;
 }
@@ -140,7 +140,7 @@ body {
   }
 }
 
-/* KnowFlow refinement: management pages */
+/* AgentLens refinement: management pages */
 :where(#page-knowledge, #page-skills, #page-memory, #page-tools) .workspace-page {
   min-height: 100vh;
   color: var(--text);
@@ -498,7 +498,7 @@ body {
   }
 }
 
-/* KnowFlow refinement: composer */
+/* AgentLens refinement: composer */
 #chat-form.composer {
   padding-inline: clamp(14px, 3vw, 32px);
 }
@@ -642,8 +642,8 @@ body {
   }
 }
 
-/* KnowFlow refinement: aligned empty composer */
-/* KnowFlow refinement: Codex composer surface */
+/* AgentLens refinement: aligned empty composer */
+/* AgentLens refinement: Codex composer surface */
 :root:not([data-theme="mono-dark"]) #page-chat,
 :root:not([data-theme="mono-dark"]) #page-chat .chat-layout,
 :root:not([data-theme="mono-dark"]) #page-chat .chat-panel,
@@ -781,7 +781,7 @@ body {
   grid-template-rows: auto minmax(50px, auto) 36px !important;
 }
 
-/* KnowFlow refinement: compact composer menu */
+/* AgentLens refinement: compact composer menu */
 #chat-form.composer .composer-menu {
   left: 0 !important;
   bottom: calc(100% + 10px) !important;
@@ -919,7 +919,7 @@ body {
   transform: none !important;
 }
 
-/* KnowFlow refinement: Codex white sidebar and knowledge */
+/* AgentLens refinement: Codex white sidebar and knowledge */
 :root {
   --sidebar-width: 252px;
   --sidebar-collapsed-width: 56px;
@@ -1459,7 +1459,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 }
 
-/* KnowFlow refinement: run drawer */
+/* AgentLens refinement: run drawer */
 .evidence-drawer {
   border: 0 !important;
   border-left: 1px solid var(--control-border) !important;
@@ -1659,7 +1659,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   overflow-wrap: anywhere;
 }
 
-/* KnowFlow refinement: settings */
+/* AgentLens refinement: settings */
 #page-settings .settings-workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1890,7 +1890,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 }
 
-/* KnowFlow refinement: responsive */
+/* AgentLens refinement: responsive */
 @media (max-width: 1180px) {
   :root {
     --drawer-width: min(360px, 38vw);
@@ -2272,7 +2272,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 }
 
-/* KnowFlow refinement: model settings workspace */
+/* AgentLens refinement: model settings workspace */
 #page-settings .settings-workspace-shell {
   grid-template-columns: 304px minmax(0, 1fr);
   background: var(--panel-bg);

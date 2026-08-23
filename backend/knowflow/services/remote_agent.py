@@ -138,7 +138,7 @@ class RemoteAgentClient:
     def headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
-            "User-Agent": "KnowFlow-CLI",
+            "User-Agent": "AgentLens-CLI",
         }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -193,7 +193,7 @@ class RemoteAgentClient:
         except requests.RequestException as exc:
             raise RemoteAgentError(
                 "remote_unavailable",
-                "无法连接KnowFlow服务器。",
+                "无法连接AgentLens服务器。",
             ) from exc
         if not response.ok:
             raise self._error(response)
@@ -228,7 +228,7 @@ class RemoteAgentClient:
         data = self.request(
             "POST",
             "/api/auth/cli/device",
-            body={"clientName": "KnowFlow CLI"},
+            body={"clientName": "AgentLens CLI"},
         )
         if not isinstance(data, dict) or not data.get("deviceCode"):
             raise RemoteAgentError(
@@ -284,7 +284,7 @@ class RemoteAgentClient:
         except requests.RequestException as exc:
             raise RemoteAgentError(
                 "remote_unavailable",
-                "无法连接KnowFlow服务器。",
+                "无法连接AgentLens服务器。",
             ) from exc
         if not response.ok:
             raise self._error(response)

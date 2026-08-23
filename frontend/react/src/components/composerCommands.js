@@ -14,6 +14,13 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "model",
   },
   {
+    value: "/permissions",
+    label: "权限模式",
+    description: "选择询问、自动编辑或完全访问",
+    category: "会话",
+    action: "permissions",
+  },
+  {
     value: "/tasks",
     label: "运行详情",
     description: "打开当前任务、工具与恢复操作",

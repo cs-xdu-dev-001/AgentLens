@@ -61,7 +61,7 @@ def main() -> None:
     device_client = TestClient(main_module.app)
     device_started = device_client.post(
         "/api/auth/cli/device",
-        json={"clientName": "KnowFlow CLI test"},
+        json={"clientName": "AgentLens CLI test"},
     )
     assert device_started.status_code == 200, device_started.text
     device_data = device_started.json()["data"]

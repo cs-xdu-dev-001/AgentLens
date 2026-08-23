@@ -569,7 +569,7 @@ def normalize_user(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "id": row["id"],
         "email": row.get("email") or "",
         "username": row.get("username") or "",
-        "displayName": row.get("display_name") or row.get("username") or row.get("email") or "KnowFlow User",
+        "displayName": row.get("display_name") or row.get("username") or row.get("email") or "AgentLens User",
         "avatarUrl": row.get("avatar_url") or "",
         "authProvider": row.get("auth_provider") or "local",
     }
@@ -1238,8 +1238,8 @@ def build_messages(
     identity = model_identity(chat_config)
     attachment_text = format_chat_attachments(attachments or [])
     identity_rule = (
-        f"Current model configuration: {identity}. KnowFlow AI is only the application wrapper and call entry point, not your model identity. "
-        "If the user asks what model, provider, or identity you are, answer only from the current model configuration and do not claim to be KnowFlow AI."
+        f"Current model configuration: {identity}. AgentLens is only the application wrapper and call entry point, not your model identity. "
+        "If the user asks what model, provider, or identity you are, answer only from the current model configuration and do not claim to be AgentLens."
     )
     memory_text = format_long_term_memories(memories or [])
     memory_rule = ""
@@ -1318,13 +1318,13 @@ def remote_model_error_answer(chat_config: dict[str, Any], exc: Exception) -> st
     base_url = chat_config.get("base_url") or ""
     hints = [
         "Check the endpoint URL, API key, and model name.",
-        "If you entered a local proxy or New API endpoint, confirm that service is running and that the KnowFlow backend can reach that port.",
+        "If you entered a local proxy or New API endpoint, confirm that service is running and that the AgentLens backend can reach that port.",
     ]
     if "127.0.0.1" in base_url or "localhost" in base_url:
-        hints.append("Note: 127.0.0.1/localhost refers to the machine running the KnowFlow backend, not necessarily the browser environment.")
+        hints.append("Note: 127.0.0.1/localhost refers to the machine running the AgentLens backend, not necessarily the browser environment.")
     return "\n".join(
         [
-            "Remote model call failed. KnowFlow did not hide the failure with a local fallback answer.",
+            "Remote model call failed. AgentLens did not hide the failure with a local fallback answer.",
             "",
             f"- Model configuration: {model_identity(chat_config)}",
             f"- Endpoint: {base_url or 'not configured'}",

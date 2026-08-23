@@ -30,7 +30,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/tasks', description: '查看和调整排队任务', source: 'builtin', category: '运行', argumentHint: '[list | add <now|next|later> <任务> | remove <序号> | priority <序号> <级别> | clear]'},
   {value: '/retry', description: '选择重试工具或整轮任务', source: 'builtin', category: '恢复'},
   {value: '/fix', description: '让Agent分析最近的工具错误并继续', source: 'builtin', category: '恢复'},
-  {value: '/exit', description: '退出KnowFlow', source: 'builtin', category: '会话', aliases: ['/quit']},
+  {value: '/exit', description: '退出AgentLens', source: 'builtin', category: '会话', aliases: ['/quit']},
 ];
 
 export function commandCategoryLabel(command) {

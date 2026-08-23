@@ -429,8 +429,10 @@ async def exercise_tui() -> None:
     app = KnowFlowTui(backend, assume_yes=False)
     async with app.run_test(size=(100, 30)) as pilot:
         composer = app.query_one(Composer)
-        assert "KnowFlow" in str(app.query_one(".welcome-panel").border_title)
-        assert "KNOWFLOW" in str(app.query_one(".welcome-brand").render())
+        assert "AgentLens" in str(app.query_one(".welcome-panel").border_title)
+        rendered_brand = str(app.query_one(".welcome-brand").render())
+        assert "AGENT" in rendered_brand
+        assert "LENS" in rendered_brand
         assert "test-model" in str(app.query_one(".welcome-context").render())
         assert "输入 / 查看命令" in str(app.query_one(".welcome-tip").render())
         composer.load_text("line one")

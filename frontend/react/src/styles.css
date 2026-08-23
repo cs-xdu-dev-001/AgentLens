@@ -7928,16 +7928,16 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   stroke-width: 1.2 !important;
 }
 
-.knowflow-logo-k,
+.knowflow-logo-lens,
 .knowflow-logo-flow {
   fill: none !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
 }
 
-.knowflow-logo-k {
+.knowflow-logo-lens {
   stroke: #111111 !important;
-  stroke-width: 3.6 !important;
+  stroke-width: 2.4 !important;
 }
 
 .knowflow-logo-flow {
@@ -7951,13 +7951,21 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   stroke-width: 1.5 !important;
 }
 
+.knowflow-logo-core {
+  fill: #111111 !important;
+}
+
 :root[data-theme="mono-dark"] .knowflow-logo-frame {
   fill: #1f1f1f !important;
   stroke: rgba(255, 255, 255, 0.14) !important;
 }
 
-:root[data-theme="mono-dark"] .knowflow-logo-k {
+:root[data-theme="mono-dark"] .knowflow-logo-lens {
   stroke: #f5f5f5 !important;
+}
+
+:root[data-theme="mono-dark"] .knowflow-logo-core {
+  fill: #f5f5f5 !important;
 }
 
 :root[data-theme="mono-dark"] .knowflow-logo-node {
@@ -14163,7 +14171,7 @@ select {
 /* Compact composer chrome. */
 #page-chat.chat-empty #chat-form.composer .composer-shell,
 #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
-  grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto 36px !important;
   grid-template-rows: minmax(24px, auto) 36px !important;
   column-gap: 4px !important;
   row-gap: 1px !important;
@@ -14201,9 +14209,13 @@ select {
 }
 
 #chat-form.composer .composer-model-picker {
-  grid-column: 2 !important;
+  grid-column: 4 !important;
   grid-row: 2 !important;
   align-self: center;
+}
+
+#chat-form.composer .composer-permission-picker {
+  grid-column: 3 !important;
 }
 
 #chat-form.composer .composer-model-trigger {
@@ -14229,7 +14241,7 @@ select {
 }
 
 #page-chat #chat-form.composer .composer-shell > button#chat-submit-btn.composer-send-button[type="submit"] {
-  grid-column: 3 !important;
+  grid-column: 5 !important;
   grid-row: 2 !important;
   width: 36px !important;
   min-width: 36px !important;
@@ -14237,6 +14249,83 @@ select {
   height: 36px !important;
   min-height: 36px !important;
   border-radius: 12px !important;
+}
+
+.composer-permission-mark {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: currentColor;
+}
+
+.composer-permission-mark svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.composer-permission-picker.mode-autoEdit .composer-permission-trigger {
+  color: var(--warning) !important;
+}
+
+.composer-permission-picker.mode-bypass .composer-permission-trigger {
+  color: var(--danger) !important;
+}
+
+.composer-permission-popover {
+  left: auto;
+  right: -8px;
+  width: min(350px, calc(100vw - 48px));
+}
+
+.composer-permission-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px 7px;
+}
+
+.composer-permission-heading strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.composer-permission-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-permission-option.danger .composer-model-copy strong {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  #page-chat.chat-empty #chat-form.composer .composer-shell,
+  #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+    grid-template-columns: 36px minmax(0, 1fr) auto auto 36px !important;
+  }
+
+  #chat-form.composer .composer-permission-trigger,
+  #chat-form.composer .composer-model-trigger {
+    padding-inline: 7px !important;
+  }
+
+  #chat-form.composer .composer-model-trigger > span:nth-child(2) {
+    max-width: 92px;
+  }
+
+  .composer-permission-popover {
+    right: -112px;
+    width: min(350px, calc(100vw - 24px));
+  }
 }
 
 #chat-form.composer .composer-shell:has(.selected-skill-pill) {

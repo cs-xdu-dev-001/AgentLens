@@ -698,10 +698,10 @@ export function Sidebar({ activePage = "chat", collapsed = false }) {
         </div>
         <div className={"brand-copy"}>
           <strong>
-            {"KnowFlow AI"}
+            {"AgentLens"}
           </strong>
           <span>
-            {"工作台"}
+            {"Agent工作台"}
           </span>
         </div>
         <button

@@ -874,13 +874,13 @@ class TranscriptView(VerticalScroll):
         workspace: str,
     ) -> None:
         panel = Vertical(classes="welcome-panel")
-        panel.border_title = f" KnowFlow v{version} "
+        panel.border_title = f" AgentLens v{version} "
         await self.mount(panel)
 
         brand = Text(justify="center")
         brand.append("●──────●  ", style=ACCENT)
-        brand.append("KNOW", style=f"bold {ACCENT}")
-        brand.append("FLOW\n", style="bold")
+        brand.append("AGENT", style=f"bold {ACCENT}")
+        brand.append("LENS\n", style="bold")
         brand.append("│╲    ╱   ", style=ACCENT)
         brand.append("Agent CLI\n", style="dim")
         brand.append("│ ╲  ╱\n", style=ACCENT)

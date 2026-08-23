@@ -44,12 +44,12 @@ export function CliDeviceAuthPage({ active }) {
         {finished ? (
           <>
             <h1 id="cli-device-title">{state === "approved" ? "CLI已连接" : "已拒绝登录"}</h1>
-            <p>{state === "approved" ? "授权结果已安全发送到终端，可以关闭此页面。" : "终端无法访问你的KnowFlow账号。"}</p>
+            <p>{state === "approved" ? "授权结果已安全发送到终端，可以关闭此页面。" : "终端无法访问你的AgentLens账号。"}</p>
           </>
         ) : (
           <>
-            <h1 id="cli-device-title">允许KnowFlow CLI登录？</h1>
-            <p>确认后，当前终端将以<strong>{user?.displayName || user?.username || "当前账号"}</strong>身份访问KnowFlow。</p>
+            <h1 id="cli-device-title">允许AgentLens CLI登录？</h1>
+            <p>确认后，当前终端将以<strong>{user?.displayName || user?.username || "当前账号"}</strong>身份访问AgentLens。</p>
             <div className="cli-device-code" aria-label={`验证码 ${userCode || "无效"}`}>{userCode || "验证码缺失"}</div>
             {!validCode ? <div className="cli-device-error" role="alert">登录链接无效，请回到终端重新发起。</div> : null}
             {message ? <div className="cli-device-error" role="alert">{message}</div> : null}

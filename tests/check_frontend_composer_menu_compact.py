@@ -33,7 +33,7 @@ def main() -> None:
         source = read(stylesheet)
         require(
             source,
-            "/* KnowFlow refinement: compact composer menu */",
+            "/* AgentLens refinement: compact composer menu */",
             "compact composer menu contract",
         )
         require(

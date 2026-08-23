@@ -12,7 +12,7 @@ export class AppErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[KnowFlow] React render failed", error, info);
+    console.error("[AgentLens] React render failed", error, info);
   }
 
   handleRefreshPage() {

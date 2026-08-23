@@ -44,7 +44,7 @@ for (const input of Object.keys(result.metafile.inputs)) {
 }
 
 const sections = [
-  'KnowFlow Ink TUI third-party notices',
+  'AgentLens Ink TUI third-party notices',
   'Generated from the packages included in the bundled terminal UI.',
 ];
 for (const {name, directory} of [...packages.values()].sort((a, b) => a.name.localeCompare(b.name))) {

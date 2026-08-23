@@ -241,7 +241,7 @@ export function MemoryPage({ active = false }) {
             <div className={"memory-empty"}>
               {settings.enabled
                 ? "还没有长期记忆。后续对话中形成的稳定偏好和决定会出现在这里。"
-                : "启用后，KnowFlow会在回答完成后提取值得长期保留的信息。"}
+                : "启用后，AgentLens会在回答完成后提取值得长期保留的信息。"}
             </div>
           ) : null}
           {memories.map((memory) => {

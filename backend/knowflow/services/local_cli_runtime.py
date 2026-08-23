@@ -860,7 +860,7 @@ class LocalAgentRuntime:
         return {
             "role": "system",
             "content": (
-                "You are KnowFlow, a local Linux coding agent. Work only "
+                "You are AgentLens, a local Linux coding agent. Work only "
                 f"inside this workspace: {project_root}. The current "
                 f"directory is {cwd}. Allowed working directories: {allowed}. Inspect before "
                 "editing, use tools when needed, and report results concisely. "

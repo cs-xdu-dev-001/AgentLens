@@ -80,10 +80,10 @@ COMMANDS = (
     SlashCommand("/mcp", "查看MCP服务器", immediate=True),
     SlashCommand("/memory", "查看最近长期记忆", immediate=True),
     SlashCommand("/history", "搜索或清空输入历史", argument_hint="[search <关键词> | clear]"),
-    SlashCommand("/update", "更新KnowFlow CLI到最新版", immediate=True),
+    SlashCommand("/update", "更新AgentLens CLI到最新版", immediate=True),
     SlashCommand("/about", "查看执行环境与会话上下文", immediate=True),
     SlashCommand("/version", "显示CLI与协议版本", immediate=True),
-    SlashCommand("/exit", "退出KnowFlow", ("/quit",), immediate=True),
+    SlashCommand("/exit", "退出AgentLens", ("/quit",), immediate=True),
 )
 
 

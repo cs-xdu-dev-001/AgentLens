@@ -36,9 +36,9 @@ def main() -> None:
 
     class FakeProvider:
         def search(self, query: str, top_k: int = 5):
-            assert query == "KnowFlow AI connectivity check"
+            assert query == "AgentLens connectivity check"
             assert top_k == 1
-            return [{"title": "KnowFlow AI", "url": "https://example.com"}]
+            return [{"title": "AgentLens", "url": "https://example.com"}]
 
     tool_config_router.make_web_search_provider = lambda api_key: FakeProvider()
     alice = TestClient(app_module.app)

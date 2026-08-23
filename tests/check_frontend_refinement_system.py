@@ -23,11 +23,11 @@ def main() -> None:
         "--kf-type-body",
         "--kf-radius-control",
         "--kf-space-4",
-        "/* KnowFlow refinement: foundation */",
+        "/* AgentLens refinement: foundation */",
     ):
         assert token in source, f"missing refinement token: {token}"
     for token in (
-        "/* KnowFlow refinement: shell and controls */",
+        "/* AgentLens refinement: shell and controls */",
         "body {",
         ":focus-visible",
         ".workspace-page",
@@ -42,8 +42,8 @@ def main() -> None:
     assert 'aria-atomic={"true"}' in drawer
     assert 'aria-label={"Agent运行步骤"}' in trace
     for token in (
-        "/* KnowFlow refinement: composer */",
-        "/* KnowFlow refinement: run drawer */",
+        "/* AgentLens refinement: composer */",
+        "/* AgentLens refinement: run drawer */",
         ".composer-shell",
         ".composer-model-popover",
         ".agent-trace-node",
@@ -54,7 +54,7 @@ def main() -> None:
     for field in ('name={"temperature"}', 'name={"topP"}'):
         assert field not in form, f"non-essential field returned: {field}"
     for token in (
-        "/* KnowFlow refinement: settings */",
+        "/* AgentLens refinement: settings */",
         ".settings-workspace-shell",
         ".model-config-item",
         ".model-config-details",
@@ -62,7 +62,7 @@ def main() -> None:
     ):
         assert token in source, f"missing settings refinement: {token}"
     for token in (
-        "/* KnowFlow refinement: management pages */",
+        "/* AgentLens refinement: management pages */",
         "#page-knowledge",
         "#page-skills",
         "#page-memory",
@@ -73,7 +73,7 @@ def main() -> None:
     ):
         assert token in source, f"missing management refinement: {token}"
     for token in (
-        "/* KnowFlow refinement: responsive */",
+        "/* AgentLens refinement: responsive */",
         "@media (max-width: 1180px)",
         "@media (max-width: 900px)",
         "@media (max-width: 720px)",

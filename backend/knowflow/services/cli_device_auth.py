@@ -43,7 +43,7 @@ class CliDeviceAuthorizationStore:
     def normalize_user_code(value: str) -> str:
         return "".join(character for character in value.upper() if character.isalnum())
 
-    def create(self, *, client_name: str = "KnowFlow CLI", now: datetime | None = None) -> dict[str, Any]:
+    def create(self, *, client_name: str = "AgentLens CLI", now: datetime | None = None) -> dict[str, Any]:
         current = now or datetime.now()
         device_code = secrets.token_urlsafe(32)
         compact_code = "".join(secrets.choice(USER_CODE_ALPHABET) for _ in range(10))
@@ -76,7 +76,7 @@ class CliDeviceAuthorizationStore:
                     "id": authorization_id,
                     "device_code_hash": self._digest("device", device_code),
                     "user_code_hash": self._digest("user", compact_code),
-                    "client_name": client_name.strip()[:100] or "KnowFlow CLI",
+                    "client_name": client_name.strip()[:100] or "AgentLens CLI",
                     "expires_at": _timestamp(expires_at),
                     "created_at": _timestamp(current),
                 },

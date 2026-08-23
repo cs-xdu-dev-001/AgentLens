@@ -2,12 +2,13 @@ export function KnowFlowLogo({ className = "" }) {
   return (
     <svg className={["knowflow-logo", className].filter(Boolean).join(" ")} viewBox={"0 0 48 48"} aria-hidden={"true"} focusable={"false"}>
       <rect className={"knowflow-logo-frame"} x={"4"} y={"4"} width={"40"} height={"40"} rx={"12"} />
-      <path className={"knowflow-logo-flow"} d={"M14.5 15.5C19.5 10.5 28.4 10.8 33.5 15.9C39.7 22.1 36.8 33 28.2 35.5C22.7 37.1 17 34.9 14.2 30.2"} />
-      <path className={"knowflow-logo-k"} d={"M17 14v20"} />
-      <path className={"knowflow-logo-k"} d={"M31 14L20.5 24.2L32 34"} />
-      <circle className={"knowflow-logo-node"} cx={"14.5"} cy={"15.5"} r={"2.3"} />
-      <circle className={"knowflow-logo-node"} cx={"33.5"} cy={"15.9"} r={"2.3"} />
-      <circle className={"knowflow-logo-node"} cx={"28.2"} cy={"35.5"} r={"2.3"} />
+      <circle className={"knowflow-logo-lens"} cx={"21"} cy={"21"} r={"10.5"} />
+      <path className={"knowflow-logo-lens"} d={"m28.4 28.4 7.4 7.4"} />
+      <path className={"knowflow-logo-flow"} d={"m21 21-4.8-4.2M21 21l5-4.1M21 21l3.8 5"} />
+      <circle className={"knowflow-logo-node"} cx={"16.2"} cy={"16.8"} r={"2"} />
+      <circle className={"knowflow-logo-node"} cx={"26"} cy={"16.9"} r={"2"} />
+      <circle className={"knowflow-logo-node"} cx={"24.8"} cy={"26"} r={"2"} />
+      <circle className={"knowflow-logo-core"} cx={"21"} cy={"21"} r={"2.2"} />
     </svg>
   );
 }

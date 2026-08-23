@@ -152,7 +152,7 @@ def extract_text_from_upload(filename: str, data: bytes) -> str:
         mime_type = IMAGE_MIME_TYPES.get(suffix, "image/*")
         return (
             f"[Image attachment]\nFilename: {filename}\nType: {mime_type}\nSize: {len(data)} bytes\n"
-            "Note: KnowFlow received this image and kept a preview. Text-only models cannot read image pixels directly; "
+            "Note: AgentLens received this image and kept a preview. Text-only models cannot read image pixels directly; "
             "connect OCR or a vision model if you need screenshot text recognition."
         )
     raw_text_suffixes = {".txt", ".md", ".markdown", ".log", ".yaml", ".yml", ".xml"}

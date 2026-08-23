@@ -107,7 +107,7 @@ export function AuthScreen() {
               <KnowFlowLogo />
             </div>
             <div>
-              <span className="eyebrow">KNOWFLOW AI</span>
+              <span className="eyebrow">AGENTLENS</span>
               <h1>正在检查登录状态</h1>
             </div>
           </div>
@@ -120,8 +120,8 @@ export function AuthScreen() {
             <KnowFlowLogo />
           </div>
           <div>
-            <span className="eyebrow">KNOWFLOW AI</span>
-            <h1>登录 KnowFlow</h1>
+            <span className="eyebrow">AGENTLENS</span>
+            <h1>登录AgentLens</h1>
           </div>
         </div>
 

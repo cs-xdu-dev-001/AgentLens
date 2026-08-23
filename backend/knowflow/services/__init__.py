@@ -1,1 +1,1 @@
-"""Service layer modules for KnowFlow AI."""
+"""Service layer modules for AgentLens."""

@@ -38,7 +38,7 @@ def main() -> None:
         '"/api/health"',
     ]
     required_docs_tokens = [
-        "# KnowFlow AI",
+        "# AgentLens",
         "Swagger UI",
         "/api/retrieval/debug",
         "/api/documents/{documentId}/tasks",

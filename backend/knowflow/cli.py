@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 app = typer.Typer(
     name="knowflow",
-    help="KnowFlow AI Linux Agent CLI",
+    help="AgentLens Linux Agent CLI",
     no_args_is_help=True,
 )
 tools_app = typer.Typer(help="Inspect Agent tools.")
@@ -110,10 +110,10 @@ def root_options(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Show the installed KnowFlow CLI version.",
+        help="Show the installed AgentLens CLI version.",
     ),
 ) -> None:
-    """KnowFlow AI Linux Agent CLI."""
+    """AgentLens Linux Agent CLI."""
 
 
 def _remote_client(
@@ -466,12 +466,12 @@ def configure(
 
 @app.command()
 def update() -> None:
-    """更新KnowFlow CLI到最新版。"""
+    """更新AgentLens CLI到最新版。"""
     current = _installed_cli_version()
     console.print(f"当前版本：[bold]{current}[/bold]")
     try:
         command = _cli_update_command()
-        with console.status("正在更新KnowFlow CLI..."):
+        with console.status("正在更新AgentLens CLI..."):
             result = subprocess.run(
                 command,
                 check=False,
@@ -492,7 +492,7 @@ def update() -> None:
 
 @auth_app.command("login")
 def auth_login(
-    server: str = typer.Argument(..., help="KnowFlow server URL."),
+    server: str = typer.Argument(..., help="AgentLens server URL."),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
     """Sign in through a browser, or use --account as a password fallback."""
@@ -642,7 +642,7 @@ def doctor(
         if json_output:
             _emit_json({"ready": ready, "checks": checks})
         else:
-            table = Table(title="KnowFlow CLI诊断")
+            table = Table(title="AgentLens CLI诊断")
             table.add_column("检查")
             table.add_column("状态")
             table.add_column("详情")
@@ -735,7 +735,7 @@ def doctor(
     if json_output:
         _emit_json({"ready": ready, "checks": checks})
     else:
-        table = Table(title="KnowFlow运行诊断")
+        table = Table(title="AgentLens运行诊断")
         table.add_column("检查")
         table.add_column("状态")
         table.add_column("详情")
@@ -1248,7 +1248,7 @@ def configure_tool(
         )
         try:
             with console.status("正在验证Tavily连接..."):
-                provider.search("KnowFlow AI", 1)
+                provider.search("AgentLens", 1)
         except Exception as exc:
             error_console.print(f"[red]配置失败：{type(exc).__name__}[/red]")
             raise typer.Exit(1) from exc
@@ -1497,7 +1497,7 @@ def oauth_mcp(server_id: str = typer.Argument(...)) -> None:
                     "error": str((values.get("error") or [""])[0]),
                 }
             )
-            body = "KnowFlow MCP授权已完成，可以关闭此页面。".encode("utf-8")
+            body = "AgentLens MCP授权已完成，可以关闭此页面。".encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

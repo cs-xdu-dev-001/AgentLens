@@ -1,4 +1,4 @@
-"""Terminal UI entry point for the KnowFlow Agent CLI."""
+"""Terminal UI entry point for the AgentLens CLI."""
 
 from __future__ import annotations
 

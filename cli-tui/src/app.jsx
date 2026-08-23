@@ -1074,9 +1074,13 @@ function PermissionPicker({selected}) {
   return (
     <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
       <Text bold>权限模式</Text>
+      <Text color={MUTED}>仅影响本次会话，Shift+Tab可快速切换</Text>
       {PERMISSION_MODES.map((mode, index) => (
         <Box key={mode.id}>
-          <Text color={index === selected ? ACCENT : PRIMARY} bold={index === selected}>
+          <Text
+            color={index === selected ? mode.id === 'bypass' ? ERROR : ACCENT : PRIMARY}
+            bold={index === selected}
+          >
             {index === selected ? '❯ ' : '  '}{mode.label}
           </Text>
           <Text color={MUTED}>  {mode.detail}</Text>
@@ -1325,7 +1329,7 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text color={ACCENT} bold>KnowFlow</Text>
+        <Text color={ACCENT} bold>AgentLens</Text>
         <Text color={MUTED}> v{version}</Text>
       </Box>
       <Text color={PRIMARY}>{model || '正在连接模型'} <Text color={MUTED}>· {workspaceLabel(workspace) || process.cwd()}</Text></Text>
@@ -3481,8 +3485,10 @@ export function App({
       if (key.upArrow) setPermissionChoice(value => (value + PERMISSION_MODES.length - 1) % PERMISSION_MODES.length);
       else if (key.downArrow) setPermissionChoice(value => (value + 1) % PERMISSION_MODES.length);
       else if (key.return) {
-        setPermissionMode(PERMISSION_MODES[permissionChoice].id);
+        const nextMode = PERMISSION_MODES[permissionChoice];
+        setPermissionMode(nextMode.id);
         setPermissionPicker(false);
+        showComposerNotice(`权限模式已切换为${nextMode.label}（仅本次会话）`);
       } else if (key.escape) setPermissionPicker(false);
       return;
     }
@@ -3793,7 +3799,9 @@ export function App({
     }
     if (key.shift && key.tab) {
       const index = PERMISSION_MODES.findIndex(item => item.id === permissionRef.current);
-      setPermissionMode(PERMISSION_MODES[(index + 1) % PERMISSION_MODES.length].id);
+      const nextMode = PERMISSION_MODES[(index + 1) % PERMISSION_MODES.length];
+      setPermissionMode(nextMode.id);
+      showComposerNotice(`权限模式：${nextMode.label}（仅本次会话）`);
       return;
     }
     if ((key.return && key.shift) || (key.ctrl && character === 'j')) {

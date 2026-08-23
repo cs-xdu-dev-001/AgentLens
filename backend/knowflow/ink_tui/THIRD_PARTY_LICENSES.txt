@@ -1,4 +1,4 @@
-KnowFlow Ink TUI third-party notices
+AgentLens Ink TUI third-party notices
 Generated from the packages included in the bundled terminal UI.
 
 ========================================================================

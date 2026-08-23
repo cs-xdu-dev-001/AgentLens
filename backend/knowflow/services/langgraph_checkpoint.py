@@ -188,12 +188,12 @@ class LangGraphCheckpointStore:
         ):
             return LangGraphCheckpointError(
                 "langgraph_checkpoint_corrupt",
-                "LangGraph checkpoint数据库损坏。请先备份本地KnowFlow数据，再移走损坏的checkpoint文件。",
+                "LangGraph checkpoint数据库损坏。请先备份本地AgentLens数据，再移走损坏的checkpoint文件。",
             )
         if isinstance(exc, sqlite3.OperationalError) and "locked" in marker:
             return LangGraphCheckpointError(
                 "langgraph_checkpoint_locked",
-                "LangGraph checkpoint正被其他进程占用。请关闭其他KnowFlow进程后重试。",
+                "LangGraph checkpoint正被其他进程占用。请关闭其他AgentLens进程后重试。",
             )
         return LangGraphCheckpointError(
             "langgraph_checkpoint_unavailable",

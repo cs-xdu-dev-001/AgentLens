@@ -13,7 +13,7 @@ def main() -> None:
 
     assert '"cli-auth"' in app
     assert "<CliDeviceAuthPage" in app
-    assert "允许KnowFlow CLI登录？" in page
+    assert "允许AgentLens CLI登录？" in page
     assert "decideCliDevice" in page
     assert "useEffect" not in page, "authorization must not happen on page load"
     assert "/api/auth/cli/device/decision" in client

@@ -1,6 +1,6 @@
 <div align="center">
 
-# KnowFlow AI
+# AgentLens
 
 **可自行部署、过程可见的AI Agent与知识库**
 
@@ -27,6 +27,8 @@
 
 > 当前版本适合个人使用、学习Agent工程和在受控环境中测试。Agent运行时与CLI优先支持Linux；Windows可用于本地开发和浏览器访问。
 
+> 项目已更名为AgentLens。为保证现有安装和服务器升级不断链，CLI命令暂保留`knowflow`，Python包名与环境变量前缀仍为`knowflow-ai`和`KNOWFLOW_*`。
+
 ## 核心能力
 
 - **可观察的Agent执行**：基于LangGraph运行，展示模型、工具、MCP、记忆和审批步骤，支持持久化checkpoint与失败恢复。
@@ -34,20 +36,20 @@
 - **模型与协议可切换**：支持OpenAI兼容端点，可为模型选择Chat Completions或Responses API。
 - **工具、MCP与Skills**：模型可读取指定网页、联网搜索、调用已授权的MCP服务，并按任务启用Skill。
 - **用户隔离**：知识库、模型配置、工具密钥、MCP连接、Skills和长期记忆均按用户隔离。
-- **Web与Linux CLI**：终端默认使用本地BYOK Agent；也可显式连接KnowFlow服务，共用服务端的审批、记忆与运行记录。
+- **Web与Linux CLI**：终端默认使用本地BYOK Agent；也可显式连接AgentLens服务，共用服务端的审批、记忆与运行记录。
 
 ## 选择你的使用方式
 
 | 目标 | 推荐入口 | 需要什么 |
 | --- | --- | --- |
 | 在Linux终端运行本地Agent | [Linux CLI](#linux-cli) | Linux、Python 3.10+、Node.js 22+、自己的模型API Key |
-| 使用已经部署的KnowFlow | 浏览器或CLI的`--remote`模式 | 现代浏览器，或Linux CLI |
+| 使用已经部署的AgentLens | 浏览器或CLI的`--remote`模式 | 现代浏览器，或Linux CLI |
 | 在Windows上修改和调试项目 | [本地开发](#windows本地开发) | Python 3.10+、Node.js 18+、npm |
 | 部署自己的服务 | [Linux部署](#linux部署) | Ubuntu 24.04、域名与HTTPS |
 
 ## Linux CLI
 
-CLI默认是本地BYOK Agent：不需要KnowFlow账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
+CLI默认是本地BYOK Agent：不需要AgentLens账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
 Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。脚本或管道场景使用`knowflow chat --plain`。
 
@@ -90,7 +92,7 @@ knowflow run "检查测试并修复失败" --yes
 knowflow update
 ```
 
-本地CLI与Web端共用Agent工具装配逻辑。读取用户提供的公共网页无需配置；联网搜索、MCP、Skills和Mem0按需启用，也不需要KnowFlow账号：
+本地CLI与Web端共用Agent工具装配逻辑。读取用户提供的公共网页无需配置；联网搜索、MCP、Skills和Mem0按需启用，也不需要AgentLens账号：
 
 ```bash
 # Tavily联网搜索
@@ -116,10 +118,10 @@ TUI输入`/tools`、`/mcp`、`/skills`或`/memory`可查看真实状态；`/tool
 
 本地公开配置位于`~/.config/knowflow/config.json`，模型Key、Tavily Key、MCP凭据和Mem0 Key位于权限为600的`credentials.json`；LangGraph checkpoint、会话记录、工作区快照、Skills、Mem0数据和按工作区隔离的TUI输入历史位于`~/.local/share/knowflow`。历史文件仅限当前用户读取，但仍可能包含用户输入，离开共用设备前可运行`/history clear`。默认项目根目录是启动命令时的当前目录。
 
-连接已有KnowFlow Web服务是可选模式：
+连接已有AgentLens Web服务是可选模式：
 
 ```bash
-knowflow auth login https://你的KnowFlow服务器
+knowflow auth login https://你的AgentLens服务器
 knowflow chat --remote
 knowflow run "总结知识库" --remote
 ```
@@ -209,7 +211,7 @@ API文档：http://127.0.0.1:8010/docs
 
 - **Chat Completions**适合传统OpenAI兼容端点。
 - **Responses API**要求上游支持`POST /v1/responses`、SSE流式事件和最终的`response.completed`事件。
-- KnowFlow不会在失败后自动降级协议，避免重复请求或重复执行工具。
+- AgentLens不会在失败后自动降级协议，避免重复请求或重复执行工具。
 - Mem0使用独立的服务端LLM与Embedding配置，不受前端聊天模型协议影响。
 
 <details>

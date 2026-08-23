@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
+import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
 import {
   composerCommandSuggestions,
   resolveComposerCommand,
 } from "./composerCommands.js";
+import { cycleComposerPermissionMode } from "./composerPermissions.js";
 import {
   applyWorkspaceMention,
   workspaceMentionAtCursor,
@@ -372,6 +374,10 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open"));
       return;
     }
+    if (command.action === "permissions") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-composer-permissions-open"));
+      return;
+    }
     if (command.action === "tasks") {
       handleOpenAgentWorkbench();
       return;
@@ -429,6 +435,13 @@ export function ChatComposerForm() {
 
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if (event.key === "Tab" && event.shiftKey) {
+      event.preventDefault();
+      closeSkillPicker();
+      closeMentionPicker();
+      cycleComposerPermissionMode();
+      return;
+    }
     if (mentionOpen) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -912,6 +925,7 @@ export function ChatComposerForm() {
             onPaste={handleChatPaste}
             onKeyDown={handleChatKeyDown}
           />
+          <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
           <ComposerModelPicker disabled={sending || switchingSession} inputRef={textareaRef} />
         </div>
         <button

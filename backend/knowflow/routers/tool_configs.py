@@ -90,7 +90,7 @@ def test_tool_config(tool_name: str, request: Request) -> dict:
         )
     try:
         results = make_web_search_provider(config["api_key"]).search(
-            "KnowFlow AI connectivity check",
+            "AgentLens connectivity check",
             top_k=1,
         )
     except WebSearchError as exc:

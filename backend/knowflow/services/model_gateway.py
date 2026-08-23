@@ -562,5 +562,5 @@ class ModelGateway:
         if any(keyword in user_content.lower() for keyword in identity_keywords):
             match = re.search(r"Current model configuration: ([^.]+)", system_content)
             identity = match.group(1) if match else "local fallback / no remote provider configured"
-            return f"The current model configuration is {identity}. KnowFlow AI is only the application wrapper and entry point."
+            return f"The current model configuration is {identity}. AgentLens is only the application wrapper and entry point."
         return "Local fallback model received the question: " + user_content

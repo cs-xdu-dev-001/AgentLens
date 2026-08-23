@@ -55,6 +55,6 @@ assert calls == [
 help_result = runner.invoke(cli.app, ["--help"])
 assert help_result.exit_code == 0, help_result.output
 assert "update" in help_result.output
-assert "更新KnowFlow CLI到最新版" in help_result.output
+assert "更新AgentLens CLI到最新版" in help_result.output
 
 print("cli update checks passed")

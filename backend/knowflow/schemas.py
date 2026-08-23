@@ -118,7 +118,7 @@ class LoginIn(BaseModel):
 
 
 class CliDeviceStartIn(BaseModel):
-    clientName: str = Field(default="KnowFlow CLI", max_length=100)
+    clientName: str = Field(default="AgentLens CLI", max_length=100)
 
 
 class CliDeviceDecisionIn(BaseModel):

@@ -34,7 +34,7 @@ REQUIRED_CHINESE_COPY = [
     "知识库",
     "新对话",
     "有什么可以帮你？",
-    "登录 KnowFlow",
+    "登录AgentLens",
 ]
 
 

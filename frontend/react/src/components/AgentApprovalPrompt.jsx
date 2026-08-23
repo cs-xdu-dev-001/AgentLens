@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { approvalApi } from "../api/client.js";
+import {
+  permissionModeAllowsApproval,
+  readComposerPermissionMode,
+  subscribeComposerPermissionMode,
+} from "./composerPermissions.js";
 
 const pendingApprovalIds = new Set();
 const localApprovalStates = new Map();
@@ -68,7 +73,11 @@ export function AgentApprovalPrompt({
   const [busy, setBusy] = useState(false);
   const [localDecision, setLocalDecision] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [permissionMode, setPermissionMode] = useState(readComposerPermissionMode);
   const rootRef = useRef(null);
+  const autoAttemptRef = useRef("");
+
+  useEffect(() => subscribeComposerPermissionMode(setPermissionMode), []);
 
   useEffect(() => {
     const approvalId = approval?.approvalId;
@@ -160,6 +169,16 @@ export function AgentApprovalPrompt({
       }
     }
   };
+
+  useEffect(() => {
+    if (!pending || busy || !permissionModeAllowsApproval(permissionMode, approval)) {
+      return;
+    }
+    const attemptKey = `${approval.approvalId}:${permissionMode}`;
+    if (autoAttemptRef.current === attemptKey) return;
+    autoAttemptRef.current = attemptKey;
+    handleDecision("allow_once");
+  }, [approval, busy, pending, permissionMode]);
 
   useEffect(() => {
     if (!pending || busy || !approval?.expiresAt) return undefined;

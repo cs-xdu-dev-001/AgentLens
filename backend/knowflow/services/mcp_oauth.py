@@ -296,7 +296,7 @@ class McpOAuthCoordinator:
                 "POST",
                 registration_endpoint,
                 json={
-                    "client_name": "KnowFlow",
+                    "client_name": "AgentLens",
                     "redirect_uris": [self.redirect_uri],
                     "grant_types": ["authorization_code"],
                     "response_types": ["code"],

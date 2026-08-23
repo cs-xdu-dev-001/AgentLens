@@ -221,7 +221,7 @@ def main() -> None:
     assert login["user"]["username"] == "alice"
     assert client.token == "session-secret"
     assert "Authorization" not in fake.calls[0][2]["headers"]
-    assert fake.calls[0][2]["headers"]["User-Agent"] == "KnowFlow-CLI"
+    assert fake.calls[0][2]["headers"]["User-Agent"] == "AgentLens-CLI"
 
     fake.responses.append(
         FakeResponse(

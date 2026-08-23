@@ -4,7 +4,7 @@ set -eu
 PACKAGE_SPEC="${KNOWFLOW_CLI_SPEC:-knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend}"
 
 fail() {
-  printf 'KnowFlow CLI安装失败：%s\n' "$1" >&2
+  printf 'AgentLens CLI安装失败：%s\n' "$1" >&2
   exit 1
 }
 
@@ -55,7 +55,7 @@ case "$PACKAGE_SPEC" in
     ;;
 esac
 
-printf '正在安装KnowFlow CLI...\n'
+printf '正在安装AgentLens CLI...\n'
 run_pipx install --force "$PACKAGE_SPEC" || fail "pipx安装失败。"
 run_pipx ensurepath >/dev/null 2>&1 || true
 
@@ -68,7 +68,7 @@ else
   fail "CLI已安装，但未找到knowflow命令。"
 fi
 
-printf '\nKnowFlow CLI安装完成。重新打开终端后运行：\n'
+printf '\nAgentLens CLI安装完成。重新打开终端后运行：\n'
 if command -v node >/dev/null 2>&1; then
   NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
 else
@@ -83,6 +83,6 @@ fi
 printf '  knowflow configure\n'
 printf '  knowflow doctor --cli\n'
 printf '  knowflow chat\n'
-printf '\n连接已有KnowFlow服务器（可选）：\n'
-printf '  knowflow auth login https://你的KnowFlow服务器\n'
+printf '\n连接已有AgentLens服务器（可选）：\n'
+printf '  knowflow auth login https://你的AgentLens服务器\n'
 printf '  knowflow chat --remote\n'

@@ -1,6 +1,6 @@
 <div align="center">
 
-# KnowFlow AI
+# AgentLens
 
 **A self-hosted AI agent and knowledge base with observable execution**
 
@@ -27,6 +27,8 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 > The current release is intended for personal use, learning agent engineering, and testing in controlled environments. The agent runtime and CLI target Linux; Windows is supported for local development and browser access.
 
+> The product is now AgentLens. To keep existing installations and server upgrades compatible, the CLI command remains `knowflow`, while the Python package and environment-variable prefix remain `knowflow-ai` and `KNOWFLOW_*`.
+
 ## Core capabilities
 
 - **Observable agent runs**: LangGraph execution with visible model, tool, MCP, memory, and approval steps, plus durable checkpoints and failure recovery.
@@ -34,20 +36,20 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 - **Switchable models and protocols**: connect OpenAI-compatible endpoints through Chat Completions or the Responses API.
 - **Tools, MCP, and Skills**: let the model read specific webpages, search the web, call authorized MCP servers, and activate a Skill for the current task.
 - **Per-user isolation**: separate knowledge bases, model settings, tool keys, MCP connections, Skills, and memories.
-- **Web and Linux CLI**: the terminal runs a local BYOK agent by default, or can explicitly connect to a KnowFlow server for shared approvals, memory, and run history.
+- **Web and Linux CLI**: the terminal runs a local BYOK agent by default, or can explicitly connect to an AgentLens server for shared approvals, memory, and run history.
 
 ## Choose a starting point
 
 | Goal | Recommended entry point | Requirements |
 | --- | --- | --- |
 | Run a local agent in a Linux terminal | [Linux CLI](#linux-cli) | Linux, Python 3.10+, Node.js 22+, and your own model API key |
-| Use an existing KnowFlow deployment | Browser or CLI `--remote` mode | A modern browser, or the Linux CLI |
+| Use an existing AgentLens deployment | Browser or CLI `--remote` mode | A modern browser, or the Linux CLI |
 | Modify and debug the project on Windows | [Local development](#local-development-on-windows) | Python 3.10+, Node.js 18+, npm |
 | Host your own service | [Linux deployment](#linux-deployment) | Ubuntu 24.04, a domain, and HTTPS |
 
 ## Linux CLI
 
-The CLI is a local BYOK agent by default. It needs no KnowFlow account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
+The CLI is a local BYOK agent by default. It needs no AgentLens account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
 With Node.js 22+ installed on Linux, `knowflow chat` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `knowflow chat --plain` for scripts and pipelines.
 
@@ -90,7 +92,7 @@ knowflow run "Run the tests and fix failures" --yes
 knowflow update
 ```
 
-The local CLI and Web app share the Agent tool-assembly layer. Reading a user-supplied public webpage needs no configuration. Web search, MCP, Skills, and Mem0 are enabled as needed and do not require a KnowFlow account:
+The local CLI and Web app share the Agent tool-assembly layer. Reading a user-supplied public webpage needs no configuration. Web search, MCP, Skills, and Mem0 are enabled as needed and do not require an AgentLens account:
 
 ```bash
 # Tavily web search
@@ -116,7 +118,7 @@ Type `/tools`, `/mcp`, `/skills`, or `/memory` in the TUI to inspect real runtim
 
 Public settings live in `~/.config/knowflow/config.json`; the mode-600 `credentials.json` stores model, Tavily, MCP, and Mem0 secrets. LangGraph checkpoints, session records, workspace snapshots, Skills, Mem0 data, and workspace-isolated TUI prompt history live under `~/.local/share/knowflow`. History files are readable only by the current user, but may still contain prompts; run `/history clear` before leaving a shared machine. The directory where the command starts is the default project root.
 
-Connecting to an existing KnowFlow Web deployment is optional:
+Connecting to an existing AgentLens Web deployment is optional:
 
 ```bash
 knowflow auth login https://your-knowflow-server.example
@@ -209,7 +211,7 @@ See [`backend/.env.example`](backend/.env.example) for the complete list, defaul
 
 - **Chat Completions** is intended for traditional OpenAI-compatible endpoints.
 - **Responses API** requires `POST /v1/responses`, SSE streaming events, and a final `response.completed` event.
-- KnowFlow does not automatically downgrade after a protocol failure, preventing duplicate requests or tool execution.
+- AgentLens does not automatically downgrade after a protocol failure, preventing duplicate requests or tool execution.
 - Mem0 uses separate server-side LLM and embedding settings; it is independent of the chat protocol selected in the UI.
 
 <details>

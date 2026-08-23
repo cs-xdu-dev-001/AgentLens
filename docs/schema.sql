@@ -1,4 +1,4 @@
--- KnowFlow AI MySQL schema reference.
+-- AgentLens MySQL schema reference.
 -- The backend can also run on SQLite. The canonical DDL lives in
 -- backend/knowflow/db_schema.py; keep this document in sync when schema
 -- fields or tables change.

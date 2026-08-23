@@ -593,7 +593,7 @@ class ApprovalScreen(ModalScreen[str]):
 
 class KnowFlowTui(App[None]):
     CSS_PATH = "knowflow.tcss"
-    TITLE = "KnowFlow"
+    TITLE = "AgentLens"
     COMMAND_PALETTE_BINDING = "ctrl+p"
     BINDINGS = [
         Binding("ctrl+c", "interrupt", "中断/退出", show=True),
@@ -906,14 +906,14 @@ class KnowFlowTui(App[None]):
     async def _cmd_about(self, args: list[str]) -> bool:
         runtime = "本地" if self.backend.remote_client is None else "远程"
         await self.query_one(TranscriptView).add_notice(
-            f"KnowFlow TUI · 模式：{runtime} · 模型：{self.backend.model_label} "
+            f"AgentLens TUI · 模式：{runtime} · 模型：{self.backend.model_label} "
             f"· 工作目录：{self.workspace}"
         )
         return True
 
     async def _cmd_version(self, args: list[str]) -> bool:
         await self.query_one(TranscriptView).add_notice(
-            f"KnowFlow CLI 当前版本 v{_cli_release()}"
+            f"AgentLens CLI 当前版本 v{_cli_release()}"
         )
         return True
 

@@ -1,1 +1,1 @@
-"""KnowFlow backend package."""
+"""AgentLens backend package."""

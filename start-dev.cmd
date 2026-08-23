@@ -17,25 +17,25 @@ set "KNOWFLOW_OAUTH_RETURN_ORIGINS=%KNOWFLOW_FRONTEND_ORIGIN%"
 rem Tool API keys are configured per user in Settings and are never loaded from this script.
 
 if not exist "%BACKEND_DIR%\main.py" (
-  echo [KnowFlow] Backend directory not found: "%BACKEND_DIR%"
+  echo [AgentLens] Backend directory not found: "%BACKEND_DIR%"
   exit /b 1
 )
 
 if not exist "%FRONTEND_DIR%\package.json" (
-  echo [KnowFlow] Frontend directory not found: "%FRONTEND_DIR%"
+  echo [AgentLens] Frontend directory not found: "%FRONTEND_DIR%"
   exit /b 1
 )
 
 if /I "%~1"=="--check" (
-  echo [KnowFlow] Backend directory:  "%BACKEND_DIR%"
-  echo [KnowFlow] Frontend directory: "%FRONTEND_DIR%"
-  echo [KnowFlow] Backend URL:        %VITE_BACKEND_URL%
-  echo [KnowFlow] GitHub callback URL: %KNOWFLOW_BASE_URL%/api/auth/oauth/github/callback
-  echo [KnowFlow] MCP callback URL:    %KNOWFLOW_BASE_URL%/api/mcp/oauth/callback
-  echo [KnowFlow] OAuth return origin:%KNOWFLOW_OAUTH_RETURN_ORIGINS%
-  echo [KnowFlow] Frontend target:    %KNOWFLOW_FRONTEND_ORIGIN%
-  echo [KnowFlow] Backend command:    set KNOWFLOW_BASE_URL=%KNOWFLOW_BASE_URL% ^&^& set KNOWFLOW_OAUTH_RETURN_ORIGINS=%KNOWFLOW_OAUTH_RETURN_ORIGINS% ^&^& py -3 -m uvicorn main:app --reload --host 127.0.0.1 --port %KNOWFLOW_BACKEND_PORT%
-  echo [KnowFlow] Frontend command:   npm run dev -- --host %KNOWFLOW_FRONTEND_HOST% --port %KNOWFLOW_FRONTEND_PORT% --strictPort
+  echo [AgentLens] Backend directory:  "%BACKEND_DIR%"
+  echo [AgentLens] Frontend directory: "%FRONTEND_DIR%"
+  echo [AgentLens] Backend URL:        %VITE_BACKEND_URL%
+  echo [AgentLens] GitHub callback URL: %KNOWFLOW_BASE_URL%/api/auth/oauth/github/callback
+  echo [AgentLens] MCP callback URL:    %KNOWFLOW_BASE_URL%/api/mcp/oauth/callback
+  echo [AgentLens] OAuth return origin:%KNOWFLOW_OAUTH_RETURN_ORIGINS%
+  echo [AgentLens] Frontend target:    %KNOWFLOW_FRONTEND_ORIGIN%
+  echo [AgentLens] Backend command:    set KNOWFLOW_BASE_URL=%KNOWFLOW_BASE_URL% ^&^& set KNOWFLOW_OAUTH_RETURN_ORIGINS=%KNOWFLOW_OAUTH_RETURN_ORIGINS% ^&^& py -3 -m uvicorn main:app --reload --host 127.0.0.1 --port %KNOWFLOW_BACKEND_PORT%
+  echo [AgentLens] Frontend command:   npm run dev -- --host %KNOWFLOW_FRONTEND_HOST% --port %KNOWFLOW_FRONTEND_PORT% --strictPort
   exit /b 0
 )
 
@@ -44,17 +44,17 @@ if /I "%~1"=="/check" (
   exit /b %ERRORLEVEL%
 )
 
-echo [KnowFlow] Backend:  %VITE_BACKEND_URL%
-echo [KnowFlow] Frontend: %KNOWFLOW_FRONTEND_ORIGIN%
+echo [AgentLens] Backend:  %VITE_BACKEND_URL%
+echo [AgentLens] Frontend: %KNOWFLOW_FRONTEND_ORIGIN%
 echo.
-echo [KnowFlow] Opening two terminal windows. Keep both windows open while developing.
-echo [KnowFlow] If the frontend port is busy, close the old Vite window or set KNOWFLOW_FRONTEND_PORT before retrying.
+echo [AgentLens] Opening two terminal windows. Keep both windows open while developing.
+echo [AgentLens] If the frontend port is busy, close the old Vite window or set KNOWFLOW_FRONTEND_PORT before retrying.
 echo.
 
-start "KnowFlow Backend :%KNOWFLOW_BACKEND_PORT%" /D "%BACKEND_DIR%" cmd /k "set KNOWFLOW_BASE_URL=%KNOWFLOW_BASE_URL%&& set KNOWFLOW_OAUTH_RETURN_ORIGINS=%KNOWFLOW_OAUTH_RETURN_ORIGINS%&& py -3 -m uvicorn main:app --reload --host 127.0.0.1 --port %KNOWFLOW_BACKEND_PORT%"
+start "AgentLens Backend :%KNOWFLOW_BACKEND_PORT%" /D "%BACKEND_DIR%" cmd /k "set KNOWFLOW_BASE_URL=%KNOWFLOW_BASE_URL%&& set KNOWFLOW_OAUTH_RETURN_ORIGINS=%KNOWFLOW_OAUTH_RETURN_ORIGINS%&& py -3 -m uvicorn main:app --reload --host 127.0.0.1 --port %KNOWFLOW_BACKEND_PORT%"
 
 timeout /t 2 /nobreak >nul
 
-start "KnowFlow Frontend :%KNOWFLOW_FRONTEND_PORT%" /D "%FRONTEND_DIR%" cmd /k "set VITE_BACKEND_URL=%VITE_BACKEND_URL%&& npm run dev -- --host %KNOWFLOW_FRONTEND_HOST% --port %KNOWFLOW_FRONTEND_PORT% --strictPort"
+start "AgentLens Frontend :%KNOWFLOW_FRONTEND_PORT%" /D "%FRONTEND_DIR%" cmd /k "set VITE_BACKEND_URL=%VITE_BACKEND_URL%&& npm run dev -- --host %KNOWFLOW_FRONTEND_HOST% --port %KNOWFLOW_FRONTEND_PORT% --strictPort"
 
 endlocal

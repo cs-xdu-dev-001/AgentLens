@@ -349,7 +349,7 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
   const client = new FakeClient({readyDelay: 80});
   const view = render(<App client={client} version="0.9.0" />);
   await waitForFrame(view, /deepseek-chat/);
-  assert.match(view.lastFrame(), /KnowFlow/);
+  assert.match(view.lastFrame(), /AgentLens/);
   assert.match(view.lastFrame(), /deepseek-chat/);
 
   view.stdin.write('/');

@@ -21,12 +21,12 @@ def main() -> None:
         source = read(stylesheet)
         require(
             source,
-            "/* KnowFlow refinement: aligned empty composer */",
+            "/* AgentLens refinement: aligned empty composer */",
             "empty composer alignment contract",
         )
         require(
             source,
-            "/* KnowFlow refinement: Codex composer surface */",
+            "/* AgentLens refinement: Codex composer surface */",
             "Codex composer contract",
         )
         require(
