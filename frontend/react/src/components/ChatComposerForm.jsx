@@ -78,6 +78,7 @@ export function ChatComposerForm() {
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
   const [contextStatus, setContextStatus] = useState(null);
+  const [commandUsage, setCommandUsage] = useState({});
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
   const pickerOpenRef = useRef(false);
@@ -411,6 +412,10 @@ export function ChatComposerForm() {
   };
 
   const runComposerCommand = (command, args = "") => {
+    setCommandUsage((current) => ({
+      ...current,
+      [command.value]: (Number(current[command.value]) || 0) + 1,
+    }));
     const pageActions = new Set([
       "knowledge",
       "workspace",
@@ -429,6 +434,21 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
       return;
     }
+    if (command.action === "help") {
+      setQuestion("/");
+      setPickerOpen(true);
+      setPickerQuery("");
+      setActiveIndex(0);
+      setSlashRange({ start: 0, end: 1 });
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(1, 1);
+        resizeTextarea(textarea);
+      });
+      return;
+    }
     if (command.action.startsWith("session-")) {
       window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
         detail: {
@@ -440,6 +460,12 @@ export function ChatComposerForm() {
     }
     if (command.action === "model") {
       window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open"));
+      return;
+    }
+    if (["reasoning", "status"].includes(command.action)) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open", {
+        detail: { focus: command.action },
+      }));
       return;
     }
     if (command.action === "context") {
@@ -628,8 +654,9 @@ export function ChatComposerForm() {
       sending,
       recoveryActions: agentState.recoveryActions,
       queuePaused,
+      usage: commandUsage,
     }),
-    [agentState.recoveryActions, pickerQuery, queuePaused, sending],
+    [agentState.recoveryActions, commandUsage, pickerQuery, queuePaused, sending],
   );
 
   const slashOptions = useMemo(() => [
@@ -695,6 +722,7 @@ export function ChatComposerForm() {
     closeSkillPicker();
     window.requestAnimationFrame(() => {
       runComposerCommand(option.command);
+      if (option.command.action === "help") return;
       const textarea = textareaRef.current;
       if (!textarea) return;
       textarea.focus();

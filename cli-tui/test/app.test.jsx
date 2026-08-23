@@ -818,7 +818,9 @@ test('local model status explains protocol and provider-controlled sampling', as
   view.stdin.write('/status');
   view.stdin.write('\r');
   await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'context', action: 'status'});
   assert.match(view.lastFrame(), /kimi-k3 · Chat Completions协议/);
+  assert.match(view.lastFrame(), /上下文待统计/);
   assert.match(view.lastFrame(), /不发送temperature、top_p或max_tokens/);
 });
 

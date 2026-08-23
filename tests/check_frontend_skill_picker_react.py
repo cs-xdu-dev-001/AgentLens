@@ -73,12 +73,15 @@ def main() -> None:
         require(slash_picker, needle, label)
     for needle, label in [
         ("export const WEB_COMPOSER_COMMANDS", "Web command catalog"),
+        ('value: "/help"', "help command"),
         ('value: "/new"', "new session command"),
         ('value: "/resume"', "resume session command"),
         ('value: "/rename"', "rename session command"),
         ('value: "/branch"', "branch session command"),
         ('value: "/export"', "export session command"),
         ('value: "/model"', "model command"),
+        ('value: "/reasoning"', "reasoning command"),
+        ('value: "/status"', "status command"),
         ('value: "/tasks"', "task workbench command"),
         ('value: "/mcp"', "MCP command"),
         ('value: "/skills"', "Skills command"),

@@ -236,9 +236,13 @@ export function ComposerModelPicker({
         return;
       }
       setOpen(true);
-      if (event.detail?.focus === "context") {
+      const focusTarget = {
+        context: ".composer-context-section",
+        reasoning: ".composer-reasoning-section",
+      }[event.detail?.focus];
+      if (focusTarget) {
         window.requestAnimationFrame(() => rootRef.current
-          ?.querySelector(".composer-context-section")
+          ?.querySelector(focusTarget)
           ?.scrollIntoView({ block: "nearest" }));
       }
     };

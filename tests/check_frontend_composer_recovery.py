@@ -41,6 +41,12 @@ import { composerCommandSuggestions, parseComposerCommand, resolveComposerComman
 
 const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
 const idle = values();
+for (const required of ["/help", "/reasoning", "/status"]) {
+  if (!idle.includes(required)) throw new Error(`missing Web parity command: ${required}`);
+}
+if (values({ usage: { "/status": 3 } })[0] !== "/status") {
+  throw new Error("frequently used commands are not promoted");
+}
 if (idle.includes("/continue") || idle.includes("/retry")) {
   throw new Error("idle composer exposed recovery commands");
 }
@@ -59,6 +65,9 @@ if (retrySearch.length !== 1 || retrySearch[0].value !== "/retry") {
 const feedback = resolveComposerCommand("/bug");
 if (feedback?.value !== "/feedback" || feedback?.action !== "feedback") {
   throw new Error("feedback alias did not resolve to the local diagnostic action");
+}
+if (resolveComposerCommand("/?")?.value !== "/help") {
+  throw new Error("help alias did not resolve");
 }
 if (!composerCommandSuggestions("bug").some((item) => item.value === "/feedback")) {
   throw new Error("feedback alias is not searchable");

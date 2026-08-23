@@ -55,9 +55,12 @@ def main() -> None:
     require(component, "上下文预算", "context budget section")
     require(component, 'role={"progressbar"}', "context progress semantics")
     require(component, "composer-context-value", "context trigger summary")
+    require(component, 'reasoning: ".composer-reasoning-section"', "reasoning focus target")
     require(composer, "ComposerModelPicker", "composer model picker mount")
     require(composer, "contextStatus={contextStatus}", "composer context projection")
     require(composer, 'command.action === "context"', "context slash command")
+    require(composer, '["reasoning", "status"].includes(command.action)', "session status commands")
+    require(composer, 'command.action === "help"', "command browser action")
     require(
         composer,
         "disabled={sending || switchingSession}",

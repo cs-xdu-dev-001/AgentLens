@@ -2,6 +2,14 @@ import Fuse from "fuse.js";
 
 export const WEB_COMPOSER_COMMANDS = Object.freeze([
   {
+    value: "/help",
+    aliases: ["/?"],
+    label: "命令帮助",
+    description: "浏览当前可用命令与Skills",
+    category: "会话",
+    action: "help",
+  },
+  {
     value: "/new",
     label: "新建会话",
     description: "开始一个空白任务",
@@ -43,6 +51,20 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     description: "选择本轮对话使用的模型",
     category: "会话",
     action: "model",
+  },
+  {
+    value: "/reasoning",
+    label: "推理强度",
+    description: "选择自动、快速、标准、深入或最高",
+    category: "会话",
+    action: "reasoning",
+  },
+  {
+    value: "/status",
+    label: "会话状态",
+    description: "查看模型、推理强度与上下文预算",
+    category: "会话",
+    action: "status",
   },
   {
     value: "/context",
@@ -150,7 +172,12 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
 
 export function composerCommandSuggestions(
   query,
-  { sending = false, recoveryActions = [], queuePaused = false } = {},
+  {
+    sending = false,
+    recoveryActions = [],
+    queuePaused = false,
+    usage = {},
+  } = {},
 ) {
   const normalized = String(query || "").trim().toLocaleLowerCase();
   const recoverable = new Set(Array.isArray(recoveryActions) ? recoveryActions : []);
@@ -160,7 +187,11 @@ export function composerCommandSuggestions(
     if (command.when === "retry" && !recoverable.has("retry")) return false;
     return true;
   });
-  if (!normalized) return available;
+  if (!normalized) {
+    return [...available].sort((left, right) => (
+      (Number(usage[right.value]) || 0) - (Number(usage[left.value]) || 0)
+    ));
+  }
 
   const names = (command) => [command.value, ...(command.aliases || [])]
     .map((value) => value.slice(1).toLocaleLowerCase());

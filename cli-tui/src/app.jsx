@@ -3341,8 +3341,10 @@ export function App({
         ? '\n本地直连不发送temperature、top_p或max_tokens，采样参数由模型服务决定。'
         : '';
       const reasoningLabel = REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动';
-      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · 推理${reasoningLabel} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
+      const contextStatus = contextIndicator(runProjection.context);
+      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · 推理${reasoningLabel} · ${contextStatus || '上下文待统计'} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
       client.send({type: 'workspace', action: 'status'});
+      client.send({type: 'context', action: 'status'});
     } else if (command.value === '/context') {
       client.send({type: 'context', action: 'status'});
       setPhase('统计上下文');
