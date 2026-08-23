@@ -449,6 +449,12 @@ export function ChatComposerForm() {
       });
       return;
     }
+    if (command.action === "transcript-search") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-transcript-search-open", {
+        detail: { query: String(args || "").trim() },
+      }));
+      return;
+    }
     if (command.action.startsWith("session-")) {
       window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
         detail: {

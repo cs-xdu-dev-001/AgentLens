@@ -18,6 +18,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/rename', description: '重命名当前会话', source: 'builtin', category: '会话', argumentHint: '<新名称>'},
   {value: '/branch', description: '从当前会话创建独立分支', source: 'builtin', category: '会话', aliases: ['/fork'], argumentHint: '[名称]'},
   {value: '/export', description: '把当前会话导出为Markdown', source: 'builtin', category: '会话', argumentHint: '[文件名]'},
+  {value: '/search', description: '搜索当前对话中实际显示的内容', source: 'builtin', category: '会话', aliases: ['/find'], argumentHint: '[关键词]'},
   {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', category: '会话', argumentHint: '[关键词 | clear]'},
   {value: '/edit', description: '取回上一条任务继续修改', source: 'builtin', category: '会话'},
   {value: '/copy', description: '复制最近回答或其中的代码块', source: 'builtin', category: '会话', argumentHint: '[answer | code [序号]]'},

@@ -2837,3 +2837,99 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     animation: none;
   }
 }
+
+/* In-conversation search follows the same compact, keyboard-first pattern as mature agent clients. */
+#page-chat .transcript-search-bar {
+  position: absolute;
+  z-index: 28;
+  top: 14px;
+  right: clamp(14px, 3vw, 32px);
+  width: min(420px, calc(100% - 28px));
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto repeat(3, 32px);
+  align-items: center;
+  gap: 4px;
+  padding: 4px 5px 4px 11px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--panel-bg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+#page-chat .transcript-search-bar > svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+#page-chat .transcript-search-bar input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 5px;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+}
+
+#page-chat .transcript-search-count {
+  min-width: 44px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+#page-chat .transcript-search-bar button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+#page-chat .transcript-search-bar button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--control-bg-hover);
+}
+
+#page-chat .transcript-search-bar button:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+#page-chat .transcript-search-bar :is(input, button):focus-visible {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: 1px;
+}
+
+#page-chat .message-row.transcript-search-match {
+  border-radius: 12px;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--text) 24%, transparent);
+}
+
+#page-chat .message-row.transcript-search-current {
+  background: color-mix(in srgb, var(--control-bg-hover) 76%, transparent);
+  box-shadow: inset 3px 0 0 var(--text);
+}
+
+@media (max-width: 720px) {
+  #page-chat .transcript-search-bar {
+    top: 8px;
+    right: 8px;
+    width: calc(100% - 16px);
+    grid-template-columns: 18px minmax(0, 1fr) auto repeat(3, 30px);
+  }
+}

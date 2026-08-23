@@ -344,8 +344,42 @@ function normalizeRawContent(value) {
   return String(value ?? "");
 }
 
-function MessageRow({ interactionOwner, message, pendingInteractionCount }) {
-  const rowClassName = ["message-row", message.role, message.thinking ? "thinking-row" : ""]
+const TRANSCRIPT_SEARCH_LIMIT = 1000;
+
+export function transcriptSearchMatches(messages, query) {
+  const needle = String(query || "").trim().toLocaleLowerCase();
+  if (!needle) return [];
+  const matches = [];
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (message?.thinking) continue;
+    const content = normalizeRawContent(message?.rawContent).toLocaleLowerCase();
+    if (!content) continue;
+    let offset = 0;
+    while (offset <= content.length - needle.length && matches.length < TRANSCRIPT_SEARCH_LIMIT) {
+      const index = content.indexOf(needle, offset);
+      if (index < 0) break;
+      matches.push({ messageId: String(message.id), offset: index });
+      offset = index + Math.max(1, needle.length);
+    }
+    if (matches.length >= TRANSCRIPT_SEARCH_LIMIT) break;
+  }
+  return matches;
+}
+
+function MessageRow({
+  interactionOwner,
+  message,
+  pendingInteractionCount,
+  searchCurrent = false,
+  searchMatch = false,
+}) {
+  const rowClassName = [
+    "message-row",
+    message.role,
+    message.thinking ? "thinking-row" : "",
+    searchMatch ? "transcript-search-match" : "",
+    searchCurrent ? "transcript-search-current" : "",
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -401,6 +435,7 @@ function MessageRow({ interactionOwner, message, pendingInteractionCount }) {
 
 export function ChatMessages() {
   const messagesRef = useRef(null);
+  const searchInputRef = useRef(null);
   const nextMessageIdRef = useRef(1);
   const followOutputRef = useRef(true);
   const scrollFrameRef = useRef(0);
@@ -409,6 +444,18 @@ export function ChatMessages() {
   const [sessionSwitch, setSessionSwitch] = useState(null);
   const [followingOutput, setFollowingOutput] = useState(true);
   const [hasNewOutput, setHasNewOutput] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchCursor, setSearchCursor] = useState(0);
+  const searchMatches = useMemo(
+    () => transcriptSearchMatches(messages, searchQuery),
+    [messages, searchQuery],
+  );
+  const currentSearchMatch = searchMatches[searchCursor] || null;
+  const searchMessageIds = useMemo(
+    () => new Set(searchMatches.map((match) => match.messageId)),
+    [searchMatches],
+  );
   const interactionOwner = useMemo(
     () => activeAgentInteractionOwner(messages),
     [messages],
@@ -452,6 +499,55 @@ export function ChatMessages() {
     setFollowOutput(true);
     scrollToBottom({ force: true, behavior: reduceMotion ? "auto" : "smooth" });
   };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchCursor(0);
+  };
+  const openSearch = (query = "") => {
+    setSearchOpen(true);
+    setSearchQuery(String(query || ""));
+    setSearchCursor(0);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+  const moveSearch = (delta) => {
+    if (!searchMatches.length) return;
+    setSearchCursor((current) => (
+      (current + delta + searchMatches.length) % searchMatches.length
+    ));
+  };
+
+  useEffect(() => {
+    setSearchCursor((current) => Math.max(0, Math.min(current, searchMatches.length - 1)));
+  }, [searchMatches.length]);
+
+  useEffect(() => {
+    if (!searchOpen || !currentSearchMatch) return;
+    const bubble = findBubble(currentSearchMatch.messageId);
+    const row = bubble?.closest(".message-row");
+    if (!row) return;
+    setFollowOutput(false);
+    row.scrollIntoView({
+      block: "center",
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }, [currentSearchMatch?.messageId, currentSearchMatch?.offset, searchOpen]);
+
+  useEffect(() => {
+    const handleSearchOpen = (event) => openSearch(event.detail?.query || "");
+    const handleFindShortcut = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== "f") return;
+      if (!document.querySelector("#page-chat.active")) return;
+      event.preventDefault();
+      openSearch(searchOpen ? searchQuery : "");
+    };
+    window.addEventListener("knowflow:react-transcript-search-open", handleSearchOpen);
+    window.addEventListener("keydown", handleFindShortcut);
+    return () => {
+      window.removeEventListener("knowflow:react-transcript-search-open", handleSearchOpen);
+      window.removeEventListener("keydown", handleFindShortcut);
+    };
+  }, [searchOpen, searchQuery]);
   const normalizeMessage = (payload, id) => {
     const rawContent = normalizeRawContent(payload.rawContent ?? payload.content);
     return {
@@ -551,6 +647,9 @@ export function ChatMessages() {
     };
     const handleReset = (event) => {
       const detail = event.detail || {};
+      setSearchOpen(false);
+      setSearchQuery("");
+      setSearchCursor(0);
       detail.node = resetMessages({ showWelcome: detail.showWelcome });
       detail.handled = true;
     };
@@ -751,6 +850,40 @@ export function ChatMessages() {
 
   return (
     <>
+      {searchOpen ? (
+        <div className={"transcript-search-bar"} role={"search"} aria-label={"搜索当前对话"}>
+          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+            <circle cx={"8.5"} cy={"8.5"} r={"5.5"}></circle>
+            <path d={"m13 13 4 4"}></path>
+          </svg>
+          <input
+            ref={searchInputRef}
+            type={"search"}
+            value={searchQuery}
+            aria-label={"搜索词"}
+            placeholder={"搜索当前对话"}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setSearchCursor(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeSearch();
+              else if (event.key === "Enter") {
+                event.preventDefault();
+                moveSearch(event.shiftKey ? -1 : 1);
+              }
+            }}
+          />
+          <span className={"transcript-search-count"} aria-live={"polite"}>
+            {searchQuery.trim()
+              ? (searchMatches.length ? `${searchCursor + 1}/${searchMatches.length}` : "无结果")
+              : ""}
+          </span>
+          <button type={"button"} aria-label={"上一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(-1)}>↑</button>
+          <button type={"button"} aria-label={"下一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(1)}>↓</button>
+          <button type={"button"} aria-label={"关闭搜索"} onClick={closeSearch}>×</button>
+        </div>
+      ) : null}
       <div
         className={`messages${sessionSwitch?.status === "loading" ? " session-switching" : ""}`}
         id={"chat-messages"}
@@ -787,6 +920,8 @@ export function ChatMessages() {
             key={message.id}
             message={message}
             pendingInteractionCount={pendingInteractionCount}
+            searchMatch={searchMessageIds.has(String(message.id))}
+            searchCurrent={currentSearchMatch?.messageId === String(message.id)}
           />
         ))}
       </div>

@@ -16,6 +16,8 @@ flow = read("frontend/react/src/controller/chatFlow.js")
 for needle in (
     'value: "/continue"',
     'value: "/retry"',
+    'value: "/search"',
+    'aliases: ["/find"]',
     'when: "continue"',
     'when: "retry"',
 ):
@@ -23,6 +25,7 @@ for needle in (
 
 for needle in (
     'knowflow:react-agent-run-action',
+    'knowflow:react-transcript-search-open',
     'action === "continue" ? "resume" : "restart"',
     'handleQueueAction("resume")',
     "agentState.recoveryActions",
@@ -82,6 +85,10 @@ if (rename?.command?.value !== "/rename" || rename?.args !== "发布复盘") {
 const fork = parseComposerCommand("/fork 方案B");
 if (fork?.command?.value !== "/branch" || fork?.args !== "方案B") {
   throw new Error("session command alias did not preserve arguments");
+}
+const search = parseComposerCommand("/find 发布状态");
+if (search?.command?.value !== "/search" || search?.args !== "发布状态") {
+  throw new Error("transcript search alias did not preserve arguments");
 }
 '''
 

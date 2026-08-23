@@ -195,6 +195,7 @@ const HELP_SHORTCUTS = Object.freeze([
   {value: 'Ctrl+T', description: '打开任务或排队任务'},
   {value: 'Ctrl+E', description: '查看工具调用与错误'},
   {value: 'Ctrl+G', description: '查看文件改动与diff'},
+  {value: 'Ctrl+F', description: '搜索当前对话'},
   {value: 'Ctrl+R', description: '搜索输入历史'},
   {value: 'Ctrl+S', description: '暂存或恢复草稿'},
   {value: 'Shift+Tab', description: '切换权限模式'},
@@ -229,6 +230,7 @@ const INTERACTION_FOCUS_LABELS = Object.freeze({
   models: '选择模型',
   reasoning: '推理强度',
   history: '搜索历史',
+  transcriptSearch: '搜索对话',
   permissions: '权限模式',
   transcript: '对话记录',
   commands: '命令建议',
@@ -247,6 +249,7 @@ export function resolveInteractionFocus(state = {}) {
   if (state.sessionPicker) return 'sessions';
   if (state.modelPicker) return 'models';
   if (state.reasoningPicker) return 'reasoning';
+  if (state.transcriptSearchOpen) return 'transcriptSearch';
   if (state.historySearchOpen) return 'history';
   if (state.permissionPicker) return 'permissions';
   if (state.helpOpen) return 'help';
@@ -282,6 +285,57 @@ export function streamingPreview(value, columns = 80, rows = 24) {
   const characterBudget = Math.max(600, Math.max(20, Number(columns || 80) - 4) * lineBudget);
   if (text.length <= characterBudget) return text;
   return `…前${text.length - characterBudget}个字符已保留在完整记录中，Ctrl+O查看\n\n${text.slice(-characterBudget)}`;
+}
+
+export function transcriptSearchText(item = {}) {
+  if (['user', 'assistant', 'assistant_chunk', 'error'].includes(item.role)) {
+    return String(item.content ?? '');
+  }
+  if (item.role === 'task_summary') {
+    return [
+      item.goal,
+      item.phase,
+      ...(Array.isArray(item.activities) ? item.activities.flatMap(([, activity]) => [activity?.label, activity?.title, activity?.toolName]) : []),
+      ...(Array.isArray(item.traceSteps) ? item.traceSteps.flatMap(([, step]) => [step?.label, step?.title, step?.toolName]) : []),
+    ].filter(Boolean).join('\n');
+  }
+  if (item.role === 'delivery_summary') {
+    return [
+      ...(Array.isArray(item.artifacts) ? item.artifacts.flatMap(artifact => [artifact?.path, artifact?.url, artifact?.title]) : []),
+      ...(Array.isArray(item.verifications) ? item.verifications.flatMap(row => [row?.label, row?.tool, row?.statusLabel]) : []),
+    ].filter(Boolean).join('\n');
+  }
+  return '';
+}
+
+const TRANSCRIPT_SEARCH_LIMIT = 1000;
+
+export function transcriptSearchMatches(items = [], query = '') {
+  const needle = String(query ?? '').trim().toLocaleLowerCase();
+  if (!needle) return [];
+  const matches = [];
+  for (const [itemIndex, item] of (Array.isArray(items) ? items : []).entries()) {
+    const visibleText = transcriptSearchText(item);
+    const haystack = visibleText.toLocaleLowerCase();
+    if (!haystack) continue;
+    let offset = 0;
+    while (offset <= haystack.length - needle.length && matches.length < TRANSCRIPT_SEARCH_LIMIT) {
+      const found = haystack.indexOf(needle, offset);
+      if (found < 0) break;
+      const start = Math.max(0, found - 42);
+      const end = Math.min(visibleText.length, found + needle.length + 72);
+      matches.push({
+        key: `${item?.id ?? itemIndex}:${found}`,
+        itemIndex,
+        offset: found,
+        role: item?.role ?? '',
+        snippet: `${start ? '…' : ''}${visibleText.slice(start, end).replace(/\s+/g, ' ').trim()}${end < visibleText.length ? '…' : ''}`,
+      });
+      offset = found + Math.max(1, needle.length);
+    }
+    if (matches.length >= TRANSCRIPT_SEARCH_LIMIT) break;
+  }
+  return matches;
 }
 
 const PERMISSION_MODES = [
@@ -1500,6 +1554,30 @@ function HistorySearch({matches, selected, query}) {
   );
 }
 
+function TranscriptSearch({matches, selected, query}) {
+  const visibleCount = Math.max(1, Math.min(5, matches.length || 1));
+  const start = Math.max(0, Math.min(selected - 2, Math.max(0, matches.length - visibleCount)));
+  return (
+    <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} marginTop={1}>
+      <Box justifyContent="space-between">
+        <Text bold>搜索对话</Text>
+        <Text color={MUTED}>{query ? (matches.length ? `${selected + 1}/${matches.length}` : '无结果') : '输入关键词'}</Text>
+      </Box>
+      {matches.length ? matches.slice(start, start + visibleCount).map((match, offset) => {
+        const index = start + offset;
+        const active = index === selected;
+        const role = match.role === 'user' ? '你' : match.role === 'error' ? '错误' : 'Agent';
+        return (
+          <Text key={match.key} color={active ? PRIMARY : MUTED} bold={active} wrap="truncate-end">
+            {active ? '❯ ' : '  '}<Text color={active ? ACCENT : MUTED}>{role}</Text>{'  '}{publicLabel(match.snippet, '', 180)}
+          </Text>
+        );
+      }) : <Text color={MUTED}>{query ? '当前可见对话中没有匹配内容' : '直接输入关键词开始搜索'}</Text>}
+      <Text color={MUTED}>输入筛选 · ↑↓/Enter继续查找 · Esc返回</Text>
+    </Box>
+  );
+}
+
 const Welcome = React.memo(function Welcome({version, model, workspace}) {
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -1893,6 +1971,10 @@ export function App({
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historySearchChoice, setHistorySearchChoice] = useState(0);
   const historySearchOriginalRef = useRef({text: '', cursor: 0});
+  const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false);
+  const transcriptSearchOpenRef = useRef(false);
+  const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('');
+  const [transcriptSearchChoice, setTranscriptSearchChoice] = useState(0);
   const [promptStash, setPromptStash] = useState(null);
   const killBufferRef = useRef('');
   const composerUndoRef = useRef([]);
@@ -1941,6 +2023,12 @@ export function App({
       setHelpQuery('');
     }
     if (keep !== 'history') setHistorySearchOpen(false);
+    if (keep !== 'transcriptSearch') {
+      transcriptSearchOpenRef.current = false;
+      setTranscriptSearchOpen(false);
+      setTranscriptSearchQuery('');
+      setTranscriptSearchChoice(0);
+    }
     if (keep !== 'tasks') {
       setTaskNavigationOpen(false);
       setTaskStepDetailKey('');
@@ -2979,6 +3067,15 @@ export function App({
       .filter((value, index, items) => items.indexOf(value) === index)
       .filter(value => !query || value.toLowerCase().includes(query));
   }, [history, historySearchQuery]);
+  const transcriptSearchItems = useMemo(() => [
+    ...transcript,
+    ...turnChunks,
+    ...(assistantDraft ? [{id: 'live-assistant-draft', role: 'assistant_chunk', content: assistantDraft}] : []),
+  ], [assistantDraft, transcript, turnChunks]);
+  const transcriptMatches = useMemo(
+    () => transcriptSearchMatches(transcriptSearchItems, transcriptSearchQuery),
+    [transcriptSearchItems, transcriptSearchQuery],
+  );
   const interactionFocus = resolveInteractionFocus({
     question,
     approval,
@@ -2991,6 +3088,7 @@ export function App({
     sessionPicker,
     modelPicker,
     reasoningPicker,
+    transcriptSearchOpen,
     historySearchOpen,
     permissionPicker,
     helpOpen,
@@ -3000,6 +3098,7 @@ export function App({
 
   useEffect(() => setSelectedSuggestion(0), [input]);
   useEffect(() => setHistorySearchChoice(0), [historySearchQuery]);
+  useEffect(() => setTranscriptSearchChoice(0), [transcriptSearchQuery]);
   useEffect(() => setHelpChoice(0), [helpQuery, helpTab]);
 
   const updateComposer = useCallback((value, cursor = String(value ?? '').length) => {
@@ -3402,6 +3501,12 @@ export function App({
         setPhase('导出会话');
         client.send({type: 'export_session', filename: args});
       }
+    } else if (command.value === '/search') {
+      closeTransientSurfaces('transcriptSearch');
+      transcriptSearchOpenRef.current = true;
+      setTranscriptSearchQuery(args.trim());
+      setTranscriptSearchChoice(0);
+      setTranscriptSearchOpen(true);
     } else if (command.value === '/history') {
       const part = args.trim();
       if (part === 'clear') {
@@ -3850,12 +3955,24 @@ export function App({
       && !taskNavigationOpen
       && !queueManagerOpen
       && !taskStepDetailKey
+      && !transcriptSearchOpen
       && !historySearchOpen
       && !transcriptMode,
   });
 
   useInput((character, key) => {
     lastTerminalInteractionAtRef.current = Date.now();
+    if ((key.ctrl || key.meta) && character.toLowerCase() === 'f' && !question && !approval) {
+      if (transcriptSearchOpenRef.current && transcriptMatches.length) {
+        setTranscriptSearchChoice(value => (value + 1) % transcriptMatches.length);
+      } else {
+        closeTransientSurfaces('transcriptSearch');
+        transcriptSearchOpenRef.current = true;
+        setTranscriptSearchOpen(true);
+        setTranscriptSearchChoice(0);
+      }
+      return;
+    }
     if (interactionFocus === 'question' && question) {
       const options = Array.isArray(question.options) ? question.options : [];
       const count = options.length + (question.allowCustom === false ? 0 : 1);
@@ -4115,6 +4232,24 @@ export function App({
       } else if (!key.ctrl && !key.meta && !key.tab) {
         const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
         if (text) setHistorySearchQuery(value => value + text);
+      }
+      return;
+    }
+    if (transcriptSearchOpenRef.current) {
+      if (key.escape) {
+        transcriptSearchOpenRef.current = false;
+        setTranscriptSearchOpen(false);
+        setTranscriptSearchQuery('');
+        setTranscriptSearchChoice(0);
+      } else if ((key.upArrow || (key.return && key.shift)) && transcriptMatches.length) {
+        setTranscriptSearchChoice(value => (value + transcriptMatches.length - 1) % transcriptMatches.length);
+      } else if ((key.downArrow || key.return) && transcriptMatches.length) {
+        setTranscriptSearchChoice(value => (value + 1) % transcriptMatches.length);
+      } else if (key.backspace || key.delete) {
+        setTranscriptSearchQuery(value => value.slice(0, -1));
+      } else if (!key.ctrl && !key.meta && !key.tab) {
+        const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
+        if (text) setTranscriptSearchQuery(value => `${value}${text}`.slice(0, 400));
       }
       return;
     }
@@ -4534,6 +4669,7 @@ export function App({
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',
+    transcriptSearch: '输入筛选 · ↑↓/Enter查找 · Esc关闭',
     permissions: '↑↓选择 · Enter确认 · Esc关闭',
     help: '输入搜索 · ←→分组 · Enter取用 · Esc关闭',
     transcript: '↑↓滚动 · PgUp/PgDn翻页 · Esc返回',
@@ -4724,6 +4860,13 @@ export function App({
               query={historySearchQuery}
             />
           ) : null}
+          {transcriptSearchOpen ? (
+            <TranscriptSearch
+              matches={transcriptMatches}
+              selected={Math.min(transcriptSearchChoice, Math.max(0, transcriptMatches.length - 1))}
+              query={transcriptSearchQuery}
+            />
+          ) : null}
           {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
           {helpOpen ? (
             <HelpBrowser
@@ -4745,7 +4888,7 @@ export function App({
               <Text color={PRIMARY}>{argumentHint}</Text>
             </Box>
           ) : null}
-          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput

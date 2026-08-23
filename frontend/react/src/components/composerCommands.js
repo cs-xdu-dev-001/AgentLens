@@ -46,6 +46,14 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "session-export",
   },
   {
+    value: "/search",
+    aliases: ["/find"],
+    label: "搜索对话",
+    description: "查找当前对话中实际显示的内容",
+    category: "会话",
+    action: "transcript-search",
+  },
+  {
     value: "/model",
     label: "切换模型",
     description: "选择本轮对话使用的模型",

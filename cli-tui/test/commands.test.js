@@ -97,6 +97,7 @@ test('aliases resolve to canonical commands', () => {
   assert.equal(resolveCommand('/edit', commands).command.description, '取回上一条任务继续修改');
   assert.equal(resolveCommand('/copy code 2', commands).command.value, '/copy');
   assert.equal(resolveCommand('/fork 方案B', commands).command.value, '/branch');
+  assert.equal(resolveCommand('/find 失败', commands).command.value, '/search');
 });
 
 test('commands expose argument guidance only after selecting the command', () => {
@@ -108,6 +109,7 @@ test('commands expose argument guidance only after selecting the command', () =>
   assert.equal(commandArgumentHint('/rename ', commands), '<新名称>');
   assert.equal(commandArgumentHint('/branch ', commands), '[名称]');
   assert.equal(commandArgumentHint('/export ', commands), '[文件名]');
+  assert.equal(commandArgumentHint('/search ', commands), '[关键词]');
   assert.equal(commandArgumentHint('/help ', commands), '');
 });
 

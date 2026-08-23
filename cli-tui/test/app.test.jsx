@@ -26,6 +26,8 @@ import {
   shouldCollapsePaste,
   streamingPreview,
   thinkingStateForPhase,
+  transcriptSearchMatches,
+  transcriptSearchText,
   turnRequestSnapshot,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
@@ -195,6 +197,57 @@ test('interaction focus resolves to one highest-priority input owner', () => {
   assert.equal(resolveInteractionFocus({approval: {}, modelPicker: true}), 'approval');
   assert.equal(resolveInteractionFocus({question: {}, approval: {}}), 'question');
   assert.equal(resolveInteractionFocus({recoveryOpen: true, toolDetailOpen: true}), 'recovery');
+  assert.equal(resolveInteractionFocus({transcriptSearchOpen: true, historySearchOpen: true}), 'transcriptSearch');
+});
+
+test('transcript search indexes visible conversation text without hidden runtime data', () => {
+  const items = [
+    {id: 'user-1', role: 'user', content: '检查AgentLens发布状态'},
+    {id: 'assistant-1', role: 'assistant', content: '发布检查已经完成'},
+    {
+      id: 'task-1',
+      role: 'task_summary',
+      goal: '验证发布',
+      phase: '已完成',
+      activities: [['tool-1', {label: '运行测试', toolName: 'run_tests', input: 'SECRET'}]],
+    },
+    {id: 'internal-1', role: 'system', content: '不可见内部提示发布'},
+  ];
+  assert.equal(transcriptSearchText(items[2]).includes('运行测试'), true);
+  assert.equal(transcriptSearchMatches(items, '发布').length, 3);
+  assert.equal(transcriptSearchMatches(items, 'SECRET').length, 0);
+  assert.equal(transcriptSearchMatches(items, '内部提示').length, 0);
+  assert.match(transcriptSearchMatches(items, 'AgentLens')[0].snippet, /AgentLens/);
+});
+
+test('Ctrl+F opens searchable visible transcript results without sending another model request', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.31.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查发布状态');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {type: 'turn_completed', answer: '发布检查完成，服务健康'});
+  await tick();
+  const submitCount = client.sent.filter(item => item.type === 'submit').length;
+
+  view.stdin.write('\x06');
+  view.stdin.write('发布');
+  await tick();
+  assert.match(view.lastFrame(), /搜索对话/);
+  assert.match(view.lastFrame(), /1\/2/);
+  assert.match(view.lastFrame(), /检查发布状态/);
+  assert.equal(client.sent.filter(item => item.type === 'submit').length, submitCount);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /2\/2/);
+  assert.match(view.lastFrame(), /发布检查完成/);
+  view.stdin.write('\u001b');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /搜索对话/);
 });
 
 test('runtime spinner stops once useful progress is visible', () => {
