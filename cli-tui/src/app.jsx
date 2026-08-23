@@ -261,8 +261,8 @@ export function streamingPreview(value, columns = 80, rows = 24) {
 
 const PERMISSION_MODES = [
   {id: 'ask', label: '询问', detail: '写入和命令执行前确认'},
-  {id: 'autoEdit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
-  {id: 'bypass', label: '完全访问', detail: '所有工具自动通过，请仅在可信目录使用'},
+  {id: 'auto_edit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
+  {id: 'full_access', label: '完全访问', detail: '本会话自动执行，仍受工作区与沙箱限制'},
 ];
 const REASONING_EFFORTS = [
   {id: 'default', command: 'auto', label: '自动', detail: '由模型服务选择合适强度'},
@@ -1137,7 +1137,7 @@ function PermissionPicker({selected}) {
       {PERMISSION_MODES.map((mode, index) => (
         <Box key={mode.id}>
           <Text
-            color={index === selected ? mode.id === 'bypass' ? ERROR : ACCENT : PRIMARY}
+            color={index === selected ? mode.id === 'full_access' ? ERROR : ACCENT : PRIMARY}
             bold={index === selected}
           >
             {index === selected ? '❯ ' : '  '}{mode.label}
@@ -1812,7 +1812,7 @@ export function App({
   const question = activeInteraction?.kind === 'question' ? activeInteraction.event : null;
   const [questionChoice, setQuestionChoice] = useState(0);
   const [questionCustom, setQuestionCustom] = useState('');
-  const [permissionMode, setPermissionMode] = useState(assumeYes ? 'bypass' : 'ask');
+  const [permissionMode, setPermissionMode] = useState(assumeYes ? 'full_access' : 'ask');
   const permissionRef = useRef(permissionMode);
   const [permissionPicker, setPermissionPicker] = useState(false);
   const [permissionChoice, setPermissionChoice] = useState(0);
@@ -2294,10 +2294,10 @@ export function App({
         } else if (eventName === 'approval.required' || event.type === 'approval_required') {
           const mode = permissionRef.current;
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));
-          const autoEdit = mode === 'autoEdit'
+          const autoEdit = mode === 'auto_edit'
             && event.risk === 'write'
             && !event.destructive;
-          if (mode === 'bypass' || autoEdit || sessionAllowed) {
+          if (mode === 'full_access' || autoEdit || sessionAllowed) {
             client.send({type: 'approve', decision: 'allow_once'});
           } else {
             closeTransientSurfaces();
@@ -4546,7 +4546,7 @@ export function App({
           </Box> : null}
           {composerNotice ? <Text color={ACCENT}>{composerNotice}</Text> : null}
           <Box justifyContent="space-between" flexShrink={0}>
-            <Text color={permissionMode === 'bypass' ? ERROR : permissionMode === 'autoEdit' ? WARNING : MUTED}>
+            <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>
               {INTERACTION_FOCUS_LABELS[interactionFocus]} · {interactionHint}
             </Text>
             {!narrow ? (

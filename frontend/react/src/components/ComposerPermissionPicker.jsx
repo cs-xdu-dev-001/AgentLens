@@ -158,7 +158,7 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
                     "composer-permission-option",
                     selected ? "selected" : "",
                     active ? "active" : "",
-                    item.id === "bypass" ? "danger" : "",
+                    item.id === "full_access" ? "danger" : "",
                   ].filter(Boolean).join(" ")}
                   id={`composer-permission-option-${item.id}`}
                   key={item.id}

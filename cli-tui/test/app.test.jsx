@@ -885,6 +885,44 @@ test('approval takes keyboard focus and closes transient pickers', async t => {
   assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'deny'});
 });
 
+test('session approval reuses the exact tool grant and resets on a new session', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.24.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  const approval = approvalId => ({
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      approvalId,
+      serverName: 'workspace',
+      toolName: 'write_workspace_file',
+      risk: 'write',
+      destructive: true,
+    },
+  });
+
+  client.emit('message', approval('approval-session-1'));
+  await tick();
+  view.stdin.write('s');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+
+  const sentBeforeReuse = client.sent.length;
+  client.emit('message', approval('approval-session-2'));
+  await tick();
+  assert.equal(client.sent.length, sentBeforeReuse + 1);
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+  assert.doesNotMatch(view.lastFrame(), /需要确认：write_workspace_file/);
+
+  client.emit('message', {type: 'session_reset'});
+  await tick();
+  client.emit('message', approval('approval-session-3'));
+  await tick();
+  assert.match(view.lastFrame(), /需要确认：write_workspace_file/);
+});
+
 test('approval and structured questions wait in arrival order without being overwritten', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { approvalApi } from "../api/client.js";
 import {
+  allowApprovalForSession,
   permissionModeAllowsApproval,
   readComposerPermissionMode,
+  sessionAllowsApproval,
   subscribeComposerPermissionMode,
 } from "./composerPermissions.js";
 
@@ -47,6 +49,7 @@ const riskLabels = {
 
 const decisionLabels = {
   allow_once: "已允许本次",
+  allow_session: "本会话已允许",
   cancelled: "运行已取消",
   deny: "已拒绝",
   timeout: "审批已超时",
@@ -83,9 +86,14 @@ export function AgentApprovalPrompt({
     const approvalId = approval?.approvalId;
     if (!approvalId) return undefined;
     if (approval.decision || approval.status !== "waiting") {
+      const shared = localApprovalStates.get(approvalId);
       clearLocalState(approvalId);
       setBusy(false);
-      setLocalDecision(approval.decision || "");
+      setLocalDecision(
+        shared?.decision === "allow_session"
+          ? "allow_session"
+          : approval.decision || "",
+      );
       setErrorMessage("");
     } else {
       const shared = localApprovalStates.get(approvalId);
@@ -128,10 +136,16 @@ export function AgentApprovalPrompt({
       error: "",
     });
     try {
+      const transportDecision = nextDecision === "allow_session"
+        ? "allow_once"
+        : nextDecision;
       const result = await approvalApi.resolve(
         approval.approvalId,
-        nextDecision,
+        transportDecision,
       );
+      if (nextDecision === "allow_session") {
+        allowApprovalForSession(approval);
+      }
       pendingApprovalIds.delete(approval.approvalId);
       publishLocalState(approval.approvalId, {
         state: "resolved",
@@ -171,7 +185,9 @@ export function AgentApprovalPrompt({
   };
 
   useEffect(() => {
-    if (!pending || busy || !permissionModeAllowsApproval(permissionMode, approval)) {
+    const automaticallyAllowed = permissionModeAllowsApproval(permissionMode, approval)
+      || sessionAllowsApproval(approval);
+    if (!pending || busy || !automaticallyAllowed) {
       return;
     }
     const attemptKey = `${approval.approvalId}:${permissionMode}`;
@@ -265,6 +281,13 @@ export function AgentApprovalPrompt({
             onClick={() => handleDecision("allow_once")}
           >
             {busy ? "正在提交..." : "允许本次"}
+          </button>
+          <button
+            type={"button"}
+            disabled={busy || !pending}
+            onClick={() => handleDecision("allow_session")}
+          >
+            {"本会话允许"}
           </button>
           <button
             type={"button"}

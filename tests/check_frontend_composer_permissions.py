@@ -23,8 +23,10 @@ def main() -> None:
     styles = "frontend/styles.css"
     tui = "cli-tui/src/app.jsx"
 
-    for token in ('id: "ask"', 'id: "autoEdit"', 'id: "bypass"'):
+    for token in ('id: "ask"', 'id: "auto_edit"', 'id: "full_access"'):
         require(policy, token, "three-level permission policy")
+    require(policy, 'autoEdit: "auto_edit"', "legacy auto-edit migration")
+    require(policy, 'bypass: "full_access"', "legacy full-access migration")
     require(policy, "window.sessionStorage", "browser-session scope")
     require(policy, "permissionModeAllowsApproval", "approval policy projection")
     require(policy, 'approval?.risk === "write"', "safe auto-edit boundary")
@@ -39,9 +41,13 @@ def main() -> None:
 
     require(composer, "ComposerPermissionPicker", "composer permission control")
     require(composer, "cycleComposerPermissionMode", "Shift+Tab mode cycle")
+    require(composer, "clearApprovalSessionGrants", "session grant reset owner")
     require(commands, 'value: "/permissions"', "permission slash command")
     require(approval, "subscribeComposerPermissionMode", "live policy updates")
     require(approval, 'handleDecision("allow_once")', "automatic approval submission")
+    require(approval, 'handleDecision("allow_session")', "session approval action")
+    require(approval, "sessionAllowsApproval", "session approval projection")
+    require(approval, "transportDecision", "server-side decision boundary")
     require(approval, "autoAttemptRef", "bounded automatic approval attempt")
 
     require(styles, ".composer-permission-picker", "permission trigger layout")
@@ -52,16 +58,28 @@ def main() -> None:
     require(tui, "权限模式已切换为", "TUI selection feedback")
 
     script = r'''import {
+  allowApprovalForSession,
+  clearApprovalSessionGrants,
   normalizeComposerPermissionMode,
   permissionModeAllowsApproval,
+  sessionAllowsApproval,
 } from "./frontend/react/src/components/composerPermissions.js";
 
 if (normalizeComposerPermissionMode("invalid") !== "ask") process.exit(1);
 if (permissionModeAllowsApproval("ask", {risk: "write"})) process.exit(2);
-if (!permissionModeAllowsApproval("autoEdit", {risk: "write", destructive: false})) process.exit(3);
-if (permissionModeAllowsApproval("autoEdit", {risk: "write", destructive: true})) process.exit(4);
-if (permissionModeAllowsApproval("autoEdit", {risk: "delete", destructive: false})) process.exit(5);
-if (!permissionModeAllowsApproval("bypass", {risk: "delete", destructive: true})) process.exit(6);
+if (!permissionModeAllowsApproval("auto_edit", {risk: "write", destructive: false})) process.exit(3);
+if (permissionModeAllowsApproval("auto_edit", {risk: "write", destructive: true})) process.exit(4);
+if (permissionModeAllowsApproval("auto_edit", {risk: "delete", destructive: false})) process.exit(5);
+if (!permissionModeAllowsApproval("full_access", {risk: "delete", destructive: true})) process.exit(6);
+if (normalizeComposerPermissionMode("autoEdit") !== "auto_edit") process.exit(7);
+if (normalizeComposerPermissionMode("bypass") !== "full_access") process.exit(8);
+const approval = {serverName: "workspace", toolName: "write_file", risk: "write", destructive: false};
+if (sessionAllowsApproval(approval)) process.exit(9);
+allowApprovalForSession(approval);
+if (!sessionAllowsApproval(approval)) process.exit(10);
+if (sessionAllowsApproval({...approval, destructive: true})) process.exit(11);
+clearApprovalSessionGrants();
+if (sessionAllowsApproval(approval)) process.exit(12);
 '''
     subprocess.run(
         ["node", "--input-type=module", "-e", script],

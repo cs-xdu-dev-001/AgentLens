@@ -7,7 +7,10 @@ import {
   composerCommandSuggestions,
   resolveComposerCommand,
 } from "./composerCommands.js";
-import { cycleComposerPermissionMode } from "./composerPermissions.js";
+import {
+  clearApprovalSessionGrants,
+  cycleComposerPermissionMode,
+} from "./composerPermissions.js";
 import {
   applyWorkspaceMention,
   workspaceMentionAtCursor,
@@ -161,7 +164,9 @@ export function ChatComposerForm() {
 
   useEffect(() => {
     const handleSessionSwitchState = (event) => {
-      setSwitchingSession(event.detail?.status === "loading");
+      const loading = event.detail?.status === "loading";
+      if (loading) clearApprovalSessionGrants();
+      setSwitchingSession(loading);
     };
     window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
     return () => window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);

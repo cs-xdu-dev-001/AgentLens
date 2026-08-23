@@ -14301,11 +14301,11 @@ select {
   stroke-linejoin: round;
 }
 
-.composer-permission-picker.mode-autoEdit .composer-permission-trigger {
+.composer-permission-picker.mode-auto_edit .composer-permission-trigger {
   color: var(--warning) !important;
 }
 
-.composer-permission-picker.mode-bypass .composer-permission-trigger {
+.composer-permission-picker.mode-full_access .composer-permission-trigger {
   color: var(--danger) !important;
 }
 

@@ -47,8 +47,12 @@ def main() -> None:
     require(messages, "interactionPending={Boolean(interactionOwner)}", "recovery interaction lock")
 
     prompt = "frontend/react/src/components/AgentApprovalPrompt.jsx"
+    composer = "frontend/react/src/components/ChatComposerForm.jsx"
     require(prompt, "approvalApi.resolve(", "approval submission")
     require(prompt, 'handleDecision("allow_once")', "allow once")
+    require(prompt, 'handleDecision("allow_session")', "allow for session")
+    require(prompt, "allowApprovalForSession", "session approval grant")
+    require(composer, "clearApprovalSessionGrants", "session approval reset")
     require(prompt, 'handleDecision("deny")', "deny")
     require(prompt, 'handleDecision("timeout")', "automatic timeout")
     require(prompt, "approval?.expiresAt", "server expiry timestamp")
