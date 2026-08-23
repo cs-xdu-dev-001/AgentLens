@@ -1362,9 +1362,8 @@ function contextIndicator(status) {
   if (!maxTokens) return '';
   const usedTokens = Math.max(0, Number(value.usedTokens) || 0);
   const usagePercent = Math.max(0, Number(value.usagePercent) || ((usedTokens / maxTokens) * 100));
-  const warningAt = Math.max(1, Number(value.warningAtPercent ?? value.autoCompactAtPercent) || 75);
   const trimmed = Boolean(value.contextTrimmed || value.compacted);
-  if (!trimmed && !value.shouldWarn && !value.shouldAutoCompact && usagePercent < warningAt) return '';
+  if (!trimmed && usedTokens <= 0) return '';
   return trimmed ? '上下文已裁剪' : `上下文${Math.round(usagePercent)}%`;
 }
 

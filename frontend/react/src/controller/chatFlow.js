@@ -156,6 +156,32 @@ function queueBlockReasonFromProjection(projection) {
 
 const composerRecoveryActions = new Set(["continue", "retry", "fix"]);
 
+function composerContextStatus(projection = {}) {
+  const source = projection?.context || projection?.run?.context;
+  if (!source || typeof source !== "object") return null;
+  const maxTokens = Math.max(0, Number(source.maxTokens) || 0);
+  if (!maxTokens) return null;
+  const usedTokens = Math.max(0, Number(source.usedTokens) || 0);
+  const usagePercent = Math.max(
+    0,
+    Math.min(100, Number(source.usagePercent) || ((usedTokens / maxTokens) * 100)),
+  );
+  return {
+    usedTokens,
+    maxTokens,
+    remainingTokens: Math.max(
+      0,
+      Number(source.remainingTokens) || (maxTokens - usedTokens),
+    ),
+    usagePercent,
+    warningAtPercent: Math.max(
+      1,
+      Number(source.warningAtPercent ?? source.autoCompactAtPercent) || 75,
+    ),
+    trimmed: Boolean(source.contextTrimmed || source.compacted),
+  };
+}
+
 function composerRecoveryContext(projection = {}, context = {}) {
   const failedStep = [...(Array.isArray(projection?.trace) ? projection.trace : [])]
     .reverse()
@@ -178,6 +204,7 @@ function composerRecoveryContext(projection = {}, context = {}) {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 160),
+    context: composerContextStatus(projection),
   };
 }
 
@@ -337,6 +364,16 @@ export function createChatFlow({
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 160),
+      context: detail.context && typeof detail.context === "object"
+        ? {
+            usedTokens: Math.max(0, Number(detail.context.usedTokens) || 0),
+            maxTokens: Math.max(0, Number(detail.context.maxTokens) || 0),
+            remainingTokens: Math.max(0, Number(detail.context.remainingTokens) || 0),
+            usagePercent: Math.max(0, Math.min(100, Number(detail.context.usagePercent) || 0)),
+            warningAtPercent: Math.max(1, Number(detail.context.warningAtPercent) || 75),
+            trimmed: Boolean(detail.context.trimmed),
+          }
+        : null,
     };
     const key = JSON.stringify(next);
     if (key === composerStateKey) return;

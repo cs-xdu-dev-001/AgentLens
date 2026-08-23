@@ -93,7 +93,11 @@ for (const [projection, expected] of composerStates) {
 }
 const recoverable = composerAgentStateFromProjection({
   terminal: "failed",
-  run: {id: "run-1", status: "failed"},
+  run: {
+    id: "run-1",
+    status: "failed",
+    context: {usedTokens: 24000, maxTokens: 96000, remainingTokens: 72000},
+  },
   error: {code: "tool_failed", message: "boom"},
   recoveryActions: ["continue", "retry", "unsafe"],
   trace: [{status: "failed", title: "搜索网页"}],
@@ -104,6 +108,7 @@ if (
   || recoverable.recoveryActions.join(",") !== "continue,retry"
   || recoverable.failureCode !== "tool_failed"
   || recoverable.failedStepTitle !== "搜索网页"
+  || recoverable.context.usagePercent !== 25
 ) {
   throw new Error("composer recovery context projection failed");
 }

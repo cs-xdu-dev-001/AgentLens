@@ -52,7 +52,12 @@ def main() -> None:
     require(component, 'aria-keyshortcuts={"Alt+P"}', "model shortcut semantics")
     require(component, "agentlens.recentChatModels.v1", "recent model ordering")
     require(component, "没有匹配", "empty model search state")
+    require(component, "上下文预算", "context budget section")
+    require(component, 'role={"progressbar"}', "context progress semantics")
+    require(component, "composer-context-value", "context trigger summary")
     require(composer, "ComposerModelPicker", "composer model picker mount")
+    require(composer, "contextStatus={contextStatus}", "composer context projection")
+    require(composer, 'command.action === "context"', "context slash command")
     require(
         composer,
         "disabled={sending || switchingSession}",
@@ -89,6 +94,8 @@ def main() -> None:
         ".composer-model-search",
         ".composer-model-empty",
         ".composer-reasoning-section",
+        ".composer-context-section",
+        ".composer-context-track",
     ):
         if selector not in styles:
             raise AssertionError(f"Missing composer model style: {selector}")

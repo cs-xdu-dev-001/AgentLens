@@ -45,6 +45,13 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "model",
   },
   {
+    value: "/context",
+    label: "上下文预算",
+    description: "查看本轮已用、剩余和安全裁剪状态",
+    category: "会话",
+    action: "context",
+  },
+  {
     value: "/permissions",
     label: "权限模式",
     description: "选择询问、自动编辑或完全访问",

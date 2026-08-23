@@ -77,6 +77,7 @@ export function ChatComposerForm() {
   const [queueBlockReason, setQueueBlockReason] = useState("");
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
+  const [contextStatus, setContextStatus] = useState(null);
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
   const pickerOpenRef = useRef(false);
@@ -284,6 +285,11 @@ export function ChatComposerForm() {
         failureCode: String(detail.failureCode || ""),
         failedStepTitle: String(detail.failedStepTitle || ""),
       };
+      setContextStatus(
+        detail.context && Number(detail.context.maxTokens) > 0
+          ? detail.context
+          : null,
+      );
       setAgentState((current) => (
         current.mode === next.mode
         && current.label === next.label
@@ -434,6 +440,12 @@ export function ChatComposerForm() {
     }
     if (command.action === "model") {
       window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open"));
+      return;
+    }
+    if (command.action === "context") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open", {
+        detail: { focus: "context" },
+      }));
       return;
     }
     if (command.action === "permissions") {
@@ -1011,7 +1023,11 @@ export function ChatComposerForm() {
             onKeyDown={handleChatKeyDown}
           />
           <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
-          <ComposerModelPicker disabled={sending || switchingSession} inputRef={textareaRef} />
+          <ComposerModelPicker
+            contextStatus={contextStatus}
+            disabled={sending || switchingSession}
+            inputRef={textareaRef}
+          />
         </div>
         <button
           className={"composer-send-button"}

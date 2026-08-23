@@ -57,6 +57,13 @@ function modelDescription(model) {
     .join(" · ");
 }
 
+function formatContextTokens(value) {
+  const tokens = Math.max(0, Number(value) || 0);
+  if (tokens < 1000) return `${Math.round(tokens)} tokens`;
+  const compact = (tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0);
+  return `${compact.replace(/\.0$/, "")}k tokens`;
+}
+
 const REASONING_EFFORTS = Object.freeze([
   { id: "default", label: "自动" },
   { id: "low", label: "快速" },
@@ -65,7 +72,11 @@ const REASONING_EFFORTS = Object.freeze([
   { id: "xhigh", label: "最高" },
 ]);
 
-export function ComposerModelPicker({ disabled = false, inputRef = null }) {
+export function ComposerModelPicker({
+  contextStatus = null,
+  disabled = false,
+  inputRef = null,
+}) {
   const [models, setModels] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState("default");
@@ -110,6 +121,25 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
     ) || null,
     [models, selectedModelId],
   );
+  const context = useMemo(() => {
+    if (!contextStatus || typeof contextStatus !== "object") return null;
+    const maxTokens = Math.max(0, Number(contextStatus.maxTokens) || 0);
+    if (!maxTokens) return null;
+    const usedTokens = Math.max(0, Number(contextStatus.usedTokens) || 0);
+    return {
+      maxTokens,
+      usedTokens,
+      remainingTokens: Math.max(
+        0,
+        Number(contextStatus.remainingTokens) || (maxTokens - usedTokens),
+      ),
+      percent: Math.max(
+        0,
+        Math.min(100, Number(contextStatus.usagePercent) || ((usedTokens / maxTokens) * 100)),
+      ),
+      trimmed: Boolean(contextStatus.trimmed),
+    };
+  }, [contextStatus]);
 
   const closePicker = useCallback((restoreInputFocus = false) => {
     setOpen(false);
@@ -197,7 +227,7 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   }, [closePicker, disabled, open]);
 
   useEffect(() => {
-    const handleOpenRequest = () => {
+    const handleOpenRequest = (event) => {
       if (disabled) return;
       if (!models.length) {
         window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
@@ -206,6 +236,11 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
         return;
       }
       setOpen(true);
+      if (event.detail?.focus === "context") {
+        window.requestAnimationFrame(() => rootRef.current
+          ?.querySelector(".composer-context-section")
+          ?.scrollIntoView({ block: "nearest" }));
+      }
     };
     window.addEventListener("knowflow:react-composer-model-open", handleOpenRequest);
     return () => window.removeEventListener(
@@ -333,6 +368,11 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
             {REASONING_EFFORTS.find((item) => item.id === reasoningEffort)?.label}
           </span>
         ) : null}
+        {context ? (
+          <span className={`composer-context-value${context.trimmed ? " trimmed" : ""}`}>
+            {context.trimmed ? "已裁剪" : `上下文${Math.round(context.percent)}%`}
+          </span>
+        ) : null}
         <svg className={"composer-model-chevron"} viewBox={"0 0 16 16"} aria-hidden={"true"} focusable={"false"}>
           <path d={"m4 6 4 4 4-4"} />
         </svg>
@@ -417,6 +457,28 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
               ))}
             </div>
           </div>
+          {context ? (
+            <section className={`composer-context-section${context.trimmed ? " trimmed" : ""}`} aria-label={"上下文预算"}>
+              <div className={"composer-context-heading"}>
+                <strong>{context.trimmed ? "上下文已安全裁剪" : "上下文预算"}</strong>
+                <span>{`${Math.round(context.percent)}%`}</span>
+              </div>
+              <span
+                className={"composer-context-track"}
+                role={"progressbar"}
+                aria-label={"上下文占用"}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(context.percent)}
+              >
+                <i style={{ transform: `scaleX(${context.percent / 100})` }}></i>
+              </span>
+              <div className={"composer-context-meta"}>
+                <span>{`已用${formatContextTokens(context.usedTokens)}`}</span>
+                <span>{`剩余${formatContextTokens(context.remainingTokens)}`}</span>
+              </div>
+            </section>
+          ) : null}
           <button
             className={"composer-model-manage"}
             type={"button"}

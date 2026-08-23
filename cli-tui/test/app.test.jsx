@@ -1974,6 +1974,7 @@ test('context commands inspect usage and compact with optional instructions', as
     },
   });
   await waitForFrame(view, /1200\/96000 tokens/);
+  await waitForFrame(view, /上下文1%/);
 
   client.emit('message', {
     type: 'agent_event',
