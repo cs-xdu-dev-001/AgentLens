@@ -64,6 +64,22 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.deepEqual(terminalFeedbackState({running: true, progressPercent: 40}), {
     kind: 'running', title: 'AgentLens — 运行中', progressState: 'running', progressPercent: 40,
   });
+  assert.deepEqual(terminalFeedbackState({ready: false, connecting: true, contextLabel: 'AgentLens-demo'}), {
+    kind: 'connecting',
+    title: 'AgentLens-demo — AgentLens — 正在连接',
+    progressState: 'indeterminate',
+    progressPercent: 0,
+  });
+  assert.deepEqual(terminalFeedbackState({ready: false}), {
+    kind: 'unavailable',
+    title: 'AgentLens — 未连接',
+    progressState: 'clear',
+    progressPercent: 0,
+  });
+  assert.equal(
+    terminalFeedbackState({running: true, contextLabel: '\u001b[31mprivate-project\u0007'}).title,
+    'private-project — AgentLens — 运行中',
+  );
   assert.equal(terminalFeedbackState({running: true, waiting: true}).kind, 'waiting');
   assert.equal(terminalFeedbackState({failed: true}).progressState, 'error');
   assert.equal(sanitizeTerminalTitle('\u001b[31mAgentLens\u0007'), 'AgentLens');
@@ -222,7 +238,7 @@ test('transcript search indexes visible conversation text without hidden runtime
 
 test('Ctrl+F opens searchable visible transcript results without sending another model request', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.31.0" />);
+  const view = render(<App client={client} version="0.32.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 

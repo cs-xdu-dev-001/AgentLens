@@ -1987,12 +1987,15 @@ export function App({
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
   useTerminalFeedback({
+    ready,
+    connecting: !ready && ['正在启动', '运行时已连接'].includes(phase),
     running,
     waiting: Boolean(activeInteraction),
     failed: !running && Boolean(runProjection.error),
     progressPercent: runProjection.runSummary?.progressPercent,
     runStatus: runProjection.runSummary?.status,
     lastInteractionAtRef: lastTerminalInteractionAtRef,
+    contextLabel: workspace ? workspaceDiagnosticName(workspace) : '',
   });
   useEffect(() => {
     waitingInteractionsRef.current = waitingInteractions;
@@ -2920,6 +2923,7 @@ export function App({
         if (message.type === 'startup_failed') {
           setRunning(false);
           setCancelPending(false);
+          setPhase('启动失败');
         }
       }
     };

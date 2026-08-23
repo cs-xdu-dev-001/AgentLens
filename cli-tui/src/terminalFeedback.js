@@ -131,32 +131,65 @@ function terminalNotificationForTransition(nextKind) {
   return '任务已完成';
 }
 
-export function terminalFeedbackState({running = false, waiting = false, failed = false, progressPercent} = {}) {
+function terminalFeedbackTitle(kind, contextLabel = '') {
+  const context = sanitizeTerminalTitle(contextLabel).slice(0, 36);
+  const base = context ? `${context} — AgentLens` : 'AgentLens';
+  const suffix = {
+    connecting: '正在连接',
+    unavailable: '未连接',
+    running: '运行中',
+    waiting: '等待操作',
+    failed: '执行失败',
+  }[kind];
+  return suffix ? `${base} — ${suffix}` : base;
+}
+
+export function terminalFeedbackState({
+  ready = true,
+  connecting = false,
+  running = false,
+  waiting = false,
+  failed = false,
+  progressPercent,
+  contextLabel = '',
+} = {}) {
   if (waiting) {
-    return {kind: 'waiting', title: 'AgentLens — 等待操作', progressState: 'paused', progressPercent};
+    return {kind: 'waiting', title: terminalFeedbackTitle('waiting', contextLabel), progressState: 'paused', progressPercent};
   }
   if (running) {
     const progress = Number(progressPercent);
     return {
       kind: 'running',
-      title: 'AgentLens — 运行中',
+      title: terminalFeedbackTitle('running', contextLabel),
       progressState: Number.isFinite(progress) && progress > 0 ? 'running' : 'indeterminate',
       progressPercent: progress,
     };
   }
   if (failed) {
-    return {kind: 'failed', title: 'AgentLens — 执行失败', progressState: 'error', progressPercent: 100};
+    return {kind: 'failed', title: terminalFeedbackTitle('failed', contextLabel), progressState: 'error', progressPercent: 100};
   }
-  return {kind: 'idle', title: 'AgentLens', progressState: 'clear', progressPercent: 0};
+  if (!ready) {
+    const kind = connecting ? 'connecting' : 'unavailable';
+    return {
+      kind,
+      title: terminalFeedbackTitle(kind, contextLabel),
+      progressState: connecting ? 'indeterminate' : 'clear',
+      progressPercent: 0,
+    };
+  }
+  return {kind: 'idle', title: terminalFeedbackTitle('idle', contextLabel), progressState: 'clear', progressPercent: 0};
 }
 
 export function useTerminalFeedback({
+  ready,
+  connecting,
   running,
   waiting,
   failed,
   progressPercent,
   runStatus,
   lastInteractionAtRef,
+  contextLabel,
 }) {
   const {stdout} = useStdout();
   const previousRef = useRef('');
@@ -169,8 +202,8 @@ export function useTerminalFeedback({
       || envDisabled(process.env.KNOWFLOW_CLI_TERMINAL_FEEDBACK)
     ) return undefined;
 
-    const feedback = terminalFeedbackState({running, waiting, failed, progressPercent});
-    const fingerprint = `${feedback.kind}:${Math.round(Number(feedback.progressPercent) || 0)}`;
+    const feedback = terminalFeedbackState({ready, connecting, running, waiting, failed, progressPercent, contextLabel});
+    const fingerprint = `${feedback.title}:${feedback.kind}:${Math.round(Number(feedback.progressPercent) || 0)}`;
     if (previousRef.current !== fingerprint) {
       stdout.write(terminalTitleSequence(feedback.title));
       if (supportsTerminalProgress(process.env, stdout.isTTY)) {
@@ -196,7 +229,7 @@ export function useTerminalFeedback({
     previousKindRef.current = feedback.kind;
 
     return undefined;
-  }, [failed, lastInteractionAtRef, progressPercent, runStatus, running, stdout, waiting]);
+  }, [connecting, contextLabel, failed, lastInteractionAtRef, progressPercent, ready, runStatus, running, stdout, waiting]);
 
   useEffect(() => () => {
     if (!stdout?.isTTY || String(process.env.TERM || '').toLowerCase() === 'dumb') return;
