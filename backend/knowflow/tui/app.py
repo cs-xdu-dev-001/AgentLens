@@ -21,6 +21,7 @@ from textual.widgets import Button, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ..services.agent_execution import AgentExecution
+from ..services.agent_event_protocol import agent_event_name
 from ..services.local_cli_runtime import local_data_dir
 from .backend import TuiBackend
 from .commands import (
@@ -643,6 +644,7 @@ class KnowFlowTui(App[None]):
         self.current_run_id: str | None = None
         self.current_approval_id: str | None = None
         self._approval_in_progress = False
+        self._stream_failure_reported = False
         self._queue_manager_previous_pause: bool | None = None
         self.workspace = str(Path.cwd())
         self.command_handlers: dict[str, Any] = {
@@ -846,6 +848,7 @@ class KnowFlowTui(App[None]):
         await transcript.begin_run()
         await transcript.set_activity_expanded(self.activity_expanded)
         self.streamed = False
+        self._stream_failure_reported = False
         self.running = True
         self.session.reset_run()
         self.started_at = monotonic()
@@ -1405,7 +1408,7 @@ class KnowFlowTui(App[None]):
 
     async def on_agent_event_message(self, message: AgentEventMessage) -> None:
         event = message.event
-        event_type = str(event.get("type") or "")
+        event_name = agent_event_name(event)
         run = event.get("run")
         run_id = event.get("runId")
         if not run_id and isinstance(run, dict):
@@ -1414,20 +1417,15 @@ class KnowFlowTui(App[None]):
             self.current_run_id = str(run_id)
         transcript = self.query_one(TranscriptView)
         await transcript.update_activity(event)
-        if event_type == "text_delta":
-            text = str(event.get("text") or "")
+        if event_name in {"message.delta", "message.completed"}:
+            text = str(event.get("text") or event.get("content") or "")
             if text:
                 self.streamed = True
                 await transcript.append_assistant(text)
-        elif event_type in {"answer", "message"}:
-            content = str(event.get("content") or "")
-            if content:
-                self.streamed = True
-                await transcript.append_assistant(content)
             self._set_status("生成回答")
-        elif event_type == "model_event":
+        elif event_name == "model.event":
             self._set_status("生成回答")
-        elif event_type == "model_retry":
+        elif event_name == "model.retrying":
             seconds = max(
                 0,
                 int((int(event.get("retryInMs") or 0) + 999) / 1000),
@@ -1447,17 +1445,19 @@ class KnowFlowTui(App[None]):
             self._set_status(
                 f"{reason}，{seconds}秒后重试（{attempt}/{maximum}）"
             )
-        elif event_type in {"tool_started", "tool_progress", "tool", "tool_result"}:
+        elif event_name.startswith("tool."):
             self.session.record_tool(event)
             title = tool_activity_title(event)
-            status = str(event.get("status") or "").lower()
-            if event_type == "tool_started":
+            status = str(
+                event.get("normalizedStatus") or event.get("status") or ""
+            ).lower()
+            if event_name == "tool.started":
                 self._set_status(
                     f"等待确认：{title}"
                     if status == "waiting"
                     else f"正在{title}"
                 )
-            elif event_type == "tool_progress":
+            elif event_name == "tool.progress":
                 elapsed = event.get("elapsedSeconds")
                 suffix = (
                     f"（{float(elapsed):.1f}s，Ctrl+C停止）"
@@ -1469,15 +1469,33 @@ class KnowFlowTui(App[None]):
                 self._set_status(f"{title}失败，正在调整")
             else:
                 self._set_status(f"{title}完成，继续分析")
-        elif event_type == "agent_step":
+        elif event_name.startswith("step."):
             step = event.get("step") if isinstance(event.get("step"), dict) else event
             self._set_status(
                 str(step.get("title") or step.get("name") or "执行Agent步骤")
             )
-        elif event_type in {"plan_created", "step_updated", "run_updated"}:
+        elif event_name in {"run.plan_created", "run.updated"}:
             self._set_status("更新任务进度")
-        elif event_type == "approval_required":
+        elif event_name == "approval.required":
             self._set_status("等待确认")
+        elif event_name in {"error.raised", "run.failed"}:
+            error = event.get("error")
+            detail = (
+                error.get("message")
+                if isinstance(error, dict)
+                else event.get("errorMessage") or event.get("message") or error
+            )
+            detail = redact_public_detail(detail or "Agent运行失败。", limit=300)
+            failure_title, recovery = error_recovery_message(detail)
+            if not self._stream_failure_reported:
+                await transcript.add_recovery(
+                    failure_title,
+                    detail,
+                    recovery,
+                    error=True,
+                )
+                self._stream_failure_reported = True
+            self._set_status(failure_title)
         self._refresh_status_bar()
 
     async def on_turn_completed(self, message: TurnCompleted) -> None:
@@ -1615,13 +1633,15 @@ class KnowFlowTui(App[None]):
         self._set_status("执行失败")
         self.query_one(TranscriptView).finalize_assistant()
         await self.query_one(TranscriptView).finish_run(failed=True)
-        failure_title, recovery = error_recovery_message(message.error)
-        await self.query_one(TranscriptView).add_recovery(
-            failure_title,
-            redact_public_detail(message.error, limit=300),
-            recovery,
-            error=True,
-        )
+        if not self._stream_failure_reported:
+            failure_title, recovery = error_recovery_message(message.error)
+            await self.query_one(TranscriptView).add_recovery(
+                failure_title,
+                redact_public_detail(message.error, limit=300),
+                recovery,
+                error=True,
+            )
+            self._stream_failure_reported = True
         self.query_one(Composer).focus()
         self._refresh_status_bar()
         if self.session.queued_questions:

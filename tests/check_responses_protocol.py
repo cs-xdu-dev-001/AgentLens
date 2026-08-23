@@ -79,6 +79,12 @@ def main():
 
     safe = ModelGateway._safe_error(RuntimeError('HTTP 502 {"secret":"x"} sk-testsecret Bearer testtoken Authorization=abc token=xyz'))
     assert "RuntimeError" in safe and all(x not in safe for x in ["secret","sk-testsecret","testtoken","Authorization=abc","token=xyz"])
+    safe = ModelGateway._safe_error(RuntimeError(
+        "HTTP 429 org-8242d004acb748ada9255f6d42f4dc23 "
+        "ak-fbzbf9goi43111d8rrx rate_limit_reached_error"
+    ))
+    assert "rate_limit_reached_error" in safe
+    assert "org-8242" not in safe and "ak-fbz" not in safe
     class E(RuntimeError): pass
     nested=E('HTTP {"outer":{"secret":"nested-value"}}'); nested.response=type('R',(),{'status_code':400})()
     safe=ModelGateway._safe_error(nested)

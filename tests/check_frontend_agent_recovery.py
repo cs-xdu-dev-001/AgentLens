@@ -34,6 +34,9 @@ def main() -> None:
     )
     require(component, "failureLabels", "Chinese recovery copy map")
     require(component, "attemptCount", "attempt count display")
+    require(component, "agent-recovery-metrics", "run recovery metrics")
+    require(component, "buildAgentRunPresentation", "shared run presentation")
+    require(component, '"可恢复"', "visible recovery state")
     require(component, "aria-busy={actionPending}", "pending recovery state")
     require(component, "disabled={actionPending", "duplicate recovery prevention")
     require(component, "interactive = true", "single interactive recovery owner")
@@ -69,6 +72,7 @@ def main() -> None:
     drawer = "frontend/react/src/components/ChatEvidenceDrawer.jsx"
     require(drawer, "AgentRecoveryPanel", "drawer recovery panel")
     require(drawer, "messageId={messageId}", "recovery message binding")
+    require(drawer, "trace={trace}", "recovery trace binding")
 
     plan = "frontend/react/src/components/AgentTaskPlan.jsx"
     if 'dispatchAction(run, "resume", messageId)' in read(plan):
@@ -90,6 +94,8 @@ def main() -> None:
         ".agent-recovery-actions",
         ".agent-recovery-code",
         ".agent-recovery-feedback",
+        ".agent-recovery-metrics",
+        ".agent-recovery-state",
     ):
         if selector not in styles:
             raise AssertionError(f"Missing recovery style: {selector}")

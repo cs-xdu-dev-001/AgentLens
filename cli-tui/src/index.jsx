@@ -29,6 +29,7 @@ const instance = render(
     <App
       client={client}
       version={version}
+      workspaceRoot={String(config.workspaceRoot || '')}
       assumeYes={Boolean(config.assumeYes)}
       fullscreenEnabled={fullscreenEnabled}
       mouseEnabled={mouseEnabled}

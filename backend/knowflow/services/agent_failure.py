@@ -88,6 +88,10 @@ def normalize_failure_code(
     raw_code = _safe_code(code or getattr(error, "code", None))
     status = _status_code(error)
     type_name = type(error).__name__.lower() if error is not None else ""
+    try:
+        error_text = str(error or "").lower()
+    except Exception:
+        error_text = ""
     combined = "_".join(
         item for item in (_safe_code(source), raw_code, type_name) if item
     )
@@ -112,9 +116,19 @@ def normalize_failure_code(
         if any(marker in combined for marker in ("mcp", "oauth", "resource_")):
             return "mcp_authentication_required"
         return "model_authentication_failed"
-    if status == 429 or "rate_limit" in combined:
+    if status == 429 or "rate_limit" in combined or any(
+        marker in error_text
+        for marker in (
+            "http 429",
+            "http_429",
+            "rate limit",
+            "rate_limit",
+            "max rpm",
+            "too many requests",
+        )
+    ):
         return "rate_limited"
-    if status in {408, 504} or "timeout" in combined:
+    if status in {408, 504} or "timeout" in combined or "timed out" in error_text:
         return "upstream_timeout"
     if raw_code == "mcp_tool_configuration_invalid":
         return raw_code

@@ -14,11 +14,52 @@ import {
   createRunProjection,
   defaultTaskNavigationIndex,
   projectRunEvent,
+  redact,
   referenceDisplayLabel,
   taskOperationRow,
+  userFacingErrorMessage,
   verificationToolCallId,
   verificationRows,
 } from '../src/protocol.js';
+import {
+  applyFileMention,
+  fileMentionAtCursor,
+  longestSuggestionPrefix,
+  workspaceFileSuggestions,
+} from '../src/fileSuggestions.js';
+
+test('file mentions follow Claude Code style fuzzy completion and quoting', () => {
+  const input = '检查 @app';
+  const mention = fileMentionAtCursor(input, input.length);
+  assert.deepEqual(mention, {start: 3, end: 7, token: '@app', query: 'app', quoted: false});
+  const suggestions = workspaceFileSuggestions(
+    ['src/', 'src/app.jsx', 'src/app test.jsx', '.env', 'node_modules/pkg/index.js'],
+    mention,
+  );
+  assert.equal(suggestions[0].path, 'src/app.jsx');
+  assert.doesNotMatch(suggestions.map(item => item.path).join('\n'), /\.env/);
+  const applied = applyFileMention(input, mention, 'src/app test.jsx');
+  assert.deepEqual(applied, {value: '检查 @"src/app test.jsx" ', cursor: 23});
+  assert.equal(longestSuggestionPrefix([
+    {path: 'src/app.jsx'},
+    {path: 'src/app.test.jsx'},
+  ]), 'src/app.');
+});
+
+test('public errors hide upstream account identifiers and alternate key prefixes', () => {
+  const source = 'Your account org-8242d004acb748ada9255f6d42f4dc23<ak-fbzbf9goi431l1d8rrx1> reached max RPM';
+  const value = redact(source);
+  assert.doesNotMatch(value, /8242d004acb748ada9255f6d42f4dc23|fbzbf9goi431l1d8rrx1/);
+  assert.match(value, /org-\[已隐藏\]/);
+});
+
+test('rate-limit failures use a concise public recovery message', () => {
+  const value = userFacingErrorMessage(
+    'HTTP 429: rate_limit_reached_error: Your account org-secret<ak-secret> reached organization max RPM: 3',
+  );
+  assert.equal(value, '上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复。');
+  assert.doesNotMatch(value, /org-secret|ak-secret|max RPM/);
+});
 
 test('completed runs focus delivery while active and failed runs focus execution', () => {
   const items = [
@@ -95,6 +136,24 @@ test('run summaries keep progress, usage and status identical across clients', (
   assert.equal(projection.runSummary.toolCalls, 3);
   assert.equal(projection.runSummary.totalTokens, 1200);
   assert.doesNotMatch(projection.runSummary.headline, /SECRET_VALUE/);
+});
+
+test('model retry projection exposes a live deadline and clears on progress', () => {
+  const startedAt = Date.now();
+  const retrying = projectRunEvent(createRunProjection(), {
+    eventName: 'model.retrying',
+    retryAttempt: 2,
+    maxRetries: 3,
+    retryInMs: 10_000,
+    statusCode: 429,
+  });
+  assert.equal(retrying.modelRetry.reason, '模型限流');
+  assert.equal(retrying.modelRetry.attempt, 2);
+  assert.equal(retrying.modelRetry.maxRetries, 3);
+  assert.ok(retrying.modelRetry.retryAt >= startedAt + 10_000);
+  assert.ok(retrying.modelRetry.retryAt <= Date.now() + 10_000);
+  const resumed = projectRunEvent(retrying, {eventName: 'message.delta', content: '继续'});
+  assert.equal(resumed.modelRetry, null);
 });
 
 test('reference artifacts stay out of file delivery and hide sensitive URL parameters', () => {

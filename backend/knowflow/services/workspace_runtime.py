@@ -23,6 +23,21 @@ from .agent_loop import ToolHandlerResult, ToolRegistry
 
 
 _WINDOWS_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL"}
+_WORKSPACE_INDEX_IGNORED_DIRECTORIES = {
+    ".git",
+    ".hg",
+    ".jj",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".tmp",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+}
 
 
 class WorkspaceRuntimeError(ValueError):
@@ -684,6 +699,116 @@ class WorkspaceRuntime:
             if len(entries) >= 200:
                 break
         return {"path": path, "entries": entries}
+
+    @classmethod
+    def _mention_path_allowed(cls, value: str) -> bool:
+        try:
+            parts = cls._components(value)
+        except WorkspaceRuntimeError:
+            return False
+        lowered = tuple(part.lower() for part in parts)
+        return bool(parts) and not cls._is_sensitive(parts) and not any(
+            part in _WORKSPACE_INDEX_IGNORED_DIRECTORIES
+            for part in lowered
+        )
+
+    @staticmethod
+    def _with_parent_directories(paths: list[str]) -> list[str]:
+        expanded = set(paths)
+        for path in paths:
+            parts = path.split("/")
+            for index in range(1, len(parts)):
+                expanded.add("/".join(parts[:index]) + "/")
+        return sorted(
+            expanded,
+            key=lambda value: (
+                value.count("/"),
+                value.casefold(),
+                value,
+            ),
+        )
+
+    def _git_mention_paths(self, *, limit: int) -> tuple[list[str], bool] | None:
+        git = shutil.which("git")
+        if not git:
+            return None
+        try:
+            result = subprocess.run(
+                [
+                    git,
+                    "-c",
+                    "core.quotepath=false",
+                    "-C",
+                    str(self.root),
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                ],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        paths: list[str] = []
+        truncated = False
+        for raw_path in result.stdout.split(b"\0"):
+            if not raw_path:
+                continue
+            path = raw_path.decode("utf-8", errors="replace")
+            if not self._mention_path_allowed(path):
+                continue
+            if len(paths) >= limit:
+                truncated = True
+                break
+            paths.append(path)
+        return paths, truncated
+
+    def _filesystem_mention_paths(self, *, limit: int) -> tuple[list[str], bool]:
+        paths: list[str] = []
+        truncated = False
+        for current, directories, files in os.walk(self.root, followlinks=False):
+            current_path = Path(current)
+            directories[:] = [
+                directory
+                for directory in sorted(directories, key=str.casefold)
+                if not (current_path / directory).is_symlink()
+                and self._mention_path_allowed(
+                    (current_path / directory).relative_to(self.root).as_posix()
+                )
+            ]
+            for filename in sorted(files, key=str.casefold):
+                target = current_path / filename
+                if target.is_symlink():
+                    continue
+                relative = target.relative_to(self.root).as_posix()
+                if not self._mention_path_allowed(relative):
+                    continue
+                if len(paths) >= limit:
+                    truncated = True
+                    break
+                paths.append(relative)
+            if truncated:
+                break
+        return paths, truncated
+
+    def mention_paths(self, *, limit: int = 10_000) -> dict[str, Any]:
+        bounded_limit = max(1, min(10_000, int(limit)))
+        indexed = self._git_mention_paths(limit=bounded_limit)
+        source = "git"
+        if indexed is None:
+            source = "filesystem"
+            indexed = self._filesystem_mention_paths(limit=bounded_limit)
+        paths, truncated = indexed
+        return {
+            "paths": self._with_parent_directories(paths),
+            "source": source,
+            "truncated": truncated,
+        }
 
     def read_text(
         self,

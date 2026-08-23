@@ -141,7 +141,7 @@ function parseSummary(value) {
   }
 }
 
-function compactPublicText(value, limit = 84) {
+export function compactPublicText(value, limit = 84) {
   if (!["string", "number", "boolean"].includes(typeof value)) return "";
   let text = String(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   redactionPatterns.forEach(([pattern, replacement]) => {
@@ -458,12 +458,17 @@ function runRows(run, trace) {
       ));
       return {
         durationMs: relatedTrace?.durationMs ?? null,
+        elapsedSeconds: step.elapsedSeconds ?? relatedTrace?.elapsedSeconds ?? null,
         id: step.id,
         kind: step.kind || relatedTrace?.kind || "plan",
         name: step.name || relatedTrace?.name || step.id,
         repeatCount: 1,
         status: step.status,
         title: step.title,
+        toolCallId: step.toolCallId || relatedTrace?.toolCallId || "",
+        toolName: step.toolName || relatedTrace?.toolName || "",
+        totalBytes: step.totalBytes ?? relatedTrace?.totalBytes ?? null,
+        totalLines: step.totalLines ?? relatedTrace?.totalLines ?? null,
       };
     });
   }
@@ -494,8 +499,27 @@ function runRows(run, trace) {
     })));
 }
 
+function liveProgressMeta(value) {
+  if (!value || typeof value !== "object") return "";
+  const parts = [];
+  const elapsed = Number(value.elapsedSeconds);
+  const lines = Number(value.totalLines);
+  const bytes = Number(value.totalBytes);
+  if (Number.isFinite(elapsed) && elapsed >= 0) parts.push(`${elapsed.toFixed(1)}s`);
+  if (Number.isFinite(lines) && lines > 0) parts.push(`${Math.round(lines)}行`);
+  if (Number.isFinite(bytes) && bytes > 0) parts.push(`${Math.round(bytes)}B`);
+  return parts.join(" · ");
+}
+
 function statusPresentation(run, step, waitState, backgroundPending) {
   const status = run?.status || step?.status || "waiting";
+  if (run?.modelRetry) {
+    return {
+      className: "waiting",
+      freshness: "自动恢复中",
+      label: "等待重试",
+    };
+  }
   if (waitState.background || backgroundPending) {
     return {
       className: "running",
@@ -531,6 +555,17 @@ function statusPresentation(run, step, waitState, backgroundPending) {
     return { className: "success", freshness: "已保存", label: "已完成" };
   }
   return { className: "waiting", freshness: "等待", label: "等待开始" };
+}
+
+function modelRetrySummary(modelRetry, now) {
+  if (!modelRetry) return "";
+  const remainingSeconds = Math.max(
+    0,
+    Math.ceil((Number(modelRetry.retryAt) - now) / 1000),
+  );
+  return remainingSeconds > 0
+    ? `${modelRetry.reason || "模型请求失败"}，${remainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
+    : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`;
 }
 
 export function buildAgentRunPresentation({ run = null, trace = [], now = Date.now() } = {}) {
@@ -592,6 +627,8 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
   const tokenLabel = formatTokens(exactTokens || estimatedTokenCount, {
     estimated: !exactTokens && Boolean(estimatedTokenCount),
   });
+  const toolCalls = protocolSummary?.toolCalls
+    ?? safeTrace.filter((item) => ["tool", "mcp", "sandbox", "workspace"].includes(item.kind)).length;
   const artifacts = Array.isArray(run?.artifacts)
     ? run.artifacts.filter((artifact) => artifact?.artifactType !== "reference")
     : [];
@@ -608,8 +645,11 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
   const progressPercent = total
     ? Math.min(100, Math.round((completed / total) * 100))
     : 0;
+  const activeProgress = liveProgressMeta(run?.activeTool || activeRow);
   const processSummary = active
-    ? status.detail || `当前：${activeRow?.title || headline}`
+    ? modelRetrySummary(run?.modelRetry, now)
+      || status.detail
+      || `当前：${activeRow?.title || headline}${activeProgress ? ` · ${activeProgress}` : ""}`
     : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
@@ -628,6 +668,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     metrics: [
       formatElapsed(elapsedMs),
       tokenLabel,
+      toolCalls ? `${toolCalls}次工具` : "",
       artifacts.length ? `${artifacts.length}个产物` : "",
       total ? `${completed}/${total}` : "",
     ].filter(Boolean).join(" · "),
@@ -651,6 +692,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
         row.repeatCount > 1 ? `${row.repeatCount}次` : "",
         kindLabels[row.kind] || row.kind || "步骤",
         stepStatusLabels[row.status] || row.status,
+        liveProgressMeta(row),
         row.durationMs == null ? "" : formatElapsed(row.durationMs),
       ]).filter(Boolean).join(" · "),
     })),
@@ -658,7 +700,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     status,
     step,
     tokenLabel,
-    toolCalls: protocolSummary?.toolCalls ?? safeTrace.filter((item) => ["tool", "mcp", "sandbox", "workspace"].includes(item.kind)).length,
+    toolCalls,
     total,
   };
 }

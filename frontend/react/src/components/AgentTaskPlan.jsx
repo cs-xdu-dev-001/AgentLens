@@ -44,6 +44,7 @@ export function AgentTaskPlan({
   trace = [],
   compact = false,
   focusStepId = "",
+  onFocusStepChange = null,
   focusScope = "message",
 }) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
@@ -246,7 +247,11 @@ export function AgentTaskPlan({
                   setFocusedStepId(step.id);
                   setSelectedStepId(selected ? "" : step.id);
                 }}
-                onFocus={() => setFocusedStepId(step.id)}
+                onFocus={() => {
+                  focusedStepIdRef.current = step.id;
+                  setFocusedStepId(step.id);
+                  onFocusStepChange?.(step.id);
+                }}
                 onKeyDown={(event) => handlePlanStepKeyDown(event, step)}
               >
                 <span
@@ -265,8 +270,10 @@ export function AgentTaskPlan({
                   {selectedTrace.length ? (
                     <AgentTraceView
                       messageId={messageId}
+                      run={run}
                       trace={selectedTrace}
                       focusStepId={focusStepId}
+                      onFocusStepChange={onFocusStepChange}
                       focusScope={focusScope}
                       onExitTree={() => focusPlanStep(step.id)}
                       onDismiss={() => {

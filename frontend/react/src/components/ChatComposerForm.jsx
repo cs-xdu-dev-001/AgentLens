@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { skillApi } from "../api/client.js";
+import { skillApi, workspaceApi } from "../api/client.js";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
+import {
+  applyWorkspaceMention,
+  workspaceMentionAtCursor,
+  workspaceMentionCommonPrefix,
+  workspaceMentionSuggestions,
+} from "./composerMentions.js";
 import { SkillPicker } from "./SkillPicker.jsx";
+import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
@@ -13,11 +20,22 @@ const queueBlockLabels = Object.freeze({
   failed: "发送失败，队列已暂停",
   cancelled: "已停止，待发送已暂停",
 });
+const idleAgentState = Object.freeze({
+  mode: "idle",
+  label: "就绪",
+  detail: "",
+  actionable: false,
+});
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
   const wanted = valueOf(currentValue);
   if (knowledgeBases.some((kb) => valueOf(kb.id) === wanted)) return wanted;
   return "";
+}
+
+async function collectWorkspaceMentionPaths() {
+  const index = await workspaceApi.mentions();
+  return Array.isArray(index?.paths) ? index.paths : [];
 }
 
 export function ChatComposerForm() {
@@ -29,6 +47,12 @@ export function ChatComposerForm() {
   const [pickerQuery, setPickerQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
   const [slashRange, setSlashRange] = useState(null);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionStatus, setMentionStatus] = useState("idle");
+  const [mentionPaths, setMentionPaths] = useState([]);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionRange, setMentionRange] = useState(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(-1);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [question, setQuestion] = useState("");
@@ -38,11 +62,15 @@ export function ChatComposerForm() {
   const [queuePaused, setQueuePaused] = useState(false);
   const [queueBlockReason, setQueueBlockReason] = useState("");
   const [switchingSession, setSwitchingSession] = useState(false);
+  const [agentState, setAgentState] = useState(idleAgentState);
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
   const pickerOpenRef = useRef(false);
   const skillsLoadedRef = useRef(false);
+  const mentionsLoadedRef = useRef(false);
+  const mentionsLoadedAtRef = useRef(0);
   const requestGenerationRef = useRef(0);
+  const agentStateResetRef = useRef(null);
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -55,6 +83,13 @@ export function ChatComposerForm() {
     setPickerQuery("");
     setActiveIndex(-1);
     setSlashRange(null);
+  }, []);
+
+  const closeMentionPicker = useCallback(() => {
+    setMentionOpen(false);
+    setMentionQuery("");
+    setMentionRange(null);
+    setMentionActiveIndex(-1);
   }, []);
 
   const loadAvailableSkills = useCallback(async () => {
@@ -78,6 +113,22 @@ export function ChatComposerForm() {
       if (!mountedRef.current || requestId !== requestGenerationRef.current) return;
       skillsLoadedRef.current = false;
       setSkillsStatus("error");
+    }
+  }, []);
+
+  const loadWorkspaceMentions = useCallback(async () => {
+    setMentionStatus("loading");
+    try {
+      const paths = await collectWorkspaceMentionPaths();
+      if (!mountedRef.current) return;
+      setMentionPaths(paths);
+      mentionsLoadedRef.current = true;
+      mentionsLoadedAtRef.current = Date.now();
+      setMentionStatus("ready");
+    } catch {
+      if (!mountedRef.current) return;
+      mentionsLoadedRef.current = false;
+      setMentionStatus("error");
     }
   }, []);
 
@@ -111,6 +162,13 @@ export function ChatComposerForm() {
   }, [loadAvailableSkills, pickerOpen]);
 
   useEffect(() => {
+    const stale = Date.now() - mentionsLoadedAtRef.current >= 5_000;
+    if (mentionOpen && (!mentionsLoadedRef.current || stale) && mentionStatus !== "loading") {
+      loadWorkspaceMentions();
+    }
+  }, [loadWorkspaceMentions, mentionOpen, mentionStatus]);
+
+  useEffect(() => {
     const handleSkillsUpdated = () => {
       const shouldRefresh = skillsLoadedRef.current || pickerOpenRef.current;
       skillsLoadedRef.current = false;
@@ -138,6 +196,7 @@ export function ChatComposerForm() {
       setQuestion("");
       setSelectedSkill(null);
       closeSkillPicker();
+      closeMentionPicker();
       window.requestAnimationFrame(() => {
         resizeTextarea();
         if (shouldFocus) textareaRef.current?.focus();
@@ -145,7 +204,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, [closeSkillPicker]);
+  }, [closeMentionPicker, closeSkillPicker]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -179,6 +238,49 @@ export function ChatComposerForm() {
     const handleSendingUpdated = (event) => setSending(Boolean(event.detail?.sending));
     window.addEventListener("knowflow:react-sending-updated", handleSendingUpdated);
     return () => window.removeEventListener("knowflow:react-sending-updated", handleSendingUpdated);
+  }, []);
+
+  useEffect(() => {
+    const clearAgentStateTimer = () => {
+      if (!agentStateResetRef.current) return;
+      window.clearTimeout(agentStateResetRef.current);
+      agentStateResetRef.current = null;
+    };
+    const handleAgentComposerState = (event) => {
+      clearAgentStateTimer();
+      const detail = event.detail || {};
+      const next = {
+        mode: String(detail.mode || "idle"),
+        label: String(detail.label || "就绪"),
+        detail: String(detail.detail || ""),
+        actionable: Boolean(detail.actionable),
+      };
+      setAgentState((current) => (
+        current.mode === next.mode
+        && current.label === next.label
+        && current.detail === next.detail
+        && current.actionable === next.actionable
+          ? current
+          : next
+      ));
+      if (["completed", "cancelled"].includes(next.mode)) {
+        agentStateResetRef.current = window.setTimeout(() => {
+          agentStateResetRef.current = null;
+          setAgentState(idleAgentState);
+        }, 2400);
+      }
+    };
+    window.addEventListener(
+      "knowflow:react-agent-composer-state",
+      handleAgentComposerState,
+    );
+    return () => {
+      clearAgentStateTimer();
+      window.removeEventListener(
+        "knowflow:react-agent-composer-state",
+        handleAgentComposerState,
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -229,6 +331,12 @@ export function ChatComposerForm() {
     }));
   };
 
+  const handleOpenAgentWorkbench = () => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open", {
+      detail: { focus: true },
+    }));
+  };
+
   const updateSkillPicker = (value, cursor) => {
     const beforeCursor = value.slice(0, cursor);
     const match = beforeCursor.match(slashPattern);
@@ -246,12 +354,31 @@ export function ChatComposerForm() {
     });
   };
 
+  const updateComposerPicker = (value, cursor) => {
+    const beforeCursor = value.slice(0, cursor);
+    if (beforeCursor.match(slashPattern)) {
+      closeMentionPicker();
+      updateSkillPicker(value, cursor);
+      return;
+    }
+    closeSkillPicker();
+    const mention = workspaceMentionAtCursor(value, cursor);
+    if (!mention) {
+      closeMentionPicker();
+      return;
+    }
+    setMentionOpen(true);
+    setMentionQuery(mention.query);
+    setMentionRange({ start: mention.start, end: mention.end });
+    setMentionActiveIndex(-1);
+  };
+
   const handleChatInput = (event) => {
     const value = event.target.value;
     const cursor = event.target.selectionStart ?? value.length;
     setQuestion(value);
     resizeTextarea(event.target);
-    updateSkillPicker(value, cursor);
+    updateComposerPicker(value, cursor);
   };
 
   const handleChatPaste = (event) => {
@@ -260,6 +387,34 @@ export function ChatComposerForm() {
 
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if (mentionOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionActiveIndex((current) => {
+          if (!filteredMentionPaths.length) return -1;
+          if (event.key === "ArrowDown") return current < 0 ? 0 : (current + 1) % filteredMentionPaths.length;
+          return current < 0
+            ? filteredMentionPaths.length - 1
+            : (current - 1 + filteredMentionPaths.length) % filteredMentionPaths.length;
+        });
+        return;
+      }
+      if (["Enter", "Tab"].includes(event.key)
+        || (event.key === "ArrowRight" && event.currentTarget.selectionStart === question.length)) {
+        event.preventDefault();
+        if (event.key === "Tab") completeWorkspaceMention();
+        else {
+          const selected = filteredMentionPaths[mentionActiveIndex];
+          if (selected) selectWorkspaceMention(selected);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMentionPicker();
+        return;
+      }
+    }
     if (pickerOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -316,6 +471,11 @@ export function ChatComposerForm() {
     );
   }, [availableSkills, pickerQuery]);
 
+  const filteredMentionPaths = useMemo(
+    () => workspaceMentionSuggestions(mentionPaths, mentionQuery),
+    [mentionPaths, mentionQuery],
+  );
+
   useEffect(() => {
     if (!pickerOpen || !filteredSkills.length) {
       setActiveIndex(-1);
@@ -326,6 +486,16 @@ export function ChatComposerForm() {
       return current;
     });
   }, [filteredSkills, pickerOpen]);
+
+  useEffect(() => {
+    if (!mentionOpen || !filteredMentionPaths.length) {
+      setMentionActiveIndex(-1);
+      return;
+    }
+    setMentionActiveIndex((current) => (
+      current < 0 || current >= filteredMentionPaths.length ? 0 : current
+    ));
+  }, [filteredMentionPaths, mentionOpen]);
 
   const selectSkill = (skill) => {
     if (!slashRange) return;
@@ -342,6 +512,41 @@ export function ChatComposerForm() {
       textarea.focus();
       textarea.setSelectionRange(cursor, cursor);
       resizeTextarea(textarea);
+    });
+  };
+
+  const selectWorkspaceMention = (path) => {
+    if (!mentionRange) return;
+    const next = applyWorkspaceMention(question, mentionRange, path);
+    setQuestion(next.value);
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(next.cursor, next.cursor);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const completeWorkspaceMention = () => {
+    if (!mentionRange || !filteredMentionPaths.length) return;
+    const commonPrefix = workspaceMentionCommonPrefix(filteredMentionPaths);
+    const partial = filteredMentionPaths.length > 1 && commonPrefix.length > mentionQuery.length;
+    if (!partial) {
+      const selected = filteredMentionPaths[mentionActiveIndex];
+      if (selected) selectWorkspaceMention(selected);
+      return;
+    }
+    const next = applyWorkspaceMention(question, mentionRange, commonPrefix, { complete: false });
+    setQuestion(next.value);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(next.cursor, next.cursor);
+      resizeTextarea(textarea);
+      updateComposerPicker(next.value, next.cursor);
     });
   };
 
@@ -367,7 +572,9 @@ export function ChatComposerForm() {
     knowledgeBases.find((kb) => valueOf(kb.id) === selectedKnowledgeBaseId)?.name ||
     "不使用知识库";
   const activeOptionId =
-    pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
+    mentionOpen && mentionActiveIndex >= 0 && filteredMentionPaths[mentionActiveIndex]
+      ? `workspace-mention-${mentionActiveIndex}`
+      : pickerOpen && activeIndex >= 0 && filteredSkills[activeIndex]
       ? `skill-option-${filteredSkills[activeIndex].id}`
       : undefined;
   const queueHeading = queuePaused
@@ -378,9 +585,37 @@ export function ChatComposerForm() {
   const queueInteractionBlocked = ["approval", "question", "run"].includes(
     queueBlockReason,
   );
+  const visibleAgentState = switchingSession
+    ? {
+        mode: "running",
+        label: "正在打开任务",
+        detail: "同步消息与运行状态",
+        actionable: false,
+      }
+    : agentState.mode !== "idle"
+      ? agentState
+      : sending
+        ? {
+            mode: "running",
+            label: "Agent正在工作",
+            detail: queuedChats.length
+              ? `当前任务运行中，另有${queuedChats.length}条待发送`
+              : "正在规划、调用工具或生成答案",
+            actionable: false,
+          }
+        : idleAgentState;
 
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
+      {mentionOpen ? (
+        <WorkspaceMentionPicker
+          paths={filteredMentionPaths}
+          status={mentionStatus}
+          activeIndex={mentionActiveIndex}
+          onSelect={selectWorkspaceMention}
+          onRetry={loadWorkspaceMentions}
+        />
+      ) : null}
       {pickerOpen ? (
         <SkillPicker
           skills={filteredSkills}
@@ -471,6 +706,24 @@ export function ChatComposerForm() {
           );
         })}
       </div>
+      {visibleAgentState.mode !== "idle" ? (
+        <div
+          className={`composer-agent-state ${visibleAgentState.mode}`}
+          role={visibleAgentState.mode === "failed" ? "alert" : "status"}
+          aria-live={visibleAgentState.mode === "failed" ? "assertive" : "polite"}
+        >
+          <span className={"composer-agent-state-dot"} aria-hidden={"true"}></span>
+          <div className={"composer-agent-state-copy"}>
+            <strong>{visibleAgentState.label}</strong>
+            <span>{visibleAgentState.detail}</span>
+          </div>
+          {visibleAgentState.actionable ? (
+            <button type={"button"} onClick={handleOpenAgentWorkbench}>
+              {visibleAgentState.mode === "failed" ? "查看恢复操作" : "查看并处理"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className={"composer-shell"}>
         <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
@@ -533,11 +786,11 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择Skill"}
+            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择Skill，@ 引用工作区文件"}
             value={question}
             disabled={switchingSession}
-            aria-controls={pickerOpen ? "skill-picker-listbox" : undefined}
-            aria-expanded={pickerOpen}
+            aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "skill-picker-listbox" : undefined}
+            aria-expanded={mentionOpen || pickerOpen}
             aria-haspopup={"listbox"}
             aria-label={"消息"}
             aria-activedescendant={activeOptionId}

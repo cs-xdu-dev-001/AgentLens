@@ -473,6 +473,18 @@ const sandboxFields = traceStepFields({{
     stderr: "",
   }},
 }});
+const referenceStep = {{
+  kind: "workspace",
+  name: "workspace_references",
+  status: "success",
+  title: "已读取2个工作区文件，跳过1个",
+  inputSummary: {{ files: ["README.md", "src/main.py", ".env"] }},
+  outputSummary: {{
+    loaded: ["README.md", "src/main.py"],
+    skipped: [{{ path: ".env", code: "workspace_path_denied" }}],
+  }},
+}};
+const referenceFields = traceStepFields(referenceStep);
 const readable = {{
   kindLabel: traceKindLabel("workspace"),
   sandboxLabel: traceKindLabel("sandbox"),
@@ -482,8 +494,10 @@ const readable = {{
     status: "success",
   }}),
   reason: traceStepReason({{ kind: "sandbox" }}),
+  referenceTitle: traceStepTitle(referenceStep),
+  referenceReason: traceStepReason(referenceStep),
 }};
-console.log(JSON.stringify({{ workspaceFields, sandboxFields, readable }}));
+console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, readable }}));
 """
     completed = subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -510,11 +524,17 @@ console.log(JSON.stringify({{ workspaceFields, sandboxFields, readable }}));
         {"label": "是否超时", "value": "否"},
         {"label": "标准输出", "value": "ok"},
     ]
+    assert result["referenceFields"] == [
+        {"label": "已读取", "value": "README.md、src/main.py"},
+        {"label": "已跳过", "value": "1"},
+    ]
     assert result["readable"] == {
         "kindLabel": "WORKSPACE",
         "sandboxLabel": "SANDBOX",
         "title": "读取工作区文件已完成",
         "reason": "在受限沙箱中执行命令，读写范围限定在当前用户工作区。",
+        "referenceTitle": "已读取2个工作区文件，跳过1个",
+        "referenceReason": "把用户明确引用的工作区文件作为受控上下文读取，不改变原始问题。",
     }
 
 
@@ -561,6 +581,25 @@ const waiting = buildAgentRunPresentation({{
     kind: "approval",
     name: "tool_approval",
     status: "waiting",
+  }}],
+}});
+const retrying = buildAgentRunPresentation({{
+  now: Date.parse("2026-08-12T00:00:03Z"),
+  run: {{
+    id: "run_retry",
+    status: "running",
+    modelRetry: {{
+      attempt: 2,
+      maxRetries: 3,
+      reason: "模型限流",
+      retryAt: Date.parse("2026-08-12T00:00:10Z"),
+    }},
+  }},
+  trace: [{{
+    stepId: "model-retry",
+    kind: "model",
+    name: "model_completion",
+    status: "running",
   }}],
 }});
 const compacted = buildAgentRunPresentation({{
@@ -665,6 +704,11 @@ console.log(JSON.stringify({{
     active: waiting.active,
     status: waiting.status,
   }},
+  retrying: {{
+    active: retrying.active,
+    processSummary: retrying.processSummary,
+    status: retrying.status,
+  }},
   compacted: {{
     headline: compacted.headline,
     processSummary: compacted.processSummary,
@@ -723,6 +767,15 @@ console.log(JSON.stringify({{
             "className": "waiting",
             "freshness": "等待",
             "label": "等待确认",
+        },
+    }
+    assert result["retrying"] == {
+        "active": True,
+        "processSummary": "模型限流，7秒后重试（2/3）",
+        "status": {
+            "className": "waiting",
+            "freshness": "自动恢复中",
+            "label": "等待重试",
         },
     }
     assert result["compacted"] == {
@@ -1079,7 +1132,7 @@ def main() -> None:
         "为什么执行",
         "复制详情",
         "管理长期记忆",
-        "重新运行本轮",
+        "查看恢复操作",
     ):
         require(detail, token, f"interactive detail {token}")
     for token in (
@@ -1096,8 +1149,19 @@ def main() -> None:
     require(detail, "memoryApi.retryOperation", "memory retry API")
     require(
         detail,
-        "knowflow:react-message-retry",
-        "failed run retry event",
+        "knowflow:react-agent-recovery-focus",
+        "failed step returns to the centralized recovery surface",
+    )
+    require(detail, "run = null", "failed step recovery is scoped to a run")
+    require(
+        "frontend/react/src/components/AgentRecoveryPanel.jsx",
+        "compactPublicText",
+        "failed run reason is redacted before rendering",
+    )
+    require(
+        "frontend/react/src/components/AgentRecoveryPanel.jsx",
+        "failure.retryable === false",
+        "non-retryable failures suppress retry actions",
     )
     require(
         detail,
@@ -1270,15 +1334,30 @@ def main() -> None:
         "AgentDiffView",
         "structured file diff presentation",
     )
-    require(
+    forbid(
         "frontend/react/src/components/AgentTraceStrip.jsx",
         "agent-task-capsule-artifacts",
-        "inline run artifact summary",
+        "duplicate inline artifact details",
+    )
+    forbid(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "function artifactChangeMeta",
+        "obsolete inline artifact metrics",
+    )
+    forbid(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "操作记录",
+        "duplicate inline operation log",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "function artifactChangeMeta",
-        "artifact change metrics",
+        "rows.slice(0, 5)",
+        "concise inline task rows",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "agent-task-capsule-summary",
+        "readable inline task summary",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
@@ -1304,6 +1383,46 @@ def main() -> None:
         "frontend/react/src/components/AgentTraceStrip.jsx",
         "agent-task-capsule-step-button",
         "keyboard accessible task rows",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "knowflow:react-agent-focus-updated",
+        "inline task rows follow workbench focus",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "nextTraceStepId",
+        "inline task rows share tree keyboard movement",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "tabIndex={expanded && focusedStepId === itemId ? 0 : -1}",
+        "inline task rows use roving tabindex",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "publishFocusStep",
+        "workbench publishes its selected run step",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "knowflow:react-agent-focus-updated",
+        "workbench focus update protocol",
+    )
+    require(
+        "frontend/react/src/components/AgentTaskPlan.jsx",
+        "onFocusStepChange",
+        "plan tree reports focused steps",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceView.jsx",
+        "onFocusStepChange",
+        "trace tree reports focused steps",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-task-capsule-steps li.selected",
+        "inline selected step state",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
@@ -1470,20 +1589,25 @@ def main() -> None:
         'setRun(event.detail?.run || null);\n      setActiveTab("trace");',
         "background run updates stealing the selected drawer tab",
     )
-    require(
+    forbid(
         "frontend/react/src/components/AgentRunSummary.jsx",
-        "当前进度",
-        "run progress metric",
+        "agent-run-metrics",
+        "duplicate run metric grid",
     )
     require(
         "frontend/react/src/components/AgentRunSummary.jsx",
-        "已用时间",
-        "run elapsed metric",
+        "agent-run-summary-meta",
+        "compact run metadata",
     )
     require(
         "frontend/react/src/components/AgentRunSummary.jsx",
-        "工具调用",
-        "run tool count metric",
+        "metrics || `${completed}/${total}`",
+        "shared run metrics presentation",
+    )
+    require(
+        "frontend/react/src/components/agentRunPresentation.js",
+        'toolCalls ? `${toolCalls}次工具` : ""',
+        "tool count in compact shared metrics",
     )
     require(
         "frontend/react/src/components/AgentRunSummary.jsx",

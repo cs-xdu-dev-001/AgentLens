@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..runtime import *
+from ..services.workspace_references import has_workspace_references
 from .extensions import agent_chat, agent_chat_stream
 
 router = APIRouter()
@@ -109,6 +110,7 @@ def should_route_to_agent(payload: ChatRequest) -> bool:
     )
     return (
         plan_command
+        or has_workspace_references(payload.question)
         or payload.skillId is not None
         or manual_tools
         or auto_tools

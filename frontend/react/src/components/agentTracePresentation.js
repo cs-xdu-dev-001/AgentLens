@@ -17,6 +17,7 @@ const nameLabels = {
   web_search: "联网搜索",
   memory_recall: "记忆召回",
   memory_write: "记忆整理",
+  workspace_references: "工作区引用",
   list_workspace: "工作区列表",
   read_workspace_file: "读取工作区文件",
   write_workspace_file: "写入工作区文件",
@@ -189,6 +190,16 @@ export function traceStepTitle(step) {
     if (status === "success") return "长期记忆整理完成";
     return "长期记忆写入失败";
   }
+  if (name === "workspace_references") {
+    if (status === "running") return "正在读取工作区文件";
+    const output = parseSummary(step.outputSummary);
+    const loaded = Array.isArray(output?.loaded) ? output.loaded.length : 0;
+    const skipped = Array.isArray(output?.skipped) ? output.skipped.length : 0;
+    if (loaded && skipped) return `已读取${loaded}个工作区文件，跳过${skipped}个`;
+    if (loaded) return `已读取${loaded}个工作区文件`;
+    if (skipped) return `未读取到工作区文件，已跳过${skipped}个`;
+    return "工作区引用已处理";
+  }
   return `${displayName(step)}${traceStatusLabel(step.status)}`;
 }
 
@@ -353,6 +364,9 @@ export function traceStepReason(step) {
   if (name === "memory_write") {
     return "回答完成后检查是否有值得长期保留的新信息。";
   }
+  if (name === "workspace_references") {
+    return "把用户明确引用的工作区文件作为受控上下文读取，不改变原始问题。";
+  }
   if (kind === "skill") {
     return "当前任务匹配该Skill，加载其公开能力和依赖。";
   }
@@ -418,6 +432,11 @@ export function traceStepFields(step) {
     addField(fields, "工具", context.toolName);
     addField(fields, "风险", context.risk);
     addField(fields, "决定", context.decision);
+  } else if (name === "workspace_references") {
+    const loaded = Array.isArray(output?.loaded) ? output.loaded : [];
+    const skipped = Array.isArray(output?.skipped) ? output.skipped : [];
+    addField(fields, "已读取", loaded);
+    addField(fields, "已跳过", skipped.length || null);
   } else if (kind === "workspace") {
     addField(fields, "工具", displayName(step));
     addField(

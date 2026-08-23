@@ -15,6 +15,10 @@ import { AgentTraceStrip } from "./AgentTraceStrip.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 import { AgentThinkingOrb } from "./AgentThinkingOrb.jsx";
 import {
+  isChatViewportPinned,
+  shouldFollowChatUpdate,
+} from "./chatScrollState.js";
+import {
   activeAgentInteractionOwner,
   pendingAgentInteractions,
 } from "./agentRunPresentation.js";
@@ -382,9 +386,13 @@ function MessageRow({ interactionOwner, message, pendingInteractionCount }) {
 export function ChatMessages() {
   const messagesRef = useRef(null);
   const nextMessageIdRef = useRef(1);
+  const followOutputRef = useRef(true);
+  const scrollFrameRef = useRef(0);
   const [messages, setMessages] = useState([]);
   const [showWelcome, setShowWelcome] = useState(true);
   const [sessionSwitch, setSessionSwitch] = useState(null);
+  const [followingOutput, setFollowingOutput] = useState(true);
+  const [hasNewOutput, setHasNewOutput] = useState(false);
   const interactionOwner = useMemo(
     () => activeAgentInteractionOwner(messages),
     [messages],
@@ -394,9 +402,39 @@ export function ChatMessages() {
     : 0;
   const findBubble = (messageId) =>
     messagesRef.current?.querySelector('[data-react-message-id="' + messageId + '"]') || null;
-  const scrollToBottom = () => {
+  const setFollowOutput = (nextValue) => {
+    const next = Boolean(nextValue);
+    followOutputRef.current = next;
+    setFollowingOutput((current) => current === next ? current : next);
+    if (next) setHasNewOutput(false);
+  };
+  const scrollToBottom = ({ force = false, behavior = "auto" } = {}) => {
     const node = messagesRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (!node) return;
+    if (!shouldFollowChatUpdate({ pinned: followOutputRef.current, force })) {
+      setHasNewOutput(true);
+      return;
+    }
+    window.cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      const viewport = messagesRef.current;
+      if (!viewport) return;
+      setFollowOutput(true);
+      if (typeof viewport.scrollTo === "function") {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+      } else {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    });
+  };
+  const handleMessagesScroll = () => {
+    const pinned = isChatViewportPinned(messagesRef.current);
+    if (pinned !== followOutputRef.current) setFollowOutput(pinned);
+  };
+  const jumpToLatest = () => {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    setFollowOutput(true);
+    scrollToBottom({ force: true, behavior: reduceMotion ? "auto" : "smooth" });
   };
   const normalizeMessage = (payload, id) => {
     const rawContent = normalizeRawContent(payload.rawContent ?? payload.content);
@@ -438,7 +476,7 @@ export function ChatMessages() {
       setMessages([]);
       setShowWelcome(Boolean(nextShowWelcome));
     });
-    scrollToBottom();
+    scrollToBottom({ force: true });
     return messagesRef.current;
   };
   const appendMessage = (payload) => {
@@ -449,7 +487,7 @@ export function ChatMessages() {
       setShowWelcome(false);
       setMessages((currentMessages) => [...currentMessages, message]);
     });
-    scrollToBottom();
+    scrollToBottom({ force: payload?.role === "user" });
     return { messageId, bubble: findBubble(messageId) };
   };
 
@@ -457,6 +495,10 @@ export function ChatMessages() {
     document.querySelector("#page-chat")?.classList.toggle("chat-empty", showWelcome);
     return () => document.querySelector("#page-chat")?.classList.remove("chat-empty");
   }, [showWelcome]);
+
+  useEffect(() => () => {
+    window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   useEffect(() => {
     const messagesNode = messagesRef.current;
@@ -692,43 +734,61 @@ export function ChatMessages() {
   };
 
   return (
-    <div
-      className={`messages${sessionSwitch?.status === "loading" ? " session-switching" : ""}`}
-      id={"chat-messages"}
-      ref={messagesRef}
-      aria-busy={sessionSwitch?.status === "loading"}
-    >
-      {sessionSwitch ? (
-        <div
-          className={`session-switch-state ${sessionSwitch.status}`}
-          role={sessionSwitch.status === "error" ? "alert" : "status"}
+    <>
+      <div
+        className={`messages${sessionSwitch?.status === "loading" ? " session-switching" : ""}`}
+        id={"chat-messages"}
+        ref={messagesRef}
+        aria-busy={sessionSwitch?.status === "loading"}
+        onScroll={handleMessagesScroll}
+      >
+        {sessionSwitch ? (
+          <div
+            className={`session-switch-state ${sessionSwitch.status}`}
+            role={sessionSwitch.status === "error" ? "alert" : "status"}
+          >
+            {sessionSwitch.status === "loading" ? (
+              <AgentThinkingOrb
+                state={"connecting"}
+                label={`正在打开「${sessionSwitch.title}」`}
+              />
+            ) : (
+              <>
+                <span>{`无法打开「${sessionSwitch.title}」`}</span>
+                <button type={"button"} onClick={retrySessionSwitch}>{"重试"}</button>
+              </>
+            )}
+          </div>
+        ) : null}
+        {showWelcome ? (
+          <div className={"welcome-card"}>
+            <h2>{"有什么可以帮你？"}</h2>
+          </div>
+        ) : null}
+        {messages.map((message) => (
+          <MessageRow
+            interactionOwner={interactionOwner}
+            key={message.id}
+            message={message}
+            pendingInteractionCount={pendingInteractionCount}
+          />
+        ))}
+      </div>
+      {!showWelcome && !followingOutput ? (
+        <button
+          className={`chat-jump-to-latest${hasNewOutput ? " has-new-output" : ""}`}
+          type={"button"}
+          aria-label={hasNewOutput ? "查看最新Agent输出" : "回到对话底部"}
+          aria-live={"polite"}
+          onClick={jumpToLatest}
         >
-          {sessionSwitch.status === "loading" ? (
-            <AgentThinkingOrb
-              state={"connecting"}
-              label={`正在打开「${sessionSwitch.title}」`}
-            />
-          ) : (
-            <>
-              <span>{`无法打开「${sessionSwitch.title}」`}</span>
-              <button type={"button"} onClick={retrySessionSwitch}>{"重试"}</button>
-            </>
-          )}
-        </div>
+          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+            <path d={"M5 8l5 5 5-5"} fill={"none"} stroke={"currentColor"} strokeWidth={"1.8"} strokeLinecap={"round"} strokeLinejoin={"round"} />
+          </svg>
+          <span>{hasNewOutput ? "查看最新输出" : "回到最新"}</span>
+          {hasNewOutput ? <i aria-hidden={"true"}></i> : null}
+        </button>
       ) : null}
-      {showWelcome ? (
-        <div className={"welcome-card"}>
-          <h2>{"有什么可以帮你？"}</h2>
-        </div>
-      ) : null}
-      {messages.map((message) => (
-        <MessageRow
-          interactionOwner={interactionOwner}
-          key={message.id}
-          message={message}
-          pendingInteractionCount={pendingInteractionCount}
-        />
-      ))}
-    </div>
+    </>
   );
 }

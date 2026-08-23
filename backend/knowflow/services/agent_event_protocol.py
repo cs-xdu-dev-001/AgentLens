@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from .agent_trace import sanitize_trace_payload
+from .agent_failure import normalize_failure_code
 
 
 AGENT_EVENT_SCHEMA_VERSION = 1
@@ -465,6 +466,11 @@ def _event_name(event: dict[str, Any]) -> str:
     return legacy.replace("_", ".")
 
 
+def agent_event_name(event: dict[str, Any]) -> str:
+    """Resolve canonical Agent event names while preserving legacy input."""
+    return _event_name(event)
+
+
 def _run_id(event: dict[str, Any], fallback: str | None) -> str | None:
     value = event.get("runId") or fallback
     snapshot = event.get("run")
@@ -488,7 +494,14 @@ def _error_payload(event: dict[str, Any], event_name: str) -> dict[str, Any] | N
         return None
     if message is None and is_error:
         message = event.get("message")
-    code_text = str(code or "agent_error")
+    message_text = _public_text(message or "Agent运行失败。")
+    inferred_code = normalize_failure_code(code=code or message_text)
+    code_text = _public_text(code or "agent_error", max_chars=100)
+    if code_text == "agent_error" and inferred_code != "agent_run_failed":
+        code_text = inferred_code
+    if code_text == "rate_limited" or inferred_code == "rate_limited":
+        code_text = "rate_limited"
+        message_text = "上游模型请求过于频繁，自动重试后仍未恢复。"
     non_retryable = {
         "approval_expired",
         "permission_denied",
@@ -497,7 +510,7 @@ def _error_payload(event: dict[str, Any], event_name: str) -> dict[str, Any] | N
     }
     payload = {
         "code": code_text,
-        "message": str(message or "Agent运行失败。"),
+        "message": message_text,
         "retryable": bool(
             structured_error.get(
                 "retryable",
@@ -570,11 +583,13 @@ def normalize_agent_event(
             }
             event = {**envelope, **artifact}
     if error is not None:
-        existing_error = event.get("error")
-        event["error"] = {
-            **(existing_error if isinstance(existing_error, dict) else {}),
-            **error,
-        }
+        event["error"] = error
+        for field in ("message", "errorMessage"):
+            if field in event:
+                event[field] = error["message"]
+        for field in ("code", "errorCode"):
+            if field in event:
+                event[field] = error["code"]
     actions = _recovery_actions(event_name, error)
     if actions:
         event.setdefault("recoveryActions", actions)

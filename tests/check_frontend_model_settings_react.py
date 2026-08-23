@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,7 @@ def main() -> None:
     form_path = "frontend/react/src/components/ModelConfigForm.jsx"
     list_panel = "frontend/react/src/components/ModelListPanel.jsx"
     details = "frontend/react/src/components/ModelConfigDetails.jsx"
+    connection_state = "frontend/react/src/components/modelConnectionState.js"
     styles = "frontend/styles.css"
     require("frontend/react/src/api/client.js", "modelConfigApi", "model config API helper")
     require("frontend/react/src/data/settings.js", "export const providerPresets", "provider preset data module")
@@ -68,6 +70,41 @@ def main() -> None:
     require(details, "检查连接", "productized model connection action")
     require("frontend/react/src/components/SettingsPage.jsx", "模型连接检查完成", "productized model connection success copy")
     require("frontend/react/src/components/SettingsPage.jsx", "检查模型失败", "productized model connection failure copy")
+    require(
+        settings,
+        'connectionResultStatus(result) === "success"',
+        "model connection result rejects contradictory backend status and message",
+    )
+    require(
+        settings,
+        'temperature: null',
+        "hidden temperature is not persisted",
+    )
+    require(
+        settings,
+        'topP: null',
+        "hidden top-p is not persisted",
+    )
+    require(
+        settings,
+        "isLegacySamplingError(result)",
+        "legacy sampling error detection",
+    )
+    require(
+        settings,
+        "await modelConfigApi.update(modelId, {",
+        "legacy sampling settings are cleared automatically",
+    )
+    require(
+        settings,
+        'recoveredLegacySampling = connectionResultStatus(result) === "success"',
+        "legacy sampling recovery follows the retried result",
+    )
+    require(
+        settings,
+        "连接已恢复，旧采样参数已自动清理。",
+        "legacy sampling recovery feedback",
+    )
     require(details, "onSetDefaultModel", "default model callback prop")
     require(details, "onDeleteModel", "delete model callback prop")
     settings_page = read("frontend/react/src/components/SettingsPage.jsx")
@@ -147,6 +184,54 @@ def main() -> None:
     require(list_panel, "onModelSelect", "model selection callback")
     require(details, "apiKeyMasked", "masked API key detail")
     require(details, "onModelTest", "detail connection action")
+    require(
+        details,
+        "connectionResultStatus(connectionResult)",
+        "connection result render guard",
+    )
+    require(
+        connection_state,
+        "connectionFailurePattern.test(message)",
+        "connection failure message guard",
+    )
+    require(
+        connection_state,
+        'new Set(["available", "success"])',
+        "backend and frontend success statuses are normalized",
+    )
+    require(
+        connection_state,
+        'new Set(["unavailable", "error", "failed", "failure"])',
+        "backend and frontend failure statuses are normalized",
+    )
+    node_check = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            """
+import { connectionResultStatus } from './frontend/react/src/components/modelConnectionState.js';
+const cases = [
+  [{ status: 'available', message: 'connection succeeded' }, 'success'],
+  [{ status: 'unavailable', message: 'HTTPError (HTTP 400)' }, 'error'],
+  [{ status: 'success', message: 'invalid temperature: only 1 is allowed' }, 'error'],
+  [{ status: 'checking', message: '' }, 'checking'],
+  [{ status: 'mystery', message: '' }, 'error'],
+];
+for (const [input, expected] of cases) {
+  const actual = connectionResultStatus(input);
+  if (actual !== expected) throw new Error(`${JSON.stringify(input)} => ${actual}, expected ${expected}`);
+}
+""",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if node_check.returncode != 0:
+        raise AssertionError(node_check.stderr or node_check.stdout)
     require(details, "onSetDefaultModel", "detail default action")
     require(details, "onDeleteModel", "detail delete action")
     forbid(settings, "SettingsSidePanel", "obsolete settings note")

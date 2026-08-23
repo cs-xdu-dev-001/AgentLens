@@ -28,6 +28,7 @@ const LEGACY_EVENT_NAMES = {
   quality: "run.quality_updated",
   usage_updated: "usage.updated",
   context_usage_updated: "context.usage_updated",
+  model_retry: "model.retrying",
 };
 
 export function agentEventName(event) {
@@ -71,9 +72,20 @@ export function agentRuntimeStatus(event, fallback = "running") {
 }
 
 export function agentEventError(event, fallback = "Agent运行失败。") {
+  const rawCode = safeAgentText(
+    event?.error?.code || event?.errorCode || event?.code || "agent_error",
+    100,
+  );
+  const rawMessage = safeAgentText(
+    event?.error?.message || event?.errorMessage || event?.message || fallback,
+  );
+  const isRateLimited = rawCode === "rate_limited"
+    || /(?:http\s*429|rate[_ -]?limit|max\s+rpm|too many requests)/i.test(rawMessage);
   return {
-    code: String(event?.error?.code || event?.errorCode || event?.code || "agent_error"),
-    message: String(event?.error?.message || event?.errorMessage || event?.message || fallback),
+    code: isRateLimited ? "rate_limited" : rawCode,
+    message: isRateLimited
+      ? "上游模型请求过于频繁，自动重试后仍未恢复。"
+      : rawMessage,
     retryable: event?.error?.retryable !== false,
     recoveryActions: Array.isArray(event?.recoveryActions) ? event.recoveryActions : [],
   };
@@ -235,6 +247,45 @@ export function mergeAgentToolCall(toolCalls, event) {
   return next;
 }
 
+function mergeToolActivityIntoRun(run, event) {
+  if (!run || typeof run !== "object") return run;
+  const toolCallId = String(event?.toolCallId || event?.id || "");
+  const toolName = String(event?.toolName || event?.name || "");
+  const status = agentRuntimeStatus(event, "running");
+  const progress = {
+    toolCallId,
+    toolName,
+    status,
+    elapsedSeconds: Number.isFinite(Number(event?.elapsedSeconds))
+      ? Math.max(0, Number(event.elapsedSeconds))
+      : null,
+    totalLines: Number.isFinite(Number(event?.totalLines))
+      ? Math.max(0, Number(event.totalLines))
+      : null,
+    totalBytes: Number.isFinite(Number(event?.totalBytes))
+      ? Math.max(0, Number(event.totalBytes))
+      : null,
+  };
+  const currentStepId = String(run?.currentStepId || "");
+  const steps = Array.isArray(run?.steps)
+    ? run.steps.map((step) => (
+        currentStepId && String(step?.id || step?.stepId || "") === currentStepId
+          ? { ...step, ...progress }
+          : step
+      ))
+    : run?.steps;
+  const activeTool = ["planning", "running", "waiting"].includes(status)
+    ? progress
+    : (
+        !run?.activeTool
+        || !toolCallId
+        || String(run.activeTool.toolCallId || "") === toolCallId
+          ? null
+          : run.activeTool
+      );
+  return { ...run, steps, activeTool };
+}
+
 function settleAgentToolCalls(toolCalls, outcome) {
   return (Array.isArray(toolCalls) ? toolCalls : []).map((toolCall) => (
     ACTIVE_AGENT_STATUSES.has(String(toolCall?.status || ""))
@@ -311,7 +362,8 @@ function safeAgentText(value, maxLength = 1000) {
     .replace(/[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?[\u0007\u001b\\])|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[已隐藏私钥]")
-    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[已隐藏]")
+    .replace(/\b(?:sk|ak)-[A-Za-z0-9_-]{8,}\b/gi, "[已隐藏]")
+    .replace(/\b(?:org|proj)-[A-Za-z0-9_-]{8,}\b/gi, "[已隐藏]")
     .replace(/\bBearer\s+[A-Za-z0-9._~-]{8,}\b/gi, "Bearer [已隐藏]")
     .replace(/(api[_-]?key|token|password|secret|cookie|authorization|private[_-]?key)(\s*[:=]\s*)\S+/gi, "$1$2[已隐藏]")
     .trim()
@@ -480,6 +532,7 @@ function projectRunMetadata(projection, runId = "") {
     ...(runId && !projection.run?.id ? { id: runId } : {}),
     artifacts: projection.artifacts,
     context: projection.context,
+    modelRetry: projection.modelRetry,
     phase: projection.phase,
     recoveryActions: projection.recoveryActions,
     runSummary: projection.runSummary,
@@ -501,6 +554,7 @@ export function createAgentProjection(initial = {}) {
     usage: {},
     verifications: [],
     recoveryActions: [],
+    modelRetry: null,
     phase: "",
     run: null,
     runSummary: null,
@@ -521,6 +575,18 @@ export function projectAgentEvent(current, event) {
   const next = { ...previous };
   const changed = new Set();
   const name = agentEventName(event);
+  if (
+    previous.modelRetry
+    && (
+      name.startsWith("message.")
+      || name.startsWith("step.")
+      || name.startsWith("tool.")
+      || ["run.completed", "run.cancelled", "run.failed", "error.raised"].includes(name)
+    )
+  ) {
+    next.modelRetry = null;
+    changed.add("modelRetry");
+  }
   const runSummary = projectRunSummary(event);
   if (runSummary) {
     next.runSummary = runSummary;
@@ -578,8 +644,10 @@ export function projectAgentEvent(current, event) {
   }
   if (name.startsWith("tool.")) {
     next.toolCalls = mergeAgentToolCall(previous.toolCalls, event);
+    next.run = mergeToolActivityIntoRun(next.run, event);
     next.phase = String(event?.toolName || event?.phase || previous.phase || "");
     changed.add("toolCalls");
+    if (next.run !== previous.run) changed.add("run");
     if (event?.verification) {
       next.verifications = mergeAgentVerification(previous.verifications, event);
       changed.add("verifications");
@@ -598,6 +666,26 @@ export function projectAgentEvent(current, event) {
   if (name === "usage.updated") {
     next.usage = mergeAgentUsage(previous.usage, event);
     changed.add("usage");
+  }
+  if (name === "model.retrying") {
+    const retryAttempt = Math.max(1, Number(event?.retryAttempt) || 1);
+    const maxRetries = Math.max(retryAttempt, Number(event?.maxRetries) || retryAttempt);
+    const retryInMs = Math.max(0, Number(event?.retryInMs) || 0);
+    const rateLimited = Number(event?.statusCode || 0) === 429
+      || String(event?.errorType || "").toLowerCase() === "rate_limit";
+    const reason = rateLimited ? "模型限流" : "模型请求失败";
+    const label = `${reason}，等待自动重试（${retryAttempt}/${maxRetries}）`;
+    next.modelRetry = {
+      attempt: retryAttempt,
+      maxRetries,
+      reason,
+      retryAt: Date.now() + retryInMs,
+      retryInMs,
+      statusCode: Math.max(0, Number(event?.statusCode) || 0),
+      label,
+    };
+    next.phase = label;
+    changed.add("modelRetry");
   }
   if (name === "context.usage_updated" || name === "context.compacted") {
     next.context = {
@@ -619,7 +707,8 @@ export function projectAgentEvent(current, event) {
   if (event?.sessionId) next.sessionId = event.sessionId;
   const metadataPhase = Boolean(event?.phase)
     && !name.startsWith("message.")
-    && !name.startsWith("context.");
+    && !name.startsWith("context.")
+    && name !== "model.retrying";
   if (metadataPhase && !name.startsWith("step.") && !name.startsWith("tool.")) {
     next.phase = String(event.phase);
   }
@@ -703,6 +792,7 @@ export function projectAgentEvent(current, event) {
     || changed.has("artifacts")
     || changed.has("verifications")
     || changed.has("recoveryActions")
+    || changed.has("modelRetry")
     || changed.has("runSummary")
     || metadataPhase
     || event?.run

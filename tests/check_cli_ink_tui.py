@@ -71,6 +71,34 @@ class FakeBackend:
             result={"paused": False, "runId": "run-ink", "answer": "回答"}
         )
 
+    def run_shell(self, command, event_sink):
+        event_sink(
+            {
+                "type": "tool_started",
+                "runId": "shell-ink",
+                "toolCallId": "shell-call",
+                "toolName": "run_sandbox_command",
+                "arguments": {"command": command},
+            }
+        )
+        event_sink(
+            {
+                "type": "tool_result",
+                "runId": "shell-ink",
+                "toolCallId": "shell-call",
+                "toolName": "run_sandbox_command",
+                "status": "success",
+                "output": {"stdout": "sandbox-ok\n", "exitCode": 0},
+            }
+        )
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "shell-ink",
+                "answer": "sandbox-ok\n",
+            }
+        )
+
     def resolve(self, execution, decision, event_sink):
         event_sink({"type": "text_delta", "text": decision})
         return AgentExecution(
@@ -227,6 +255,23 @@ def main() -> None:
     )
     assert any(row.get("answer") == "回答" for row in rows)
 
+    shell_output = StringIO()
+    shell_bridge = InkRuntimeBridge(
+        backend,
+        input_stream=StringIO(),
+        output_stream=shell_output,
+    )
+    shell_bridge.handle(
+        {"type": "shell", "requestId": "shell-1", "command": "echo sandbox-ok"}
+    )
+    shell_rows = wait_for(shell_output, "turn_completed")
+    assert any(
+        row.get("type") == "agent_event"
+        and row.get("event", {}).get("toolName") == "run_sandbox_command"
+        for row in shell_rows
+    )
+    assert shell_rows[-1]["answer"] == "sandbox-ok\n"
+
     ready_output = StringIO()
     ready_bridge = InkRuntimeBridge(
         backend,
@@ -244,7 +289,7 @@ def main() -> None:
     assert ready["agentEventSchemaVersion"] == AGENT_EVENT_SCHEMA_VERSION
     assert ready["workspace"]["branch"] == "main"
     assert ready["sessions"][0]["runId"] == "run_ink"
-    assert ready["history"] == ["你好"]
+    assert ready["history"] == ["你好", "!echo sandbox-ok"]
     assert ready["models"][0]["selected"] is True
 
     ready_bridge.handle({"type": "models", "action": "list"})
@@ -267,7 +312,7 @@ def main() -> None:
 
     ready_bridge.handle({"type": "history", "action": "list"})
     history_rows = wait_for(ready_output, "history_result")
-    assert history_rows[-1]["history"] == ["你好"]
+    assert history_rows[-1]["history"] == ["你好", "!echo sandbox-ok"]
     ready_bridge.handle({"type": "history", "action": "clear"})
     history_rows = wait_for(ready_output, "history_result")
     assert history_rows[-1]["action"] == "clear"
@@ -380,9 +425,10 @@ def main() -> None:
     assert "flexShrink={1}" in app_source
     assert "if (!fullscreenEnabled)" in app_source
     assert "终端滚轮选择复制" in app_source
-    assert "actions.has('retry') ? 'R重新运行本轮'" in app_source
-    assert "actions.has('fix') ? 'F分析错误并继续'" in app_source
-    assert "Array.isArray(row.recoveryActions)" in app_source
+    assert "const RECOVERY_ACTION_OPTIONS" in app_source
+    assert "row?.recoveryActions) && row.recoveryActions.length" in app_source
+    assert "←→选择 · Enter执行" in app_source
+    assert "recoverFailedTool(recoveryItems[Math.min(recoveryChoiceRef.current" in app_source
     assert "<QueuePreview items={queue}" in app_source
     assert "/tasks remove <序号>" in app_source
     assert "transcriptSnapshot" in app_source

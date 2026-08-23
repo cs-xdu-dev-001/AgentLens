@@ -184,6 +184,7 @@ function workspacePath(path) {
 
 export const workspaceApi = {
   status: () => apiRequest("/api/workspace"),
+  mentions: () => apiRequest("/api/workspace/mentions"),
   diff: ({ runId, path = "" }) => apiRequest(
     `/api/workspace/changes?${new URLSearchParams({ run_id: runId, ...(path ? { path } : {}) })}`,
   ),

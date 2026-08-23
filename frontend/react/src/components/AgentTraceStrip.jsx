@@ -1,17 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
+import { nextTraceStepId } from "./agentTraceNavigation.js";
 import { buildAgentRunPresentation } from "./agentRunPresentation.js";
-
-function artifactChangeMeta(artifact) {
-  const added = Math.max(0, Number(artifact?.addedLines) || 0);
-  const removed = Math.max(0, Number(artifact?.removedLines) || 0);
-  const bytes = Math.max(0, Number(artifact?.writtenBytes) || 0);
-  return [
-    added ? `+${added}` : "",
-    removed ? `−${removed}` : "",
-    bytes ? `${bytes} B` : "",
-  ].filter(Boolean).join(" · ");
-}
 
 export function AgentTraceStrip({
   interactionPending = false,
@@ -30,6 +20,13 @@ export function AgentTraceStrip({
   const active = Boolean(presentation?.active);
   const status = presentation?.status || { className: "waiting", label: "等待开始" };
   const [expanded, setExpanded] = useState(active);
+  const [focusedStepId, setFocusedStepId] = useState("");
+  const capsuleRef = useRef(null);
+  const navigationIds = Array.isArray(presentation?.rows)
+    ? presentation.rows.slice(0, 5).map((item) => String(item.id || "")).filter(Boolean)
+    : [];
+  const navigationKey = navigationIds.join("\u001f");
+  const scopedRunId = String(presentation?.runId || run?.id || run?.runId || "");
 
   useEffect(() => {
     setExpanded(active || status.className === "failed");
@@ -37,9 +34,33 @@ export function AgentTraceStrip({
 
   useEffect(() => {
     if (!active) return undefined;
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [active]);
+  }, [active, run?.modelRetry?.retryAt]);
+
+  useEffect(() => {
+    setFocusedStepId((current) => {
+      if (navigationIds.includes(current)) return current;
+      const preferred = String(presentation?.activeRow?.id || "");
+      return navigationIds.includes(preferred) ? preferred : navigationIds[0] || "";
+    });
+  }, [navigationKey, presentation?.activeRow?.id, scopedRunId]);
+
+  useEffect(() => {
+    const handleFocusUpdated = (event) => {
+      const eventMessageId = String(event.detail?.messageId || "");
+      const eventRunId = String(event.detail?.runId || "");
+      if (
+        (eventMessageId && String(messageId || "") !== eventMessageId)
+        || (eventRunId && scopedRunId && eventRunId !== scopedRunId)
+      ) return;
+      const nextStepId = String(event.detail?.focusStepId || "");
+      if (navigationIds.includes(nextStepId)) setFocusedStepId(nextStepId);
+    };
+    window.addEventListener("knowflow:react-agent-focus-updated", handleFocusUpdated);
+    return () => window.removeEventListener("knowflow:react-agent-focus-updated", handleFocusUpdated);
+  }, [messageId, navigationKey, scopedRunId]);
 
   if (!presentation) return null;
   const {
@@ -47,10 +68,8 @@ export function AgentTraceStrip({
     artifacts,
     completed: progressCompleted,
     context,
-    hasPlan,
     headline,
     metrics,
-    operations,
     processSummary,
     progressPercent,
     rows,
@@ -58,6 +77,7 @@ export function AgentTraceStrip({
   } = presentation;
 
   const handleOpen = (activeTab = "trace", focusStepId = "") => {
+    if (focusStepId) setFocusedStepId(String(focusStepId));
     window.dispatchEvent(new CustomEvent("knowflow:react-agent-trace-open", {
       detail: { messageId, trace: safeTrace, approvals, toolCalls, run, activeTab, focusStepId },
     }));
@@ -66,8 +86,25 @@ export function AgentTraceStrip({
     }));
   };
 
+  const focusNavigationRow = (stepId) => {
+    if (!stepId) return;
+    setFocusedStepId(stepId);
+    window.requestAnimationFrame(() => {
+      capsuleRef.current
+        ?.querySelector(`[data-capsule-step-id="${CSS.escape(stepId)}"]`)
+        ?.focus();
+    });
+  };
+
+  const handleNavigationKeyDown = (event, stepId) => {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    focusNavigationRow(nextTraceStepId(navigationIds, stepId, event.key));
+  };
+
   return (
     <section
+      ref={capsuleRef}
       className={`agent-task-capsule ${status.className}${expanded ? " expanded" : ""}`}
       aria-label={"本次运行过程"}
     >
@@ -82,7 +119,7 @@ export function AgentTraceStrip({
           <span className={"agent-task-capsule-chevron"} aria-hidden={"true"}>⌄</span>
           <span className={"agent-task-capsule-title"}>
             <strong>{headline}</strong>
-            <small>{processSummary}</small>
+            <span className={"agent-task-capsule-summary"}>{processSummary}</span>
           </span>
         </button>
         <div className={"agent-task-capsule-meta"}>
@@ -112,17 +149,23 @@ export function AgentTraceStrip({
             <span>{`${progressCompleted}/${progressTotal || rows.length}完成`}</span>
           </div>
           <ol className={"agent-task-capsule-steps"}>
-            {rows.slice(0, 8).map((item) => (
+            {rows.slice(0, 5).map((item) => {
+              const itemId = String(item.id || "");
+              return (
               <li
-                className={`${item.status}${item.id === activeRow?.id && active ? " current" : ""}`}
-                key={item.id}
+                className={`${item.status}${itemId === String(activeRow?.id || "") && active ? " current" : ""}${focusedStepId === itemId ? " selected" : ""}`}
+                key={itemId}
               >
                 <button
                   className={"agent-task-capsule-step-button"}
                   type={"button"}
-                  onClick={() => handleOpen("trace", item.id)}
+                  onClick={() => handleOpen("trace", itemId)}
+                  onFocus={() => setFocusedStepId(itemId)}
+                  onKeyDown={(event) => handleNavigationKeyDown(event, itemId)}
                   aria-label={`查看步骤：${item.title}`}
-                  tabIndex={expanded ? 0 : -1}
+                  aria-current={itemId === String(activeRow?.id || "") && active ? "step" : undefined}
+                  data-capsule-step-id={itemId}
+                  tabIndex={expanded && focusedStepId === itemId ? 0 : -1}
                 >
                   <span className={"agent-task-capsule-step-icon"} aria-hidden={"true"}></span>
                   <span className={"agent-task-capsule-step-copy"}>
@@ -132,46 +175,13 @@ export function AgentTraceStrip({
                   <span className={"agent-task-capsule-step-open"} aria-hidden={"true"}>↗</span>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ol>
-          {rows.length > 8 ? (
-            <span className={"agent-task-capsule-more"}>{`另有${rows.length - 8}个步骤`}</span>
+          {rows.length > 5 ? (
+            <span className={"agent-task-capsule-more"}>{`另有${rows.length - 5}个步骤`}</span>
           ) : null}
-          {operations.length && hasPlan ? (
-            <div className={"agent-task-capsule-operations"}>
-              <div className={"agent-task-capsule-section-head"}>
-                <strong>{"操作记录"}</strong>
-                <span>{`${operations.length}项`}</span>
-              </div>
-              <ol className={"agent-task-capsule-steps"}>
-                {operations.slice(0, 6).map((item) => (
-                  <li
-                    className={`${item.status}${active && ["planning", "running", "waiting"].includes(item.status) ? " current" : ""}`}
-                    key={`operation-${item.id}`}
-                  >
-                    <button
-                      className={"agent-task-capsule-step-button"}
-                      type={"button"}
-                      onClick={() => handleOpen("trace", item.id)}
-                      aria-label={`查看操作：${item.title}`}
-                      tabIndex={expanded ? 0 : -1}
-                    >
-                      <span className={"agent-task-capsule-step-icon"} aria-hidden={"true"}></span>
-                      <span className={"agent-task-capsule-step-copy"}>
-                        <strong>{item.title}</strong>
-                        {item.meta ? <small>{item.meta}</small> : null}
-                      </span>
-                      <span className={"agent-task-capsule-step-open"} aria-hidden={"true"}>↗</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              {operations.length > 6 ? (
-                <span className={"agent-task-capsule-more"}>{`另有${operations.length - 6}项操作`}</span>
-              ) : null}
-            </div>
-          ) : null}
-          {context ? (
+          {context && (context.trimmed || context.percent >= 70) ? (
             <div className={`agent-context-pressure${context.trimmed ? " trimmed" : ""}`}>
               <div>
                 <strong>{context.label}</strong>
@@ -182,42 +192,13 @@ export function AgentTraceStrip({
               </span>
             </div>
           ) : null}
-          {active && artifacts.length ? (
-            <div className={"agent-task-capsule-artifacts"}>
-              <div className={"agent-task-capsule-section-head"}>
-                <strong>{`${artifacts.length}个产物`}</strong>
-                <span>{"已保存"}</span>
-              </div>
-              <ul>
-                {artifacts.slice(0, 5).map((artifact, index) => {
-                  const target = artifact.path || artifact.url || artifact.title || "运行产物";
-                  return (
-                    <li key={artifact.artifactId || `${target}-${index}`}>
-                      <button
-                        type={"button"}
-                        onClick={() => handleOpen("artifacts")}
-                        aria-label={`查看变更：${target}`}
-                        tabIndex={expanded ? 0 : -1}
-                      >
-                        <span aria-hidden={"true"}>◆</span>
-                        <strong title={target}>{target}</strong>
-                        <small>{artifactChangeMeta(artifact)}</small>
-                        <span aria-hidden={"true"}>↗</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              {artifacts.length > 5 ? (
-                <span className={"agent-task-capsule-more"}>{`另有${artifacts.length - 5}个产物`}</span>
-              ) : null}
-            </div>
-          ) : null}
           <AgentRecoveryPanel
             compact
             interactive={!interactionPending}
             messageId={messageId}
+            presentation={presentation}
             run={run}
+            trace={safeTrace}
           />
           <div className={"agent-task-capsule-actions"}>
             <button

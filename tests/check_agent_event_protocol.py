@@ -38,6 +38,21 @@ def main() -> None:
     assert started["eventId"].startswith("evt_")
     assert started["occurredAt"].endswith("+00:00")
 
+    rate_limited = normalize_agent_event({
+        "type": "error",
+        "message": (
+            "HTTP 429: rate_limit_reached_error: org-8242d004acb748ada9255f6d42f4dc23 "
+            "ak-fbzbf9goi43111d8rrx request reached organization max RPM"
+        ),
+    })
+    assert rate_limited["error"] == {
+        "code": "rate_limited",
+        "message": "上游模型请求过于频繁，自动重试后仍未恢复。",
+        "retryable": True,
+    }
+    assert "org-" not in json.dumps(rate_limited)
+    assert "ak-" not in json.dumps(rate_limited)
+
     snapshot = normalize_agent_event({
         "type": "run_snapshot",
         "run": {
@@ -326,12 +341,19 @@ def main() -> None:
         projectRunEvent,
       } from './cli-tui/src/protocol.js';
       import {mergeToolCall} from './frontend/react/src/controller/chatFlow.js';
+      import {buildAgentRunPresentation} from './frontend/react/src/components/agentRunPresentation.js';
       const tool = {type: 'tool_result', status: 'failed'};
       if (agentEventName(tool) !== 'tool.failed') process.exit(1);
       if (agentEventName({type: 'answer', final: true}) !== 'message.completed') process.exit(5);
       if (!agentEventIs({eventName: 'approval.required'}, 'approval.required')) process.exit(2);
       const error = agentEventError({error: {code: 'x', message: '失败', retryable: false}});
       if (error.code !== 'x' || error.message !== '失败' || error.retryable !== false) process.exit(3);
+      const rateLimitError = agentEventError({
+        message: 'HTTP 429 rate_limit_reached_error org-8242d004acb748ada9255f6d42f4dc23 ak-fbzbf9goi43111d8rrx max RPM: 3',
+      });
+      if (rateLimitError.code !== 'rate_limited') process.exit(67);
+      if (!rateLimitError.message.includes('请求过于频繁')) process.exit(68);
+      if (/org-|ak-/.test(JSON.stringify(rateLimitError))) process.exit(69);
       const calls = mergeToolCall(
         [{toolCallId: 'call_1', status: 'running'}],
         {toolCallId: 'call_1', normalizedStatus: 'completed', output: 'ok'},
@@ -392,6 +414,43 @@ def main() -> None:
       if (projection.runSummary?.headline !== '统一摘要') process.exit(50);
       if (projection.run?.runSummary?.progressPercent !== 25) process.exit(51);
       if (tuiProjection.runSummary?.totalTokens !== 900) process.exit(52);
+      let progressProjection = createAgentProjection({
+        run: {
+          id: 'run_progress',
+          status: 'running',
+          currentStepId: 'step_progress',
+          steps: [{id: 'step_progress', title: '执行检查', status: 'running'}],
+        },
+      });
+      progressProjection = projectAgentEvent(progressProjection, {
+        eventName: 'tool.progress',
+        runId: 'run_progress',
+        toolCallId: 'call_progress',
+        toolName: 'run_sandbox_command',
+        elapsedSeconds: 1.2,
+        totalLines: 4,
+        totalBytes: 256,
+      }).projection;
+      if (progressProjection.run?.activeTool?.toolCallId !== 'call_progress') process.exit(70);
+      if (progressProjection.run?.steps?.[0]?.elapsedSeconds !== 1.2) process.exit(71);
+      if (progressProjection.run?.steps?.[0]?.totalLines !== 4) process.exit(72);
+      const progressPresentation = buildAgentRunPresentation({
+        run: progressProjection.run,
+        trace: progressProjection.trace,
+      });
+      if (!progressPresentation?.processSummary.includes('1.2s')) process.exit(75);
+      if (!progressPresentation?.rows?.[0]?.meta.includes('4行')) process.exit(76);
+      progressProjection = projectAgentEvent(progressProjection, {
+        eventName: 'tool.completed',
+        runId: 'run_progress',
+        toolCallId: 'call_progress',
+        toolName: 'run_sandbox_command',
+        elapsedSeconds: 1.4,
+        totalLines: 5,
+        totalBytes: 300,
+      }).projection;
+      if (progressProjection.run?.activeTool !== null) process.exit(73);
+      if (progressProjection.run?.steps?.[0]?.totalBytes !== 300) process.exit(74);
       if (projection.artifacts[1]?.path !== 'reports/report.md') process.exit(28);
       if (tuiProjection.artifacts[0]?.addedLines !== 12) process.exit(29);
       const unsafeArtifact = {
@@ -482,6 +541,35 @@ def main() -> None:
         },
       ).projection;
       if (approvalProjection.paused) process.exit(19);
+      const retryEvent = {
+        eventName: 'model.retrying',
+        retryAttempt: 2,
+        maxRetries: 3,
+        retryInMs: 10000,
+        statusCode: 429,
+        errorType: 'rate_limit',
+      };
+      const retryStartedAt = Date.now();
+      let retryProjection = projectAgentEvent(
+        createAgentProjection({run: {id: 'run_retry', status: 'running'}}),
+        retryEvent,
+      ).projection;
+      let retryTuiProjection = projectRunEvent(createRunProjection(), retryEvent);
+      if (retryProjection.modelRetry?.reason !== '模型限流') process.exit(60);
+      if (retryProjection.run?.modelRetry?.attempt !== 2) process.exit(61);
+      if (retryTuiProjection.modelRetry?.maxRetries !== 3) process.exit(62);
+      if (retryProjection.modelRetry.retryAt < retryStartedAt + 10000) process.exit(63);
+      if (retryTuiProjection.modelRetry.retryAt < retryStartedAt + 10000) process.exit(64);
+      retryProjection = projectAgentEvent(
+        retryProjection,
+        {eventName: 'message.delta', content: '继续'},
+      ).projection;
+      retryTuiProjection = projectRunEvent(
+        retryTuiProjection,
+        {eventName: 'message.delta', content: '继续'},
+      );
+      if (retryProjection.modelRetry !== null || retryProjection.run?.modelRetry !== null) process.exit(65);
+      if (retryTuiProjection.modelRetry !== null) process.exit(66);
       const failure = {
         eventName: 'error.raised',
         error: {code: 'fixture_failed', message: '失败', retryable: true},

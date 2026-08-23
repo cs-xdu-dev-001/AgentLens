@@ -45,6 +45,26 @@ def main() -> None:
         assert workspace.list_entries("src")["entries"] == [
             {"path": "src/main.py", "kind": "file"}
         ]
+        (workspace.root / "src" / "nested").mkdir()
+        (workspace.root / "src" / "nested" / "feature.py").write_text(
+            "pass\n",
+            encoding="utf-8",
+        )
+        (workspace.root / "node_modules").mkdir()
+        (workspace.root / "node_modules" / "ignored.js").write_text(
+            "ignored\n",
+            encoding="utf-8",
+        )
+        (workspace.root / ".env.local").write_text("secret", encoding="utf-8")
+        mentions = workspace.mention_paths()
+        assert mentions["source"] in {"git", "filesystem"}
+        assert mentions["truncated"] is False
+        assert "src/" in mentions["paths"]
+        assert "src/nested/" in mentions["paths"]
+        assert "src/main.py" in mentions["paths"]
+        assert "src/nested/feature.py" in mentions["paths"]
+        assert not any("node_modules" in path for path in mentions["paths"])
+        assert not any(".env" in path for path in mentions["paths"])
         uploaded = workspace.write_bytes(
             "artifacts/result.bin",
             b"\x00\x01result",

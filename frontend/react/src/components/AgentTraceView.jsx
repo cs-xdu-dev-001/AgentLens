@@ -62,7 +62,9 @@ function preferredStep(rows) {
 export function AgentTraceView({
   trace = [],
   messageId = "",
+  run = null,
   focusStepId = "",
+  onFocusStepChange = null,
   onExitTree = null,
   onDismiss = null,
   focusScope = "message",
@@ -267,6 +269,7 @@ export function AgentTraceView({
                 onFocus={() => {
                   focusedIdRef.current = step.stepId;
                   setFocusedId(step.stepId);
+                  onFocusStepChange?.(step.stepId);
                 }}
                 onKeyDown={(event) => handleStepKeyDown(event, step)}
               >
@@ -305,6 +308,7 @@ export function AgentTraceView({
                   id={detailId}
                   step={step}
                   messageId={messageId}
+                  run={run}
                 />
               ) : null}
             </div>

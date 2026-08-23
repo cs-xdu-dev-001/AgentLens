@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.local_cli_runtime import (  # noqa: E402
+    gateway_config,
     LocalAgentRuntime,
     LocalCliConfigError,
     LocalCliConfigStore,
@@ -25,6 +26,7 @@ from knowflow.services.langgraph_agent_engine import (  # noqa: E402
     LangGraphAgentEngine,
 )
 from knowflow.services.workspace_runtime import (  # noqa: E402
+    SandboxCommandResult,
     WorkspaceRuntime,
     register_workspace_tools,
 )
@@ -126,6 +128,26 @@ def main() -> None:
     )
     assert loopback["api_mode"] == "chat_completions"
 
+    gateway = gateway_config(
+        {
+            **loopback,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+        }
+    )
+    assert set(gateway) == {
+        "provider",
+        "base_url",
+        "model_name",
+        "api_mode",
+        "api_key_cipher",
+        "model_type",
+    }
+    assert "temperature" not in gateway
+    assert "top_p" not in gateway
+    assert "max_tokens" not in gateway
+
     class FourRoundGateway:
         def __init__(self):
             self.calls = 0
@@ -221,6 +243,92 @@ def main() -> None:
         assert "edit_workspace_file" in {
             item["function"]["name"] for item in runtime.tool_schemas()
         }
+        shell_events = []
+        with patch(
+            "knowflow.services.local_cli_runtime.SrtSandboxRunner"
+        ) as sandbox_runner:
+            sandbox_runner.return_value.run.return_value = SandboxCommandResult(
+                exit_code=0,
+                stdout="sandbox-ok\n",
+                stderr="",
+                timed_out=False,
+                elapsed_seconds=0.1,
+                total_lines=1,
+                total_bytes=11,
+            )
+            shell_execution = runtime.run_shell_command(
+                "echo sandbox-ok",
+                event_sink=shell_events.append,
+            )
+        assert shell_execution.result["answer"] == "sandbox-ok\n"
+        assert shell_execution.result["runId"].startswith("shell_")
+        assert [event["type"] for event in shell_events] == [
+            "run_started",
+            "tool_started",
+            "tool_result",
+            "done",
+        ]
+        sandbox_runner.return_value.run.assert_called_once()
+
+    class ReferenceGateway:
+        def __init__(self):
+            self.messages = []
+
+        def complete(self, messages, _config, **_kwargs):
+            self.messages = [dict(item) for item in messages]
+            return {"role": "assistant", "content": "引用读取完成。"}
+
+    with TemporaryDirectory() as folder:
+        root = Path(folder)
+        workspace_root = root / "workspace"
+        workspace_root.mkdir()
+        (workspace_root / "notes.md").write_text(
+            "private workspace evidence\n",
+            encoding="utf-8",
+        )
+        store = LocalCliConfigStore(root / "config")
+        store.save(
+            provider="custom",
+            base_url="https://gateway.example/v1",
+            model_name="agent-model",
+            api_mode="responses",
+            api_key="secret-value",
+        )
+        runtime = LocalAgentRuntime(
+            config_store=store,
+            workspace_root=workspace_root,
+            data_root=root / "data",
+        )
+        gateway = ReferenceGateway()
+        runtime.engine._gateway = gateway
+        execution = runtime.run("总结 @notes.md", tools=False)
+        assert gateway.messages[-1]["content"] == "总结 @notes.md"
+        assert "private workspace evidence" in gateway.messages[-2]["content"]
+        assert "untrusted data" in gateway.messages[-2]["content"]
+        assert execution.result["transcriptMessages"][-1] == {
+            "role": "user",
+            "content": "总结 @notes.md",
+        }
+        assert all(
+            "private workspace evidence" not in str(message.get("content") or "")
+            for message in execution.result["transcriptMessages"]
+        )
+        assert any(
+            event.get("type") == "agent_step"
+            and event.get("name") == "workspace_references"
+            and event.get("status") == "success"
+            for event in execution.events
+        )
+        assert execution.events[0]["type"] == "run_started"
+        loaded = runtime.load_session(execution.result["runId"])
+        assert any(
+            "private workspace evidence" in str(message.get("content") or "")
+            for message in loaded["contextMessages"]
+        )
+        assert all(
+            "private workspace evidence" not in str(message.get("content") or "")
+            for message in loaded["messages"]
+        )
 
     class FakeGateway:
         def __init__(self):

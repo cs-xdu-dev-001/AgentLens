@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, ExitStack
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
 import re
 import requests
@@ -17,7 +19,11 @@ from .responses_protocol import (
 
 MAX_UPSTREAM_ERROR_BYTES = 65_536
 RETRYABLE_MODEL_STATUSES = {408, 409, 429, 500, 502, 503, 504}
-MAX_MODEL_RETRIES = 2
+MAX_MODEL_RETRIES = 3
+MAX_RATE_LIMIT_RETRIES = 5
+MAX_MODEL_RETRY_DELAY_SECONDS = 60.0
+RATE_LIMIT_RETRY_BASE_SECONDS = 5.0
+TRANSIENT_RETRY_BASE_SECONDS = 1.0
 
 
 class ChatCompletionsStreamAccumulator:
@@ -119,17 +125,50 @@ class ModelGateway:
         self.sleep_fn = sleep_fn
 
     @staticmethod
-    def _retry_delay(response: Any, attempt: int) -> float:
+    def _retry_delay(
+        response: Any,
+        attempt: int,
+        *,
+        status: int = 0,
+    ) -> float:
         headers = getattr(response, "headers", None)
-        retry_after = (
-            headers.get("Retry-After")
-            if hasattr(headers, "get")
-            else None
+        retry_after = None
+        if hasattr(headers, "get"):
+            retry_after_ms = headers.get("Retry-After-Ms")
+            retry_after = headers.get("Retry-After")
+            if retry_after_ms is not None:
+                try:
+                    retry_after = float(retry_after_ms) / 1000.0
+                except (TypeError, ValueError):
+                    pass
+        base = (
+            RATE_LIMIT_RETRY_BASE_SECONDS
+            if status == 429
+            else TRANSIENT_RETRY_BASE_SECONDS
+        )
+        backoff = min(
+            MAX_MODEL_RETRY_DELAY_SECONDS,
+            base * float(2 ** max(0, attempt - 1)),
         )
         try:
-            return max(0.0, min(8.0, float(retry_after)))
+            upstream_delay = max(0.0, float(retry_after))
         except (TypeError, ValueError):
-            return min(4.0, float(2 ** max(0, attempt - 1)))
+            upstream_delay = 0.0
+            if isinstance(retry_after, str):
+                try:
+                    retry_at = parsedate_to_datetime(retry_after)
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    upstream_delay = max(
+                        0.0,
+                        (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    pass
+        return min(
+            MAX_MODEL_RETRY_DELAY_SECONDS,
+            max(backoff, upstream_delay),
+        )
 
     @staticmethod
     def _emit_retry(
@@ -145,7 +184,11 @@ class ModelGateway:
         event: dict[str, Any] = {
             "type": "model_retry",
             "retryAttempt": attempt,
-            "maxRetries": MAX_MODEL_RETRIES,
+            "maxRetries": (
+                MAX_RATE_LIMIT_RETRIES
+                if status == 429
+                else MAX_MODEL_RETRIES
+            ),
             "retryInMs": int(delay * 1000),
         }
         if status:
@@ -159,7 +202,7 @@ class ModelGateway:
         transport: Callable[[], Any],
         event_callback: Callable[[dict[str, Any]], None] | None,
     ) -> Any:
-        for attempt in range(1, MAX_MODEL_RETRIES + 2):
+        for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 2):
             try:
                 response = transport()
             except requests.RequestException as exc:
@@ -179,17 +222,24 @@ class ModelGateway:
                 status = int(getattr(response, "status_code", 200))
             except (TypeError, ValueError):
                 status = 200
-            if (
-                status not in RETRYABLE_MODEL_STATUSES
-                or attempt > MAX_MODEL_RETRIES
-            ):
+            max_retries = (
+                MAX_RATE_LIMIT_RETRIES
+                if status == 429
+                else MAX_MODEL_RETRIES
+            )
+            if status not in RETRYABLE_MODEL_STATUSES or attempt > max_retries:
                 return response
-            delay = self._retry_delay(response, attempt)
+            delay = self._retry_delay(response, attempt, status=status)
             self._emit_retry(
                 event_callback,
                 status=status,
                 attempt=attempt,
                 delay=delay,
+                error_type=(
+                    "rate_limit"
+                    if status == 429
+                    else "upstream_unavailable"
+                ),
             )
             close = getattr(response, "close", None)
             if callable(close):
@@ -203,7 +253,7 @@ class ModelGateway:
         transport: Callable[[], Any],
         event_callback: Callable[[dict[str, Any]], None] | None,
     ):
-        for attempt in range(1, MAX_MODEL_RETRIES + 2):
+        for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 2):
             stack = ExitStack()
             try:
                 response = stack.enter_context(transport())
@@ -225,19 +275,26 @@ class ModelGateway:
                 status = int(getattr(response, "status_code", 200))
             except (TypeError, ValueError):
                 status = 200
-            if (
-                status not in RETRYABLE_MODEL_STATUSES
-                or attempt > MAX_MODEL_RETRIES
-            ):
+            max_retries = (
+                MAX_RATE_LIMIT_RETRIES
+                if status == 429
+                else MAX_MODEL_RETRIES
+            )
+            if status not in RETRYABLE_MODEL_STATUSES or attempt > max_retries:
                 with stack:
                     yield response
                 return
-            delay = self._retry_delay(response, attempt)
+            delay = self._retry_delay(response, attempt, status=status)
             self._emit_retry(
                 event_callback,
                 status=status,
                 attempt=attempt,
                 delay=delay,
+                error_type=(
+                    "rate_limit"
+                    if status == 429
+                    else "upstream_unavailable"
+                ),
             )
             stack.close()
             self.sleep_fn(delay)
@@ -375,7 +432,14 @@ class ModelGateway:
             return self.local_embedding(text_value)
         url = self.endpoint(config["base_url"], "/embeddings")
         payload = {"model": config["model_name"], "input": text_value}
-        response = self.post_model_json(url, self.headers(config), payload)
+        response = self._model_request(
+            lambda: self.post_model_json(
+                url,
+                self.headers(config),
+                payload,
+            ),
+            None,
+        )
         response.raise_for_status()
         data = response.json()
         return list(data["data"][0]["embedding"])

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentRunSummary } from "./AgentRunSummary.jsx";
@@ -195,6 +195,20 @@ export function ChatEvidenceDrawer() {
   const runRef = useRef(null);
   const referencesRef = useRef([]);
   const manualTabRef = useRef(false);
+
+  const publishFocusStep = useCallback((stepId) => {
+    const nextStepId = String(stepId || "");
+    if (!nextStepId) return;
+    setFocusStepId((current) => current === nextStepId ? current : nextStepId);
+    const currentRun = runRef.current;
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-focus-updated", {
+      detail: {
+        focusStepId: nextStepId,
+        messageId: messageIdRef.current,
+        runId: String(currentRun?.id || currentRun?.runId || ""),
+      },
+    }));
+  }, []);
 
   const selectTab = (nextTab, { manual = false } = {}) => {
     if (manual) manualTabRef.current = true;
@@ -595,6 +609,7 @@ export function ChatEvidenceDrawer() {
           <AgentRecoveryPanel
             messageId={messageId}
             run={run}
+            trace={trace}
           />
           {approvals.length ? (
             <div className={"agent-approval-drawer-list"}>
@@ -613,13 +628,16 @@ export function ChatEvidenceDrawer() {
             run={run}
             trace={trace}
             focusStepId={focusStepId}
+            onFocusStepChange={publishFocusStep}
             focusScope={"workbench"}
           />
           {!run?.steps?.length ? (
             <AgentTraceView
               messageId={messageId}
+              run={run}
               trace={trace}
               focusStepId={focusStepId}
+              onFocusStepChange={publishFocusStep}
               focusScope={"workbench"}
             />
           ) : null}

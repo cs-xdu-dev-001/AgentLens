@@ -13,6 +13,7 @@ from textual.message import Message
 from textual.widgets import Collapsible, Input, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
+from ..services.agent_event_protocol import agent_event_name
 from .commands import COMMANDS, SlashCommand, match_commands
 
 
@@ -32,7 +33,10 @@ SENSITIVE_VALUE_PATTERN = re.compile(
     r"(?i)([\"']?(?:api[_-]?key|token|secret|password|authorization|cookie|"
     r"private[_-]?key|key)[\"']?\s*[:=]\s*[\"']?)([^\"',;\s}]+)"
 )
-OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+OPENAI_KEY_PATTERN = re.compile(r"\b(?:sk|ak)-[A-Za-z0-9_-]{8,}\b")
+ACCOUNT_IDENTIFIER_PATTERN = re.compile(
+    r"\b((?:org|proj)-)[A-Za-z0-9_-]{8,}\b"
+)
 BEARER_PATTERN = re.compile(
     r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+"
 )
@@ -67,6 +71,7 @@ def redact_public_detail(value: Any, *, limit: int = 180) -> str:
             return ", ".join(render(child, depth + 1) for child in item[:8])
         text = str(item)
         text = OPENAI_KEY_PATTERN.sub("[已隐藏]", text)
+        text = ACCOUNT_IDENTIFIER_PATTERN.sub(r"\1[已隐藏]", text)
         text = BEARER_PATTERN.sub("Bearer [已隐藏]", text)
         text = JWT_PATTERN.sub("[已隐藏]", text)
         text = CLI_SECRET_PATTERN.sub(r"\1[已隐藏]", text)
@@ -467,8 +472,8 @@ class RunActivity(Vertical):
             row.collapsed = not expanded or not bool(self._details.get(key))
 
     async def update_event(self, event: dict) -> None:
-        event_type = str(event.get("type") or "")
-        if event_type == "model_retry":
+        event_name = agent_event_name(event)
+        if event_name == "model.retrying":
             delay_ms = event.get("retryInMs")
             delay = (
                 max(0.0, float(delay_ms) / 1000)
@@ -497,7 +502,7 @@ class RunActivity(Vertical):
                 title += f"（HTTP {self._retry_status}）"
             await self.upsert("model", title, "retrying", detail)
             return
-        if event_type in {"text_delta", "answer", "message", "model_event"}:
+        if event_name in {"message.delta", "message.completed", "model.event"}:
             had_retry = self._retry_deadline is not None
             self._retry_deadline = None
             if had_retry:
@@ -506,7 +511,7 @@ class RunActivity(Vertical):
             if had_retry and "model" in self._rows:
                 self._rows["model"].collapsed = True
             return
-        if event_type == "agent_step":
+        if event_name.startswith("step."):
             step = event.get("step") if isinstance(event.get("step"), dict) else event
             kind = str(step.get("kind") or "")
             name = str(step.get("name") or "")
@@ -533,7 +538,7 @@ class RunActivity(Vertical):
                 detail,
             )
             return
-        if event_type in {"tool_started", "tool_progress", "tool", "tool_result"}:
+        if event_name.startswith("tool."):
             call_id = str(
                 event.get("toolCallId")
                 or event.get("callId")
@@ -545,7 +550,7 @@ class RunActivity(Vertical):
                 call_id = str(self._tool_sequence)
             key = f"tool:{call_id}"
             title = self._titles.get(key) or tool_activity_title(event)
-            if event_type == "tool_progress":
+            if event_name == "tool.progress":
                 output = _safe_shell_output(event.get("output"), lines=5)
                 elapsed = event.get("elapsedSeconds")
                 summary = []
@@ -624,7 +629,11 @@ class RunActivity(Vertical):
                 if error_message
                 else " · ".join(fragments)
             )
-            status = str(event.get("status") or "completed")
+            status = str(
+                event.get("normalizedStatus")
+                or event.get("status")
+                or ("failed" if event_name == "tool.failed" else "completed")
+            )
             self._tool_keys.add(key)
             if status.lower() in {"failed", "error"}:
                 self._failed_tool_keys.add(key)
@@ -641,12 +650,7 @@ class RunActivity(Vertical):
             if is_shell and detail and key in self._rows:
                 self._rows[key].collapsed = False
             return
-        if event_type in {
-            "run_snapshot",
-            "plan_created",
-            "run_updated",
-            "step_updated",
-        }:
+        if event_name in {"run.updated", "run.plan_created"}:
             run = event.get("run")
             if not isinstance(run, dict):
                 return
@@ -661,7 +665,7 @@ class RunActivity(Vertical):
                         str(step.get("status") or "pending"),
                     )
             return
-        if event_type == "approval_required":
+        if event_name == "approval.required":
             call_id = str(
                 event.get("toolCallId")
                 or event.get("approvalId")

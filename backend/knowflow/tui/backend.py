@@ -485,6 +485,20 @@ class TuiBackend:
         self._finish(execution)
         return execution
 
+    def run_shell(
+        self,
+        command: str,
+        event_sink: AgentEventSink,
+    ) -> AgentExecution:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式暂不支持本地Shell，请在服务器终端运行命令。")
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        runner = getattr(self.local_agent, "run_shell_command", None)
+        if not callable(runner):
+            raise RuntimeError("当前本地运行时不支持Shell模式。")
+        return runner(command, event_sink=event_sink)
+
     def resolve(
         self,
         execution: AgentExecution,

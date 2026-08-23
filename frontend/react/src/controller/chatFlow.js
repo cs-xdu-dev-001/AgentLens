@@ -154,6 +154,88 @@ function queueBlockReasonFromProjection(projection) {
   return "run";
 }
 
+export function composerAgentStateFromProjection(projection = {}) {
+  const blockedReason = projection?.paused
+    ? queueBlockReasonFromProjection(projection)
+    : "";
+  if (blockedReason === "question") {
+    return {
+      mode: "question",
+      label: "等待你的回答",
+      detail: "回答当前问题后，Agent会从原位置继续",
+      actionable: true,
+    };
+  }
+  if (blockedReason === "approval") {
+    return {
+      mode: "approval",
+      label: "等待权限确认",
+      detail: "审查工具操作并决定是否允许",
+      actionable: true,
+    };
+  }
+
+  const runStatus = String(projection?.run?.status || "").toLowerCase();
+  if (
+    projection?.error
+    || projection?.terminal === "failed"
+    || runStatus === "failed"
+  ) {
+    return {
+      mode: "failed",
+      label: "执行失败",
+      detail: "打开运行详情查看错误与恢复操作",
+      actionable: true,
+    };
+  }
+  if (projection?.paused) {
+    return {
+      mode: "waiting",
+      label: "任务已暂停",
+      detail: "打开运行详情处理后继续",
+      actionable: true,
+    };
+  }
+  if (projection?.terminal === "completed" || runStatus === "completed") {
+    return {
+      mode: "completed",
+      label: "任务已完成",
+      detail: "结果和验证信息已写入对话",
+      actionable: false,
+    };
+  }
+  if (projection?.terminal === "cancelled" || runStatus === "cancelled") {
+    return {
+      mode: "cancelled",
+      label: "任务已停止",
+      detail: "输入新任务即可继续",
+      actionable: false,
+    };
+  }
+
+  const running = Boolean(
+    projection?.run
+    || (projection?.trace || []).some((item) => [
+      "planning",
+      "running",
+      "waiting_start",
+    ].includes(String(item?.status || "").toLowerCase())),
+  );
+  return running
+    ? {
+        mode: "running",
+        label: "Agent正在工作",
+        detail: "正在规划、调用工具或生成答案",
+        actionable: false,
+      }
+    : {
+        mode: "idle",
+        label: "就绪",
+        detail: "",
+        actionable: false,
+      };
+}
+
 const restoredRunOpenStatuses = new Set([
   "planning",
   "waiting_start",
@@ -194,6 +276,23 @@ export function createChatFlow({
   switchPage,
 }) {
   let sessionSwitchController = null;
+  let composerStateKey = "";
+
+  function publishAgentComposerState(detail = {}) {
+    const next = {
+      mode: String(detail.mode || "idle"),
+      label: String(detail.label || "就绪"),
+      detail: String(detail.detail || ""),
+      actionable: Boolean(detail.actionable),
+    };
+    const key = JSON.stringify(next);
+    if (key === composerStateKey) return;
+    composerStateKey = key;
+    window.dispatchEvent(new CustomEvent(
+      "knowflow:react-agent-composer-state",
+      { detail: next },
+    ));
+  }
 
   function publishSessionSwitch(status, detail = {}) {
     window.dispatchEvent(new CustomEvent(
@@ -393,6 +492,7 @@ export function createChatFlow({
         ? message.messageId
         : null;
     }
+    publishAgentComposerState(composerAgentStateFromProjection(projection));
     return projection;
   }
 
@@ -513,6 +613,11 @@ export function createChatFlow({
       state.activeRunId = reconnectTarget.runId;
       state.activeRunMessageId = reconnectTarget.messageId;
       setSending(true);
+      publishAgentComposerState({
+        mode: "running",
+        label: "正在恢复任务",
+        detail: "同步已有运行状态和最新进度",
+      });
       reconnectAgentRun(
         reconnectTarget.runId,
         reconnectTarget.messageId,
@@ -552,6 +657,7 @@ export function createChatFlow({
     state.chatAttachments = [];
     renderAttachmentTray();
     clearQueuedChats();
+    publishAgentComposerState(composerAgentStateFromProjection());
     requestReactSessionsRefresh();
     switchPage("chat");
   }
@@ -561,6 +667,12 @@ export function createChatFlow({
     state.chatQueuePaused = pauseQueue && Boolean(state.chatQueue.length);
     state.chatQueueBlockReason = state.chatQueuePaused ? "cancelled" : "";
     notifyChatQueue();
+    publishAgentComposerState({
+      mode: "waiting",
+      label: "正在停止任务",
+      detail: "已发送取消请求，等待当前操作安全结束",
+      actionable: false,
+    });
     if (state.activeRunId) {
       agentRunApi.cancel(state.activeRunId).catch(() => {});
     }
@@ -665,6 +777,12 @@ export function createChatFlow({
     const controller = new AbortController();
     state.activeChatController = controller;
     setSending(true);
+    publishAgentComposerState({
+      mode: "running",
+      label: "Agent正在启动",
+      detail: "正在读取上下文并规划任务",
+      actionable: false,
+    });
     renderReferences([]);
     renderToolTimeline(answer, []);
     renderAgentApprovals(answer, projection.approvals);
@@ -821,6 +939,12 @@ export function createChatFlow({
       if (controller.signal.aborted || error?.name === "AbortError") {
         cancelPendingApprovals();
         setMessageContent(answer, "assistant", projection.answer || "生成已停止。");
+        publishAgentComposerState({
+          mode: "cancelled",
+          label: "任务已停止",
+          detail: "输入新任务即可继续",
+          actionable: false,
+        });
         advanceQueue = !state.chatQueuePaused;
       } else if (state.activeRunId) {
         try {
@@ -850,6 +974,11 @@ export function createChatFlow({
           toast("聊天请求失败", 4200, "error");
           state.chatQueuePaused = Boolean(state.chatQueue.length);
           state.chatQueueBlockReason = state.chatQueuePaused ? "failed" : "";
+          publishAgentComposerState(composerAgentStateFromProjection({
+            ...projection,
+            terminal: "failed",
+            error: { message: "reconnect_failed" },
+          }));
         }
       } else {
         cancelPendingApprovals();
@@ -864,6 +993,11 @@ export function createChatFlow({
         toast("聊天请求失败", 4200, "error");
         state.chatQueuePaused = Boolean(state.chatQueue.length);
         state.chatQueueBlockReason = state.chatQueuePaused ? "failed" : "";
+        publishAgentComposerState(composerAgentStateFromProjection({
+          ...projection,
+          terminal: "failed",
+          error: { message: "request_failed" },
+        }));
       }
     } finally {
       window.removeEventListener(

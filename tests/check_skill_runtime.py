@@ -136,6 +136,12 @@ def main() -> None:
     )
     assert explicit_request.skillId == 41
     assert should_route_to_agent(explicit_request) is True
+    workspace_reference_request = ChatRequest(
+        question="总结 @README.md",
+        autoAgent=False,
+        enableTools=False,
+    )
+    assert should_route_to_agent(workspace_reference_request) is True
 
     for model, value in (
         (ActivateSkillArguments, {"skill": ""}),

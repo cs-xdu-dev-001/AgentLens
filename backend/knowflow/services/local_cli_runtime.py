@@ -42,10 +42,16 @@ from .skill_runtime import SkillActivationSession
 from .web_fetch import PublicWebFetcher
 from .web_search import TavilyWebSearch
 from .workspace_runtime import (
+    RunSandboxCommandArguments,
     SrtSandboxRunner,
     WorkspaceContext,
     WorkspaceRuntime,
     register_workspace_tools,
+)
+from .workspace_references import (
+    extract_workspace_references,
+    load_workspace_references,
+    workspace_reference_trace_title,
 )
 
 
@@ -616,6 +622,159 @@ class LocalAgentRuntime:
             *SrtSandboxRunner(self._workspace()).diagnostics(smoke=smoke),
         ]
 
+    def run_shell_command(
+        self,
+        command: str,
+        *,
+        event_sink: AgentEventSink | None = None,
+        timeout_seconds: int = 120,
+    ) -> AgentExecution:
+        """Run an explicit user shell command through the existing SRT boundary."""
+        arguments = RunSandboxCommandArguments(
+            command=str(command or "").strip(),
+            timeout_seconds=timeout_seconds,
+        )
+        identifier = f"shell_{uuid4().hex[:12]}"
+        tool_call_id = f"shell_call_{uuid4().hex[:12]}"
+        events: list[dict[str, Any]] = []
+        normalize_event = AgentEventNormalizer(identifier)
+        cancel_event = Event()
+        with self._cancel_lock:
+            self._cancel_events[identifier] = cancel_event
+        self.workspace.begin_turn(identifier)
+
+        def emit(event: dict[str, Any]) -> None:
+            normalized = normalize_event(event)
+            if (
+                normalized.get("type") == "tool_progress"
+                and events
+                and events[-1].get("type") == "tool_progress"
+                and events[-1].get("toolCallId") == tool_call_id
+            ):
+                events[-1] = normalized
+            else:
+                events.append(normalized)
+            if event_sink is not None:
+                event_sink(normalized)
+
+        def progress(value: dict[str, Any]) -> None:
+            emit(
+                {
+                    "type": "tool_progress",
+                    "runId": identifier,
+                    "toolCallId": tool_call_id,
+                    "toolName": "run_sandbox_command",
+                    "status": "running",
+                    "output": _public_event_value(value.get("output"), max_chars=4_000),
+                    "stdout": _public_event_value(value.get("stdout"), max_chars=2_000),
+                    "stderr": _public_event_value(value.get("stderr"), max_chars=2_000),
+                    "elapsedSeconds": value.get("elapsedSeconds"),
+                    "totalLines": value.get("totalLines"),
+                    "totalBytes": value.get("totalBytes"),
+                    "timeoutSeconds": value.get("timeoutSeconds"),
+                }
+            )
+
+        emit(
+            {
+                "type": "run_started",
+                "runId": identifier,
+                "goalSummary": f"! {arguments.command}"[:160],
+            }
+        )
+        emit(
+            {
+                "type": "tool_started",
+                "runId": identifier,
+                "toolCallId": tool_call_id,
+                "toolName": "run_sandbox_command",
+                "status": "running",
+                "arguments": {"command": arguments.command},
+            }
+        )
+        try:
+            result = SrtSandboxRunner(self._workspace()).run(
+                arguments.command,
+                timeout_seconds=arguments.timeout_seconds,
+                progress_callback=progress,
+                cancel_check=cancel_event.is_set,
+            )
+            output = result.__dict__
+            status = (
+                "cancelled"
+                if result.cancelled
+                else "failed"
+                if result.timed_out or result.exit_code != 0
+                else "success"
+            )
+            error_code = (
+                "tool_cancelled"
+                if result.cancelled
+                else "tool_timeout"
+                if result.timed_out
+                else "shell_exit_nonzero"
+                if result.exit_code != 0
+                else None
+            )
+            emit(
+                {
+                    "type": "tool_result",
+                    "runId": identifier,
+                    "toolCallId": tool_call_id,
+                    "toolName": "run_sandbox_command",
+                    "status": status,
+                    "errorCode": error_code,
+                    "latencyMs": round(result.elapsed_seconds * 1_000),
+                    "arguments": {"command": arguments.command},
+                    "output": _public_event_value(output, max_chars=20_000),
+                    "errorMessage": _public_event_value(
+                        result.stderr if status == "failed" else "",
+                        max_chars=1_000,
+                    ),
+                }
+            )
+            if status == "failed":
+                reason = str(
+                    _public_event_value(
+                        result.stderr or result.stdout or f"退出码{result.exit_code}",
+                        max_chars=1_000,
+                    )
+                    or f"退出码{result.exit_code}"
+                )
+                raise RuntimeError(f"Shell命令执行失败：{reason}")
+            answer = str(
+                _public_event_value(
+                    result.stdout or result.stderr,
+                    max_chars=20_000,
+                )
+                or ""
+            )
+            emit(
+                {
+                    "type": "done",
+                    "runId": identifier,
+                    "status": "cancelled" if result.cancelled else "completed",
+                }
+            )
+            return AgentExecution(
+                result={
+                    "paused": False,
+                    "cancelled": result.cancelled,
+                    "runId": identifier,
+                    "answer": answer,
+                    "trace": [],
+                    "messages": [],
+                    "transcriptMessages": [],
+                    "compaction": {},
+                },
+                events=events,
+            )
+        finally:
+            with self._cancel_lock:
+                current = self._cancel_events.get(identifier)
+                if current is cancel_event:
+                    self._cancel_events.pop(identifier, None)
+
     def tool_schemas(self) -> list[dict[str, Any]]:
         """Return the public tool catalog used by local interactive clients."""
         with self._mcp_pool() as pool:
@@ -739,6 +898,8 @@ class LocalAgentRuntime:
             transcript_messages.append(self._system_message(self.workspace))
         elif transcript_messages[0].get("role") == "system":
             transcript_messages[0] = self._system_message(self.workspace)
+        workspace_references = extract_workspace_references(task) if task else ()
+        workspace_reference_bundle = None
         if task:
             messages.append({"role": "user", "content": task})
             transcript_messages.append({"role": "user", "content": task})
@@ -892,6 +1053,45 @@ class LocalAgentRuntime:
             "runId": identifier,
             "goalSummary": title,
         })
+        if workspace_references:
+            reference_step = trace.start_step(
+                kind="workspace",
+                name="workspace_references",
+                title="正在读取工作区文件",
+                input_summary={
+                    "files": [
+                        item.label
+                        for item in workspace_references
+                    ],
+                },
+            )
+            workspace_reference_bundle = load_workspace_references(
+                task,
+                self._workspace(),
+            )
+            if workspace_reference_bundle.context_message:
+                messages.insert(
+                    max(1, len(messages) - 1),
+                    {
+                        "role": "user",
+                        "content": workspace_reference_bundle.context_message,
+                    },
+                )
+                self.sessions.save(
+                    identifier,
+                    **self._session_workspace_fields(),
+                    messages=transcript_messages,
+                    contextMessages=messages,
+                    compaction=dict(context_metadata or {}),
+                )
+            trace.finish_step(
+                reference_step,
+                status="success",
+                title=workspace_reference_trace_title(
+                    workspace_reference_bundle
+                ),
+                output_summary=workspace_reference_bundle.public_summary(),
+            )
         try:
             with self._mcp_pool() as mcp_pool:
                 registry = self._registry(

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { connectionResultStatus } from "./modelConnectionState.js";
 
 const modelTypeLabel = {
   chat: "聊天模型",
@@ -57,6 +58,7 @@ export function ModelConfigDetails({
   }
 
   const status = model.status || "untested";
+  const connectionStatus = connectionResultStatus(connectionResult);
   const protocol = model.modelType === "chat"
     ? apiModeLabel[model.apiMode] || apiModeLabel.chat_completions
     : "不适用";
@@ -98,13 +100,13 @@ export function ModelConfigDetails({
       </dl>
 
       {connectionResult ? (
-        <div className={"model-config-connection-result"} data-status={connectionResult.status} role={connectionResult.status === "error" ? "alert" : "status"}>
+        <div className={"model-config-connection-result"} data-status={connectionStatus} role={connectionStatus === "error" ? "alert" : "status"}>
           <span className={"model-config-connection-dot"} aria-hidden={"true"} />
           <div>
             <strong>
-              {connectionResult.status === "checking"
+              {connectionStatus === "checking"
                 ? "正在检查连接"
-                : connectionResult.status === "success"
+                : connectionStatus === "success"
                   ? "连接可用"
                   : "连接失败"}
               {Number.isFinite(connectionResult.latencyMs) ? ` · ${connectionResult.latencyMs}ms` : ""}

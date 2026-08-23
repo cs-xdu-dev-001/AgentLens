@@ -32,9 +32,15 @@ def sanitize_upstream_error(value: Any, *, limit: int = 300) -> str:
         flags=re.I,
     )
     text = re.sub(
-        r"sk-[A-Za-z0-9_-]+",
-        "sk-[redacted]",
+        r"\b(?:sk|ak)-[A-Za-z0-9_-]+",
+        "[redacted]",
         text,
+    )
+    text = re.sub(
+        r"\b(?:org|proj)-[A-Za-z0-9_-]+",
+        "[redacted]",
+        text,
+        flags=re.I,
     )
     text = re.sub(
         r"(?i)\b(?:api-key|x-api-key|x-secret|authorization)"

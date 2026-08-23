@@ -36,6 +36,11 @@ def main() -> None:
     require("frontend/react/src/components/ChatComposerForm.jsx", "composer-queue-priority", "queue priority selector")
     require("frontend/react/src/components/ChatComposerForm.jsx", "等待权限确认", "approval queue block copy")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-chat-queue-action", "chat queue action bridge")
+    require("frontend/react/src/controller/chatFlow.js", "composerAgentStateFromProjection", "composer Agent state projection")
+    require("frontend/react/src/controller/chatFlow.js", "knowflow:react-agent-composer-state", "composer Agent state event")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "composer-agent-state", "composer Agent state UI")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "查看并处理", "composer interaction action")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "查看恢复操作", "composer recovery action")
 
     forbid("frontend/react/src/components/ChatComposerForm.jsx", "knowflow:legacy-sending-updated", "legacy sending event listener")
     forbid("frontend/react/src/controller/knowflowController.js", "knowflow:legacy-sending-updated", "legacy sending event dispatch")
@@ -45,7 +50,8 @@ def main() -> None:
     forbid("frontend/react/src/controller/knowflowController.js", "chat-submit-btn", "legacy send button DOM access")
 
     script = r'''import {
-  appendQueuedChatRequest,
+   appendQueuedChatRequest,
+  composerAgentStateFromProjection,
   orderQueuedChatRequests,
   reprioritizeQueuedChatRequest,
   takeQueuedChatRequest,
@@ -68,6 +74,19 @@ if (reprioritized[0].id !== "later") throw new Error("reprioritize failed");
 const taken = takeQueuedChatRequest(queue);
 if (taken.request.id !== "now" || taken.remaining.length !== 3) {
   throw new Error("priority dequeue failed");
+}
+const composerStates = [
+  [{run: {status: "running"}}, "running"],
+  [{paused: true, approvals: [{status: "waiting"}]}, "approval"],
+  [{paused: true, questions: [{status: "waiting"}]}, "question"],
+  [{terminal: "failed", error: {message: "boom"}}, "failed"],
+  [{terminal: "completed"}, "completed"],
+];
+for (const [projection, expected] of composerStates) {
+  const state = composerAgentStateFromProjection(projection);
+  if (state.mode !== expected) {
+    throw new Error(`composer state ${expected} projected as ${state.mode}`);
+  }
 }
 '''
     result = subprocess.run(

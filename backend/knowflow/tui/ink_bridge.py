@@ -21,7 +21,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore
 
 
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 7
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -244,6 +244,29 @@ class InkRuntimeBridge:
                 }
             )
         self._start(lambda: self.backend.run(text, self._agent_event))
+
+    def _shell(self, message: dict[str, Any]) -> None:
+        command = str(message.get("command") or "").strip()
+        if not command:
+            return
+        with self._state_lock:
+            if self._running:
+                self.send({"type": "busy", "message": "当前任务尚未结束。"})
+                return
+        self._request_id = str(message.get("requestId") or "")
+        self._run_id = ""
+        self._pending = None
+        self._queued_decision = None
+        self._queued_answer = None
+        if not self.history_store.append(f"!{command}"):
+            self.send(
+                {
+                    "type": "history_failed",
+                    "action": "append",
+                    "message": "输入历史无法保存，本次命令仍会继续。",
+                }
+            )
+        self._start(lambda: self.backend.run_shell(command, self._agent_event))
 
     def _history(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "list")
@@ -474,6 +497,8 @@ class InkRuntimeBridge:
         message_type = str(message.get("type") or "")
         if message_type == "submit":
             self._submit(message)
+        elif message_type == "shell":
+            self._shell(message)
         elif message_type == "approve":
             self._approve(message)
         elif message_type == "answer_question":

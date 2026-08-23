@@ -1,4 +1,6 @@
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 import json
 import requests
 import sys
@@ -188,13 +190,14 @@ def main() -> None:
         event_callback=public_events.append,
     )
     assert retry_response.closed
-    assert waits == [0.0]
+    assert waits == [5.0]
     assert public_events[0] == {
         "type": "model_retry",
         "statusCode": 429,
         "retryAttempt": 1,
-        "maxRetries": 2,
-        "retryInMs": 0,
+        "maxRetries": 5,
+        "retryInMs": 5000,
+        "errorType": "rate_limit",
     }
     assert [event.get("text") for event in public_events[1:] if event.get("type") == "text_delta"] == [
         "正在",
@@ -251,6 +254,137 @@ def main() -> None:
     assert connection_waits == [1.0]
     assert connection_events[0]["errorType"] == "ConnectTimeout"
     assert connection_events[-1] == {"type": "text_delta", "text": "ok"}
+
+    sustained_limit_responses = [
+        FakeStreamResponse(
+            [],
+            status_code=429,
+            headers={"Retry-After": "1"},
+        )
+        for _ in range(3)
+    ] + [
+        FakeStreamResponse(
+            [b'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n']
+        )
+    ]
+    sustained_limit_waits = []
+    sustained_limit_events = []
+
+    def sustained_limit_stream(_url, _headers, _payload):
+        return sustained_limit_responses.pop(0)
+
+    sustained_limit_gateway = ModelGateway(
+        fetch_one=lambda *_args, **_kwargs: None,
+        cipher=FakeCipher(),
+        post_model_json=post_model_json,
+        stream_model_json=sustained_limit_stream,
+        local_embedding=lambda _text: [0.0],
+        sleep_fn=sustained_limit_waits.append,
+    )
+    sustained_limit_message = sustained_limit_gateway.complete(
+        [{"role": "user", "content": "respect a low RPM limit"}],
+        config,
+        event_callback=sustained_limit_events.append,
+    )
+    assert sustained_limit_message["content"] == "recovered"
+    assert sustained_limit_waits == [5.0, 10.0, 20.0]
+    assert [
+        event["retryInMs"]
+        for event in sustained_limit_events
+        if event.get("type") == "model_retry"
+    ] == [5000, 10000, 20000]
+
+    assert ModelGateway._retry_delay(
+        FakeStreamResponse(
+            [],
+            status_code=429,
+            headers={"Retry-After-Ms": "7500"},
+        ),
+        1,
+        status=429,
+    ) == 7.5
+    http_date_delay = ModelGateway._retry_delay(
+        FakeStreamResponse(
+            [],
+            status_code=429,
+            headers={
+                "Retry-After": format_datetime(
+                    datetime.now(timezone.utc) + timedelta(seconds=30),
+                    usegmt=True,
+                )
+            },
+        ),
+        1,
+        status=429,
+    )
+    assert 25.0 <= http_date_delay <= 30.0
+
+    patient_limit_responses = [
+        FakeStreamResponse([], status_code=429)
+        for _ in range(5)
+    ] + [
+        FakeStreamResponse(
+            [b'data: {"choices":[{"delta":{"content":"patient"}}]}\n\n']
+        )
+    ]
+    patient_limit_waits = []
+    patient_limit_events = []
+    patient_limit_gateway = ModelGateway(
+        fetch_one=lambda *_args, **_kwargs: None,
+        cipher=FakeCipher(),
+        post_model_json=post_model_json,
+        stream_model_json=lambda *_args: patient_limit_responses.pop(0),
+        local_embedding=lambda _text: [0.0],
+        sleep_fn=patient_limit_waits.append,
+    )
+    patient_limit_message = patient_limit_gateway.complete(
+        [{"role": "user", "content": "wait through the RPM window"}],
+        config,
+        event_callback=patient_limit_events.append,
+    )
+    assert patient_limit_message["content"] == "patient"
+    assert patient_limit_waits == [5.0, 10.0, 20.0, 40.0, 60.0]
+    assert [
+        event["maxRetries"]
+        for event in patient_limit_events
+        if event.get("type") == "model_retry"
+    ] == [5, 5, 5, 5, 5]
+
+    class FakeEmbeddingResponse:
+        def __init__(self, *, status_code, vector=None):
+            self.status_code = status_code
+            self.headers = {"Retry-After": "0"}
+            self.vector = vector or []
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            return {"data": [{"embedding": self.vector}]}
+
+    embedding_responses = [
+        FakeEmbeddingResponse(status_code=429),
+        FakeEmbeddingResponse(status_code=200, vector=[0.25, 0.75]),
+    ]
+    embedding_waits = []
+    embedding_gateway = ModelGateway(
+        fetch_one=lambda *_args, **_kwargs: None,
+        cipher=FakeCipher(),
+        post_model_json=lambda *_args: embedding_responses.pop(0),
+        local_embedding=lambda _text: [0.0],
+        sleep_fn=embedding_waits.append,
+    )
+    embedding_config = {
+        **config,
+        "model_type": "embedding",
+    }
+    assert embedding_gateway.embed("remember this", embedding_config) == [0.25, 0.75]
+    assert embedding_waits == [5.0]
 
     local_message = gateway.complete(
         [{"role": "user", "content": "hello"}],

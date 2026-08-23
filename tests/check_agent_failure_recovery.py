@@ -36,6 +36,13 @@ def main() -> None:
     rate_limit = classify_agent_failure(code="rate_limit_exceeded")
     assert rate_limit["code"] == "rate_limited"
     assert rate_limit["retryable"] is True
+    embedded_rate_limit = classify_agent_failure(
+        RuntimeError(
+            "HTTP 429: request reached organization max RPM: 3"
+        )
+    )
+    assert embedded_rate_limit["code"] == "rate_limited"
+    assert embedded_rate_limit["retryable"] is True
 
     unknown = classify_agent_failure(code="private_vendor_problem")
     assert unknown == {

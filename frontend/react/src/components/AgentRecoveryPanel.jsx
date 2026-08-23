@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  buildAgentRunPresentation,
+  compactPublicText,
+} from "./agentRunPresentation.js";
 
 const failureLabels = {
   agent_run_cancelled: {
@@ -110,8 +114,12 @@ export function AgentRecoveryPanel({
   compact = false,
   interactive = true,
   messageId = "",
+  presentation = null,
   run = null,
+  trace = [],
 }) {
+  const headingId = useId();
+  const panelRef = useRef(null);
   const [actionState, setActionState] = useState({
     action: "",
     message: "",
@@ -145,6 +153,33 @@ export function AgentRecoveryPanel({
     );
   }, [messageId, run?.id]);
 
+  useEffect(() => {
+    function handleRecoveryFocus(event) {
+      const detail = event.detail || {};
+      if (
+        compact
+        || String(detail.runId || "") !== String(run?.id || "")
+        || String(detail.messageId || "") !== String(messageId || "")
+      ) return;
+      window.requestAnimationFrame(() => {
+        const target = panelRef.current?.querySelector("button:not(:disabled)");
+        (target || panelRef.current)?.focus();
+      });
+    }
+    window.addEventListener(
+      "knowflow:react-agent-recovery-focus",
+      handleRecoveryFocus,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-agent-recovery-focus",
+      handleRecoveryFocus,
+    );
+  }, [compact, messageId, run?.id]);
+
+  const runPresentation = useMemo(() => (
+    presentation || buildAgentRunPresentation({ run, trace, now: Date.now() })
+  ), [presentation, run, trace]);
+
   if (!run?.id || !["failed", "interrupted", "cancelled"].includes(run.status)) {
     return null;
   }
@@ -157,10 +192,30 @@ export function AgentRecoveryPanel({
     && Array.isArray(run.steps)
     && run.steps.length > 0;
   const target = failure.target;
-  const recoveryActions = Array.isArray(run.recoveryActions) && run.recoveryActions.length
+  const advertisedActions = Array.isArray(run.recoveryActions)
     ? run.recoveryActions.filter((action) => actionMap[action])
-    : [canResume ? "continue" : null, messageId ? "retry" : null].filter(Boolean);
+    : [];
+  const recoveryActions = failure.retryable === false
+    ? []
+    : advertisedActions.length
+      ? advertisedActions
+      : [canResume ? "continue" : null, messageId ? "retry" : null].filter(Boolean);
+  const failureReason = compactPublicText(
+    failure.message || failure.summary,
+    compact ? 180 : 260,
+  );
   const actionPending = actionState.status === "pending";
+  const recoveryMetrics = [
+    runPresentation?.total
+      ? { label: "已完成", value: `${runPresentation.completed}/${runPresentation.total}` }
+      : null,
+    runPresentation?.elapsedMs > 0
+      ? { label: "用时", value: runPresentation.elapsed }
+      : null,
+    runPresentation?.toolCalls > 0
+      ? { label: "工具调用", value: `${runPresentation.toolCalls}次` }
+      : null,
+  ].filter(Boolean);
 
   function requestRecovery(action) {
     if (!interactive) return;
@@ -176,18 +231,38 @@ export function AgentRecoveryPanel({
 
   return (
     <section
-      className={`agent-recovery-panel ${failure.retryable ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
-      aria-label={"运行恢复"}
+      className={`agent-recovery-panel ${failure.retryable !== false ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
+      aria-labelledby={headingId}
       aria-busy={actionPending}
-      role={"status"}
+      ref={panelRef}
+      role={"region"}
+      tabIndex={-1}
     >
       <div className={"agent-recovery-heading"}>
         <span className={"agent-recovery-signal"} aria-hidden={"true"}></span>
-        <div>
-          <strong>{copy.title}</strong>
+        <div className={"agent-recovery-copy"}>
+          <div className={"agent-recovery-title-row"}>
+            <strong id={headingId}>{copy.title}</strong>
+            <span className={"agent-recovery-state"}>
+              {failure.retryable !== false ? "可恢复" : "需要处理"}
+            </span>
+          </div>
           <p>{copy.summary}</p>
         </div>
       </div>
+      {failureReason ? (
+        <p className={"agent-recovery-reason"}>{failureReason}</p>
+      ) : null}
+      {recoveryMetrics.length ? (
+        <dl className={"agent-recovery-metrics"}>
+          {recoveryMetrics.map((metric) => (
+            <div key={metric.label}>
+              <dt>{metric.label}</dt>
+              <dd>{metric.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {!compact ? (
         <div className={"agent-recovery-meta"}>
           <code className={"agent-recovery-code"}>{failure.code}</code>
@@ -200,7 +275,7 @@ export function AgentRecoveryPanel({
         </div>
       ) : null}
       {interactive ? (
-      <div className={"agent-recovery-actions"}>
+      <div className={"agent-recovery-actions"} role={"group"} aria-label={"恢复操作"}>
         {target ? (
           <button
             className={!failure.retryable ? "primary" : ""}

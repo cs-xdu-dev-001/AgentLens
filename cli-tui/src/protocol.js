@@ -4,7 +4,7 @@ import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 import parseDiff from 'parse-diff';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 export const AGENT_EVENT_SCHEMA_VERSION = 1;
 
 export function buildDiffPresentation(value) {
@@ -145,6 +145,7 @@ export function createRunProjection(initial = {}) {
     references: [],
     context: {},
     error: null,
+    modelRetry: null,
     phase: '',
     recoveryActions: [],
     runSummary: null,
@@ -270,6 +271,12 @@ function artifactProjection(event) {
 export function projectRunEvent(current, event) {
   const previous = createRunProjection(current);
   const name = agentEventName(event);
+  const clearsModelRetry = Boolean(previous.modelRetry) && (
+    name.startsWith('message.')
+    || name.startsWith('step.')
+    || name.startsWith('tool.')
+    || ['run.completed', 'run.cancelled', 'run.failed', 'error.raised'].includes(name)
+  );
   const projectable = (
     name.startsWith('run.')
     || name.startsWith('step.')
@@ -278,7 +285,9 @@ export function projectRunEvent(current, event) {
     || name === 'usage.updated'
     || name === 'context.usage_updated'
     || name === 'context.compacted'
+    || name === 'model.retrying'
     || name === 'error.raised'
+    || clearsModelRetry
     || (Boolean(event?.phase) && !name.startsWith('message.'))
     || Array.isArray(event?.recoveryActions)
   );
@@ -286,6 +295,7 @@ export function projectRunEvent(current, event) {
     return current && typeof current === 'object' ? current : previous;
   }
   const next = {...previous};
+  if (clearsModelRetry) next.modelRetry = null;
   const runSummary = runSummaryProjection(event);
   if (runSummary) next.runSummary = runSummary;
   if (name.startsWith('step.')) next.phase = sanitizeTerminalText(event?.title ?? event?.name ?? event?.phase ?? previous.phase);
@@ -319,6 +329,22 @@ export function projectRunEvent(current, event) {
       usage.totalTokens = (usage.inputTokens || 0) + (usage.outputTokens || 0);
     }
     next.usage = usage;
+  }
+
+  if (name === 'model.retrying') {
+    const retryInMs = Math.max(0, Number(event?.retryInMs) || 0);
+    const attempt = Math.max(1, Number(event?.retryAttempt) || 1);
+    const maxRetries = Math.max(attempt, Number(event?.maxRetries) || attempt);
+    const rateLimited = Number(event?.statusCode || 0) === 429
+      || String(event?.errorType || '').toLowerCase() === 'rate_limit';
+    next.modelRetry = {
+      attempt,
+      maxRetries,
+      reason: rateLimited ? '模型限流' : '模型请求失败',
+      retryAt: Date.now() + retryInMs,
+      retryInMs,
+      statusCode: Math.max(0, Number(event?.statusCode) || 0),
+    };
   }
 
   if (name === 'context.usage_updated' || name === 'context.compacted') {
@@ -445,7 +471,8 @@ export function referenceDisplayLabel(reference, fallback = '引用来源') {
 
 const SECRET_PATTERNS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[已隐藏私钥]'],
-  [/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[已隐藏]'],
+  [/\b(?:sk|ak)-[A-Za-z0-9_-]{12,}\b/g, '[已隐藏]'],
+  [/\b((?:org|proj)-)[A-Za-z0-9_-]{8,}\b/g, '$1[已隐藏]'],
   [/\bBearer\s+[A-Za-z0-9._~-]{8,}\b/gi, 'Bearer [已隐藏]'],
   [/(api[_-]?key|token|password|secret|cookie|authorization|private[_-]?key)(\s*[:=]\s*)\S+/gi, '$1$2[已隐藏]'],
   [/(--(?:api[-_]?key|token|password|secret|cookie|authorization|private[-_]?key))(?:=|\s+)\S+/gi, '$1=[已隐藏]'],
@@ -456,6 +483,15 @@ export function redact(value, limit = 500) {
   let text = sanitizeTerminalText(value);
   for (const [pattern, replacement] of SECRET_PATTERNS) text = text.replace(pattern, replacement);
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+export function userFacingErrorMessage(value, fallback = '执行失败。') {
+  const text = redact(value, 1200).trim();
+  if (!text) return fallback;
+  if (/\b(?:http\s*)?429\b|rate[_ -]?limit|max\s+rpm/i.test(text)) {
+    return '上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复。';
+  }
+  return text;
 }
 
 const OPERATION_KINDS = new Set(['approval', 'memory', 'mcp', 'sandbox', 'skill', 'tool', 'workspace']);

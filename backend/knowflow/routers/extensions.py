@@ -54,6 +54,12 @@ from ..services.workspace_runtime import (
     register_workspace_tools,
     tracked_workspace_runtime,
 )
+from ..services.workspace_references import (
+    WorkspaceReferenceBundle,
+    extract_workspace_references,
+    load_workspace_references,
+    workspace_reference_trace_title,
+)
 
 router = APIRouter()
 plan_executor = LangGraphPlanExecutor()
@@ -611,6 +617,7 @@ def execute_agent_chat(
     execution_records: list[tuple[Any, str | None]] = []
     artifacts: dict[str, dict[str, Any]] = {}
     plan_snapshot: dict[str, Any] | None = None
+    workspace_reference_bundle: WorkspaceReferenceBundle | None = None
     run_failed = False
     try:
         if run_action == "replan":
@@ -627,6 +634,52 @@ def execute_agent_chat(
                 "running",
             )
             publish_snapshot("run_updated")
+        referenced_files = extract_workspace_references(payload.question)
+        if referenced_files:
+            reference_step = trace.start_step(
+                kind="workspace",
+                name="workspace_references",
+                title="Loading workspace references",
+                parent_id=root_step,
+                input_summary={
+                    "files": [item.label for item in referenced_files],
+                },
+            )
+            if WORKSPACE_ENABLED:
+                workspace_reference_bundle = load_workspace_references(
+                    payload.question,
+                    WorkspaceRuntime(
+                        WORKSPACE_DIR,
+                        user_id=user_id,
+                        max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+                    ),
+                )
+                trace.finish_step(
+                    reference_step,
+                    status="success",
+                    title=workspace_reference_trace_title(
+                        workspace_reference_bundle
+                    ),
+                    output_summary=workspace_reference_bundle.public_summary(),
+                )
+            else:
+                trace.finish_step(
+                    reference_step,
+                    status="failed",
+                    title="Workspace references unavailable",
+                    output_summary={
+                        "loaded": [],
+                        "skipped": [
+                            {
+                                "path": item.label,
+                                "code": "workspace_disabled",
+                                "reason": "Workspace access is disabled.",
+                            }
+                            for item in referenced_files
+                        ],
+                    },
+                    error_code="workspace_disabled",
+                )
         chat_config = get_model_config(
             payload.chatModelConfigId,
             "chat",
@@ -730,6 +783,17 @@ def execute_agent_chat(
                 attachments=payload.attachments,
                 memories=memories if memory_active else None,
             )
+            if (
+                workspace_reference_bundle is not None
+                and workspace_reference_bundle.context_message
+            ):
+                base_messages.insert(
+                    -1,
+                    {
+                        "role": "user",
+                        "content": workspace_reference_bundle.context_message,
+                    },
+                )
             if base_messages and "ask_user_question" in registry.names():
                 base_messages[0]["content"] = (
                     f"{base_messages[0].get('content', '')}\n\n"

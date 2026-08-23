@@ -30,6 +30,7 @@ export function AgentTraceStepDetail({
   id,
   step,
   messageId = "",
+  run = null,
 }) {
   const [copying, setCopying] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -38,10 +39,8 @@ export function AgentTraceStepDetail({
   const target = traceStepTarget(step);
   const failed = normalizeTraceStatus(step?.status) === "failed";
   const operationId = safeText(step?.details?.operationId);
-  const canRetry = failed && (
-    (step?.name === "memory_write" && operationId)
-    || messageId
-  );
+  const canRetryMemory = failed && step?.name === "memory_write" && operationId;
+  const canOpenRecovery = failed && step?.name !== "memory_write" && run?.id;
 
   const copyDetails = async () => {
     if (copying) return;
@@ -67,29 +66,31 @@ export function AgentTraceStepDetail({
   };
 
   const retryStep = async () => {
-    if (!canRetry || retrying) return;
+    if (!canRetryMemory || retrying) return;
     setRetrying(true);
     try {
-      if (step?.name === "memory_write" && operationId) {
-        const nextActivity = await memoryApi.retryOperation(
-          operationId,
-        );
-        publishMemoryActivity(messageId, nextActivity);
-        notifyToast("已重新整理长期记忆");
-        return;
-      }
-      window.dispatchEvent(
-        new CustomEvent(
-          "knowflow:react-message-retry",
-          { detail: { messageId } },
-        ),
+      const nextActivity = await memoryApi.retryOperation(
+        operationId,
       );
-      notifyToast("已重新运行本轮");
+      publishMemoryActivity(messageId, nextActivity);
+      notifyToast("已重新整理长期记忆");
     } catch (error) {
       notifyError(error, "重试失败，请稍后再试。");
     } finally {
       setRetrying(false);
     }
+  };
+
+  const openRecovery = () => {
+    if (!canOpenRecovery) return;
+    window.dispatchEvent(
+      new CustomEvent("knowflow:react-agent-recovery-focus", {
+        detail: {
+          messageId,
+          runId: run.id,
+        },
+      }),
+    );
   };
 
   return (
@@ -144,18 +145,19 @@ export function AgentTraceStepDetail({
             {targetLabels[target]}
           </button>
         ) : null}
-        {canRetry ? (
+        {canRetryMemory ? (
           <button
             className={"primary"}
             type={"button"}
             disabled={retrying}
             onClick={retryStep}
           >
-            {retrying
-              ? "重试中…"
-              : step?.name === "memory_write"
-                ? "重试记忆整理"
-                : "重新运行本轮"}
+            {retrying ? "重试中…" : "重试记忆整理"}
+          </button>
+        ) : null}
+        {canOpenRecovery ? (
+          <button className={"primary"} type={"button"} onClick={openRecovery}>
+            {"查看恢复操作"}
           </button>
         ) : null}
       </div>

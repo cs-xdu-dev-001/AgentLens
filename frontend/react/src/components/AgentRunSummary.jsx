@@ -24,7 +24,7 @@ export function AgentRunSummary({ trace = [], run = null }) {
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [running]);
+  }, [running, run?.modelRetry?.retryAt]);
 
   if (!presentation) {
     return (
@@ -41,14 +41,12 @@ export function AgentRunSummary({ trace = [], run = null }) {
   }
   const {
     completed,
-    elapsed,
     headline,
+    metrics,
     processSummary,
     progressPercent,
     runId,
     status,
-    tokenLabel,
-    toolCalls,
     total,
   } = presentation;
 
@@ -57,7 +55,10 @@ export function AgentRunSummary({ trace = [], run = null }) {
       <div className={"agent-run-summary-head"}>
         <div className={"agent-run-summary-copy"}>
           <h2 title={headline}>{headline}</h2>
-          <span>{shortRunId(runId)}{" · "}{status.freshness}</span>
+          <div className={"agent-run-summary-meta"}>
+            <strong>{metrics || `${completed}/${total}`}</strong>
+            <span>{shortRunId(runId)}{" · "}{status.freshness}</span>
+          </div>
           <p>{processSummary}</p>
         </div>
         <strong className={`agent-run-status ${status.className}`}>
@@ -73,24 +74,6 @@ export function AgentRunSummary({ trace = [], run = null }) {
         aria-valuenow={completed}
       >
         <span style={{ transform: `scaleX(${progressPercent / 100})` }}></span>
-      </div>
-      <div className={"agent-run-metrics"}>
-        <div>
-          <span>{"当前进度"}</span>
-          <strong>{completed}{" / "}{total}</strong>
-        </div>
-        <div>
-          <span>{"已用时间"}</span>
-          <strong>{elapsed}</strong>
-        </div>
-        <div>
-          <span>{"工具调用"}</span>
-          <strong>{toolCalls}{"次"}</strong>
-        </div>
-        <div>
-          <span>{"Tokens"}</span>
-          <strong>{tokenLabel || "—"}</strong>
-        </div>
       </div>
     </section>
   );

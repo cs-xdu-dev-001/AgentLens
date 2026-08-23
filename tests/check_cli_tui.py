@@ -273,6 +273,27 @@ class FailThenBackend(SlowBackend):
         )
 
 
+class StreamFailureBackend(SlowBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        event_sink(
+            {
+                "eventName": "error.raised",
+                "runId": "run_stream_failure",
+                "error": {
+                    "code": "rate_limited",
+                    "message": "HTTP 429 rate limit",
+                    "retryable": True,
+                },
+                "recoveryActions": ["retry"],
+            }
+        )
+        self.started.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("stream failure test did not release")
+        raise RuntimeError("HTTP 429 rate limit")
+
+
 class RetryBackend(SlowBackend):
     def run(self, question, event_sink):
         self.questions.append(question)
@@ -294,6 +315,58 @@ class RetryBackend(SlowBackend):
                 "paused": False,
                 "runId": "run_retry_tui",
                 "answer": "恢复成功",
+            }
+        )
+
+
+class CanonicalEventBackend(SlowBackend):
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        event_sink({"eventName": "message.delta", "text": "规范事件"})
+        event_sink(
+            {
+                "eventName": "tool.started",
+                "toolCallId": "call_canonical",
+                "toolName": "read_workspace_file",
+                "normalizedStatus": "running",
+                "arguments": {"path": "README.md"},
+            }
+        )
+        event_sink(
+            {
+                "eventName": "tool.completed",
+                "toolCallId": "call_canonical",
+                "toolName": "read_workspace_file",
+                "normalizedStatus": "completed",
+                "latencyMs": 8,
+                "output": {"bytes": 64},
+            }
+        )
+        event_sink(
+            {
+                "eventName": "step.completed",
+                "stepId": "step_canonical",
+                "kind": "tool",
+                "name": "读取说明",
+                "normalizedStatus": "completed",
+            }
+        )
+        event_sink(
+            {
+                "eventName": "model.retrying",
+                "retryAttempt": 1,
+                "maxRetries": 2,
+                "retryInMs": 3000,
+            }
+        )
+        self.started.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("canonical event test did not release")
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run_canonical_tui",
+                "answer": "规范事件",
             }
         )
 
@@ -595,6 +668,55 @@ async def exercise_retry_status() -> None:
                 break
         assert not app.running
         assert app.query_one("#transcript")._assistant_text == "恢复成功"
+
+
+async def exercise_canonical_events() -> None:
+    backend = CanonicalEventBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("canonical")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        assert backend.started.is_set()
+        transcript = app.query_one("#transcript")
+        assert transcript._assistant_text == "规范事件"
+        activity = app.query_one(".run-activity")
+        assert "tool:call_canonical" in activity._rows
+        assert activity._statuses["tool:call_canonical"] == "completed"
+        assert "step_canonical" in activity._rows
+        assert "模型请求失败" in str(app.query_one("#run-status").render())
+        backend.release.set()
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert not app.running
+
+
+async def exercise_stream_failure_recovery() -> None:
+    backend = StreamFailureBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("stream failure")
+        await pilot.press("enter")
+        for _ in range(20):
+            await pilot.pause(0.05)
+            if backend.started.is_set():
+                break
+        assert backend.started.is_set()
+        notices = list(app.query(".recovery-notice"))
+        assert len(notices) == 1
+        assert "请求过于频繁" in str(notices[0].render())
+        backend.release.set()
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert not app.running
+        assert len(list(app.query(".recovery-notice"))) == 1
 
 
 async def exercise_tool_failure_feedback() -> None:
@@ -1006,6 +1128,7 @@ def main() -> None:
         "Authorization: Bearer bearer-secret",
         "curl --password command-secret https://example.test",
         "eyJheader.payload.signature",
+        "Your account org-8242d004acb748ada9255f6d42f4dc23<ak-fbzbf9goi431l1d8rrx1>",
     ):
         assert not any(
             secret in redact_public_detail(secret_text)
@@ -1013,6 +1136,8 @@ def main() -> None:
                 "bearer-secret",
                 "command-secret",
                 "eyJheader.payload.signature",
+                "8242d004acb748ada9255f6d42f4dc23",
+                "fbzbf9goi431l1d8rrx1",
             )
         )
 
@@ -1062,6 +1187,8 @@ def main() -> None:
         asyncio.run(exercise_remote_streaming())
         asyncio.run(exercise_live_status())
         asyncio.run(exercise_retry_status())
+        asyncio.run(exercise_canonical_events())
+        asyncio.run(exercise_stream_failure_recovery())
         asyncio.run(exercise_tool_failure_feedback())
         asyncio.run(exercise_narrow_command_menu())
         asyncio.run(exercise_approval())

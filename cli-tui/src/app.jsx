@@ -23,10 +23,18 @@ import {
   referenceDisplayLabel,
   sanitizeTerminalText,
   taskOperationRow,
+  userFacingErrorMessage,
   verificationToolCallId,
   verificationRows,
 } from './protocol.js';
 import {MarkdownText, stableMarkdownBoundary} from './markdown.jsx';
+import {
+  applyFileMention,
+  fileMentionAtCursor,
+  loadWorkspacePaths,
+  longestSuggestionPrefix,
+  workspaceFileSuggestions,
+} from './fileSuggestions.js';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -92,10 +100,28 @@ function queuedPromptText(item) {
   return typeof item === 'string' ? item : String(item?.text ?? '');
 }
 
+function queuedPromptMode(item) {
+  return typeof item === 'object' && item?.mode === 'shell' ? 'shell' : 'prompt';
+}
+
 function queuedPromptDisplay(item) {
   return typeof item === 'string'
     ? item
     : String(item?.displayText ?? item?.text ?? '');
+}
+
+function queuedPromptHistory(item) {
+  const text = queuedPromptText(item);
+  return queuedPromptMode(item) === 'shell' ? `!${text}` : text;
+}
+
+function storedTurnRequest(value) {
+  const raw = String(value ?? '');
+  const shell = raw.startsWith('!');
+  return {
+    text: shell ? raw.slice(1).replace(/^ /, '') : raw,
+    mode: shell ? 'shell' : 'prompt',
+  };
 }
 
 const QUEUE_PRIORITIES = Object.freeze({now: 0, next: 1, later: 2});
@@ -279,6 +305,37 @@ function publicLabel(value, fallback, limit = 120) {
   return label || fallback;
 }
 
+function shellOutputValue(row) {
+  const output = row?.output;
+  const payload = output && typeof output === 'object' && !Array.isArray(output) ? output : {};
+  return row?.stdout ?? payload.stdout ?? row?.stderr ?? payload.stderr
+    ?? (typeof output === 'string' ? output : '');
+}
+
+export function shellActivityPreview(row, maxLines = 5) {
+  if (!row || row.name !== 'run_sandbox_command') return null;
+  const status = String(row.status ?? 'running');
+  const errorCode = String(row.errorCode ?? '');
+  const raw = redact(shellOutputValue(row), 4000).replace(/\r\n?/g, '\n').trimEnd();
+  const lines = raw ? raw.split('\n').slice(-Math.max(1, maxLines)) : [];
+  const hiddenLines = raw ? Math.max(0, raw.split('\n').length - lines.length) : 0;
+  const timedOut = errorCode === 'tool_timeout' || Boolean(row.output?.timed_out);
+  const cancelled = status === 'cancelled' || errorCode === 'tool_cancelled' || Boolean(row.output?.cancelled);
+  const failed = FAILURE_RUNTIME_STATUSES.has(status);
+  const label = timedOut
+    ? '命令超时'
+    : cancelled
+      ? '命令已取消'
+      : failed
+        ? '命令失败'
+        : status === 'running'
+          ? '实时输出'
+          : lines.length
+            ? '命令输出'
+            : '命令已完成（无输出）';
+  return {cancelled, failed, hiddenLines, label, lines, status, timedOut};
+}
+
 export function runtimeStatusFromEvent(event, fallback = 'running') {
   const name = agentEventName(event);
   if (name.endsWith('.completed')) return 'completed';
@@ -286,6 +343,18 @@ export function runtimeStatusFromEvent(event, fallback = 'running') {
   if (name.endsWith('.cancelled')) return 'cancelled';
   if (name.endsWith('.waiting') || name.endsWith('.required')) return 'waiting';
   return publicLabel(event?.status ?? fallback, 'running', 40);
+}
+
+function workspaceReferenceTitle(event, status) {
+  if (publicLabel(event?.name, '', 120) !== 'workspace_references') return '';
+  if (status === 'running') return '正在读取工作区文件';
+  const summary = parseSummary(event?.outputSummary);
+  const loaded = Array.isArray(summary?.loaded) ? summary.loaded.length : 0;
+  const skipped = Array.isArray(summary?.skipped) ? summary.skipped.length : 0;
+  if (loaded && skipped) return `已读取${loaded}个工作区文件，跳过${skipped}个`;
+  if (loaded) return `已读取${loaded}个工作区文件`;
+  if (skipped) return `未读取到工作区文件，已跳过${skipped}个`;
+  return '工作区引用已处理';
 }
 
 function activityFromEvent(previous, event) {
@@ -322,13 +391,13 @@ function traceStepFromEvent(previous, event) {
   if (!stepId) return previous;
   const name = publicLabel(event.name, 'agent_step', 120);
   const status = runtimeStatusFromEvent(event);
-  const title = name === 'model_completion'
+  const title = workspaceReferenceTitle(event, status) || (name === 'model_completion'
     ? ['failed', 'error', 'interrupted'].includes(status)
       ? '模型分析失败'
       : ['running', 'planning'].includes(status)
         ? '模型正在分析'
         : '模型分析完成'
-    : publicLabel(event.title ?? event.name, '分析任务', 160);
+    : publicLabel(event.title ?? event.name, '分析任务', 160));
   const next = new Map(previous);
   next.set(stepId, {
     id: stepId,
@@ -384,6 +453,18 @@ function statusSymbol(status, spinner) {
 
 const ACTIVE_RUNTIME_STATUSES = new Set(['pending', 'planning', 'queued', 'running', 'started', 'waiting', 'waiting_approval']);
 const FAILURE_RUNTIME_STATUSES = new Set(['error', 'failed', 'interrupted']);
+const RECOVERY_ACTION_OPTIONS = Object.freeze([
+  {id: 'continue', label: '从checkpoint继续', shortcut: 'C'},
+  {id: 'retry', label: '重试本轮', shortcut: 'R'},
+  {id: 'fix', label: '分析错误并继续', shortcut: 'F'},
+]);
+
+function recoveryOptions(row) {
+  const enabled = new Set(Array.isArray(row?.recoveryActions) && row.recoveryActions.length
+    ? row.recoveryActions
+    : ['retry', 'fix']);
+  return RECOVERY_ACTION_OPTIONS.filter(option => enabled.has(option.id));
+}
 
 export function settleRuntimeRows(previous, outcome) {
   let changed = false;
@@ -574,6 +655,7 @@ const TaskSummary = React.memo(function TaskSummary({
   activities,
   elapsedMs,
   expanded,
+  failure = null,
   goal = '',
   phase,
   running,
@@ -584,6 +666,8 @@ const TaskSummary = React.memo(function TaskSummary({
   references = [],
   recoveryActions = [],
   runSummary = null,
+  modelRetry = null,
+  now = Date.now(),
   navigationActive = false,
   selectedNavigationKey = '',
 }) {
@@ -626,14 +710,25 @@ const TaskSummary = React.memo(function TaskSummary({
     references.length ? `${references.length}个来源` : '',
     total ? `${completed}/${total}` : '',
   ].filter(Boolean).join(' · ');
-  const stateLabel = waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
-  const stateColor = failed ? ERROR : waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const retryRemainingSeconds = modelRetry
+    ? Math.max(0, Math.ceil((Number(modelRetry.retryAt) - now) / 1000))
+    : 0;
+  const retryLabel = modelRetry
+    ? retryRemainingSeconds > 0
+      ? `${modelRetry.reason || '模型请求失败'}，${retryRemainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
+      : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`
+    : '';
+  const stateLabel = modelRetry ? '等待重试' : waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
+  const stateColor = failed ? ERROR : modelRetry || waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const failureMessage = failed && failure?.message
+    ? userFacingErrorMessage(failure.message)
+    : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
   const processLabel = running
-    ? publicLabel(phase || currentRow?.title, '正在执行')
+    ? retryLabel || publicLabel(phase || currentRow?.title, '正在执行')
     : failed
-      ? '执行失败，可选择恢复操作'
+      ? failureMessage || '执行失败，可选择恢复操作'
       : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
@@ -652,6 +747,14 @@ const TaskSummary = React.memo(function TaskSummary({
   ].filter(Boolean).join(' · ');
   const taskTitle = publicLabel(String(runSummary?.headline || goal || '').replace(/\s+/g, ' ').trim(), '本次运行');
   const compactTitle = taskTitle.length > 72 ? `${taskTitle.slice(0, 72)}…` : taskTitle;
+  const latestShellActivity = [...activities.values()].reverse().find(row => row.name === 'run_sandbox_command');
+  const shellPreview = shellActivityPreview(latestShellActivity);
+  const showShellPreview = shellPreview && (
+    latestShellActivity.status === 'running'
+    || shellPreview.failed
+    || shellPreview.cancelled
+    || shellPreview.timedOut
+  );
 
   return (
     <Box flexDirection="column" marginTop={1} marginLeft={1} marginBottom={1}>
@@ -666,6 +769,29 @@ const TaskSummary = React.memo(function TaskSummary({
       <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text>
       {failed && !expanded ? (
         <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
+      ) : null}
+      {showShellPreview ? (
+        <Box
+          flexDirection="column"
+          marginLeft={2}
+          marginTop={1}
+          paddingLeft={1}
+          borderStyle="single"
+          borderTop={false}
+          borderBottom={false}
+          borderRight={false}
+          borderColor={shellPreview.failed || shellPreview.timedOut ? ERROR : shellPreview.cancelled ? MUTED : ACCENT}
+        >
+          <Text color={shellPreview.failed || shellPreview.timedOut ? ERROR : MUTED}>
+            {shellPreview.label}{shellPreview.hiddenLines ? ` · 最近${shellPreview.lines.length}行` : ''}
+          </Text>
+          {shellPreview.lines.map((line, index) => (
+            <Text key={`${index}-${line}`} color={PRIMARY} wrap="truncate-end">{line || ' '}</Text>
+          ))}
+          {!shellPreview.lines.length && latestShellActivity.status === 'running' ? (
+            <Text color={MUTED}>等待命令输出…</Text>
+          ) : null}
+        </Box>
       ) : null}
       {expanded ? (
         <Box flexDirection="column" marginLeft={2} marginTop={1}>
@@ -760,7 +886,8 @@ const TaskSummary = React.memo(function TaskSummary({
               {references.length > 3 ? <Text color={MUTED}>    另有{references.length - 3}个来源</Text> : null}
             </Box>
           ) : null}
-          {!rows.length && !streaming ? <Text color={MUTED}>{spinner} {phase}</Text> : null}
+          {!rows.length && !streaming && !modelRetry ? <Text color={MUTED}>{spinner} {phase}</Text> : null}
+          {failed && failureMessage ? <Text color={ERROR}>  原因：{failureMessage}</Text> : null}
           {failed && recoveryHint ? <Text color={ERROR}>  {recoveryHint}</Text> : null}
           <Text color={MUTED}>  {detailControls}</Text>
         </Box>
@@ -769,32 +896,36 @@ const TaskSummary = React.memo(function TaskSummary({
   );
 });
 
-function ToolDetailPanel({rows, selected, running, hasReferences}) {
+function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice = 0}) {
   const row = rows[selected];
   if (!row) return null;
   const state = statusSymbol(row.status, '·');
   const failed = FAILURE_RUNTIME_STATUSES.has(row.status);
-  const actions = new Set(Array.isArray(row.recoveryActions) ? row.recoveryActions : ['retry', 'fix']);
-  const recoveryHint = [
-    actions.has('retry') ? 'R重新运行本轮' : '',
-    actions.has('fix') ? 'F分析错误并继续' : '',
-    actions.has('continue') ? 'C从checkpoint继续' : '',
-  ].filter(Boolean).join('  ');
+  const recoveryItems = recoveryOptions(row);
+  const detailLabel = row.scope === 'run' ? '运行详情' : '工具详情';
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-      <Text bold>工具详情 <Text color={MUTED}>{selected + 1}/{rows.length}</Text></Text>
+      <Text bold>{detailLabel} <Text color={MUTED}>{selected + 1}/{rows.length}</Text></Text>
       <Box>
         <Text color={state.color}>{state.symbol} </Text>
         <Text color={PRIMARY} bold>{row.name}</Text>
         <Text color={MUTED}>  {row.status}</Text>
       </Box>
       <ActivityDetails row={row} />
-      {failed ? (
-        <Text color={running ? MUTED : ACCENT}>
-          {running ? '当前任务结束后可恢复' : recoveryHint || '当前错误不可自动恢复'}
-        </Text>
-      ) : null}
-      <Text color={MUTED}>↑↓切换工具  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭</Text>
+      {failed && !running && recoveryItems.length ? (
+        <Box marginTop={1}>
+          <Text color={MUTED}>恢复  </Text>
+          {recoveryItems.map((option, index) => (
+            <Text key={option.id} color={index === recoveryChoice ? PRIMARY : MUTED} bold={index === recoveryChoice}>
+              {index === recoveryChoice ? '❯ ' : ''}{option.label}{index < recoveryItems.length - 1 ? '  ' : ''}
+            </Text>
+          ))}
+        </Box>
+      ) : failed ? <Text color={MUTED}>当前任务结束后可恢复</Text> : null}
+      <Text color={MUTED}>
+        {failed && !running && recoveryItems.length ? '←→选择 · Enter执行  ' : ''}
+        ↑↓切换详情  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭
+      </Text>
     </Box>
   );
 }
@@ -1061,6 +1192,13 @@ function formatSessionTime(value, now = Date.now()) {
   return new Date(timestamp).toLocaleDateString('zh-CN', {month: 'numeric', day: 'numeric'});
 }
 
+function modelProtocolLabel(value) {
+  const mode = String(value ?? '').trim().toLowerCase();
+  if (mode === 'responses') return 'Responses协议';
+  if (mode === 'chat_completions') return 'Chat Completions协议';
+  return publicLabel(value, '兼容协议', 30);
+}
+
 const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, maxVisible = 6}) {
   const spinner = useSpinner(loading, '连接会话');
   const labels = {
@@ -1144,8 +1282,8 @@ const ModelPicker = React.memo(function ModelPicker({models, selected, query, lo
       }) : null}
       {!loading && !error && active ? (
         <Text color={MUTED} wrap="truncate-end">
-          {'  '}{publicLabel(active.modelName, active.name, 100)} · {publicLabel(active.apiMode, 'chat', 30)}
-          {active.switchable === false ? ' · 本地配置请运行knowflow configure修改' : ''}
+          {'  '}{publicLabel(active.modelName, active.name, 100)} · {modelProtocolLabel(active.apiMode)}
+          {active.switchable === false ? ' · 采样参数由模型服务决定 · 运行knowflow configure修改' : ''}
         </Text>
       ) : null}
       <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter切换 · 输入搜索 · Esc关闭</Text>
@@ -1210,6 +1348,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
         references={item.references ?? []}
         recoveryActions={item.recoveryActions ?? []}
         runSummary={item.runSummary ?? null}
+        failure={item.failure ?? null}
         navigationActive={taskNavigationActive}
         selectedNavigationKey={selectedNavigationKey}
       />
@@ -1408,6 +1547,7 @@ function verticalCursorOffset(value, cursor, direction) {
 export function App({
   client,
   version = 'development',
+  workspaceRoot = '',
   assumeYes = false,
   fullscreenEnabled = false,
   mouseEnabled = false,
@@ -1443,6 +1583,8 @@ export function App({
   const runProjectionRef = useRef(runProjection);
   const [input, setInput] = useState('');
   const inputRef = useRef('');
+  const [composerMode, setComposerMode] = useState('prompt');
+  const composerModeRef = useRef('prompt');
   const [pastedContents, setPastedContents] = useState({});
   const pastedContentsRef = useRef({});
   const nextPasteIdRef = useRef(1);
@@ -1450,6 +1592,7 @@ export function App({
   const cursorOffsetRef = useRef(0);
   const [dismissedInput, setDismissedInput] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [workspacePaths, setWorkspacePaths] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [staticEpoch, setStaticEpoch] = useState(0);
   const [assistantDraft, setAssistantDraft] = useState('');
@@ -1472,6 +1615,13 @@ export function App({
   const [runClock, setRunClock] = useState(() => Date.now());
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
+  const [recoveryChoice, setRecoveryChoice] = useState(0);
+  const recoveryChoiceRef = useRef(0);
+  const updateRecoveryChoice = useCallback(next => {
+    const value = typeof next === 'function' ? next(recoveryChoiceRef.current) : next;
+    recoveryChoiceRef.current = value;
+    setRecoveryChoice(value);
+  }, []);
   const [detailTab, setDetailTab] = useState('tools');
   const [referenceDetailIndex, setReferenceDetailIndex] = useState(0);
   const [changeDetailOpen, setChangeDetailOpen] = useState(false);
@@ -1512,6 +1662,7 @@ export function App({
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historyDraftRef = useRef('');
+  const historyDraftModeRef = useRef('prompt');
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historySearchChoice, setHistorySearchChoice] = useState(0);
@@ -1567,30 +1718,22 @@ export function App({
 
   useEffect(() => {
     if (!running) return undefined;
+    setRunClock(Date.now());
     const timer = setInterval(() => setRunClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [running]);
+  }, [running, runProjection.modelRetry?.retryAt]);
 
   useEffect(() => {
     pastedContentsRef.current = pastedContents;
   }, [pastedContents]);
+  useEffect(() => {
+    composerModeRef.current = composerMode;
+  }, [composerMode]);
 
   useEffect(() => () => {
     if (composerNoticeTimerRef.current) clearTimeout(composerNoticeTimerRef.current);
   }, []);
 
-  useEffect(() => {
-    activitiesRef.current = activities;
-  }, [activities]);
-  useEffect(() => {
-    traceStepsRef.current = traceSteps;
-  }, [traceSteps]);
-  useEffect(() => {
-    lastQuestionRef.current = lastQuestion;
-  }, [lastQuestion]);
-  useEffect(() => {
-    runProjectionRef.current = runProjection;
-  }, [runProjection]);
   useEffect(() => {
     changeDetailOpenRef.current = changeDetailOpen;
   }, [changeDetailOpen]);
@@ -1708,6 +1851,7 @@ export function App({
         references: runProjectionRef.current.references,
         recoveryActions: runProjectionRef.current.recoveryActions,
         runSummary: runProjectionRef.current.runSummary,
+        failure: runProjectionRef.current.error,
       });
     }
     const text = redact(String(answer ?? ''), 200_000).trim();
@@ -1896,6 +2040,7 @@ export function App({
       if (message.type === 'agent_event') {
         const event = message.event ?? {};
         const eventName = agentEventName(event);
+        const wasModelRetrying = Boolean(runProjectionRef.current.modelRetry);
         const nextProjection = projectRunEvent(runProjectionRef.current, event);
         if (nextProjection !== runProjectionRef.current) {
           runProjectionRef.current = nextProjection;
@@ -1926,10 +2071,12 @@ export function App({
         } else if (eventName === 'message.completed') {
           assistantDraftRef.current = sanitizeTerminalText(event.content ?? '');
           scheduleDraftFlush();
+          if (wasModelRetrying) setPhase('模型已恢复，整理回答');
         } else if (eventName === 'message.delta' || event.type === 'text_delta') {
           const delta = sanitizeTerminalText(event.text ?? event.delta ?? event.content ?? '');
           assistantDraftRef.current += delta;
           scheduleDraftFlush();
+          if (wasModelRetrying) setPhase('模型已恢复，继续生成');
         } else if (
           ['tool.started', 'tool.progress', 'tool.completed', 'tool.failed', 'tool.cancelled'].includes(eventName)
           || ['tool_started', 'tool_progress', 'tool_result'].includes(event.type)
@@ -1960,7 +2107,10 @@ export function App({
           const nextTraceSteps = traceStepFromEvent(traceStepsRef.current, event);
           traceStepsRef.current = nextTraceSteps;
           setTraceSteps(nextTraceSteps);
-          setPhase(publicLabel(event.title ?? event.name, '分析任务'));
+          setPhase(
+            workspaceReferenceTitle(event, runtimeStatusFromEvent(event))
+              || publicLabel(event.title ?? event.name, '分析任务'),
+          );
         } else if (eventName === 'approval.required' || event.type === 'approval_required') {
           const mode = permissionRef.current;
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));
@@ -1985,7 +2135,14 @@ export function App({
           setWaitingInteractions(items => removeWaitingInteraction(items, 'question', event));
           setPhase(waitingInteractionsRef.current.length > 1 ? '还有待处理请求' : '继续执行');
         } else if (eventName === 'model.retrying' || event.type === 'model_retry') {
-          setPhase('模型请求重试');
+          setRunClock(Date.now());
+          const retryAttempt = Math.max(1, Number(event.retryAttempt || 1));
+          const maxRetries = Math.max(retryAttempt, Number(event.maxRetries || retryAttempt));
+          const retryReason = Number(event.statusCode || 0) === 429
+            || String(event.errorType || '').toLowerCase() === 'rate_limit'
+            ? '模型限流'
+            : '模型请求失败';
+          setPhase(`${retryReason}，等待自动重试（${retryAttempt}/${maxRetries}）`);
         } else if (eventName === 'memory.started' || event.type === 'memory_started') {
           const nextActivities = activityFromEvent(activitiesRef.current, {
             ...event,
@@ -2171,7 +2328,8 @@ export function App({
           setPhase('正在切换到立即任务');
           return;
         }
-        settleCurrentRun('failed', message.message);
+        const publicFailure = userFacingErrorMessage(message.message);
+        settleCurrentRun('failed', publicFailure);
         archiveCurrentTurn(assistantDraftRef.current, '执行失败');
         if (message.runId) {
           setCurrentRunId(String(message.runId));
@@ -2183,7 +2341,7 @@ export function App({
           actions.has('retry') ? '/retry选择重试范围' : '',
           actions.has('fix') ? '/fix分析错误并继续' : '',
         ].filter(Boolean).join('，或');
-        appendItem('error', `${message.message}${recovery ? `  输入${recovery}` : ''}`);
+        appendItem('error', `${publicFailure}${recovery ? `  输入${recovery}` : ''}`);
         resetAssistantDraft();
         if (runStartedAtRef.current) {
           setRunElapsedMs(Date.now() - runStartedAtRef.current);
@@ -2350,9 +2508,13 @@ export function App({
     const [next, ...remaining] = orderedQueue(queue);
     const text = queuedPromptText(next);
     const displayText = queuedPromptDisplay(next);
+    const mode = queuedPromptMode(next);
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
-    if (!client.send({type: 'submit', requestId, text})) {
+    const message = mode === 'shell'
+      ? {type: 'shell', requestId, command: text}
+      : {type: 'submit', requestId, text};
+    if (!client.send(message)) {
       setQueue(orderedQueue(queue));
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
@@ -2384,19 +2546,40 @@ export function App({
     setChangeDetailOpen(false);
     setChangeConfirming(false);
     resetAssistantDraft();
-    setLastQuestion(text);
-    setHistory(items => [...items.filter(item => item !== text), text].slice(-100));
+    const historyText = queuedPromptHistory(next);
+    lastQuestionRef.current = historyText;
+    setLastQuestion(historyText);
+    setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
     appendItem('user', displayText);
   }, [approval, appendItem, client, question, queue, queueManagerOpen, queuePaused, ready, resetAssistantDraft, running]);
 
+  useEffect(() => {
+    let active = true;
+    if (!workspaceRoot) {
+      setWorkspacePaths([]);
+      return () => { active = false; };
+    }
+    void loadWorkspacePaths(workspaceRoot).then(paths => {
+      if (active) setWorkspacePaths(paths);
+    });
+    return () => { active = false; };
+  }, [workspaceRoot]);
+
+  const fileMention = useMemo(
+    () => composerMode === 'prompt' ? fileMentionAtCursor(input, cursorOffset) : null,
+    [composerMode, cursorOffset, input],
+  );
   const suggestions = useMemo(() => {
+    if (composerMode === 'shell') return [];
     if (input === dismissedInput) return [];
-    return commandSuggestions(input, commands, usage);
-  }, [commands, dismissedInput, input, usage]);
+    const commandItems = commandSuggestions(input, commands, usage);
+    if (commandItems.length) return commandItems;
+    return workspaceFileSuggestions(workspacePaths, fileMention);
+  }, [commands, composerMode, dismissedInput, fileMention, input, usage, workspacePaths]);
   const argumentHint = useMemo(
-    () => commandArgumentHint(input, commands),
-    [commands, input],
+    () => composerMode === 'shell' ? '' : commandArgumentHint(input, commands),
+    [commands, composerMode, input],
   );
   const filteredSessions = useMemo(() => {
     const query = sessionQuery.trim().toLowerCase();
@@ -2421,6 +2604,11 @@ export function App({
       item.apiMode,
     ].some(value => String(value ?? '').toLowerCase().includes(query)));
   }, [modelQuery, models]);
+  const activeModel = useMemo(() => (
+    models.find(item => item.selected)
+    ?? models.find(item => [item.name, item.modelName].some(value => String(value ?? '') === model))
+    ?? null
+  ), [model, models]);
   const helpGroups = useMemo(() => ({
     shortcuts: HELP_SHORTCUTS.map(item => ({...item, source: 'shortcut'})),
     builtin: commands.filter(command => command.source === 'builtin'),
@@ -2495,6 +2683,7 @@ export function App({
       text: inputRef.current,
       cursor: cursorOffsetRef.current,
       pastedContents: {...pastedContentsRef.current},
+      mode: composerModeRef.current,
     };
     const buffer = composerUndoRef.current;
     const previous = buffer[buffer.length - 1];
@@ -2521,13 +2710,17 @@ export function App({
       return;
     }
     replacePastedContents(entry.pastedContents);
+    setComposerMode(entry.mode === 'shell' ? 'shell' : 'prompt');
     updateComposer(entry.text, entry.cursor);
     lastUndoPushRef.current = 0;
     composerUndoCoalescingRef.current = false;
   }, [replacePastedContents, showComposerNotice, updateComposer]);
 
   const loadComposerText = useCallback(raw => {
-    const text = sanitizeComposerInput(raw);
+    const rawText = sanitizeComposerInput(raw);
+    const shellMode = rawText.startsWith('!');
+    const text = shellMode ? rawText.slice(1).replace(/^ /, '') : rawText;
+    setComposerMode(shellMode ? 'shell' : 'prompt');
     if (!shouldCollapsePaste(text)) {
       replacePastedContents({});
       updateComposer(text);
@@ -2542,6 +2735,7 @@ export function App({
     if (restore) {
       const original = historySearchOriginalRef.current;
       replacePastedContents(original.pastedContents);
+      setComposerMode(original.mode === 'shell' ? 'shell' : 'prompt');
       updateComposer(original.text, original.cursor);
     }
     setHistorySearchOpen(false);
@@ -2549,7 +2743,7 @@ export function App({
     setHistorySearchChoice(0);
   }, [replacePastedContents, updateComposer]);
 
-  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next') => {
+  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next', mode = 'prompt') => {
     const normalizedPriority = Object.hasOwn(QUEUE_PRIORITIES, priority) ? priority : 'next';
     queueSequenceRef.current += 1;
     const item = {
@@ -2557,6 +2751,7 @@ export function App({
       displayText,
       priority: normalizedPriority,
       sequence: queueSequenceRef.current,
+      mode: mode === 'shell' ? 'shell' : 'prompt',
     };
     setQueue(items => orderedQueue([...items, item]));
     return item;
@@ -2596,12 +2791,15 @@ export function App({
 
   const startTurn = useCallback((text, displayText = text, options = {}) => {
     const bypassQueuePause = options?.bypassQueuePause === true;
+    const mode = options?.mode === 'shell' ? 'shell' : 'prompt';
+    const historyText = mode === 'shell' ? `!${text}` : text;
+    const publicDisplayText = mode === 'shell' ? `! ${displayText}` : displayText;
     if (!ready) {
       appendItem('error', '运行时尚未准备好。');
       return;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
-      enqueuePrompt(text, displayText);
+      enqueuePrompt(text, publicDisplayText, 'next', mode);
       setPhase(queuePaused
         ? `队列已暂停 · 待发送${queue.length + 1}个任务`
         : `已排队${queue.length + 1}个任务`);
@@ -2609,8 +2807,11 @@ export function App({
     }
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
-    if (!client.send({type: 'submit', requestId, text})) {
-      enqueuePrompt(text, displayText, 'now');
+    const message = mode === 'shell'
+      ? {type: 'shell', requestId, command: text}
+      : {type: 'submit', requestId, text};
+    if (!client.send(message)) {
+      enqueuePrompt(text, publicDisplayText, 'now', mode);
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
       appendItem('error', '任务尚未发送，已保留在队列中。输入/continue重试。');
@@ -2640,10 +2841,11 @@ export function App({
     setChangeDetailOpen(false);
     setChangeConfirming(false);
     resetAssistantDraft();
-    setLastQuestion(text);
-    setHistory(items => [...items.filter(item => item !== text), text].slice(-100));
+    lastQuestionRef.current = historyText;
+    setLastQuestion(historyText);
+    setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
-    appendItem('user', displayText);
+    appendItem('user', publicDisplayText);
   }, [approval, appendItem, client, enqueuePrompt, question, queue.length, queuePaused, ready, resetAssistantDraft, running]);
 
   const resumeRun = useCallback(runId => {
@@ -2754,7 +2956,11 @@ export function App({
         client.send({type: 'models', action: 'list'});
       } else appendItem('error', '用法：/model、/model use <ID>或/model config');
     } else if (command.value === '/status') {
-      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}`);
+      const modelStatus = `${model} · ${modelProtocolLabel(activeModel?.apiMode)}`;
+      const samplingStatus = activeModel?.switchable === false
+        ? '\n本地直连不发送temperature、top_p或max_tokens，采样参数由模型服务决定。'
+        : '';
+      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
       client.send({type: 'workspace', action: 'status'});
     } else if (command.value === '/context') {
       client.send({type: 'context', action: 'status'});
@@ -2799,6 +3005,7 @@ export function App({
           text: inputRef.current,
           cursor: cursorOffsetRef.current,
           pastedContents: pastedContentsRef.current,
+          mode: composerModeRef.current,
         };
         setHistorySearchQuery(part);
         setHistorySearchChoice(0);
@@ -2885,8 +3092,12 @@ export function App({
         if (!lastQuestion) {
           appendItem('error', '没有可重试的问题。');
         } else {
+          const retry = storedTurnRequest(lastQuestion);
           setQueuePaused(false);
-          startTurn(lastQuestion, lastQuestion, {bypassQueuePause: true});
+          startTurn(retry.text, retry.text, {
+            bypassQueuePause: true,
+            mode: retry.mode,
+          });
         }
       } else if (args === 'tool') {
         const failed = [...activitiesRef.current.values()].reverse().find(item => item.status === 'failed');
@@ -2924,16 +3135,26 @@ export function App({
         ].join('\n'), undefined, {bypassQueuePause: true});
       }
     }
-  }, [approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, startTurn]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, startTurn]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
     if (!suggestion) return;
+    if (suggestion.kind === 'file' && fileMention) {
+      const prefix = longestSuggestionPrefix(suggestions);
+      const partial = prefix.length > fileMention.query.length && suggestions.length > 1;
+      const selectedPath = partial ? prefix : suggestion.path;
+      const next = applyFileMention(inputRef.current, fileMention, selectedPath, {complete: !partial});
+      pushComposerUndo();
+      updateComposer(next.value, next.cursor);
+      if (!partial) setDismissedInput(next.value);
+      return;
+    }
     const next = `${suggestion.value} `;
     pushComposerUndo();
     updateComposer(next);
     setDismissedInput(next);
-  }, [pushComposerUndo, selectedSuggestion, suggestions, updateComposer]);
+  }, [fileMention, pushComposerUndo, selectedSuggestion, suggestions, updateComposer]);
 
   const submitComposer = useCallback(value => {
     const selected = suggestions[selectedSuggestion];
@@ -2948,14 +3169,29 @@ export function App({
     clearComposerUndo();
     setDismissedInput('');
     historyDraftRef.current = '';
-    if (resolveCommand(expandedText, commands) || /^\//.test(expandedText)) {
+    if (composerMode === 'shell') {
+      if (expandedText) startTurn(expandedText, displayText || expandedText, {mode: 'shell'});
+    } else if (resolveCommand(expandedText, commands) || /^\//.test(expandedText)) {
       executeInput(expandedText);
     } else if (expandedText) {
       startTurn(expandedText, displayText || expandedText);
     }
-  }, [acceptSuggestion, clearComposerUndo, commands, executeInput, replacePastedContents, selectedSuggestion, startTurn, suggestions, updateComposer]);
+  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, replacePastedContents, selectedSuggestion, startTurn, suggestions, updateComposer]);
 
   const toolRows = useMemo(() => [...activities.values()], [activities]);
+  const detailRows = useMemo(() => {
+    const hasFailedTool = toolRows.some(row => FAILURE_RUNTIME_STATUSES.has(row.status));
+    if (!runProjection.error || hasFailedTool) return toolRows;
+    return [...toolRows, {
+      id: 'run-failure',
+      scope: 'run',
+      name: 'Agent运行',
+      status: 'failed',
+      errorCode: runProjection.error.code,
+      errorMessage: runProjection.error.message,
+      recoveryActions: runProjection.recoveryActions,
+    }];
+  }, [runProjection.error, runProjection.recoveryActions, toolRows]);
   const taskNavigationItems = useMemo(() => taskSummaryModel(
     activities,
     traceSteps,
@@ -3020,22 +3256,23 @@ export function App({
   }, [closeTransientSurfaces, taskNavigationIndex, taskNavigationItems, toolRows]);
   const openToolDetails = useCallback(() => {
     const references = runProjectionRef.current.references || [];
-    if (!toolRows.length && !references.length) {
+    if (!detailRows.length && !references.length) {
       appendItem('error', '本轮还没有工具调用或引用来源。');
       return;
     }
-    const failedIndex = toolRows.findLastIndex(item => FAILURE_RUNTIME_STATUSES.has(item.status));
+    const failedIndex = detailRows.findLastIndex(item => FAILURE_RUNTIME_STATUSES.has(item.status));
     closeTransientSurfaces('tools');
-    setToolDetailIndex(failedIndex >= 0 ? failedIndex : toolRows.length - 1);
+    setToolDetailIndex(failedIndex >= 0 ? failedIndex : detailRows.length - 1);
+    updateRecoveryChoice(0);
     setReferenceDetailIndex(0);
-    setDetailTab(toolRows.length ? 'tools' : 'references');
+    setDetailTab(detailRows.length ? 'tools' : 'references');
     setToolDetailOpen(true);
-  }, [appendItem, closeTransientSurfaces, toolRows]);
+  }, [appendItem, closeTransientSurfaces, detailRows, updateRecoveryChoice]);
   const recoverFailedTool = useCallback(mode => {
-    const row = toolRows[toolDetailIndex];
+    const row = detailRows[toolDetailIndex];
     if (!row || !FAILURE_RUNTIME_STATUSES.has(row.status) || running) return;
     setToolDetailOpen(false);
-    const actions = new Set(Array.isArray(row.recoveryActions) ? row.recoveryActions : ['retry', 'fix']);
+    const actions = new Set(recoveryOptions(row).map(option => option.id));
     if (!actions.has(mode)) return;
     if (mode === 'continue') {
       const resumable = lastFailedRunId || currentRunId;
@@ -3045,8 +3282,12 @@ export function App({
     }
     if (mode === 'retry') {
       if (lastQuestion) {
+        const retry = storedTurnRequest(lastQuestion);
         setQueuePaused(false);
-        startTurn(lastQuestion, lastQuestion, {bypassQueuePause: true});
+        startTurn(retry.text, retry.text, {
+          bypassQueuePause: true,
+          mode: retry.mode,
+        });
       }
       else appendItem('error', '找不到失败任务的原始问题。');
       return;
@@ -3064,11 +3305,16 @@ export function App({
       `<tool_error>${reason}</tool_error>`,
       '请先分析失败原因，避免重复同一无效调用，并采用安全替代方案。',
     ].join('\n'), undefined, {bypassQueuePause: true});
-  }, [appendItem, currentRunId, lastFailedRunId, lastQuestion, resumeRun, running, startTurn, toolDetailIndex, toolRows]);
+  }, [appendItem, currentRunId, detailRows, lastFailedRunId, lastQuestion, resumeRun, running, startTurn, toolDetailIndex]);
 
   usePaste(rawText => {
-    const text = sanitizeComposerInput(rawText).replace(/\t/g, '    ');
+    let text = sanitizeComposerInput(rawText).replace(/\t/g, '    ');
     if (!text) return;
+    if (composerModeRef.current === 'prompt' && !inputRef.current && text.startsWith('!')) {
+      setComposerMode('shell');
+      text = text.slice(1).replace(/^ /, '');
+      if (!text) return;
+    }
     pushComposerUndo();
     const value = inputRef.current;
     const cursor = cursorOffsetRef.current;
@@ -3273,6 +3519,8 @@ export function App({
     }
     if (interactionFocus === 'toolDetail' && toolDetailOpen) {
       const references = runProjectionRef.current.references || [];
+      const row = detailRows[toolDetailIndex];
+      const recoveryItems = recoveryOptions(row);
       if (key.ctrl && character === 'c') {
         if (running) requestCancel();
         else setToolDetailOpen(false);
@@ -3280,7 +3528,7 @@ export function App({
         setToolDetailOpen(false);
         if (taskNavigationItems.length) setTaskNavigationOpen(true);
       }
-      else if (key.tab && toolRows.length && references.length) {
+      else if (key.tab && detailRows.length && references.length) {
         setDetailTab(value => value === 'tools' ? 'references' : 'tools');
       } else if (detailTab === 'references') {
         if (key.upArrow && references.length) {
@@ -3288,10 +3536,18 @@ export function App({
         } else if (key.downArrow && references.length) {
           setReferenceDetailIndex(value => (value + 1) % references.length);
         }
-      } else if (key.upArrow && toolRows.length) {
-        setToolDetailIndex(value => (value + toolRows.length - 1) % toolRows.length);
-      } else if (key.downArrow && toolRows.length) {
-        setToolDetailIndex(value => (value + 1) % toolRows.length);
+      } else if (key.leftArrow && recoveryItems.length && !running) {
+        updateRecoveryChoice(value => (value + recoveryItems.length - 1) % recoveryItems.length);
+      } else if (key.rightArrow && recoveryItems.length && !running) {
+        updateRecoveryChoice(value => (value + 1) % recoveryItems.length);
+      } else if (key.return && recoveryItems.length && !running) {
+        recoverFailedTool(recoveryItems[Math.min(recoveryChoiceRef.current, recoveryItems.length - 1)].id);
+      } else if (key.upArrow && detailRows.length) {
+        setToolDetailIndex(value => (value + detailRows.length - 1) % detailRows.length);
+        updateRecoveryChoice(0);
+      } else if (key.downArrow && detailRows.length) {
+        setToolDetailIndex(value => (value + 1) % detailRows.length);
+        updateRecoveryChoice(0);
       } else if (character.toLowerCase() === 'r') recoverFailedTool('retry');
       else if (character.toLowerCase() === 'f') recoverFailedTool('fix');
       else if (character.toLowerCase() === 'c') recoverFailedTool('continue');
@@ -3337,6 +3593,7 @@ export function App({
         setQueue(items => items.filter(item => item !== selected));
         setQueueManagerOpen(false);
         replacePastedContents({});
+        setComposerMode(queuedPromptMode(selected));
         updateComposer(queuedPromptText(selected));
         showComposerNotice('已取回任务，可修改后重新提交');
       } else if (character.toLowerCase() === 'd' && selected) {
@@ -3452,6 +3709,7 @@ export function App({
         text: inputRef.current,
         cursor: cursorOffsetRef.current,
         pastedContents: pastedContentsRef.current,
+        mode: composerModeRef.current,
       };
       setHistorySearchQuery(inputRef.current);
       setHistorySearchChoice(0);
@@ -3465,6 +3723,7 @@ export function App({
           text: inputRef.current,
           cursor: cursorOffsetRef.current,
           pastedContents: pastedContentsRef.current,
+          mode: composerModeRef.current,
         });
         pushComposerUndo();
         updateComposer('', 0);
@@ -3473,6 +3732,7 @@ export function App({
         showComposerNotice('草稿已暂存，Ctrl+S恢复');
       } else if (promptStash?.text) {
         replacePastedContents(promptStash.pastedContents);
+        setComposerMode(promptStash.mode === 'shell' ? 'shell' : 'prompt');
         updateComposer(promptStash.text, promptStash.cursor);
         setPromptStash(null);
         showComposerNotice('草稿已恢复');
@@ -3560,7 +3820,7 @@ export function App({
       }
       if (key.return) {
         const selected = suggestions[selectedSuggestion];
-        submitComposer(selected?.value ?? inputRef.current);
+        submitComposer(selected?.kind === 'file' ? inputRef.current : selected?.value ?? inputRef.current);
         return;
       }
       if (key.escape) {
@@ -3573,14 +3833,21 @@ export function App({
       if (latest) {
         setQueue(items => items.filter(item => item !== latest));
         replacePastedContents({});
+        setComposerMode(queuedPromptMode(latest));
         updateComposer(queuedPromptText(latest));
         setHistoryIndex(-1);
         showComposerNotice('已取回最近排队任务');
       }
       return;
     }
+    if (key.escape && composerModeRef.current === 'shell' && !inputRef.current) {
+      setComposerMode('prompt');
+      showComposerNotice('已返回问答模式');
+      return;
+    }
     if (!inputRef.current && history.length && key.upArrow) {
       historyDraftRef.current = inputRef.current;
+      historyDraftModeRef.current = composerModeRef.current;
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);
       loadComposerText(history[next]);
@@ -3596,7 +3863,8 @@ export function App({
       const next = historyIndex + 1;
       if (next >= history.length) {
         setHistoryIndex(-1);
-        loadComposerText(historyDraftRef.current);
+        setComposerMode(historyDraftModeRef.current === 'shell' ? 'shell' : 'prompt');
+        updateComposer(historyDraftRef.current);
       } else {
         setHistoryIndex(next);
         loadComposerText(history[next]);
@@ -3651,6 +3919,9 @@ export function App({
           value.slice(0, cursor - 1) + value.slice(cursor),
           cursor - 1,
         );
+      } else if (composerModeRef.current === 'shell') {
+        setComposerMode('prompt');
+        showComposerNotice('已返回问答模式');
       }
       return;
     }
@@ -3671,6 +3942,12 @@ export function App({
     if (!text) return;
     const value = inputRef.current;
     const cursor = cursorOffsetRef.current;
+    if (composerModeRef.current === 'prompt' && !value && cursor === 0 && text.startsWith('!')) {
+      setComposerMode('shell');
+      const remainder = text.slice(1);
+      if (remainder) updateComposer(remainder, remainder.length);
+      return;
+    }
     pushComposerUndo({coalesce: true});
     updateComposer(
       value.slice(0, cursor) + text + value.slice(cursor),
@@ -3705,7 +3982,9 @@ export function App({
     help: '输入搜索 · ←→分组 · Enter取用 · Esc关闭',
     transcript: '↑↓滚动 · PgUp/PgDn翻页 · Esc返回',
     commands: '↑↓选择 · Enter执行 · Tab/→补全 · Esc关闭',
-    composer: running ? '继续输入会加入队列' : '输入任务，/查看命令',
+    composer: composerMode === 'shell'
+      ? 'Shell模式 · 命令在SRT沙箱中运行 · Esc返回问答'
+      : running ? '继续输入会加入队列' : '输入任务，/查看命令 · !进入Shell',
   }[interactionFocus];
   const liveConversation = (
     <Box key="conversation" flexDirection="column" width="100%">
@@ -3730,6 +4009,9 @@ export function App({
           references={runProjection.references}
           recoveryActions={runProjection.recoveryActions}
           runSummary={runProjection.runSummary}
+          failure={runProjection.error}
+          modelRetry={runProjection.modelRetry}
+          now={runClock}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -3780,6 +4062,9 @@ export function App({
           references={frozen.runProjection?.references ?? []}
           recoveryActions={frozen.runProjection?.recoveryActions ?? []}
           runSummary={frozen.runProjection?.runSummary ?? null}
+          failure={frozen.runProjection?.error ?? null}
+          modelRetry={frozen.runProjection?.modelRetry ?? null}
+          now={runClock}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -3827,14 +4112,15 @@ export function App({
           <ReferenceDetailPanel
             rows={runProjection.references || []}
             selected={referenceDetailIndex}
-            hasTools={Boolean(toolRows.length)}
+            hasTools={Boolean(detailRows.length)}
           />
         ) : (
           <ToolDetailPanel
-            rows={toolRows}
+            rows={detailRows}
             selected={toolDetailIndex}
             running={running}
             hasReferences={Boolean(runProjection.references?.length)}
+            recoveryChoice={recoveryChoice}
           />
         )
       ) : taskStepDetailKey ? (
@@ -3897,12 +4183,14 @@ export function App({
           ) : null}
           {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
-              <Text color={ACCENT}>❯ </Text>
+              <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput
                 value={input}
                 cursorOffset={cursorOffset}
                 placeholder={interactionFocus === 'composer' || interactionFocus === 'commands'
-                  ? (running ? '继续输入可加入队列' : '输入任务，/查看命令')
+                  ? (composerMode === 'shell'
+                    ? (running ? '输入命令可加入队列' : '输入Shell命令')
+                    : (running ? '继续输入可加入队列' : '输入任务，/查看命令'))
                   : `${INTERACTION_FOCUS_LABELS[interactionFocus]}正在接收按键`}
               />
             </Box>

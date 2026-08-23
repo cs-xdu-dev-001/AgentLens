@@ -6,6 +6,7 @@ import { ModelConfigForm } from "./ModelConfigForm.jsx";
 import { ModelListPanel } from "./ModelListPanel.jsx";
 import { SettingsHeader } from "./SettingsHeader.jsx";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { connectionResultStatus } from "./modelConnectionState.js";
 
 
 const defaultModelFormValues = {
@@ -16,9 +17,9 @@ const defaultModelFormValues = {
   baseUrl: "https://api.deepseek.com",
   apiKey: "",
   modelName: "deepseek-v4-flash",
-  temperature: "0.7",
-  topP: "0.9",
-  maxTokens: "4096",
+  temperature: "",
+  topP: "",
+  maxTokens: "",
 };
 
 
@@ -50,9 +51,9 @@ function formValuesFromPreset(provider, presetIndex = 0) {
       provider: key === "custom" ? "" : key,
       baseUrl: providerPresets[key]?.baseUrl || "",
       modelName: "",
-      temperature: "0.7",
-      topP: "0.9",
-      maxTokens: "4096",
+      temperature: "",
+      topP: "",
+      maxTokens: "",
     };
   }
   return {
@@ -63,9 +64,9 @@ function formValuesFromPreset(provider, presetIndex = 0) {
     baseUrl: providerPresets[key].baseUrl,
     apiKey: "",
     modelName: preset.modelName,
-    temperature: valueForInput(preset.temperature),
-    topP: valueForInput(preset.topP),
-    maxTokens: valueForInput(preset.maxTokens),
+    temperature: "",
+    topP: "",
+    maxTokens: "",
   };
 }
 
@@ -78,16 +79,10 @@ function formValuesFromModel(model) {
     baseUrl: valueForInput(model.baseUrl),
     apiKey: "",
     modelName: valueForInput(model.modelName),
-    temperature: valueForInput(model.temperature),
-    topP: valueForInput(model.topP),
-    maxTokens: valueForInput(model.maxTokens),
+    temperature: "",
+    topP: "",
+    maxTokens: "",
   };
-}
-
-function numberOrNull(value, parser = Number) {
-  if (value === "" || value === null || value === undefined) return null;
-  const parsed = parser(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function payloadFromFormValues(formValues) {
@@ -100,17 +95,32 @@ function payloadFromFormValues(formValues) {
       : "chat_completions",
     baseUrl: formValues.baseUrl.trim(),
     modelName: formValues.modelName.trim(),
-    temperature: numberOrNull(formValues.temperature),
-    topP: numberOrNull(formValues.topP),
-    maxTokens: numberOrNull(
-      formValues.maxTokens,
-      (value) => Number.parseInt(value, 10),
-    ),
+    // 这些采样项不在当前表单中展示，不能继续静默保存预设或旧值。
+    temperature: null,
+    topP: null,
+    maxTokens: null,
   };
   if (formValues.apiKey.trim()) {
     payload.apiKey = formValues.apiKey.trim();
   }
   return payload;
+}
+
+function isLegacySamplingError(result) {
+  return /invalid temperature[\s\S]*only 1/i.test(
+    String(result?.message || ""),
+  );
+}
+
+function connectionResultMessage(result, recoveredLegacySampling = false) {
+  if (recoveredLegacySampling && connectionResultStatus(result) === "success") {
+    return "连接已恢复，旧采样参数已自动清理。";
+  }
+  const message = String(result?.message || "模型连接检查完成").trim();
+  if (isLegacySamplingError(result)) {
+    return "当前模型拒绝旧temperature配置，自动清理后仍未恢复。";
+  }
+  return message;
 }
 
 function requestModelOptionsRefresh() {
@@ -264,6 +274,7 @@ export function SettingsPage({ active = false }) {
       const preferredId = savedModel?.id || editingModelId || null;
       await loadModels(preferredId);
       requestModelOptionsRefresh();
+      setConnectionResult(null);
       resetModelForm();
       setPanelMode("details");
     } catch (error) {
@@ -300,15 +311,32 @@ export function SettingsPage({ active = false }) {
       latencyMs: null,
     });
     try {
-      const result = await modelConfigApi.test(modelId);
-      const message = result?.message || "模型连接检查完成";
+      let result = await modelConfigApi.test(modelId);
+      let recoveredLegacySampling = false;
+      if (connectionResultStatus(result) !== "success" && isLegacySamplingError(result)) {
+        await modelConfigApi.update(modelId, {
+          temperature: null,
+          topP: null,
+          maxTokens: null,
+        });
+        result = await modelConfigApi.test(modelId);
+        recoveredLegacySampling = connectionResultStatus(result) === "success";
+      }
+      const message = connectionResultMessage(
+        result,
+        recoveredLegacySampling,
+      );
+      const connectionAvailable = connectionResultStatus(result) === "success";
       setConnectionResult({
         modelId,
-        status: "success",
+        status: connectionAvailable ? "success" : "error",
         message,
         latencyMs: Date.now() - startedAt,
       });
-      notifyToast(message);
+      notifyToast(message, {
+        duration: connectionAvailable ? 2400 : 4200,
+        tone: connectionAvailable ? "neutral" : "error",
+      });
       await loadModels(modelId);
       requestModelOptionsRefresh();
     } catch (error) {

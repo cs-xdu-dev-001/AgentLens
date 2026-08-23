@@ -193,6 +193,11 @@ def list_workspace_files(request: Request, path: str = "") -> dict:
         _raise_workspace_error(exc)
 
 
+@router.get("/api/workspace/mentions", tags=WORKSPACE_TAGS)
+def list_workspace_mentions(request: Request) -> dict:
+    return api_success(_runtime(request).mention_paths())
+
+
 @router.post("/api/workspace/files", tags=WORKSPACE_TAGS)
 async def upload_workspace_file(
     request: Request,

@@ -1,4 +1,7 @@
 import {EventEmitter} from 'node:events';
+import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
@@ -14,6 +17,7 @@ import {
   resolveTerminalMode,
   runtimeStatusFromEvent,
   sanitizeComposerInput,
+  shellActivityPreview,
   settleRuntimeRows,
   shouldAnimateRuntimeStatus,
   shouldCollapsePaste,
@@ -39,6 +43,25 @@ test('runtime spinner stops once useful progress is visible', () => {
   assert.equal(shouldAnimateRuntimeStatus({running: true, blocked: true}), false);
   assert.equal(shouldAnimateRuntimeStatus({running: true, cancelPending: true}), false);
   assert.equal(shouldAnimateRuntimeStatus({running: false}), false);
+});
+
+test('shell progress keeps a redacted five-line live preview and classifies failures', () => {
+  const preview = shellActivityPreview({
+    name: 'run_sandbox_command',
+    status: 'running',
+    stdout: 'one\ntwo\nthree\nfour\nfive\nsix\napi_key=secret-value',
+  });
+  assert.deepEqual(preview.lines, ['three', 'four', 'five', 'six', 'api_key=[已隐藏]']);
+  assert.equal(preview.hiddenLines, 2);
+  assert.equal(preview.label, '实时输出');
+
+  const timeout = shellActivityPreview({
+    name: 'run_sandbox_command',
+    status: 'failed',
+    errorCode: 'tool_timeout',
+  });
+  assert.equal(timeout.label, '命令超时');
+  assert.equal(timeout.timedOut, true);
 });
 
 test('unified event names settle tool and step status even without legacy status fields', () => {
@@ -184,6 +207,15 @@ async function waitForFrame(view, pattern, timeoutMs = 1500) {
   return view.lastFrame() ?? '';
 }
 
+async function waitForCondition(predicate, message, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.ok(predicate(), message);
+}
+
 class FakeClient extends EventEmitter {
   constructor({readyDelay = 0} = {}) {
     super();
@@ -194,7 +226,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 6,
+      protocolVersion: 7,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -236,6 +268,82 @@ class ClosingClient extends FakeClient {
     this.closed += 1;
   }
 }
+
+test('bang mode runs explicit shell commands without asking the model', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.20.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('!');
+  await tick();
+  assert.match(view.lastFrame(), /Shell模式/);
+  assert.match(view.lastFrame(), /SRT沙箱/);
+
+  view.stdin.write('echo sandbox-ok');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'shell',
+    requestId: 'turn-1',
+    command: 'echo sandbox-ok',
+  });
+
+  client.emit('message', {
+    type: 'agent_event',
+    requestId: 'turn-1',
+    event: {
+      type: 'tool_result',
+      runId: 'shell-run',
+      toolCallId: 'shell-call',
+      toolName: 'run_sandbox_command',
+      status: 'success',
+      output: {stdout: 'sandbox-ok\n', exitCode: 0},
+    },
+  });
+  client.emit('message', {
+    type: 'turn_completed',
+    requestId: 'turn-1',
+    runId: 'shell-run',
+    answer: 'sandbox-ok\n',
+  });
+  await waitForFrame(view, /sandbox-ok/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /已返回问答模式/);
+});
+
+test('queued bang commands preserve shell mode and execution order', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.20.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('先执行Agent任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('!echo queued-shell');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /接下来 1/);
+  assert.equal(client.sent.filter(item => item.type === 'shell').length, 0);
+
+  client.emit('message', {
+    type: 'turn_completed',
+    requestId: 'turn-1',
+    runId: 'run-agent',
+    answer: 'Agent任务完成',
+  });
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && client.sent.filter(item => item.type === 'shell').length === 0) await tick();
+  assert.deepEqual(client.sent.filter(item => item.type === 'shell')[0], {
+    type: 'shell',
+    requestId: 'turn-2',
+    command: 'echo queued-shell',
+  });
+});
 
 test('Ink app renders command suggestions and streamed tool progress', async () => {
   const client = new FakeClient({readyDelay: 80});
@@ -282,6 +390,8 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
   await tick();
   assert.match(view.lastFrame(), /run_sandbox_command/);
   assert.match(view.lastFrame(), /0\.4s/);
+  assert.match(view.lastFrame(), /实时输出/);
+  assert.match(view.lastFrame(), /up 3 days/);
 
   client.emit('message', {
     type: 'agent_event',
@@ -318,6 +428,30 @@ test('command completion reveals the selected command argument contract', async 
   await tick();
   assert.doesNotMatch(view.lastFrame(), /list \| use <ID> \| config/);
   view.unmount();
+});
+
+test('at mentions fuzzy-complete workspace files without exposing sensitive paths', async t => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'knowflow-at-'));
+  await mkdir(join(workspaceRoot, 'src'));
+  await writeFile(join(workspaceRoot, 'src', 'app.jsx'), 'export default {};\n');
+  await writeFile(join(workspaceRoot, '.env'), 'SECRET=hidden\n');
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" workspaceRoot={workspaceRoot} />);
+  t.after(async () => {
+    view.unmount();
+    await rm(workspaceRoot, {recursive: true, force: true});
+  });
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查 @app');
+  await waitForFrame(view, /@src\/app\.jsx/);
+  assert.doesNotMatch(view.lastFrame(), /\.env/);
+  view.stdin.write('\t');
+  await tick();
+  assert.match(view.lastFrame(), /检查 @src\/app\.jsx/);
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.find(item => item.type === 'submit')?.text, '检查 @src/app.jsx');
 });
 
 test('Enter executes the highlighted slash command while Tab only completes it', async t => {
@@ -493,6 +627,38 @@ test('Ink app searches and switches models from the composer', async () => {
   await tick();
   assert.match(view.lastFrame(), /已切换到GPT 5\.5/);
   view.unmount();
+});
+
+test('local model status explains protocol and provider-controlled sampling', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.2" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'model_list',
+    model: 'kimi-k3',
+    models: [{
+      id: 'local',
+      name: 'kimi-k3',
+      modelName: 'kimi-k3',
+      provider: 'custom',
+      apiMode: 'chat_completions',
+      selected: true,
+      switchable: false,
+    }],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /Chat Completions协议/);
+  assert.match(view.lastFrame(), /采样参数由模型服务决定/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  view.stdin.write('/status');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /kimi-k3 · Chat Completions协议/);
+  assert.match(view.lastFrame(), /不发送temperature、top_p或max_tokens/);
 });
 
 test('Alt+P opens the model picker without entering composer text', async () => {
@@ -713,7 +879,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 6,
+    protocolVersion: 7,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1007,9 +1173,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(view.lastFrame(), /example\.com\/report/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u0005');
-  await tick();
-  assert.match(view.lastFrame(), /引用来源/);
-  assert.match(view.lastFrame(), /匹配度 91%/);
+  await waitForFrame(view, /引用来源[\s\S]*匹配度 91%/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u001b');
   await tick();
@@ -1113,6 +1277,79 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.doesNotMatch(view.lastFrame(), /模型分析完成/);
   assert.match(view.lastFrame(), /已读取网页/);
   view.unmount();
+});
+
+test('Ink app counts down model rate-limit recovery and clears it on output', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.1" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查模型重试');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      eventName: 'model.retrying',
+      retryAttempt: 1,
+      maxRetries: 3,
+      retryInMs: 2000,
+      statusCode: 429,
+      errorType: 'rate_limit',
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /等待重试/);
+  assert.match(view.lastFrame(), /模型限流，2秒后重试（1\/3）/);
+
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.match(view.lastFrame(), /模型限流，1秒后重试（1\/3）/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {eventName: 'message.delta', text: '已恢复'},
+  });
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /等待重试|秒后重试/);
+  assert.match(view.lastFrame(), /模型已恢复/);
+});
+
+test('Ink app hides upstream rate-limit account details after retries are exhausted', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.1" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('触发限流');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_failed',
+    message: 'HTTP 429: rate_limit_reached_error: Your account org-8242d004acb748ada9255f6d42f4dc23<ak-fbzbf9goi431l1d8rrx1> reached organization max RPM: 3',
+  });
+  await waitForFrame(view, /上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复/);
+
+  assert.match(view.lastFrame(), /上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复/);
+  assert.match(view.lastFrame(), /失败/);
+  assert.doesNotMatch(view.lastFrame(), /8242d004acb748ada9255f6d42f4dc23|fbzbf9goi431l1d8rrx1|max RPM/);
+
+  view.stdin.write('\u0005');
+  await waitForFrame(view, /运行详情/);
+  assert.match(view.lastFrame(), /重试本轮/);
+  assert.match(view.lastFrame(), /分析错误并继续/);
+  assert.doesNotMatch(view.lastFrame(), /8242d004acb748ada9255f6d42f4dc23|fbzbf9goi431l1d8rrx1|max RPM/);
+
+  view.stdin.write('\u001b[C');
+  await waitForFrame(view, /❯ 分析错误并继续/);
+  view.stdin.write('\r');
+  await waitForCondition(
+    () => client.sent.at(-1)?.type === 'submit'
+      && /非可信诊断数据/.test(client.sent.at(-1)?.text || ''),
+    'failed-run analysis task should be submitted',
+  );
+  assert.equal(client.sent.at(-1).type, 'submit');
+  assert.match(client.sent.at(-1).text, /非可信诊断数据/);
 });
 
 test('Ctrl+T turns the task summary into a navigable view and opens the selected tool', async () => {
@@ -1258,11 +1495,10 @@ test('Ink app preserves a failed run summary before partial output', async () =>
     runId: 'run-failed-summary',
     message: '工具调用失败',
   });
-  await tick();
+  await waitForFrame(view, /执行失败|队列已暂停/);
 
   view.stdin.write('\u000f');
-  await tick();
-  const frame = view.lastFrame();
+  const frame = await waitForFrame(view, /对话记录/);
   assert.match(frame, /执行一个会失败的任务/);
   assert.match(frame, /失败/);
   assert.ok(frame.indexOf('执行一个会失败的任务') < frame.indexOf('部分输出。'));
@@ -1297,8 +1533,7 @@ test('capability commands request and render real runtime status', async () => {
     section: 'tools',
     status: {webSearch: {configured: true, enabled: true}},
   });
-  await tick();
-  assert.match(view.lastFrame(), /web_search\s+已启用/);
+  await waitForFrame(view, /web_search\s+已启用/);
   view.unmount();
 });
 
@@ -1323,8 +1558,7 @@ test('context commands inspect usage and compact with optional instructions', as
       roleTokens: {system: 100, user: 400, assistant: 700},
     },
   });
-  await tick();
-  assert.match(view.lastFrame(), /1200\/96000 tokens/);
+  await waitForFrame(view, /1200\/96000 tokens/);
 
   client.emit('message', {
     type: 'agent_event',
@@ -1338,8 +1572,7 @@ test('context commands inspect usage and compact with optional instructions', as
       shouldWarn: true,
     },
   });
-  await tick();
-  assert.match(view.lastFrame(), /上下文81%/);
+  await waitForFrame(view, /上下文81%/);
 
   view.stdin.write('/compact 保留工作区边界');
   await tick();
@@ -1357,8 +1590,7 @@ test('context commands inspect usage and compact with optional instructions', as
     status: {usedTokens: 500, maxTokens: 96000, usagePercent: 0.5},
     transcriptMessageCount: 6,
   });
-  await tick();
-  assert.match(view.lastFrame(), /上下文压缩完成/);
+  await waitForFrame(view, /上下文压缩完成/);
   assert.match(view.lastFrame(), /完整对话记录仍保留/);
   view.unmount();
 });
@@ -1387,8 +1619,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
       changedFiles: 2,
     },
   });
-  await tick();
-  assert.match(view.lastFrame(), /2个文件已修改/);
+  await waitForFrame(view, /2个文件已修改/);
 
   view.stdin.write('/resume');
   await tick();
@@ -1399,8 +1630,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
     type: 'session_list',
     sessions: [{runId: 'run_restore', title: '恢复测试', status: 'failed'}],
   });
-  await tick();
-  assert.match(view.lastFrame(), /恢复测试[\s\S]*失败，可继续/);
+  await waitForFrame(view, /恢复测试[\s\S]*失败，可继续/);
   view.stdin.write('\r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
@@ -1442,8 +1672,7 @@ test('resume picker filters sessions, previews context and retries loading in pl
   view.stdin.write('\r');
   await tick();
   client.emit('message', {type: 'sessions_failed', message: '会话目录暂不可读'});
-  await tick();
-  assert.match(view.lastFrame(), /会话目录暂不可读/);
+  await waitForFrame(view, /会话目录暂不可读/);
   view.stdin.write('r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'sessions');
@@ -1516,8 +1745,7 @@ test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-sc
   await tick();
   const answer = Array.from({length: 40}, (_, index) => `记录行${index + 1}`).join('\n');
   client.emit('message', {type: 'turn_completed', answer});
-  await tick();
-  const frame = view.lastFrame();
+  const frame = await waitForFrame(view, /记录行40/);
   assert.ok(frame.split('\n').length > 24, `native scrollback was still viewport-clamped:\n${frame}`);
   assert.match(frame, /记录行1/);
   assert.match(frame, /记录行40/);
@@ -1535,8 +1763,7 @@ test('native scrollback stays selectable while Ctrl+O opens a frozen keyboard-sc
   await tick();
   assert.doesNotMatch(view.lastFrame(), /进入浏览器后到达的新消息/);
   view.stdin.write('\u000f');
-  await tick();
-  assert.match(view.lastFrame(), /进入浏览器后到达的新消息/);
+  await waitForFrame(view, /进入浏览器后到达的新消息/);
   view.unmount();
 });
 
@@ -1570,8 +1797,8 @@ test('failed tool details expose recovery actions that really retry or ask the a
   assert.match(view.lastFrame(), /missing path/);
   assert.match(view.lastFrame(), /--password=\[已隐藏\]/);
   assert.doesNotMatch(view.lastFrame(), /hunter2|forged-title/);
-  assert.match(view.lastFrame(), /R重新运行本轮/);
-  assert.match(view.lastFrame(), /F分析错误并继续/);
+  assert.match(view.lastFrame(), /恢复\s+❯ 重试本轮\s+分析错误并继续/);
+  assert.match(view.lastFrame(), /←→选择 · Enter执行/);
 
   view.stdin.write('f');
   await tick();
