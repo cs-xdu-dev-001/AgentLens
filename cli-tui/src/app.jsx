@@ -111,6 +111,12 @@ function queuedPromptDisplay(item) {
     : String(item?.displayText ?? item?.text ?? '');
 }
 
+function queuedPromptReasoning(item) {
+  return typeof item === 'object' && item?.reasoningEffort
+    ? String(item.reasoningEffort)
+    : 'default';
+}
+
 function queuedPromptHistory(item) {
   const text = queuedPromptText(item);
   return queuedPromptMode(item) === 'shell' ? `!${text}` : text;
@@ -138,6 +144,7 @@ const HELP_SHORTCUTS = Object.freeze([
   {value: 'Ctrl+S', description: '暂存或恢复草稿'},
   {value: 'Shift+Tab', description: '切换权限模式'},
   {value: 'Alt+P', description: '切换模型'},
+  {value: 'Alt+R', description: '切换推理强度'},
   {value: 'Ctrl+C', description: '取消任务；空输入时二次退出'},
 ]);
 
@@ -164,6 +171,7 @@ const INTERACTION_FOCUS_LABELS = Object.freeze({
   help: '命令浏览',
   sessions: '恢复会话',
   models: '选择模型',
+  reasoning: '推理强度',
   history: '搜索历史',
   permissions: '权限模式',
   transcript: '对话记录',
@@ -181,6 +189,7 @@ export function resolveInteractionFocus(state = {}) {
   if (state.taskNavigationOpen) return 'taskNavigation';
   if (state.sessionPicker) return 'sessions';
   if (state.modelPicker) return 'models';
+  if (state.reasoningPicker) return 'reasoning';
   if (state.historySearchOpen) return 'history';
   if (state.permissionPicker) return 'permissions';
   if (state.helpOpen) return 'help';
@@ -222,6 +231,13 @@ const PERMISSION_MODES = [
   {id: 'ask', label: '询问', detail: '写入和命令执行前确认'},
   {id: 'autoEdit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
   {id: 'bypass', label: '完全访问', detail: '所有工具自动通过，请仅在可信目录使用'},
+];
+const REASONING_EFFORTS = [
+  {id: 'default', command: 'auto', label: '自动', detail: '由模型服务选择合适强度'},
+  {id: 'low', command: 'low', label: '快速', detail: '降低推理开销，优先响应速度'},
+  {id: 'medium', command: 'medium', label: '标准', detail: '平衡速度与复杂任务能力'},
+  {id: 'high', command: 'high', label: '深入', detail: '增加复杂任务的推理投入'},
+  {id: 'xhigh', command: 'xhigh', label: '最高', detail: '用于最复杂任务，耗时可能更长'},
 ];
 
 export function thinkingStateForPhase(phase) {
@@ -1091,6 +1107,23 @@ function PermissionPicker({selected}) {
   );
 }
 
+function ReasoningPicker({selected}) {
+  return (
+    <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+      <Text bold>推理强度</Text>
+      {REASONING_EFFORTS.map((mode, index) => (
+        <Box key={mode.id}>
+          <Text color={index === selected ? ACCENT : PRIMARY} bold={index === selected}>
+            {index === selected ? '❯ ' : '  '}{mode.label}
+          </Text>
+          <Text color={MUTED}>  {mode.detail}</Text>
+        </Box>
+      ))}
+      <Text color={MUTED}>↑↓选择  Enter确认  Esc关闭</Text>
+    </Box>
+  );
+}
+
 function ApprovalPrompt({approval, selected, position = 1, total = 1}) {
   const options = ['允许一次', '本次会话允许', '拒绝'];
   return (
@@ -1594,6 +1627,9 @@ export function App({
   const [modelQuery, setModelQuery] = useState('');
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('default');
+  const [reasoningPicker, setReasoningPicker] = useState(false);
+  const [reasoningChoice, setReasoningChoice] = useState(0);
   const [currentRunId, setCurrentRunId] = useState('');
   const activeRequestIdRef = useRef('');
   const settledRequestIdsRef = useRef(new Set());
@@ -1720,6 +1756,7 @@ export function App({
       setModelQuery('');
       setModelError('');
     }
+    if (keep !== 'reasoning') setReasoningPicker(false);
     if (keep !== 'permissions') setPermissionPicker(false);
     if (keep !== 'help') {
       setHelpOpen(false);
@@ -2535,7 +2572,7 @@ export function App({
     const requestId = `turn-${requestCounter.current}`;
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
-      : {type: 'submit', requestId, text};
+      : {type: 'submit', requestId, text, reasoningEffort: queuedPromptReasoning(next)};
     if (!client.send(message)) {
       setQueue(orderedQueue(queue));
       setQueuePaused(true);
@@ -2661,6 +2698,7 @@ export function App({
     queueManagerOpen,
     sessionPicker,
     modelPicker,
+    reasoningPicker,
     historySearchOpen,
     permissionPicker,
     helpOpen,
@@ -2774,10 +2812,11 @@ export function App({
       priority: normalizedPriority,
       sequence: queueSequenceRef.current,
       mode: mode === 'shell' ? 'shell' : 'prompt',
+      reasoningEffort,
     };
     setQueue(items => orderedQueue([...items, item]));
     return item;
-  }, []);
+  }, [reasoningEffort]);
 
   const requestImmediateQueueRun = useCallback(() => {
     if (!running || queueInterruptRequestRef.current) return false;
@@ -2831,7 +2870,7 @@ export function App({
     const requestId = `turn-${requestCounter.current}`;
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
-      : {type: 'submit', requestId, text};
+      : {type: 'submit', requestId, text, reasoningEffort};
     if (!client.send(message)) {
       enqueuePrompt(text, publicDisplayText, 'now', mode);
       setQueuePaused(true);
@@ -2868,7 +2907,7 @@ export function App({
     setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
     appendItem('user', publicDisplayText);
-  }, [approval, appendItem, client, enqueuePrompt, question, queue.length, queuePaused, ready, resetAssistantDraft, running]);
+  }, [approval, appendItem, client, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, running]);
 
   const resumeRun = useCallback(runId => {
     const identifier = String(runId ?? '').trim();
@@ -2977,12 +3016,27 @@ export function App({
         setModelChoice(0);
         client.send({type: 'models', action: 'list'});
       } else appendItem('error', '用法：/model、/model use <ID>或/model config');
+    } else if (command.value === '/reasoning') {
+      const value = args.trim().toLowerCase();
+      if (!value) {
+        setReasoningChoice(Math.max(0, REASONING_EFFORTS.findIndex(item => item.id === reasoningEffort)));
+        closeTransientSurfaces('reasoning');
+        setReasoningPicker(true);
+      } else {
+        const selected = REASONING_EFFORTS.find(item => item.command === value || item.id === value);
+        if (!selected) appendItem('error', '用法：/reasoning [auto|low|medium|high|xhigh]');
+        else {
+          setReasoningEffort(selected.id);
+          showComposerNotice(`推理强度：${selected.label}（仅本次会话）`);
+        }
+      }
     } else if (command.value === '/status') {
       const modelStatus = `${model} · ${modelProtocolLabel(activeModel?.apiMode)}`;
       const samplingStatus = activeModel?.switchable === false
         ? '\n本地直连不发送temperature、top_p或max_tokens，采样参数由模型服务决定。'
         : '';
-      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
+      const reasoningLabel = REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动';
+      appendItem('assistant', `${running ? '执行中' : '就绪'} · ${modelStatus} · 推理${reasoningLabel} · ${queue.length}个排队任务 · ${PERMISSION_MODES.find(item => item.id === permissionMode)?.label}${samplingStatus}`);
       client.send({type: 'workspace', action: 'status'});
     } else if (command.value === '/context') {
       client.send({type: 'context', action: 'status'});
@@ -3157,7 +3211,7 @@ export function App({
         ].join('\n'), undefined, {bypassQueuePause: true});
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, startTurn]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, enqueuePrompt, exit, lastFailedRunId, lastQuestion, model, permissionMode, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, running, sessions, showComposerNotice, startTurn]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -3365,6 +3419,7 @@ export function App({
       && !question
       && !sessionPicker
       && !modelPicker
+      && !reasoningPicker
       && !permissionPicker
       && !helpOpen
       && !changeDetailOpen
@@ -3490,6 +3545,19 @@ export function App({
           setModelChoice(0);
         }
       }
+      return;
+    }
+    if (interactionFocus === 'reasoning' && reasoningPicker) {
+      if (key.upArrow) {
+        setReasoningChoice(value => (value + REASONING_EFFORTS.length - 1) % REASONING_EFFORTS.length);
+      } else if (key.downArrow) {
+        setReasoningChoice(value => (value + 1) % REASONING_EFFORTS.length);
+      } else if (key.return) {
+        const nextEffort = REASONING_EFFORTS[reasoningChoice] ?? REASONING_EFFORTS[0];
+        setReasoningEffort(nextEffort.id);
+        setReasoningPicker(false);
+        showComposerNotice(`推理强度：${nextEffort.label}（仅本次会话）`);
+      } else if (key.escape) setReasoningPicker(false);
       return;
     }
     if (interactionFocus === 'permissions' && permissionPicker) {
@@ -3690,6 +3758,15 @@ export function App({
         setModelQuery('');
         setModelChoice(0);
         client.send({type: 'models', action: 'list'});
+      }
+      return;
+    }
+    if (key.meta && character.toLowerCase() === 'r') {
+      if (running || approval) showComposerNotice('请等待当前任务结束后再切换推理强度');
+      else {
+        setReasoningChoice(Math.max(0, REASONING_EFFORTS.findIndex(item => item.id === reasoningEffort)));
+        closeTransientSurfaces('reasoning');
+        setReasoningPicker(true);
       }
       return;
     }
@@ -4003,6 +4080,7 @@ export function App({
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
     sessions: '↑↓选择 · Enter恢复 · Esc关闭',
     models: '↑↓选择 · Enter切换 · Esc关闭',
+    reasoning: '↑↓选择 · Enter确认 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',
     permissions: '↑↓选择 · Enter确认 · Esc关闭',
     help: '输入搜索 · ←→分组 · Enter取用 · Esc关闭',
@@ -4179,6 +4257,7 @@ export function App({
               maxVisible={Math.max(2, Math.min(6, (stdout.rows ?? 24) - 15))}
             />
           ) : null}
+          {reasoningPicker ? <ReasoningPicker selected={reasoningChoice} /> : null}
           {historySearchOpen ? (
             <HistorySearch
               matches={historyMatches}
@@ -4207,7 +4286,7 @@ export function App({
               <Text color={PRIMARY}>{argumentHint}</Text>
             </Box>
           ) : null}
-          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput
@@ -4228,7 +4307,7 @@ export function App({
             </Text>
             {!narrow ? (
               <Text color={MUTED}>
-                {[contextIndicator(runProjection.context), model || '连接中', workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}
+                {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}
               </Text>
             ) : null}
           </Box>

@@ -112,6 +112,8 @@ def main() -> None:
     assert payload["tools"] == tools
     assert payload["tool_choice"] == "auto"
     assert payload["max_completion_tokens"] == 1000
+    assert "temperature" not in payload
+    assert "top_p" not in payload
 
     default_sampling_config = dict(config)
     default_sampling_config.pop("temperature")

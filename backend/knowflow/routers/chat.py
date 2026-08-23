@@ -202,6 +202,11 @@ def run_chat(
         else []
     )
     chat_config = get_model_config(payload.chatModelConfigId, "chat", user_id)
+    if chat_config is not None:
+        chat_config = {
+            **chat_config,
+            "reasoning_effort": payload.reasoningEffort,
+        }
     answer_options = {
         "use_rag": use_rag,
         "attachments": payload.attachments,

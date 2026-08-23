@@ -243,7 +243,16 @@ class InkRuntimeBridge:
                     "message": "输入历史无法保存，本次任务仍会继续。",
                 }
             )
-        self._start(lambda: self.backend.run(text, self._agent_event))
+        reasoning_effort = str(
+            message.get("reasoningEffort") or "default"
+        )
+        self._start(
+            lambda: self.backend.run(
+                text,
+                self._agent_event,
+                reasoning_effort=reasoning_effort,
+            )
+        )
 
     def _shell(self, message: dict[str, Any]) -> None:
         command = str(message.get("command") or "").strip()

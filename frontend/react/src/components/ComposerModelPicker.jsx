@@ -25,9 +25,18 @@ function modelDescription(model) {
     .join(" · ");
 }
 
+const REASONING_EFFORTS = Object.freeze([
+  { id: "default", label: "自动" },
+  { id: "low", label: "快速" },
+  { id: "medium", label: "标准" },
+  { id: "high", label: "深入" },
+  { id: "xhigh", label: "最高" },
+]);
+
 export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   const [models, setModels] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState("default");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef(null);
@@ -86,6 +95,23 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
   }, [models]);
 
   useEffect(() => {
+    const handleReasoningUpdated = (event) => {
+      const value = String(event.detail?.value || "default");
+      if (REASONING_EFFORTS.some((item) => item.id === value)) {
+        setReasoningEffort(value);
+      }
+    };
+    window.addEventListener(
+      "knowflow:react-reasoning-selection-updated",
+      handleReasoningUpdated,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-reasoning-selection-updated",
+      handleReasoningUpdated,
+    );
+  }, []);
+
+  useEffect(() => {
     const handleOutsidePointer = (event) => {
       if (!rootRef.current?.contains(event.target)) closePicker();
     };
@@ -142,6 +168,15 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
       { detail: { value } },
     ));
     closePicker(true);
+  };
+
+  const selectReasoningEffort = (value) => {
+    if (disabled || !REASONING_EFFORTS.some((item) => item.id === value)) return;
+    setReasoningEffort(value);
+    window.dispatchEvent(new CustomEvent(
+      "knowflow:react-chat-reasoning-change",
+      { detail: { value } },
+    ));
   };
 
   const togglePicker = () => {
@@ -209,6 +244,11 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
           </svg>
         </span>
         <span>{selectedModel?.name || "配置模型"}</span>
+        {reasoningEffort !== "default" ? (
+          <span className={"composer-reasoning-value"}>
+            {REASONING_EFFORTS.find((item) => item.id === reasoningEffort)?.label}
+          </span>
+        ) : null}
         <svg className={"composer-model-chevron"} viewBox={"0 0 16 16"} aria-hidden={"true"} focusable={"false"}>
           <path d={"m4 6 4 4 4-4"} />
         </svg>
@@ -251,6 +291,23 @@ export function ComposerModelPicker({ disabled = false, inputRef = null }) {
                 </button>
               );
             })}
+          </div>
+          <div className={"composer-reasoning-section"}>
+            <strong>{"推理强度"}</strong>
+            <div role={"radiogroup"} aria-label={"推理强度"}>
+              {REASONING_EFFORTS.map((item) => (
+                <button
+                  className={item.id === reasoningEffort ? "selected" : ""}
+                  key={item.id}
+                  type={"button"}
+                  role={"radio"}
+                  aria-checked={item.id === reasoningEffort}
+                  onClick={() => selectReasoningEffort(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             className={"composer-model-manage"}

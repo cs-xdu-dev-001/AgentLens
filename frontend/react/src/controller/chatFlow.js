@@ -347,6 +347,7 @@ export function createChatFlow({
       chatModelConfigId: state.selectedChatModelConfigId
         ? Number(state.selectedChatModelConfigId)
         : null,
+      reasoningEffort: state.selectedReasoningEffort || "default",
       attachments: state.chatAttachments.map(
         ({ attachmentId, filename, fileType, mimeType, content, previewUrl }) => ({
           attachmentId,
@@ -409,6 +410,7 @@ export function createChatFlow({
     state.selectedChatModelConfigId = request.chatModelConfigId
       ? String(request.chatModelConfigId)
       : "";
+    state.selectedReasoningEffort = request.reasoningEffort || "default";
     requestComposerReset({
       focus: true,
       question: request.question,
@@ -419,6 +421,10 @@ export function createChatFlow({
       selectedChatKnowledgeBaseId: state.selectedChatKnowledgeBaseId,
     });
     notifyReactModelSelectionUpdated(state.selectedChatModelConfigId);
+    window.dispatchEvent(new CustomEvent(
+      "knowflow:react-reasoning-selection-updated",
+      { detail: { value: state.selectedReasoningEffort } },
+    ));
     notifyChatQueue();
     toast("已取回待发送任务，可修改后重新提交");
     return true;
@@ -756,6 +762,10 @@ export function createChatFlow({
     const chatModelConfigId = retryRequest?.payload?.chatModelConfigId
       ?? queuedRequest?.chatModelConfigId
       ?? (state.selectedChatModelConfigId ? Number(state.selectedChatModelConfigId) : null);
+    const reasoningEffort = retryRequest?.payload?.reasoningEffort
+      ?? queuedRequest?.reasoningEffort
+      ?? state.selectedReasoningEffort
+      ?? "default";
     const skillId = retryRequest?.payload?.skillId ?? queuedRequest?.skillId ?? options.skillId ?? null;
     const attachments =
       retryRequest?.payload?.attachments ||
@@ -773,6 +783,7 @@ export function createChatFlow({
       sessionId: state.currentSessionId,
       question,
       chatModelConfigId,
+      reasoningEffort,
       useRag: Boolean(knowledgeBaseId),
       enableTools: true,
       autoAgent: true,

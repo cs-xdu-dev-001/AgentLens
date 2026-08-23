@@ -187,7 +187,7 @@ def main():
         return FakeResponse({"output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Current answer."}]}]})
 
     gateway = ModelGateway(fetch_one=lambda *_a, **_k: None, cipher=FakeCipher(), post_model_json=post_model_json, stream_model_json=stream_from_post(post_model_json), local_embedding=lambda _: [0.0])
-    config = {"api_mode": "responses", "model_name": "gpt-test", "base_url": "https://example.com/v1", "api_key_cipher": "key", "temperature": "0.2", "top_p": "0.8", "max_tokens": 123}
+    config = {"api_mode": "responses", "model_name": "gpt-test", "base_url": "https://example.com/v1", "api_key_cipher": "key", "temperature": "0.2", "top_p": "0.8", "max_tokens": 123, "reasoning_effort": "high"}
     message = gateway.complete([{ "role": "system", "content": "Be concise."}, {"role": "system", "content": "Use plain text."}, {"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}], config)
     assert calls[0][0] == "https://example.com/v1/responses"
     payload = calls[0][1]
@@ -195,10 +195,27 @@ def main():
     assert payload["input"] == [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}, {"role": "user", "content": "Again"}]
     assert payload["model"] == "gpt-test" and payload["store"] is False
     assert payload["max_output_tokens"] == 123
-    assert payload["temperature"] == 0.2
+    assert "temperature" not in payload
     assert "top_p" not in payload
+    assert payload["reasoning"] == {"effort": "high"}
     assert "previous_response_id" not in payload and "conversation" not in payload
     assert message == {"role": "assistant", "content": "Current answer.", "tool_calls": []}
+
+    default_payload = build_responses_payload(
+        config={"model_name": "gpt-test", "temperature": 0.7},
+        messages=[{"role": "user", "content": "Hi"}],
+    )
+    assert "temperature" not in default_payload
+    assert "reasoning" not in default_payload
+    try:
+        build_responses_payload(
+            config={"model_name": "gpt-test", "reasoning_effort": "turbo"},
+            messages=[{"role": "user", "content": "Hi"}],
+        )
+    except ResponsesProtocolError:
+        pass
+    else:
+        raise AssertionError("invalid reasoning effort unexpectedly accepted")
 
     def no_text(*_args):
         return FakeResponse({"output": [{"type": "message", "content": []}]})

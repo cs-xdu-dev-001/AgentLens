@@ -593,6 +593,13 @@ body {
   font-weight: 640;
 }
 
+#chat-form.composer .composer-model-trigger .composer-reasoning-value {
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid var(--control-border);
+  color: var(--muted);
+  font-weight: 560;
+}
+
 #chat-form.composer .composer-model-mark {
   width: 19px;
   height: 19px;
@@ -600,11 +607,57 @@ body {
 }
 
 #chat-form.composer .composer-model-popover {
-  width: min(320px, calc(100vw - 32px));
+  width: min(370px, calc(100vw - 32px));
   border-color: var(--control-border);
   border-radius: var(--kf-radius-panel);
   background: var(--panel-bg);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+}
+
+.composer-reasoning-section {
+  display: grid;
+  gap: 8px;
+  padding: 11px 10px 10px;
+  border-top: 1px solid var(--control-border);
+}
+
+.composer-reasoning-section > strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.composer-reasoning-section > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--control-bg);
+}
+
+.composer-reasoning-section button {
+  min-height: 32px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.composer-reasoning-section button.selected {
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.composer-reasoning-section button:focus-visible {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: 1px;
 }
 
 #page-chat #chat-form.composer .composer-shell > button#chat-submit-btn.composer-send-button[type="submit"] {

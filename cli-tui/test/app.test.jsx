@@ -673,6 +673,28 @@ test('Alt+P opens the model picker without entering composer text', async () => 
   view.unmount();
 });
 
+test('reasoning picker changes the session effort and forwards it with submissions', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.7" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/reasoning high');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /推理强度：深入/);
+
+  view.stdin.write('检查复杂问题');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'submit',
+    requestId: 'turn-1',
+    text: '检查复杂问题',
+    reasoningEffort: 'high',
+  });
+});
+
 test('opening a new picker replaces the previous keyboard owner', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);

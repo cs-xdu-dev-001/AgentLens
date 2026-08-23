@@ -685,6 +685,11 @@ def execute_agent_chat(
             "chat",
             user_id,
         )
+        if chat_config is not None:
+            chat_config = {
+                **chat_config,
+                "reasoning_effort": payload.reasoningEffort,
+            }
         _raise_if_cancelled(cancel_event)
         with McpRunSessionPool(
             server_loader=lambda server_id: _load_mcp_server(

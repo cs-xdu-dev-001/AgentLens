@@ -492,10 +492,6 @@ class ModelGateway:
             "model": config["model_name"],
             "messages": messages,
         }
-        if config.get("temperature") is not None:
-            payload["temperature"] = float(config["temperature"])
-        if config.get("top_p") is not None:
-            payload["top_p"] = float(config["top_p"])
         if config.get("max_tokens") is not None:
             if config.get("provider") in {"mimo", "openai"}:
                 payload["max_completion_tokens"] = int(config["max_tokens"])

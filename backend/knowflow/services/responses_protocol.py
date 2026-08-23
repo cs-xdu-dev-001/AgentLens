@@ -6,6 +6,20 @@ import copy, json, re
 
 
 MAX_SSE_EVENT_BYTES = 1_048_576
+REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
+
+
+class ResponsesProtocolError(ValueError):
+    """Raised when a Responses API payload/response violates the expected shape."""
+
+
+def normalize_reasoning_effort(value: Any) -> str | None:
+    effort = str(value or "").strip().lower()
+    if effort in {"", "default"}:
+        return None
+    if effort not in REASONING_EFFORTS:
+        raise ResponsesProtocolError("Unsupported reasoning effort.")
+    return effort
 
 def _normalize_items(items):
     out=copy.deepcopy(items)
@@ -17,11 +31,6 @@ def _normalize_items(items):
         if item.get("type")=="function_call":
             item["arguments"] = json.dumps(item.get("arguments", "{}"), ensure_ascii=False) if not isinstance(item.get("arguments", "{}"), str) else item.get("arguments", "{}")
     return out
-
-
-class ResponsesProtocolError(ValueError):
-    """Raised when a Responses API payload/response violates the expected shape."""
-
 
 def sanitize_upstream_error(value: Any, *, limit: int = 300) -> str:
     text = " ".join(str(value or "").split())
@@ -320,7 +329,11 @@ def build_responses_payload(
         payload["tool_choice"] = tool_choice or "auto"
     if system:
         payload["instructions"] = "\n\n".join(system)
-    payload["temperature"] = float(config.get("temperature", 0.3) if config.get("temperature") is not None else 0.3)
+    reasoning_effort = normalize_reasoning_effort(
+        config.get("reasoning_effort")
+    )
+    if reasoning_effort is not None:
+        payload["reasoning"] = {"effort": reasoning_effort}
     if config.get("max_tokens") is not None:
         payload["max_output_tokens"] = int(config["max_tokens"])
     return payload

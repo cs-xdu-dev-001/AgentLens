@@ -880,13 +880,17 @@ class LocalAgentRuntime:
         transcript: list[dict[str, Any]] | None = None,
         context_metadata: dict[str, Any] | None = None,
         tools: bool = True,
+        reasoning_effort: str = "default",
         run_id: str | None = None,
         approval_decision: str | None = None,
         resume_value: Any = None,
         resume_from_checkpoint: bool = False,
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
-        config = gateway_config(self.config_store.load())
+        config = {
+            **gateway_config(self.config_store.load()),
+            "reasoning_effort": reasoning_effort,
+        }
         identifier = run_id or f"run_{uuid4().hex[:12]}"
         messages = list(history or [])
         if not messages:

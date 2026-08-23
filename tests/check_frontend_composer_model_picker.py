@@ -43,6 +43,9 @@ def main() -> None:
     require(component, 'event.key === "Escape"', "keyboard close")
     require(component, "配置模型", "empty model action")
     require(component, "管理模型", "model settings action")
+    require(component, "推理强度", "reasoning effort controls")
+    require(component, "knowflow:react-chat-reasoning-change", "reasoning change dispatch")
+    require(component, 'role={"radiogroup"}', "reasoning radio semantics")
     require(component, "aria-activedescendant", "active option semantics")
     require(composer, "ComposerModelPicker", "composer model picker mount")
     require(
@@ -64,13 +67,21 @@ def main() -> None:
         "retryRequest?.payload?.chatModelConfigId",
         "retry keeps original request model",
     )
+    require(
+        chat_flow,
+        "retryRequest?.payload?.reasoningEffort",
+        "retry keeps original reasoning effort",
+    )
+    require(chat_flow, "reasoningEffort,", "reasoning effort API payload")
+    require(bridge, "selectedReasoningEffort", "reasoning state synchronization")
 
-    styles = read("frontend/styles.css")
+    styles = read("frontend/styles.css") + read("frontend/refinement.css")
     for selector in (
         ".composer-model-trigger",
         ".composer-model-popover",
         ".composer-model-option",
         ".composer-model-option.selected",
+        ".composer-reasoning-section",
     ):
         if selector not in styles:
             raise AssertionError(f"Missing composer model style: {selector}")

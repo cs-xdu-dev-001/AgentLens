@@ -5,6 +5,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/new', description: '开始新会话', source: 'builtin', category: '会话'},
   {value: '/clear', description: '清空终端显示', source: 'builtin', category: '会话'},
   {value: '/model', description: '选择本轮对话使用的模型', source: 'builtin', category: '会话', argumentHint: '[list | use <ID> | config]'},
+  {value: '/reasoning', description: '选择本次会话的推理强度', source: 'builtin', category: '会话', argumentHint: '[auto | low | medium | high | xhigh]'},
   {value: '/status', description: '查看会话状态', source: 'builtin', category: '会话'},
   {value: '/context', description: '查看模型上下文占用', source: 'builtin', category: '会话'},
   {value: '/compact', description: '压缩早期会话并保留结构化摘要', source: 'builtin', category: '会话', argumentHint: '[补充要求]'},

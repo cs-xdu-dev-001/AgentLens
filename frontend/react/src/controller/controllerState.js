@@ -4,6 +4,7 @@ export const state = {
   currentSessionId: null,
   selectedKnowledgeBaseId: null,
   selectedChatModelConfigId: "",
+  selectedReasoningEffort: "default",
   selectedEmbeddingModelConfigId: "",
   selectedChatKnowledgeBaseId: "",
   selectedDocumentKnowledgeBaseId: null,

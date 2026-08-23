@@ -71,6 +71,9 @@ class ChatRequest(BaseModel):
     sessionId: str | None = None
     question: str = Field(min_length=1)
     chatModelConfigId: int | None = None
+    reasoningEffort: Literal[
+        "default", "none", "low", "medium", "high", "xhigh", "max"
+    ] = "default"
     useRag: bool = False
     autoAgent: bool = True
     enableTools: bool = False

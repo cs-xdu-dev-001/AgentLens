@@ -27,6 +27,7 @@ class FakeBackend:
         self.workspace_root = workspace_root
         self.selected_model_id = 1
         self.workspace_undo_args = None
+        self.reasoning_effort = "default"
 
     def command_catalog(self):
         return [
@@ -65,7 +66,8 @@ class FakeBackend:
         self.model_label = selected["name"]
         return selected
 
-    def run(self, question, event_sink):
+    def run(self, question, event_sink, reasoning_effort="default"):
+        self.reasoning_effort = reasoning_effort
         event_sink({"type": "text_delta", "text": "回答"})
         return AgentExecution(
             result={"paused": False, "runId": "run-ink", "answer": "回答"}
@@ -202,7 +204,8 @@ class ApprovalBackend(FakeBackend):
         super().__init__()
         self.decisions: list[str] = []
 
-    def run(self, question, event_sink):
+    def run(self, question, event_sink, reasoning_effort="default"):
+        self.reasoning_effort = reasoning_effort
         approval = {
             "type": "approval_required",
             "approvalId": "approval-ink",
@@ -246,7 +249,7 @@ def main() -> None:
         input_stream=StringIO(),
         output_stream=output,
     )
-    bridge.handle({"type": "submit", "requestId": "turn-1", "text": "你好"})
+    bridge.handle({"type": "submit", "requestId": "turn-1", "text": "你好", "reasoningEffort": "high"})
     rows = wait_for(output, "turn_completed")
     assert any(
         row.get("type") == "agent_event"
@@ -254,6 +257,7 @@ def main() -> None:
         for row in rows
     )
     assert any(row.get("answer") == "回答" for row in rows)
+    assert backend.reasoning_effort == "high"
 
     shell_output = StringIO()
     shell_bridge = InkRuntimeBridge(

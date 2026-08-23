@@ -24,6 +24,7 @@ class TuiBackend:
         self.tools = tools
         self.model_id = model_id
         self.skill_id = skill_id
+        self.reasoning_effort = "default"
         self._model_label: str | None = None
         self.session_id: str | None = None
         self.conversation: list[dict[str, Any]] = []
@@ -457,13 +458,16 @@ class TuiBackend:
         self,
         question: str,
         event_sink: AgentEventSink,
+        reasoning_effort: str = "default",
     ) -> AgentExecution:
+        self.reasoning_effort = str(reasoning_effort or "default")
         if self.remote_client is not None:
             execution = self.remote_client.run(
                 {
                     "question": question,
                     "sessionId": self.session_id,
                     "chatModelConfigId": self.model_id,
+                    "reasoningEffort": self.reasoning_effort,
                     "autoAgent": True,
                     "enableTools": self.tools,
                     "skillId": self.skill_id,
@@ -480,6 +484,7 @@ class TuiBackend:
                 transcript=self.transcript,
                 context_metadata=self.context_metadata,
                 tools=self.tools,
+                reasoning_effort=self.reasoning_effort,
                 event_sink=event_sink,
             )
         self._finish(execution)
@@ -535,6 +540,7 @@ class TuiBackend:
                     or self.context_metadata
                 ),
                 tools=self.tools,
+                reasoning_effort=self.reasoning_effort,
                 run_id=run_id,
                 approval_decision=decision,
                 event_sink=event_sink,
@@ -586,6 +592,7 @@ class TuiBackend:
                     or self.context_metadata
                 ),
                 tools=self.tools,
+                reasoning_effort=self.reasoning_effort,
                 run_id=run_id,
                 resume_value=payload,
                 resume_from_checkpoint=True,

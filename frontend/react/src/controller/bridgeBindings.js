@@ -104,6 +104,17 @@ export function bindReactControllerEvents({
     notifyReactModelSelectionUpdated(value);
   });
 
+  window.addEventListener("knowflow:react-chat-reasoning-change", (event) => {
+    const value = String(event.detail?.value || "default");
+    state.selectedReasoningEffort = [
+      "default", "none", "low", "medium", "high", "xhigh", "max",
+    ].includes(value) ? value : "default";
+    window.dispatchEvent(new CustomEvent(
+      "knowflow:react-reasoning-selection-updated",
+      { detail: { value: state.selectedReasoningEffort } },
+    ));
+  });
+
   window.addEventListener("knowflow:react-chat-kb-change", (event) => {
     const value = resolveChatKnowledgeBaseId(event.detail?.value || "");
     state.selectedChatKnowledgeBaseId = value;
