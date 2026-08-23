@@ -12776,12 +12776,13 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 #chat-form.composer .composer-queue-heading {
   grid-template-columns: minmax(0, 1fr) auto;
-  font-size: 12px;
+  min-height: 28px;
+  font-size: 14px;
 }
 
 #chat-form.composer .composer-queue-heading strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 #chat-form.composer .composer-queue-heading > span {
@@ -12790,7 +12791,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 #chat-form.composer .composer-queue button {
-  padding: 0;
+  min-height: 28px;
+  padding: 0 5px;
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -12803,10 +12805,17 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--text);
 }
 
+#chat-form.composer .composer-queue button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 #chat-form.composer .composer-queue-row {
-  grid-template-columns: 18px auto minmax(0, 1fr) 24px;
-  min-height: 28px;
-  font-size: 13px;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto auto;
+  gap: 4px;
+  min-height: 32px;
+  font-size: 14px;
 }
 
 #chat-form.composer .composer-queue-list {
@@ -12815,7 +12824,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   min-width: 0;
 }
 
-#chat-form.composer .composer-queue-row > span {
+#chat-form.composer .composer-queue-index {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
@@ -12854,7 +12863,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 #chat-form.composer .composer-queue-more {
   padding-left: 18px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 @media (max-width: 520px) {
@@ -12882,16 +12891,20 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 
   #chat-form.composer .composer-queue-row {
-    grid-template-columns: 18px minmax(0, 1fr) 24px;
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
   }
 
   #chat-form.composer .composer-queue-priority {
-    grid-column: 2;
+    grid-column: 2 / 3;
     justify-self: start;
   }
 
   #chat-form.composer .composer-queue-row p {
-    grid-column: 2;
+    grid-column: 2 / -1;
+  }
+
+  #chat-form.composer .composer-queue-row .composer-queue-action:first-of-type {
+    grid-column: 3;
   }
 }
 

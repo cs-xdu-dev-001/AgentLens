@@ -267,6 +267,8 @@ export function createChatFlow({
   renderAgentTrace,
   renderMemoryActivity,
   renderAttachmentTray,
+  notifyReactKnowledgeSelectionUpdated,
+  notifyReactModelSelectionUpdated,
   renderReferences,
   renderRagQuality,
   renderToolTimeline,
@@ -346,7 +348,8 @@ export function createChatFlow({
         ? Number(state.selectedChatModelConfigId)
         : null,
       attachments: state.chatAttachments.map(
-        ({ filename, fileType, mimeType, content, previewUrl }) => ({
+        ({ attachmentId, filename, fileType, mimeType, content, previewUrl }) => ({
+          attachmentId,
           filename,
           fileType,
           mimeType,
@@ -388,6 +391,37 @@ export function createChatFlow({
       state.chatQueueBlockReason = "";
     }
     notifyChatQueue();
+  }
+
+  function retrieveQueuedChat(requestId) {
+    const request = state.chatQueue.find((item) => item?.id === requestId);
+    if (!request) return false;
+    state.chatQueue = removeQueuedChatRequest(state.chatQueue, requestId);
+    if (!state.chatQueue.length) {
+      state.chatQueuePaused = false;
+      state.chatQueueBlockReason = "";
+    }
+    state.chatAttachments = (Array.isArray(request.attachments) ? request.attachments : [])
+      .map((attachment) => ({ ...attachment }));
+    state.selectedChatKnowledgeBaseId = request.knowledgeBaseId
+      ? String(request.knowledgeBaseId)
+      : "";
+    state.selectedChatModelConfigId = request.chatModelConfigId
+      ? String(request.chatModelConfigId)
+      : "";
+    requestComposerReset({
+      focus: true,
+      question: request.question,
+      skillId: request.skillId ?? null,
+    });
+    renderAttachmentTray();
+    notifyReactKnowledgeSelectionUpdated(undefined, {
+      selectedChatKnowledgeBaseId: state.selectedChatKnowledgeBaseId,
+    });
+    notifyReactModelSelectionUpdated(state.selectedChatModelConfigId);
+    notifyChatQueue();
+    toast("已取回待发送任务，可修改后重新提交");
+    return true;
   }
 
   function reprioritizeQueuedChat(requestId, priority) {
@@ -1332,6 +1366,7 @@ export function createChatFlow({
     clearQueuedChats,
     continueSession,
     removeQueuedChat,
+    retrieveQueuedChat,
     reprioritizeQueuedChat,
     resumeQueuedChats,
     retryAnswer,

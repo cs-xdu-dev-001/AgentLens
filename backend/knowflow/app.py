@@ -19,7 +19,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="AgentLens API",
-    version="0.17.5",
+    version="0.17.6",
     description=(
         "AgentLens API for a personal knowledge workspace. "
         "Core workflows include model configuration, document ingestion, RAG retrieval debugging, chat, and session management."

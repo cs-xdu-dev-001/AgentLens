@@ -15,6 +15,7 @@ export function bindReactControllerEvents({
   refreshModels,
   removeChatAttachment,
   removeQueuedChat,
+  retrieveQueuedChat,
   reprioritizeQueuedChat,
   renderActiveSession,
   renderCurrentUser,
@@ -152,6 +153,7 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-chat-queue-action", (event) => {
     const action = event.detail?.action;
     if (action === "remove") removeQueuedChat(event.detail?.requestId);
+    if (action === "retrieve") retrieveQueuedChat(event.detail?.requestId);
     if (action === "clear") clearQueuedChats();
     if (action === "resume") resumeQueuedChats();
     if (action === "priority") {

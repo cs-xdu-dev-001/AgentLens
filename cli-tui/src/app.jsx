@@ -579,7 +579,7 @@ function QueuePreview({items, paused, hidden = false}) {
     <Box flexDirection="column" marginTop={1} paddingLeft={1} borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} borderColor={paused ? WARNING : ACCENT}>
       <Box justifyContent="space-between">
         <Text color={paused ? WARNING : PRIMARY}>{paused ? '待发送已暂停' : `接下来 ${items.length}`}</Text>
-        <Text color={MUTED}>Ctrl+T管理</Text>
+        <Text color={MUTED}>Ctrl+T编辑队列</Text>
       </Box>
       {ordered.slice(0, 3).map((item, index) => (
         <Text key={`${index}-${queuedPromptText(item)}`} color={MUTED} wrap="truncate-end">
@@ -4000,7 +4000,7 @@ export function App({
     toolDetail: '↑↓选择 · Tab切换 · Esc返回',
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
-    queueManager: '↑↓选择 · ←→优先级 · Enter取回 · D移除',
+    queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
     sessions: '↑↓选择 · Enter恢复 · Esc关闭',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',

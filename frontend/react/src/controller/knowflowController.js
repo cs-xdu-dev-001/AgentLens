@@ -138,7 +138,11 @@ function setSending(sending) {
 }
 
 function requestComposerReset(options = {}) {
-  dispatchReactEvent("knowflow:react-composer-reset", { focus: Boolean(options.focus) });
+  dispatchReactEvent("knowflow:react-composer-reset", {
+    focus: Boolean(options.focus),
+    question: String(options.question || ""),
+    skillId: options.skillId ?? null,
+  });
 }
 
 function clearChatMessages(showWelcome = false) {
@@ -185,6 +189,8 @@ const chatFlow = createChatFlow({
   renderAgentTrace,
   renderMemoryActivity,
   renderAttachmentTray,
+  notifyReactKnowledgeSelectionUpdated,
+  notifyReactModelSelectionUpdated,
   renderReferences,
   renderRagQuality,
   renderToolTimeline,
@@ -206,6 +212,7 @@ function bindEvents() {
     refreshModels: catalogSync.refreshModels,
     removeChatAttachment: attachmentFlow.removeChatAttachment,
     removeQueuedChat: chatFlow.removeQueuedChat,
+    retrieveQueuedChat: chatFlow.retrieveQueuedChat,
     reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
     renderActiveSession,
     renderCurrentUser: authFlow.renderCurrentUser,

@@ -199,8 +199,14 @@ export function ChatComposerForm() {
   useEffect(() => {
     const handleComposerReset = (event) => {
       const shouldFocus = Boolean(event.detail?.focus);
-      setQuestion("");
-      setSelectedSkill(null);
+      const nextQuestion = String(event.detail?.question || "");
+      const nextSkillId = event.detail?.skillId ?? null;
+      setQuestion(nextQuestion);
+      setSelectedSkill(
+        nextSkillId === null
+          ? null
+          : availableSkills.find((skill) => String(skill.id) === String(nextSkillId)) || null,
+      );
       closeSkillPicker();
       closeMentionPicker();
       window.requestAnimationFrame(() => {
@@ -210,7 +216,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, [closeMentionPicker, closeSkillPicker]);
+  }, [availableSkills, closeMentionPicker, closeSkillPicker]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -705,7 +711,7 @@ export function ChatComposerForm() {
         : `skill-option-${slashOptions[activeIndex].skill.id}`
       : undefined;
   const queueHeading = queuePaused
-    ? queueBlockLabels[queueBlockReason] || "待发送已暂停"
+    ? `${queueBlockLabels[queueBlockReason] || "待发送已暂停"} · ${queuedChats.length}`
     : `接下来 ${queuedChats.length}`;
   const canResumeQueue = queuePaused
     && !["approval", "question", "run"].includes(queueBlockReason);
@@ -771,7 +777,8 @@ export function ChatComposerForm() {
               : "next";
             return (
             <div className={"composer-queue-row"} key={item.id} role={"listitem"}>
-              <span aria-hidden={"true"}>{index + 1}</span>
+              <span className={"composer-queue-index"} aria-hidden={"true"}>{index + 1}</span>
+              <p title={item.question}>{item.question}</p>
               <select
                 className={`composer-queue-priority priority-${priority}`}
                 aria-label={`设置任务优先级：${item.question}`}
@@ -787,13 +794,23 @@ export function ChatComposerForm() {
                 <option value={"next"}>{queuePriorityLabels.next}</option>
                 <option value={"later"}>{queuePriorityLabels.later}</option>
               </select>
-              <p>{item.question}</p>
               <button
                 type={"button"}
+                className={"composer-queue-action"}
+                aria-label={`取回编辑待发送任务：${item.question}`}
+                disabled={Boolean(question.trim() || attachments.length)}
+                title={question.trim() || attachments.length ? "先处理当前输入，再取回编辑" : "取回输入框继续编辑"}
+                onClick={() => handleQueueAction("retrieve", item.id)}
+              >
+                {"编辑"}
+              </button>
+              <button
+                type={"button"}
+                className={"composer-queue-action"}
                 aria-label={`移除待发送任务：${item.question}`}
                 onClick={() => handleQueueAction("remove", item.id)}
               >
-                {"×"}
+                {"移除"}
               </button>
             </div>
             );
