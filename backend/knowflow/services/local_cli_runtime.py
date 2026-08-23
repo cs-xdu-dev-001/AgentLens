@@ -782,7 +782,38 @@ class LocalAgentRuntime:
             return registry.schemas(engine_name="langgraph")
 
     def capability_status(self) -> dict[str, Any]:
-        return self.extensions.capability_status()
+        status = self.extensions.capability_status()
+        try:
+            schemas = self.tool_schemas()
+        except Exception:
+            schemas = []
+        status["tools"] = {
+            "count": len(schemas),
+            "items": [
+                {
+                    "name": str((schema.get("function") or {}).get("name") or ""),
+                    "description": str(
+                        (schema.get("function") or {}).get("description") or ""
+                    ),
+                }
+                for schema in schemas
+                if str((schema.get("function") or {}).get("name") or "")
+            ],
+        }
+        memory = dict(status.get("memory") or {})
+        memory["items"] = []
+        if memory.get("configured") and memory.get("enabled"):
+            try:
+                provider = self.extensions.memory_provider()
+                if provider is not None:
+                    memory["items"] = provider.list(
+                        user_id=LOCAL_USER_ID,
+                        limit=10,
+                    )
+            except Exception:
+                memory["error"] = "memory_unavailable"
+        status["memory"] = memory
+        return status
 
     def context_status(
         self,

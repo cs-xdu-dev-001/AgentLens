@@ -217,7 +217,11 @@ class TuiBackend:
             if self.local_agent is None:
                 return {}
             status = getattr(self.local_agent, "capability_status", None)
-            return dict(status()) if callable(status) else {}
+            result = dict(status()) if callable(status) else {}
+            tools = dict(result.get("tools") or {})
+            tools["enabled"] = bool(self.tools)
+            result["tools"] = tools
+            return result
         result: dict[str, Any] = {}
         for key, path in (
             ("tools", "/api/agent/tools"),
@@ -229,6 +233,46 @@ class TuiBackend:
                 result[key] = self.remote_client.request("GET", path, params={})
             except Exception:
                 result[key] = None
+        tool_rows = result.get("tools")
+        if isinstance(tool_rows, list):
+            result["tools"] = {
+                "count": len(tool_rows),
+                "enabled": bool(self.tools),
+                "items": tool_rows,
+            }
+        skill_rows = result.get("skills")
+        if isinstance(skill_rows, list):
+            result["skills"] = {
+                "count": len(skill_rows),
+                "items": skill_rows,
+            }
+        mcp_rows = result.get("mcp")
+        if isinstance(mcp_rows, list):
+            result["mcp"] = {
+                "count": len(mcp_rows),
+                "connected": sum(
+                    1
+                    for item in mcp_rows
+                    if isinstance(item, dict)
+                    and item.get("enabled")
+                    and item.get("status") == "connected"
+                ),
+                "servers": mcp_rows,
+            }
+        memory = result.get("memory")
+        if isinstance(memory, dict):
+            try:
+                rows = self.remote_client.request(
+                    "GET",
+                    "/api/memories",
+                    params={"limit": 10},
+                )
+            except Exception:
+                rows = []
+            result["memory"] = {
+                **memory,
+                "items": rows if isinstance(rows, list) else [],
+            }
         return result
 
     def cancel(self, run_id: str | None) -> bool:

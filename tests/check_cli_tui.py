@@ -42,6 +42,7 @@ from knowflow.tui.widgets import (  # noqa: E402
 
 class FakeBackend:
     model_label = "test-model"
+    remote_client = None
 
     def __init__(self) -> None:
         self.questions: list[str] = []
@@ -159,6 +160,38 @@ class FakeBackend:
                 "detail": "SRT隔离执行成功",
             },
         ]
+
+    def capability_status(self):
+        return {
+            "tools": {
+                "count": 2,
+                "enabled": True,
+                "items": [
+                    {"name": "read_workspace_file"},
+                    {"name": "run_sandbox_command"},
+                ],
+            },
+            "skills": {
+                "count": 1,
+                "items": [{"name": "repo-audit", "enabled": True}],
+            },
+            "mcp": {
+                "count": 1,
+                "connected": 1,
+                "servers": [
+                    {
+                        "name": "Notion",
+                        "enabled": True,
+                        "status": "connected",
+                    }
+                ],
+            },
+            "memory": {
+                "configured": True,
+                "enabled": True,
+                "items": [{"memory": "用户偏好中文回答"}],
+            },
+        }
 
 
 class ApprovalBackend(FakeBackend):
@@ -546,6 +579,20 @@ async def exercise_tui() -> None:
             "SRT已可执行shell工具" in str(item.render())
             for item in app.query(".notice")
         )
+
+        for command, expected in (
+            ("/tools", "read_workspace_file"),
+            ("/skills", "repo-audit"),
+            ("/mcp", "Notion · connected"),
+            ("/memory", "用户偏好中文回答"),
+        ):
+            composer.load_text(command)
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+            assert any(
+                expected in str(item.render())
+                for item in app.query(".notice")
+            )
 
         await pilot.press("ctrl+r")
         await pilot.pause(0.05)

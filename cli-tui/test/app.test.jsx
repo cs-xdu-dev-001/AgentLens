@@ -1617,9 +1617,44 @@ test('capability commands request and render real runtime status', async () => {
   client.emit('message', {
     type: 'capability_status',
     section: 'tools',
-    status: {webSearch: {configured: true, enabled: true}},
+    status: {
+      tools: {
+        count: 2,
+        enabled: true,
+        items: [
+          {name: 'read_workspace_file'},
+          {name: 'run_sandbox_command'},
+        ],
+      },
+      webSearch: {configured: true, enabled: true},
+    },
   });
+  await waitForFrame(view, /工具\s+2个可用/);
+  assert.match(view.lastFrame(), /read_workspace_file/);
   await waitForFrame(view, /web_search\s+已启用/);
+  view.unmount();
+});
+
+test('memory capability renders recent local memories', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.20.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('/memory');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'capability_status',
+    section: 'memory',
+    status: {
+      memory: {
+        configured: true,
+        enabled: true,
+        items: [{memory: '用户偏好中文回答'}],
+      },
+    },
+  });
+  await waitForFrame(view, /用户偏好中文回答/);
   view.unmount();
 });
 

@@ -1525,11 +1525,22 @@ function capabilityText(section, status) {
   const value = status && typeof status === 'object' ? status : {};
   if (section === 'tools') {
     const web = value.webSearch ?? {};
+    const tools = value.tools ?? {};
+    const items = Array.isArray(tools.items)
+      ? tools.items
+      : Array.isArray(tools)
+        ? tools
+        : [];
+    const names = items
+      .map(item => typeof item === 'string' ? item : item?.name)
+      .filter(Boolean);
     return [
-      '工具状态',
-      `web_search  ${web.configured ? (web.enabled ? '已启用' : '已停用') : '未配置'}`,
+      `工具  ${tools.enabled === false ? '本次会话已停用' : `${tools.count ?? names.length}个可用`}`,
+      ...names.slice(0, 20).map(name => `✓ ${name}`),
+      names.length > 20 ? `另有${names.length - 20}个工具` : '',
+      `web_search  ${web.configured ? (web.enabled ? '已启用' : '已停用') : '未配置'} · 联网搜索`,
       web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：knowflow tools configure web-search',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
   if (section === 'mcp') {
     const mcp = value.mcp ?? {};
@@ -1550,11 +1561,17 @@ function capabilityText(section, status) {
     ].join('\n');
   }
   const memory = value.memory ?? {};
+  const memories = Array.isArray(memory.items) ? memory.items : [];
   return [
     '长期记忆（Mem0）',
     `状态  ${memory.configured ? (memory.enabled ? '已启用' : '已配置但停用') : '未配置'}`,
+    ...memories.slice(0, 10).map((item, index) => {
+      const content = String(item?.memory ?? item?.content ?? item?.summary ?? '').trim();
+      return content ? `${index + 1}. ${content.slice(0, 96)}${content.length > 96 ? '…' : ''}` : '';
+    }).filter(Boolean),
+    memory.enabled && memory.configured && !memories.length ? '当前还没有长期记忆。' : '',
     memory.configured ? '管理：knowflow memory list|enable|disable' : '配置：knowflow memory configure',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function MouseWheelCapture({targetRef, onWheel}) {

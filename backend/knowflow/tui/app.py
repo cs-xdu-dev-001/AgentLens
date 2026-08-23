@@ -1096,14 +1096,16 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_tools(self, args: list[str]) -> bool:
         if self.backend.remote_client is None:
-            await self.query_one(TranscriptView).add_notice(
-                "本地模式不支持工具列表查询。"
-            )
-            return True
-        items = await self._fetch_remote_list("/api/agent/tools")
-        if items is None:
-            return True
-        tools = [str(item.get("name") if isinstance(item, dict) else item) for item in items]
+            status = self.backend.capability_status()
+            items = list((status.get("tools") or {}).get("items") or [])
+        else:
+            items = await self._fetch_remote_list("/api/agent/tools")
+            if items is None:
+                return True
+        tools = [
+            str(item.get("name") if isinstance(item, dict) else item)
+            for item in items
+        ]
         await self.query_one(TranscriptView).add_notice(
             "可用工具："
             + ("、".join(tools[:20]) if tools else "无可用工具。")
@@ -1116,13 +1118,12 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_skills(self, args: list[str]) -> bool:
         if self.backend.remote_client is None:
-            await self.query_one(TranscriptView).add_notice(
-                "本地模式不支持技能列表查询。"
-            )
-            return True
-        items = await self._fetch_remote_list("/api/skills/")
-        if items is None:
-            return True
+            status = self.backend.capability_status()
+            items = list((status.get("skills") or {}).get("items") or [])
+        else:
+            items = await self._fetch_remote_list("/api/skills/")
+            if items is None:
+                return True
         names = [
             str(item.get("name") if isinstance(item, dict) else item)
             for item in items
@@ -1139,13 +1140,12 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_mcp(self, args: list[str]) -> bool:
         if self.backend.remote_client is None:
-            await self.query_one(TranscriptView).add_notice(
-                "本地模式不支持MCP列表查询。"
-            )
-            return True
-        items = await self._fetch_remote_list("/api/mcp/servers")
-        if items is None:
-            return True
+            status = self.backend.capability_status()
+            items = list((status.get("mcp") or {}).get("servers") or [])
+        else:
+            items = await self._fetch_remote_list("/api/mcp/servers")
+            if items is None:
+                return True
         records = []
         for item in items:
             if not isinstance(item, dict):
@@ -1166,16 +1166,26 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_memory(self, args: list[str]) -> bool:
         if self.backend.remote_client is None:
-            await self.query_one(TranscriptView).add_notice(
-                "本地模式暂不支持记忆列表查询。"
+            status = self.backend.capability_status()
+            memory = dict(status.get("memory") or {})
+            if not memory.get("configured"):
+                await self.query_one(TranscriptView).add_notice(
+                    "长期记忆未配置。运行knowflow memory configure开始配置。"
+                )
+                return True
+            if not memory.get("enabled"):
+                await self.query_one(TranscriptView).add_notice(
+                    "长期记忆已配置但未启用。运行knowflow memory enable启用。"
+                )
+                return True
+            items = list(memory.get("items") or [])
+        else:
+            items = await self._fetch_remote_list(
+                "/api/memories",
+                params={"limit": 20},
             )
-            return True
-        items = await self._fetch_remote_list(
-            "/api/memories",
-            params={"limit": 20},
-        )
-        if items is None:
-            return True
+            if items is None:
+                return True
         if not items:
             await self.query_one(TranscriptView).add_notice("暂无记忆记录。")
             return True

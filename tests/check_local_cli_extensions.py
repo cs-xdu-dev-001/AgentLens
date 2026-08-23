@@ -52,6 +52,14 @@ def main() -> None:
         }
         assert "web_fetch" in names
         assert "web_search" in names
+        runtime_status = runtime.capability_status()
+        runtime_tool_names = {
+            str(item.get("name") or "")
+            for item in (runtime_status.get("tools") or {}).get("items") or []
+        }
+        assert {"web_fetch", "web_search"}.issubset(runtime_tool_names)
+        assert runtime_status["tools"]["count"] == len(runtime_tool_names)
+        assert runtime_status["memory"]["items"] == []
 
         skill = root / "sample-skill"
         skill.mkdir()
