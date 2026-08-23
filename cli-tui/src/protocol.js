@@ -4,7 +4,7 @@ import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 import parseDiff from 'parse-diff';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export const AGENT_EVENT_SCHEMA_VERSION = 1;
 
 export function buildDiffPresentation(value) {
@@ -145,6 +145,7 @@ export function createRunProjection(initial = {}) {
     references: [],
     context: {},
     error: null,
+    failedStep: null,
     modelRetry: null,
     phase: '',
     recoveryActions: [],
@@ -411,6 +412,14 @@ export function projectRunEvent(current, event) {
   if (Array.isArray(event?.recoveryActions)) {
     next.recoveryActions = [...new Set(event.recoveryActions.map(String).filter(action => RECOVERY_ACTIONS.has(action)))];
   }
+  if (name === 'step.failed') {
+    const attemptCount = Math.max(0, Number(event?.attemptCount ?? event?.step?.attemptCount) || 0);
+    next.failedStep = {
+      id: sanitizeTerminalText(event?.stepId ?? event?.id ?? event?.eventId ?? '').slice(0, 200),
+      title: redact(event?.title ?? event?.name ?? event?.step?.title ?? '失败步骤', 240).trim(),
+      attemptCount,
+    };
+  }
   if (name === 'error.raised' || name === 'run.failed' || name === 'step.failed' || name === 'tool.failed') {
     next.error = {
       code: sanitizeTerminalText(event?.error?.code ?? event?.errorCode ?? event?.code ?? 'agent_error'),
@@ -420,7 +429,10 @@ export function projectRunEvent(current, event) {
   }
   if (name === 'run.completed' || name === 'run.cancelled') {
     next.recoveryActions = [];
-    if (name === 'run.completed') next.error = null;
+    if (name === 'run.completed') {
+      next.error = null;
+      next.failedStep = null;
+    }
   }
   return next;
 }

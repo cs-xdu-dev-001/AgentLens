@@ -443,7 +443,9 @@ class TuiBackend:
         event_sink: AgentEventSink,
     ) -> AgentExecution:
         if self.remote_client is not None:
-            raise RuntimeError("远程会话请使用Web端恢复。")
+            execution = self.remote_client.resume(run_id, event_sink)
+            self._finish(execution)
+            return execution
         session = self.local_agent.load_session(run_id)
         self.current_run_id = run_id
         status = str(session.get("status") or "")

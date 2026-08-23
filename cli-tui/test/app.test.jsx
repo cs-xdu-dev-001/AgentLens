@@ -28,6 +28,7 @@ import {
   turnRequestSnapshot,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
+import {createRunProjection, projectRunEvent} from '../src/protocol.js';
 import {
   sanitizeTerminalTitle,
   shouldNotifyTerminalTransition,
@@ -126,6 +127,24 @@ test('retry request snapshots preserve mode, display text, and reasoning effort'
   });
 });
 
+test('run projection preserves the failed step and advertised recovery actions', () => {
+  const projection = projectRunEvent(createRunProjection(), {
+    eventName: 'step.failed',
+    stepId: 'step-read',
+    title: '读取配置',
+    attemptCount: 2,
+    error: {code: 'workspace_read_failed', message: '无法读取配置', retryable: true},
+    recoveryActions: ['continue', 'retry', 'fix'],
+  });
+  assert.deepEqual(projection.failedStep, {
+    id: 'step-read',
+    title: '读取配置',
+    attemptCount: 2,
+  });
+  assert.deepEqual(projection.recoveryActions, ['continue', 'retry', 'fix']);
+  assert.equal(projection.error.code, 'workspace_read_failed');
+});
+
 test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
   const report = buildTuiDiagnosticReport({
     version: '0.22.0',
@@ -164,6 +183,7 @@ test('interaction focus resolves to one highest-priority input owner', () => {
   assert.equal(resolveInteractionFocus({toolDetailOpen: true, taskNavigationOpen: true}), 'toolDetail');
   assert.equal(resolveInteractionFocus({approval: {}, modelPicker: true}), 'approval');
   assert.equal(resolveInteractionFocus({question: {}, approval: {}}), 'question');
+  assert.equal(resolveInteractionFocus({recoveryOpen: true, toolDetailOpen: true}), 'recovery');
 });
 
 test('runtime spinner stops once useful progress is visible', () => {
@@ -356,7 +376,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 7,
+      protocolVersion: 8,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1069,7 +1089,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 7,
+    protocolVersion: 8,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -2191,6 +2211,46 @@ test('failed tool details expose recovery actions that really retry or ask the a
   assert.match(recovery.text, /工具read_workspace_file执行失败/);
   assert.match(recovery.text, /避免重复同一无效调用/);
   assert.match(recovery.text, /读取缺失文件并继续/);
+  view.unmount();
+});
+
+test('task failure opens a first-class recovery panel and continues from checkpoint', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.25.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查失败恢复');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      eventName: 'step.failed',
+      stepId: 'step-check',
+      title: '执行项目检查',
+      attemptCount: 2,
+      error: {code: 'project_check_failed', message: '检查命令失败', retryable: true},
+      recoveryActions: ['continue', 'retry', 'fix'],
+    },
+  });
+  client.emit('message', {
+    type: 'turn_failed',
+    runId: 'run-recover',
+    message: '检查命令失败',
+    errorCode: 'project_check_failed',
+    recoveryActions: ['continue', 'retry', 'fix'],
+  });
+  const frame = await waitForFrame(view, /恢复任务/);
+  assert.match(frame, /步骤 执行项目检查 · 已尝试2次/);
+  assert.match(frame, /从checkpoint继续/);
+  assert.match(frame, /重试本轮/);
+  assert.match(frame, /分析错误并继续/);
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'resume_session',
+    requestId: 'resume-2',
+    runId: 'run-recover',
+  });
   view.unmount();
 });
 

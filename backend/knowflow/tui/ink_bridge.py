@@ -21,7 +21,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore
 
 
-PROTOCOL_VERSION = 7
+PROTOCOL_VERSION = 8
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -193,12 +193,29 @@ class InkRuntimeBridge:
                 execution = callback()
             self._complete(execution)
         except Exception as exc:
+            message = self._public_error(exc)
+            error_code = str(type(exc).__name__ or "turn_failed")[:80]
+            recovery_actions = (
+                ["continue", "retry", "fix"]
+                if self._run_id
+                else ["retry", "fix"]
+            )
+            self._agent_event(
+                {
+                    "type": "error",
+                    "errorCode": error_code,
+                    "message": message,
+                    "recoveryActions": recovery_actions,
+                }
+            )
             self.send(
                 {
                     "type": "turn_failed",
                     "requestId": self._request_id,
                     "runId": self._run_id,
-                    "message": self._public_error(exc),
+                    "message": message,
+                    "errorCode": error_code,
+                    "recoveryActions": recovery_actions,
                 }
             )
         finally:

@@ -227,6 +227,22 @@ class ApprovalBackend(FakeBackend):
         )
 
 
+class FailureBackend(FakeBackend):
+    def run(self, question, event_sink, reasoning_effort="default"):
+        event_sink(
+            {
+                "type": "agent_step",
+                "runId": "run-failed",
+                "stepId": "step-check",
+                "title": "执行检查",
+                "status": "failed",
+                "errorCode": "project_check_failed",
+                "errorMessage": "检查命令失败",
+            }
+        )
+        raise RuntimeError("检查命令失败")
+
+
 def wait_for(output: StringIO, event_type: str) -> list[dict]:
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
@@ -258,6 +274,28 @@ def main() -> None:
     )
     assert any(row.get("answer") == "回答" for row in rows)
     assert backend.reasoning_effort == "high"
+
+    failure_output = StringIO()
+    failure_bridge = InkRuntimeBridge(
+        FailureBackend("/failure-workspace"),
+        input_stream=StringIO(),
+        output_stream=failure_output,
+    )
+    failure_bridge.handle(
+        {"type": "submit", "requestId": "turn-failed", "text": "执行检查"}
+    )
+    failure_rows = wait_for(failure_output, "turn_failed")
+    structured_error = next(
+        row["event"]
+        for row in failure_rows
+        if row.get("type") == "agent_event"
+        and row.get("event", {}).get("eventName") == "error.raised"
+    )
+    assert structured_error["error"]["code"] == "RuntimeError"
+    assert structured_error["recoveryActions"] == ["continue", "retry", "fix"]
+    turn_failure = next(row for row in failure_rows if row.get("type") == "turn_failed")
+    assert turn_failure["errorCode"] == "RuntimeError"
+    assert turn_failure["recoveryActions"] == ["continue", "retry", "fix"]
 
     shell_output = StringIO()
     shell_bridge = InkRuntimeBridge(
