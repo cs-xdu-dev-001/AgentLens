@@ -3966,9 +3966,39 @@ export function App({
     } else if (command.value === '/cd') {
       client.send({type: 'workspace', action: 'cd', path: args});
     } else if (command.value === '/diff') {
-      client.send({type: 'workspace', action: 'diff', path: args});
+      const artifacts = runProjectionRef.current.artifacts || [];
+      const requestedPath = args.trim();
+      const index = requestedPath
+        ? artifacts.findIndex(artifact => artifact.path === requestedPath)
+        : artifacts.findIndex(artifact => artifact?.path && !artifact.reverted);
+      if (!artifacts.length) {
+        appendItem('error', '本次运行没有文件变更。');
+      } else if (index < 0) {
+        appendItem('error', requestedPath
+          ? `本次运行中找不到文件变更：${requestedPath}`
+          : '本次运行没有可查看的文本差异。');
+      } else {
+        const selected = artifacts[index];
+        closeTransientSurfaces('changes');
+        setChangeDetailIndex(index);
+        setChangePatch('');
+        setChangeConfirming(false);
+        setChangeDetailOpen(true);
+        setChangeLoading(true);
+        client.send({type: 'workspace', action: 'diff', path: selected.path});
+      }
     } else if (command.value === '/undo') {
-      client.send({type: 'workspace', action: 'undo'});
+      const artifacts = runProjectionRef.current.artifacts || [];
+      const index = artifacts.findLastIndex(artifact => artifact?.operationId && !artifact.reverted);
+      if (index < 0) {
+        appendItem('error', '本次运行没有可安全撤销的文件修改。');
+      } else {
+        closeTransientSurfaces('changes');
+        setChangeDetailIndex(index);
+        setChangePatch('');
+        setChangeConfirming(false);
+        setChangeDetailOpen(true);
+      }
     } else if (command.value === '/resume') {
       if (/^run_[A-Za-z0-9]+$/.test(args)) {
         resumeRun(args, sessions.find(item => item.runId === args)?.title);

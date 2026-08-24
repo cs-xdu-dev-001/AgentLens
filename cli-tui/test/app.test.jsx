@@ -2023,6 +2023,67 @@ test('final-only workspace changes render the same delivery card as artifact eve
   assert.doesNotMatch(frame, /本轮修改/);
 });
 
+test('/diff and /undo reuse the interactive change panel before mutating files', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.48.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('更新报告');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_completed',
+    runId: 'run-command-changes',
+    answer: '报告已更新。',
+    changes: [{
+      path: 'reports/final.md',
+      added: 8,
+      removed: 1,
+      operation: 'edit',
+      operationId: 'change-final',
+      diffAvailable: true,
+    }],
+  });
+  await waitForFrame(view, /本轮交付/);
+
+  view.stdin.write('/diff');
+  view.stdin.write('\r');
+  await waitForFrame(view, /文件变更/);
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'diff',
+    path: 'reports/final.md',
+  });
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'diff',
+    result: {patch: '+updated report'},
+  });
+  await waitForFrame(view, /\+updated report/);
+  view.stdin.write('\u001b');
+  await tick();
+
+  const undoCount = () => client.sent.filter(message => (
+    message.type === 'workspace' && message.action === 'undo'
+  )).length;
+  view.stdin.write('/undo');
+  view.stdin.write('\r');
+  await waitForFrame(view, /D撤销此文件/);
+  assert.equal(undoCount(), 0);
+  view.stdin.write('d');
+  await waitForFrame(view, /再次按D确认安全撤销/);
+  assert.equal(undoCount(), 0);
+  view.stdin.write('d');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'undo',
+    operationId: 'change-final',
+    runId: 'run-command-changes',
+  });
+});
+
 test('Ink app counts down model rate-limit recovery and clears it on output', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.1" />);

@@ -15,7 +15,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/add-dir', description: '添加本次会话可访问的目录', source: 'builtin', category: '工作区'},
   {value: '/cd', description: '切换工具执行目录', source: 'builtin', category: '工作区'},
   {value: '/diff', description: '查看本轮文件改动', source: 'builtin', category: '工作区'},
-  {value: '/undo', description: '安全撤销最近一次文件操作', source: 'builtin', category: '工作区'},
+  {value: '/undo', description: '打开文件变更并确认安全撤销', source: 'builtin', category: '工作区'},
   {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin', category: '会话'},
   {value: '/rename', description: '重命名当前会话', source: 'builtin', category: '会话', argumentHint: '<新名称>'},
   {value: '/branch', description: '从当前会话创建独立分支', source: 'builtin', category: '会话', aliases: ['/fork'], argumentHint: '[名称]'},
