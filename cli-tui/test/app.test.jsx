@@ -15,6 +15,7 @@ import {
   formatPastedTextRef,
   nextPromptSuggestion,
   pastedTextLineCount,
+  permissionRuleBehavior,
   rankModelOptions,
   resolveInteractionFocus,
   removeWaitingInteraction,
@@ -32,6 +33,7 @@ import {
   transcriptSearchMatches,
   transcriptSearchText,
   turnRequestSnapshot,
+  updatePermissionRules,
   workspaceExecutionBlock,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
@@ -78,6 +80,20 @@ test('home workspaces block execution while preserving remote and project worksp
   );
   assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
   assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
+});
+
+test('tool permission rules move tools between Allow, Ask, and Deny with safe precedence', () => {
+  let rules = {allow: [], ask: [], deny: []};
+  rules = updatePermissionRules(rules, 'allow', 'run_sandbox_command');
+  assert.equal(permissionRuleBehavior('RUN_SANDBOX_COMMAND', rules), 'allow');
+  rules = updatePermissionRules(rules, 'ask', 'run_sandbox_command');
+  assert.deepEqual(rules.allow, []);
+  assert.equal(permissionRuleBehavior('run_sandbox_command', rules), 'ask');
+  rules = updatePermissionRules(rules, 'deny', '*');
+  assert.equal(permissionRuleBehavior('write_workspace_file', rules), 'deny');
+  rules = updatePermissionRules(rules, 'deny', '*', true);
+  assert.equal(permissionRuleBehavior('write_workspace_file', rules), '');
+  assert.equal(updatePermissionRules(rules, 'allow', 'invalid tool name'), rules);
 });
 
 test('next prompt suggestions only appear for actionable completed or failed runs', () => {
@@ -1219,6 +1235,60 @@ test('session approval reuses the exact tool grant and resets on a new session',
   client.emit('message', approval('approval-session-3'));
   await tick();
   assert.match(view.lastFrame(), /需要确认：write_workspace_file/);
+});
+
+test('permission rule editor auto-allows matching tools and keeps rule editing keyboard-first', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.45.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/permissions rules');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /工具权限规则/);
+  assert.match(view.lastFrame(), /Allow 0/);
+
+  view.stdin.write('a');
+  await tick();
+  view.stdin.write('run_sandbox_command');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /run_sandbox_command/);
+  assert.match(view.lastFrame(), /Allow 1/);
+
+  const sentBeforeApproval = client.sent.length;
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      approvalId: 'permission-rule-allow',
+      serverName: 'workspace',
+      toolName: 'run_sandbox_command',
+      risk: 'execute',
+      destructive: true,
+    },
+  });
+  await tick();
+  assert.equal(client.sent.length, sentBeforeApproval + 1);
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+  assert.doesNotMatch(view.lastFrame(), /需要确认：run_sandbox_command/);
+
+  client.emit('message', {type: 'session_reset'});
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      approvalId: 'permission-rule-after-reset',
+      serverName: 'workspace',
+      toolName: 'run_sandbox_command',
+      risk: 'execute',
+      destructive: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /需要确认：run_sandbox_command/);
 });
 
 test('approval and structured questions wait in arrival order without being overwritten', async t => {

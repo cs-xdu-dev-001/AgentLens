@@ -57,8 +57,10 @@ def main() -> None:
     require(styles, ".composer-permission-popover", "permission popover")
     require(styles, ".composer-permission-option.danger", "full-access warning")
 
-    require(tui, "仅影响本次会话，Shift+Tab可快速切换", "TUI session scope")
+    require(tui, "本次会话", "TUI session scope")
     require(tui, "权限模式已切换为", "TUI selection feedback")
+    require(tui, "Allow / Ask / Deny", "TUI tool rule categories")
+    require(tui, "permissionRuleBehavior", "TUI rule enforcement")
 
     script = r'''import {
   allowApprovalForSession,

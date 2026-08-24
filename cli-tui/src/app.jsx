@@ -371,6 +371,47 @@ const PERMISSION_MODES = [
   {id: 'auto_edit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
   {id: 'full_access', label: '完全访问', detail: '本会话自动执行，仍受工作区与沙箱限制'},
 ];
+const PERMISSION_BEHAVIORS = [
+  {id: 'allow', label: 'Allow', detail: '匹配工具自动放行，包括破坏性操作'},
+  {id: 'ask', label: 'Ask', detail: '匹配工具始终询问'},
+  {id: 'deny', label: 'Deny', detail: '匹配工具直接拒绝'},
+];
+const emptyPermissionRules = () => ({allow: [], ask: [], deny: []});
+
+function normalizePermissionRule(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return /^[a-z0-9_.:*/-]+$/u.test(normalized) ? normalized.slice(0, 120) : '';
+}
+
+export function permissionRuleBehavior(toolName, rules = {}) {
+  const normalized = normalizePermissionRule(toolName);
+  if (!normalized) return '';
+  for (const behavior of ['deny', 'ask', 'allow']) {
+    const values = Array.isArray(rules?.[behavior]) ? rules[behavior] : [];
+    if (values.includes('*') || values.includes(normalized)) return behavior;
+  }
+  return '';
+}
+
+export function updatePermissionRules(rules, behavior, toolName, remove = false) {
+  const normalized = normalizePermissionRule(toolName);
+  if (!PERMISSION_BEHAVIORS.some(item => item.id === behavior) || !normalized) return rules;
+  const next = emptyPermissionRules();
+  for (const item of PERMISSION_BEHAVIORS) {
+    next[item.id] = [...new Set((rules?.[item.id] ?? [])
+      .map(normalizePermissionRule)
+      .filter(Boolean))];
+  }
+  for (const item of PERMISSION_BEHAVIORS) {
+    next[item.id] = next[item.id].filter(value => value !== normalized);
+  }
+  if (!remove) next[behavior] = [...next[behavior], normalized].sort();
+  return next;
+}
+
+function permissionRuleCount(rules) {
+  return PERMISSION_BEHAVIORS.reduce((total, item) => total + (rules?.[item.id]?.length ?? 0), 0);
+}
 const REASONING_EFFORTS = [
   {id: 'default', command: 'auto', label: '自动', detail: '由模型服务选择合适强度'},
   {id: 'low', command: 'low', label: '快速', detail: '降低推理开销，优先响应速度'},
@@ -1304,11 +1345,53 @@ function CommandMenu({suggestions, selected}) {
   );
 }
 
-function PermissionPicker({selected}) {
+function PermissionPicker({
+  selected,
+  page = 'modes',
+  rules = emptyPermissionRules(),
+  ruleTab = 0,
+  ruleChoice = 0,
+  adding = false,
+  draft = '',
+}) {
+  if (page === 'rules') {
+    const behavior = PERMISSION_BEHAVIORS[ruleTab] ?? PERMISSION_BEHAVIORS[0];
+    const values = rules?.[behavior.id] ?? [];
+    return (
+      <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+        <Box justifyContent="space-between">
+          <Text bold>工具权限规则</Text>
+          <Text color={MUTED}>{permissionRuleCount(rules)}条 · 本次会话</Text>
+        </Box>
+        <Box>
+          {PERMISSION_BEHAVIORS.map((item, index) => (
+            <Text key={item.id} color={index === ruleTab ? ACCENT : MUTED} bold={index === ruleTab}>
+              {index === ruleTab ? '› ' : '  '}{item.label} {rules?.[item.id]?.length ?? 0}{'  '}
+            </Text>
+          ))}
+        </Box>
+        <Text color={MUTED}>{behavior.detail}</Text>
+        {adding ? (
+          <Box marginTop={1}>
+            <Text color={ACCENT}>添加到{behavior.label}  </Text>
+            <Text color={PRIMARY}>{draft || '工具名'}</Text>
+            <Text color={ACCENT}>█</Text>
+          </Box>
+        ) : values.length ? values.map((value, index) => (
+          <Text key={value} color={index === ruleChoice ? PRIMARY : MUTED} bold={index === ruleChoice}>
+            {index === ruleChoice ? '❯ ' : '  '}{value}
+          </Text>
+        )) : <Text color={MUTED}>当前分类没有规则，按A添加</Text>}
+        <Text color={MUTED}>
+          {adding ? 'Enter保存 · Esc取消' : '←→切换分类 · ↑↓选择 · A添加 · D删除 · Esc返回'}
+        </Text>
+      </Box>
+    );
+  }
+  const ruleItemSelected = selected === PERMISSION_MODES.length;
   return (
     <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
       <Text bold>权限模式</Text>
-      <Text color={MUTED}>仅影响本次会话，Shift+Tab可快速切换</Text>
       {PERMISSION_MODES.map((mode, index) => (
         <Box key={mode.id}>
           <Text
@@ -1320,7 +1403,13 @@ function PermissionPicker({selected}) {
           <Text color={MUTED}>  {mode.detail}</Text>
         </Box>
       ))}
-      <Text color={MUTED}>↑↓选择  Enter确认  Esc关闭</Text>
+      <Box>
+        <Text color={ruleItemSelected ? ACCENT : PRIMARY} bold={ruleItemSelected}>
+          {ruleItemSelected ? '❯ ' : '  '}工具规则
+        </Text>
+        <Text color={MUTED}>  Allow / Ask / Deny · {permissionRuleCount(rules)}条</Text>
+      </Box>
+      <Text color={MUTED}>↑↓选择 · Enter确认 · Shift+Tab快速切换 · Esc关闭</Text>
     </Box>
   );
 }
@@ -2104,6 +2193,13 @@ export function App({
   const permissionRef = useRef(permissionMode);
   const [permissionPicker, setPermissionPicker] = useState(false);
   const [permissionChoice, setPermissionChoice] = useState(0);
+  const [permissionPage, setPermissionPage] = useState('modes');
+  const [permissionRules, setPermissionRules] = useState(emptyPermissionRules);
+  const permissionRulesRef = useRef(permissionRules);
+  const [permissionRuleTab, setPermissionRuleTab] = useState(0);
+  const [permissionRuleChoice, setPermissionRuleChoice] = useState(0);
+  const [permissionRuleAdding, setPermissionRuleAdding] = useState(false);
+  const [permissionRuleDraft, setPermissionRuleDraft] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTab, setHelpTab] = useState('shortcuts');
   const [helpQuery, setHelpQuery] = useState('');
@@ -2229,6 +2325,9 @@ export function App({
   useEffect(() => {
     permissionRef.current = permissionMode;
   }, [permissionMode]);
+  useEffect(() => {
+    permissionRulesRef.current = permissionRules;
+  }, [permissionRules]);
   useEffect(() => {
     viewportSizeRef.current = {columns: stdout.columns, rows: stdout.rows};
   }, [stdout.columns, stdout.rows]);
@@ -2625,11 +2724,15 @@ export function App({
           );
         } else if (eventName === 'approval.required' || event.type === 'approval_required') {
           const mode = permissionRef.current;
+          const rule = permissionRuleBehavior(event.toolName, permissionRulesRef.current);
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));
           const autoEdit = mode === 'auto_edit'
             && event.risk === 'write'
             && !event.destructive;
-          if (mode === 'full_access' || autoEdit || sessionAllowed) {
+          if (rule === 'deny') {
+            client.send({type: 'approve', decision: 'deny'});
+            showComposerNotice(`${event.toolName ?? '该工具'}已被Deny规则拒绝`);
+          } else if (rule === 'allow' || (rule !== 'ask' && (mode === 'full_access' || autoEdit || sessionAllowed))) {
             client.send({type: 'approve', decision: 'allow_once'});
           } else {
             closeTransientSurfaces();
@@ -3064,7 +3167,14 @@ export function App({
         setToolDetailOpen(false);
         setToolDetailIndex(0);
         sessionApprovals.current.clear();
+        const clearedPermissionRules = emptyPermissionRules();
+        permissionRef.current = 'ask';
+        permissionRulesRef.current = clearedPermissionRules;
         setPermissionMode('ask');
+        setPermissionRules(clearedPermissionRules);
+        setPermissionPage('modes');
+        setPermissionRuleAdding(false);
+        setPermissionRuleDraft('');
         setCurrentRunId('');
         setCurrentSessionTitle('');
         activeRequestIdRef.current = '';
@@ -3973,9 +4083,31 @@ export function App({
         showComposerNotice('已切换到计划模式：只分析并制定计划，不执行修改');
       }
     } else if (command.value === '/permissions') {
-      setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
-      closeTransientSurfaces('permissions');
-      setPermissionPicker(true);
+      const [action, rawToolName] = args.trim().split(/\s+/, 2);
+      const behavior = String(action || '').toLowerCase();
+      if (behavior === 'rules') {
+        setPermissionPage('rules');
+        setPermissionRuleChoice(0);
+        setPermissionRuleAdding(false);
+        setPermissionRuleDraft('');
+        closeTransientSurfaces('permissions');
+        setPermissionPicker(true);
+      } else if (PERMISSION_BEHAVIORS.some(item => item.id === behavior)) {
+        const toolName = normalizePermissionRule(rawToolName);
+        if (!toolName) {
+          appendItem('error', '用法：/permissions allow|ask|deny <工具名>');
+        } else {
+          setPermissionRules(current => updatePermissionRules(current, behavior, toolName));
+          showComposerNotice(`${toolName}已设为${behavior.toUpperCase()}（本次会话）`);
+        }
+      } else if (behavior) {
+        appendItem('error', '用法：/permissions [rules | allow|ask|deny <工具名>]');
+      } else {
+        setPermissionPage('modes');
+        setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
+        closeTransientSurfaces('permissions');
+        setPermissionPicker(true);
+      }
     } else if (['/tools', '/mcp', '/skills', '/memory'].includes(command.value)) {
       client.send({type: 'capabilities', section: command.value.slice(1)});
       setPhase(`读取${command.value.slice(1)}状态`);
@@ -4633,14 +4765,64 @@ export function App({
       return;
     }
     if (interactionFocus === 'permissions' && permissionPicker) {
-      if (key.upArrow) setPermissionChoice(value => (value + PERMISSION_MODES.length - 1) % PERMISSION_MODES.length);
-      else if (key.downArrow) setPermissionChoice(value => (value + 1) % PERMISSION_MODES.length);
-      else if (key.return) {
-        const nextMode = PERMISSION_MODES[permissionChoice];
-        setPermissionMode(nextMode.id);
-        setPermissionPicker(false);
-        showComposerNotice(`权限模式已切换为${nextMode.label}（仅本次会话）`);
-      } else if (key.escape) setPermissionPicker(false);
+      if (permissionPage === 'rules') {
+        const behavior = PERMISSION_BEHAVIORS[permissionRuleTab] ?? PERMISSION_BEHAVIORS[0];
+        const values = permissionRules?.[behavior.id] ?? [];
+        if (permissionRuleAdding) {
+          if (key.escape) {
+            setPermissionRuleAdding(false);
+            setPermissionRuleDraft('');
+          } else if (key.return) {
+            const toolName = normalizePermissionRule(permissionRuleDraft);
+            if (toolName) {
+              setPermissionRules(current => updatePermissionRules(current, behavior.id, toolName));
+              setPermissionRuleAdding(false);
+              setPermissionRuleDraft('');
+              setPermissionRuleChoice(0);
+              showComposerNotice(`${toolName}已设为${behavior.label}`);
+            } else {
+              showComposerNotice('工具名仅支持字母、数字、._:*/-');
+            }
+          } else if (key.backspace || key.delete) {
+            setPermissionRuleDraft(value => value.slice(0, -1));
+          } else if (!key.ctrl && !key.meta && !key.tab) {
+            const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
+            if (text) setPermissionRuleDraft(value => `${value}${text}`.slice(0, 120));
+          }
+        } else if (key.leftArrow || key.rightArrow || key.tab) {
+          const delta = key.leftArrow ? -1 : 1;
+          setPermissionRuleTab(value => (value + delta + PERMISSION_BEHAVIORS.length) % PERMISSION_BEHAVIORS.length);
+          setPermissionRuleChoice(0);
+        } else if (key.upArrow && values.length) {
+          setPermissionRuleChoice(value => (value + values.length - 1) % values.length);
+        } else if (key.downArrow && values.length) {
+          setPermissionRuleChoice(value => (value + 1) % values.length);
+        } else if (character.toLowerCase() === 'a') {
+          setPermissionRuleAdding(true);
+          setPermissionRuleDraft('');
+        } else if (character.toLowerCase() === 'd' && values.length) {
+          const toolName = values[Math.min(permissionRuleChoice, values.length - 1)];
+          setPermissionRules(current => updatePermissionRules(current, behavior.id, toolName, true));
+          setPermissionRuleChoice(value => Math.max(0, Math.min(value, values.length - 2)));
+          showComposerNotice(`${toolName}规则已删除`);
+        } else if (key.escape) {
+          setPermissionPage('modes');
+          setPermissionChoice(PERMISSION_MODES.length);
+        }
+      } else {
+        const itemCount = PERMISSION_MODES.length + 1;
+        if (key.upArrow) setPermissionChoice(value => (value + itemCount - 1) % itemCount);
+        else if (key.downArrow) setPermissionChoice(value => (value + 1) % itemCount);
+        else if (key.return && permissionChoice === PERMISSION_MODES.length) {
+          setPermissionPage('rules');
+          setPermissionRuleChoice(0);
+        } else if (key.return) {
+          const nextMode = PERMISSION_MODES[permissionChoice];
+          setPermissionMode(nextMode.id);
+          setPermissionPicker(false);
+          showComposerNotice(`权限模式已切换为${nextMode.label}（仅本次会话）`);
+        } else if (key.escape) setPermissionPicker(false);
+      }
       return;
     }
     if (interactionFocus === 'taskStep' && taskStepDetailKey) {
@@ -5205,7 +5387,7 @@ export function App({
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',
     transcriptSearch: '输入筛选 · ↑↓/Enter查找 · Esc关闭',
-    permissions: '↑↓选择 · Enter确认 · Esc关闭',
+    permissions: permissionPage === 'rules' ? '←→分类 · A添加 · D删除 · Esc返回' : '↑↓选择 · Enter确认 · Esc关闭',
     help: '输入搜索 · ←→分组 · Enter取用 · Esc关闭',
     transcript: '↑↓滚动 · PgUp/PgDn翻页 · Esc返回',
     commands: '↑↓选择 · Enter执行 · Tab/→补全 · Esc关闭',
@@ -5416,7 +5598,17 @@ export function App({
               query={transcriptSearchQuery}
             />
           ) : null}
-          {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
+          {permissionPicker ? (
+            <PermissionPicker
+              selected={permissionChoice}
+              page={permissionPage}
+              rules={permissionRules}
+              ruleTab={permissionRuleTab}
+              ruleChoice={permissionRuleChoice}
+              adding={permissionRuleAdding}
+              draft={permissionRuleDraft}
+            />
+          ) : null}
           {helpOpen ? (
             <HelpBrowser
               items={filteredHelpCommands}
