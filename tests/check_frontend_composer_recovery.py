@@ -47,6 +47,9 @@ const idle = values();
 for (const required of ["/help", "/reasoning", "/status"]) {
   if (!idle.includes(required)) throw new Error(`missing Web parity command: ${required}`);
 }
+if (!idle.includes("/compact")) {
+  throw new Error("Web composer omitted manual context compaction");
+}
 if (values({ usage: { "/status": 3 } })[0] !== "/status") {
   throw new Error("frequently used commands are not promoted");
 }
@@ -89,6 +92,10 @@ if (fork?.command?.value !== "/branch" || fork?.args !== "方案B") {
 const search = parseComposerCommand("/find 发布状态");
 if (search?.command?.value !== "/search" || search?.args !== "发布状态") {
   throw new Error("transcript search alias did not preserve arguments");
+}
+const compact = parseComposerCommand("/compact 优先保留工作区边界");
+if (compact?.command?.action !== "session-compact" || compact?.args !== "优先保留工作区边界") {
+  throw new Error("context compaction command did not preserve instructions");
 }
 '''
 

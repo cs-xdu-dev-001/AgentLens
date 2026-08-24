@@ -39,13 +39,13 @@ def main() -> None:
     from knowflow.db_schema import MYSQL_SCHEMA
     from knowflow.runtime import fetch_all, fetch_one
 
-    assert CURRENT_SCHEMA_VERSION == 12, CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 13, CURRENT_SCHEMA_VERSION
     version_row = fetch_one(
         "SELECT description FROM schema_version WHERE version=:version",
         {"version": CURRENT_SCHEMA_VERSION},
     )
     assert version_row == {
-        "description": "Persist replayable Agent run events."
+        "description": "Persist session context compaction boundaries."
     }, version_row
 
     tables = {
@@ -237,7 +237,7 @@ def main() -> None:
             ]
         assert [(row["version"], row["count"]) for row in version_rows] == [
             (4, 1),
-            (12, 1),
+            (CURRENT_SCHEMA_VERSION, 1),
         ], version_rows
         assert len(chat_columns) == len(set(chat_columns))
         assert len(tool_columns) == len(set(tool_columns))

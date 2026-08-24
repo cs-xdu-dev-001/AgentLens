@@ -79,6 +79,7 @@ def main() -> None:
         ('value: "/rename"', "rename session command"),
         ('value: "/branch"', "branch session command"),
         ('value: "/export"', "export session command"),
+        ('value: "/compact"', "compact session context command"),
         ('value: "/model"', "model command"),
         ('value: "/reasoning"', "reasoning command"),
         ('value: "/status"', "status command"),

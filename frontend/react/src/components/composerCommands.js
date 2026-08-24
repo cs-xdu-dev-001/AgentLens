@@ -82,6 +82,13 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "context",
   },
   {
+    value: "/compact",
+    label: "压缩上下文",
+    description: "摘要早期对话并保留完整聊天记录",
+    category: "会话",
+    action: "session-compact",
+  },
+  {
     value: "/plan",
     label: "计划模式",
     description: "只分析并制定计划，不执行修改",

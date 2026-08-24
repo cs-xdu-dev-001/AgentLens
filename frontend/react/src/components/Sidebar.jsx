@@ -359,6 +359,33 @@ function SessionHistory() {
   }, [currentSessionId, sessions]);
 
   useEffect(() => {
+    let cancelled = false;
+    window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+      detail: { status: "idle", message: "" },
+    }));
+    if (!currentSessionId) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: null },
+      }));
+      return undefined;
+    }
+    sessionApi.context(currentSessionId).then((status) => {
+      if (cancelled) return;
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status },
+      }));
+    }).catch(() => {
+      if (cancelled) return;
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: null },
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId]);
+
+  useEffect(() => {
     const closeMenu = (event) => {
       if (!historyRef.current?.contains(event.target)) {
         setOpenMenuSessionId(null);
@@ -496,6 +523,31 @@ function SessionHistory() {
     }
   };
 
+  const handleSessionCompact = async (sessionId, instructions = "") => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+      detail: { status: "running", message: "正在整理早期对话，完整记录不会删除" },
+    }));
+    try {
+      const result = await sessionApi.compactContext(sessionId, instructions);
+      const compacted = Boolean(result?.compacted);
+      const message = compacted
+        ? `上下文已压缩：${Number(result?.metadata?.originalTokens || 0).toLocaleString()} → ${Number(result?.metadata?.compactedTokens || 0).toLocaleString()} tokens`
+        : "当前会话还没有足够的早期对话可压缩";
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: result?.status || null },
+      }));
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+        detail: { status: compacted ? "success" : "idle", message },
+      }));
+      notifyToast(message);
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+        detail: { status: "error", message: error?.message || "上下文压缩失败，原对话保持不变" },
+      }));
+      notifyError(error, "上下文压缩失败，原对话保持不变");
+    }
+  };
+
   const handleSessionAction = (action, sessionId) => {
     setOpenMenuSessionId(null);
     setMenuAnchor(null);
@@ -546,6 +598,7 @@ function SessionHistory() {
         return;
       }
       if (action === "export") handleSessionExport(currentSessionId);
+      if (action === "compact") handleSessionCompact(currentSessionId, args);
     };
     window.addEventListener("knowflow:react-session-command", handleSessionCommand);
     return () => window.removeEventListener("knowflow:react-session-command", handleSessionCommand);

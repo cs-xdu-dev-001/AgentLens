@@ -55,9 +55,12 @@ def main() -> None:
     require(component, "上下文预算", "context budget section")
     require(component, 'role={"progressbar"}', "context progress semantics")
     require(component, "composer-context-value", "context trigger summary")
+    require(component, "压缩早期对话", "manual context compaction action")
+    require(component, "onCompactContext", "context compaction callback")
     require(component, 'reasoning: ".composer-reasoning-section"', "reasoning focus target")
     require(composer, "ComposerModelPicker", "composer model picker mount")
     require(composer, "contextStatus={contextStatus}", "composer context projection")
+    require(composer, "contextOperation={contextOperation}", "context compaction state projection")
     require(composer, 'command.action === "context"', "context slash command")
     require(composer, '["reasoning", "status"].includes(command.action)', "session status commands")
     require(composer, 'command.action === "help"', "command browser action")
@@ -68,6 +71,7 @@ def main() -> None:
     )
 
     require(sidebar, "chat_model_config_id", "saved session model field")
+    require(sidebar, "sessionApi.compactContext", "session context compaction API call")
     require(sidebar, "chatModelConfigId", "session model event payload")
     require(bridge, "resolveChatModelConfigId", "session model validation")
     require(

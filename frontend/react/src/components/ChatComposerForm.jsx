@@ -82,6 +82,7 @@ export function ChatComposerForm() {
   const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState("");
   const [promptStash, setPromptStash] = useState(null);
   const [contextStatus, setContextStatus] = useState(null);
+  const [contextOperation, setContextOperation] = useState({ status: "idle", message: "" });
   const [commandUsage, setCommandUsage] = useState({});
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
@@ -186,6 +187,32 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-focus", handleComposerFocus);
     return () => window.removeEventListener("knowflow:react-composer-focus", handleComposerFocus);
+  }, []);
+
+  useEffect(() => {
+    const handleContextStatus = (event) => {
+      const next = event.detail?.status;
+      if (!next || typeof next !== "object" || !Number(next.maxTokens)) {
+        setContextStatus(null);
+        return;
+      }
+      setContextStatus({
+        ...next,
+        trimmed: Boolean(next.trimmed || next.compacted || next.contextTrimmed),
+      });
+    };
+    const handleContextOperation = (event) => {
+      setContextOperation({
+        status: String(event.detail?.status || "idle"),
+        message: String(event.detail?.message || ""),
+      });
+    };
+    window.addEventListener("knowflow:react-context-status-updated", handleContextStatus);
+    window.addEventListener("knowflow:react-context-compact-state", handleContextOperation);
+    return () => {
+      window.removeEventListener("knowflow:react-context-status-updated", handleContextStatus);
+      window.removeEventListener("knowflow:react-context-compact-state", handleContextOperation);
+    };
   }, []);
 
   useEffect(() => {
@@ -1210,9 +1237,15 @@ export function ChatComposerForm() {
           />
           <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
           <ComposerModelPicker
+            contextOperation={contextOperation}
             contextStatus={contextStatus}
             disabled={sending || switchingSession}
             inputRef={textareaRef}
+            onCompactContext={() => {
+              window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
+                detail: { action: "compact", args: "" },
+              }));
+            }}
           />
         </div>
         <button

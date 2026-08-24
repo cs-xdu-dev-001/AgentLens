@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS chat_session (
   title TEXT,
   knowledge_base_id INTEGER,
   chat_model_config_id INTEGER,
+  context_summary TEXT,
+  context_summary_metadata_json TEXT,
+  context_summary_up_to_message_id INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -431,6 +434,9 @@ CREATE TABLE IF NOT EXISTS chat_session (
   title VARCHAR(255),
   knowledge_base_id BIGINT,
   chat_model_config_id BIGINT,
+  context_summary LONGTEXT,
+  context_summary_metadata_json LONGTEXT,
+  context_summary_up_to_message_id BIGINT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -73,9 +73,11 @@ const REASONING_EFFORTS = Object.freeze([
 ]);
 
 export function ComposerModelPicker({
+  contextOperation = null,
   contextStatus = null,
   disabled = false,
   inputRef = null,
+  onCompactContext = null,
 }) {
   const [models, setModels] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -138,6 +140,7 @@ export function ComposerModelPicker({
         Math.min(100, Number(contextStatus.usagePercent) || ((usedTokens / maxTokens) * 100)),
       ),
       trimmed: Boolean(contextStatus.trimmed),
+      compacted: Boolean(contextStatus.compacted || contextStatus.trimmed),
     };
   }, [contextStatus]);
 
@@ -481,6 +484,25 @@ export function ComposerModelPicker({
                 <span>{`已用${formatContextTokens(context.usedTokens)}`}</span>
                 <span>{`剩余${formatContextTokens(context.remainingTokens)}`}</span>
               </div>
+              {typeof onCompactContext === "function" ? (
+                <button
+                  className={"composer-context-compact"}
+                  type={"button"}
+                  disabled={disabled || contextOperation?.status === "running"}
+                  onClick={onCompactContext}
+                >
+                  {contextOperation?.status === "running"
+                    ? "正在压缩早期对话…"
+                    : context.compacted
+                      ? "重新压缩早期对话"
+                      : "压缩早期对话"}
+                </button>
+              ) : null}
+              {contextOperation?.message ? (
+                <span className={`composer-context-result ${contextOperation.status}`} role={"status"}>
+                  {contextOperation.message}
+                </span>
+              ) : null}
             </section>
           ) : null}
           <button

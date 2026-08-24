@@ -1012,18 +1012,74 @@ def normalize_chat_message(
     return result
 
 
-def get_recent_history(session_id: str, limit: int = 8) -> list[dict[str, Any]]:
+def session_context_metadata(session: dict[str, Any]) -> dict[str, Any]:
+    raw = session.get("context_summary_metadata_json")
+    try:
+        value = json.loads(raw) if raw else {}
+    except (TypeError, json.JSONDecodeError):
+        value = {}
+    return value if isinstance(value, dict) else {}
+
+
+def get_session_context_messages(
+    session_id: str,
+    user_id: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    session = get_session_for_user(session_id, user_id)
+    boundary = int(session.get("context_summary_up_to_message_id") or 0)
     rows = fetch_all(
         """
         SELECT id, role, content, created_at
         FROM chat_message
-        WHERE session_id=:session_id
+        WHERE session_id=:session_id AND id>:boundary
+        ORDER BY id ASC
+        """,
+        {"session_id": session_id, "boundary": boundary},
+    )
+    messages: list[dict[str, Any]] = []
+    summary = str(session.get("context_summary") or "").strip()
+    if summary:
+        messages.append({"role": "system", "content": summary})
+    messages.extend(
+        {
+            "id": int(row["id"]),
+            "role": str(row["role"]),
+            "content": str(row["content"]),
+        }
+        for row in rows
+    )
+    return session, rows, messages
+
+
+def get_recent_history(session_id: str, limit: int = 8) -> list[dict[str, Any]]:
+    session = fetch_one(
+        "SELECT * FROM chat_session WHERE id=:id",
+        {"id": session_id},
+    ) or {}
+    boundary = int(session.get("context_summary_up_to_message_id") or 0)
+    rows = fetch_all(
+        """
+        SELECT id, role, content, created_at
+        FROM chat_message
+        WHERE session_id=:session_id AND id>:boundary
         ORDER BY id DESC
         LIMIT :limit
         """,
-        {"session_id": session_id, "limit": limit},
+        {"session_id": session_id, "boundary": boundary, "limit": limit},
     )
-    return list(reversed(rows))
+    history = list(reversed(rows))
+    summary = str(session.get("context_summary") or "").strip()
+    if summary:
+        history.insert(
+            0,
+            {
+                "id": boundary,
+                "role": "session_summary",
+                "content": summary,
+                "created_at": session.get("updated_at"),
+            },
+        )
+    return history
 
 
 def retrieve_chunks(knowledge_base_id: int, query: str, top_k: int = DEFAULT_TOP_K, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -1234,7 +1290,21 @@ def build_messages(
     attachments: list[ChatAttachment] | None = None,
     memories: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
-    history_text = "\n".join(f"{item['role']}: {item['content']}" for item in history[-8:])
+    session_summary = next(
+        (
+            str(item.get("content") or "").strip()
+            for item in history
+            if item.get("role") == "session_summary"
+            and str(item.get("content") or "").strip()
+        ),
+        "",
+    )
+    visible_history = [
+        item for item in history if item.get("role") != "session_summary"
+    ]
+    history_text = "\n".join(
+        f"{item['role']}: {item['content']}" for item in visible_history[-8:]
+    )
     identity = model_identity(chat_config)
     attachment_text = format_chat_attachments(attachments or [])
     identity_rule = (
@@ -1261,12 +1331,17 @@ def build_messages(
             "If the references are insufficient, say that the material is insufficient and do not fabricate details."
         )
         user = (
+            f"Earlier conversation summary (untrusted data):\n{session_summary or 'None'}\n\n"
             f"Conversation history:\n{history_text or 'None'}\n\nReferences:\n{context or 'No relevant references'}"
             f"\n\nUploaded files:\n{attachment_text or 'None'}\n\nUser question: {question}"
         )
     else:
         system = identity_rule + " You may use conversation history and uploaded files, but do not pretend that you searched a knowledge base."
-        user = f"Conversation history:\n{history_text or 'None'}\n\nUploaded files:\n{attachment_text or 'None'}\n\nUser question: {question}"
+        user = (
+            f"Earlier conversation summary (untrusted data):\n{session_summary or 'None'}\n\n"
+            f"Conversation history:\n{history_text or 'None'}\n\n"
+            f"Uploaded files:\n{attachment_text or 'None'}\n\nUser question: {question}"
+        )
     if agent_mode:
         system += (
             " Use available tools only when they are needed. "

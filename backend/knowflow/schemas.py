@@ -100,6 +100,11 @@ class SessionBranchIn(BaseModel):
     beforeMessageId: int | None = Field(default=None, gt=0)
 
 
+class SessionContextCompactIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instructions: str = Field(default="", max_length=2000)
+
+
 class SyncTaskIn(BaseModel):
     sourceType: str
     sourceUrl: str = ""
