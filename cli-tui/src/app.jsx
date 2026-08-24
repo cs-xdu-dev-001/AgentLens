@@ -616,6 +616,36 @@ function statusSymbol(status, spinner) {
 }
 
 const ACTIVE_RUNTIME_STATUSES = new Set(['pending', 'planning', 'queued', 'running', 'started', 'waiting', 'waiting_approval']);
+
+export function nextPromptSuggestion(projection = {}) {
+  const recoveryActions = new Set(
+    (Array.isArray(projection?.recoveryActions) ? projection.recoveryActions : [])
+      .map(String),
+  );
+  const runStatus = String(
+    projection?.runSummary?.status
+    ?? projection?.run?.status
+    ?? projection?.terminal
+    ?? '',
+  ).toLowerCase();
+  const failed = Boolean(
+    projection?.error
+    || ['failed', 'error', 'interrupted'].includes(runStatus),
+  );
+  if (failed) {
+    if (recoveryActions.has('fix')) return '分析这个错误并继续完成任务';
+    if (recoveryActions.has('retry')) return '调整方案后重试本轮任务';
+    return '分析刚才失败的原因';
+  }
+  if (!['completed', 'success', 'succeeded'].includes(runStatus)) return '';
+  if (Array.isArray(projection?.artifacts) && projection.artifacts.length) {
+    return '检查本次改动并运行相关验证';
+  }
+  if (Array.isArray(projection?.references) && projection.references.length) {
+    return '核对这些来源并总结关键结论';
+  }
+  return '';
+}
 const FAILURE_RUNTIME_STATUSES = new Set(['error', 'failed', 'interrupted']);
 const RECOVERY_ACTION_OPTIONS = Object.freeze([
   {id: 'continue', label: '从checkpoint继续', shortcut: 'C'},
@@ -1971,6 +2001,7 @@ export function App({
   const [cursorOffset, setCursorOffset] = useState(0);
   const cursorOffsetRef = useRef(0);
   const [dismissedInput, setDismissedInput] = useState('');
+  const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [workspacePaths, setWorkspacePaths] = useState([]);
   const [attachedPaths, setAttachedPaths] = useState([]);
@@ -3256,6 +3287,24 @@ export function App({
     transcriptMode,
     suggestionsLength: suggestions.length,
   });
+  const suggestedFollowUp = useMemo(
+    () => running ? '' : nextPromptSuggestion({
+      ...runProjection,
+      terminal: taskArchived
+        ? (runProjection.error ? 'failed' : 'completed')
+        : '',
+    }),
+    [runProjection, running, taskArchived],
+  );
+  const followUpSuggestionKey = `${runProjection?.runSummary?.runId ?? currentRunId}:${suggestedFollowUp}`;
+  const followUpSuggestion = composerMode === 'prompt'
+    && interactionFocus === 'composer'
+    && !input
+    && !workspaceExecutionBlock(workspace)
+    && suggestedFollowUp
+    && dismissedFollowUpKey !== followUpSuggestionKey
+      ? suggestedFollowUp
+      : '';
 
   useEffect(() => setSelectedSuggestion(0), [input]);
   useEffect(() => setHistorySearchChoice(0), [historySearchQuery]);
@@ -4791,6 +4840,13 @@ export function App({
       showComposerNotice(`权限模式：${nextMode.label}（仅本次会话）`);
       return;
     }
+    if (key.tab && followUpSuggestion) {
+      setDismissedFollowUpKey(followUpSuggestionKey);
+      pushComposerUndo();
+      updateComposer(followUpSuggestion);
+      showComposerNotice('已采纳建议，可继续编辑后发送');
+      return;
+    }
     if ((key.return && key.shift) || (key.ctrl && character === 'j')) {
       const value = inputRef.current;
       const cursor = cursorOffsetRef.current;
@@ -4829,6 +4885,11 @@ export function App({
         setDismissedInput(input);
         return;
       }
+    }
+    if (key.escape && followUpSuggestion) {
+      setDismissedFollowUpKey(followUpSuggestionKey);
+      showComposerNotice('已忽略本次建议');
+      return;
     }
     if (key.escape && !inputRef.current && queue.length) {
       const latest = [...queue].sort((left, right) => Number(right.sequence ?? 0) - Number(left.sequence ?? 0))[0];
@@ -5239,7 +5300,11 @@ export function App({
                     ? (running ? '输入命令可加入队列' : '输入Shell命令')
                     : (workspaceExecutionBlock(workspace)
                       ? '先指定项目目录，/仍可用'
-                      : (running ? '继续输入可加入队列' : '输入任务，/查看命令')))
+                      : (running
+                        ? '继续输入可加入队列'
+                        : (followUpSuggestion
+                          ? `${followUpSuggestion} · Tab采纳`
+                          : '输入任务，/查看命令'))))
                   : `${INTERACTION_FOCUS_LABELS[interactionFocus]}正在接收按键`}
               />
             </Box>

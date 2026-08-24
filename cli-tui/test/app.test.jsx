@@ -13,6 +13,7 @@ import {
   expandPastedTextRefs,
   enqueueWaitingInteraction,
   formatPastedTextRef,
+  nextPromptSuggestion,
   pastedTextLineCount,
   rankModelOptions,
   resolveInteractionFocus,
@@ -77,6 +78,52 @@ test('home workspaces block execution while preserving remote and project worksp
   );
   assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
   assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
+});
+
+test('next prompt suggestions only appear for actionable completed or failed runs', () => {
+  assert.equal(nextPromptSuggestion({runSummary: {status: 'running'}}), '');
+  assert.equal(nextPromptSuggestion({
+    runSummary: {status: 'completed'},
+    artifacts: [{path: 'src/app.jsx'}],
+  }), '检查本次改动并运行相关验证');
+  assert.equal(nextPromptSuggestion({
+    runSummary: {status: 'completed'},
+    references: [{url: 'https://example.com'}],
+  }), '核对这些来源并总结关键结论');
+  assert.equal(nextPromptSuggestion({
+    error: {code: 'tool_failed'},
+    recoveryActions: ['retry', 'fix'],
+  }), '分析这个错误并继续完成任务');
+});
+
+test('Tab accepts the next prompt suggestion without submitting it immediately', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.40.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('修改首页');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      eventName: 'artifact.created',
+      artifactId: 'file:src/app.jsx',
+      artifactType: 'file',
+      path: 'src/app.jsx',
+      operation: 'write',
+    },
+  });
+  client.emit('message', {type: 'turn_completed', runId: 'run-follow-up', answer: '修改完成'});
+  await waitForFrame(view, /检查本次改动并运行相关验证 · Tab采纳/);
+
+  view.stdin.write('\t');
+  await waitForFrame(view, /已采纳建议，可继续编辑后发送/);
+  assert.equal(client.sent.filter(message => message.type === 'submit').length, 1);
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.filter(message => message.type === 'submit').at(-1)?.text, '检查本次改动并运行相关验证');
 });
 
 test('terminal feedback mirrors idle, running, waiting, and failed Agent states', () => {
@@ -2288,7 +2335,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 
 test('home workspace keeps the draft and prevents failed task cards', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.39.0" />);
+  const view = render(<App client={client} version="0.40.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 

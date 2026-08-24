@@ -165,6 +165,33 @@ function queueBlockReasonFromProjection(projection) {
 
 const composerRecoveryActions = new Set(["continue", "retry", "fix"]);
 
+export function composerFollowUpSuggestion(projection = {}) {
+  const recoveryActions = new Set(
+    (Array.isArray(projection?.recoveryActions) ? projection.recoveryActions : [])
+      .map(String),
+  );
+  const runStatus = String(projection?.run?.status || "").toLowerCase();
+  const failed = Boolean(
+    projection?.error
+    || projection?.terminal === "failed"
+    || runStatus === "failed",
+  );
+  if (failed) {
+    if (recoveryActions.has("fix")) return "分析这个错误并继续完成任务";
+    if (recoveryActions.has("retry")) return "调整方案后重试本轮任务";
+    return "分析刚才失败的原因";
+  }
+  const completed = projection?.terminal === "completed" || runStatus === "completed";
+  if (!completed) return "";
+  if (Array.isArray(projection?.artifacts) && projection.artifacts.length) {
+    return "检查本次改动并运行相关验证";
+  }
+  if (Array.isArray(projection?.references) && projection.references.length) {
+    return "核对这些来源并总结关键结论";
+  }
+  return "";
+}
+
 function composerContextStatus(projection = {}) {
   const source = projection?.context || projection?.run?.context;
   if (!source || typeof source !== "object") return null;
@@ -213,6 +240,7 @@ function composerRecoveryContext(projection = {}, context = {}) {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 160),
+    suggestedPrompt: composerFollowUpSuggestion(projection),
     context: composerContextStatus(projection),
   };
 }
@@ -369,6 +397,11 @@ export function createChatFlow({
         .replace(/[^A-Za-z0-9_.-]/g, "")
         .slice(0, 80),
       failedStepTitle: String(detail.failedStepTitle || "")
+        .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 160),
+      suggestedPrompt: String(detail.suggestedPrompt || "")
         .replace(/[\u0000-\u001f\u007f<>]/g, " ")
         .replace(/\s+/g, " ")
         .trim()

@@ -40,6 +40,7 @@ const idleAgentState = Object.freeze({
   recoveryActions: [],
   failureCode: "",
   failedStepTitle: "",
+  suggestedPrompt: "",
 });
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
@@ -78,6 +79,7 @@ export function ChatComposerForm() {
   const [queueBlockReason, setQueueBlockReason] = useState("");
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
+  const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState("");
   const [contextStatus, setContextStatus] = useState(null);
   const [commandUsage, setCommandUsage] = useState({});
   const textareaRef = useRef(null);
@@ -286,6 +288,7 @@ export function ChatComposerForm() {
           : [],
         failureCode: String(detail.failureCode || ""),
         failedStepTitle: String(detail.failedStepTitle || ""),
+        suggestedPrompt: String(detail.suggestedPrompt || ""),
       };
       setContextStatus(
         detail.context && Number(detail.context.maxTokens) > 0
@@ -302,13 +305,18 @@ export function ChatComposerForm() {
         && current.recoveryActions.join(",") === next.recoveryActions.join(",")
         && current.failureCode === next.failureCode
         && current.failedStepTitle === next.failedStepTitle
+        && current.suggestedPrompt === next.suggestedPrompt
           ? current
           : next
       ));
       if (["completed", "cancelled"].includes(next.mode)) {
         agentStateResetRef.current = window.setTimeout(() => {
           agentStateResetRef.current = null;
-          setAgentState(idleAgentState);
+          setAgentState((current) => ({
+            ...idleAgentState,
+            runId: current.runId,
+            suggestedPrompt: current.suggestedPrompt,
+          }));
         }, 2400);
       }
     };
@@ -569,6 +577,36 @@ export function ChatComposerForm() {
       closeSkillPicker();
       closeMentionPicker();
       cycleComposerPermissionMode();
+      return;
+    }
+    if (
+      event.key === "Tab"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && followUpSuggestion
+    ) {
+      event.preventDefault();
+      setDismissedFollowUpKey(followUpSuggestionKey);
+      setQuestion(followUpSuggestion);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(followUpSuggestion.length, followUpSuggestion.length);
+        resizeTextarea(textarea);
+      });
+      return;
+    }
+    if (
+      event.key === "Escape"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && followUpSuggestion
+    ) {
+      event.preventDefault();
+      setDismissedFollowUpKey(followUpSuggestionKey);
       return;
     }
     if (mentionOpen) {
@@ -866,6 +904,14 @@ export function ChatComposerForm() {
             actionable: false,
           }
         : idleAgentState;
+  const followUpSuggestionKey = `${agentState.runId}:${agentState.suggestedPrompt}`;
+  const followUpSuggestion = !sending
+    && !switchingSession
+    && !question
+    && agentState.suggestedPrompt
+    && dismissedFollowUpKey !== followUpSuggestionKey
+      ? agentState.suggestedPrompt
+      : "";
 
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
@@ -1059,7 +1105,13 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择命令或Skill，@ 引用工作区文件"}
+            placeholder={switchingSession
+              ? "正在打开任务…"
+              : sending
+                ? "继续输入，Enter加入待发送"
+                : followUpSuggestion
+                  ? `${followUpSuggestion} · Tab采纳`
+                  : "有问题尽管问。输入 / 选择命令或Skill，@ 引用工作区文件"}
             value={question}
             disabled={switchingSession}
             aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}

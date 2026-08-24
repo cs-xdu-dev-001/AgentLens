@@ -53,8 +53,9 @@ def main() -> None:
     forbid("frontend/react/src/controller/knowflowController.js", "chat-submit-btn", "legacy send button DOM access")
 
     script = r'''import {
-   appendQueuedChatRequest,
+  appendQueuedChatRequest,
   composerAgentStateFromProjection,
+  composerFollowUpSuggestion,
   orderQueuedChatRequests,
   reprioritizeQueuedChatRequest,
   takeQueuedChatRequest,
@@ -111,6 +112,24 @@ if (
   || recoverable.context.usagePercent !== 25
 ) {
   throw new Error("composer recovery context projection failed");
+}
+if (recoverable.suggestedPrompt !== "调整方案后重试本轮任务") {
+  throw new Error("failed run follow-up suggestion is incorrect");
+}
+if (composerFollowUpSuggestion({
+  terminal: "completed",
+  artifacts: [{path: "src/app.jsx"}],
+}) !== "检查本次改动并运行相关验证") {
+  throw new Error("artifact follow-up suggestion is incorrect");
+}
+if (composerFollowUpSuggestion({
+  terminal: "completed",
+  references: [{url: "https://example.com"}],
+}) !== "核对这些来源并总结关键结论") {
+  throw new Error("reference follow-up suggestion is incorrect");
+}
+if (composerFollowUpSuggestion({run: {status: "running"}}) !== "") {
+  throw new Error("running state exposed a follow-up suggestion");
 }
 '''
     result = subprocess.run(
