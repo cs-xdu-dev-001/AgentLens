@@ -401,7 +401,17 @@ class WorkspaceContext:
             )
             added = sum(1 for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
             removed = sum(1 for line in patch.splitlines() if line.startswith("-") and not line.startswith("---"))
-            files.append({"path": display, "added": added, "removed": removed})
+            files.append(
+                {
+                    "path": display,
+                    "added": added,
+                    "removed": removed,
+                    "operation": record.get("operation"),
+                    "operationId": record.get("id"),
+                    "diffAvailable": bool(patch),
+                    "reverted": False,
+                }
+            )
             if patch:
                 chunks.append(patch)
         return {

@@ -21,6 +21,7 @@ import {
   userFacingErrorMessage,
   verificationToolCallId,
   verificationRows,
+  workspaceChangesToArtifactEvents,
 } from '../src/protocol.js';
 import {
   applyFileMention,
@@ -88,6 +89,34 @@ test('completed runs focus delivery while active and failed runs focus execution
   assert.equal(defaultTaskNavigationIndex([
     {key: 'reference:source', type: 'reference', row: {url: 'https://example.com'}},
   ], {running: false}), 0);
+});
+
+test('final workspace changes reuse the artifact protocol', () => {
+  assert.deepEqual(workspaceChangesToArtifactEvents([
+    {
+      path: 'src/app.jsx',
+      added: 12,
+      removed: 3,
+      operation: 'edit',
+      operationId: 'change-1',
+      diffAvailable: true,
+    },
+    {path: '/etc/passwd', added: 1},
+    {path: '../secret.txt', added: 1},
+  ]), [{
+    eventName: 'artifact.created',
+    artifactId: 'file:src/app.jsx',
+    artifactType: 'file',
+    title: 'src/app.jsx',
+    path: 'src/app.jsx',
+    operation: 'edit',
+    operationId: 'change-1',
+    addedLines: 12,
+    removedLines: 3,
+    diffAvailable: true,
+    reverted: false,
+    sequence: 1,
+  }]);
 });
 
 test('commands merge dynamic entries and prefer exact or prefix matches', () => {

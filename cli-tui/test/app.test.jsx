@@ -1923,6 +1923,36 @@ test('Ink app renders a live task summary and collapses it after completion', as
   view.unmount();
 });
 
+test('final-only workspace changes render the same delivery card as artifact events', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('生成报告');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_completed',
+    runId: 'run-final-changes',
+    answer: '报告已生成。',
+    changes: [{
+      path: 'reports/final.md',
+      added: 8,
+      removed: 1,
+      operation: 'write',
+      operationId: 'change-final',
+      diffAvailable: true,
+    }],
+  });
+
+  await waitForFrame(view, /本轮交付/);
+  const frame = view.lastFrame();
+  assert.match(frame, /1个文件已更改/);
+  assert.match(frame, /已写入\s+reports\/final\.md\s+\+8 · -1/);
+  assert.doesNotMatch(frame, /本轮修改/);
+});
+
 test('Ink app counts down model rate-limit recovery and clears it on output', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.1" />);

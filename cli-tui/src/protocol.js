@@ -212,6 +212,30 @@ function safeWorkspaceArtifactPath(value) {
   return parts.some(part => !part || part === '.' || part === '..') ? '' : parts.join('/');
 }
 
+export function workspaceChangesToArtifactEvents(changes = []) {
+  return (Array.isArray(changes) ? changes : []).flatMap((change, index) => {
+    if (!change || typeof change !== 'object') return [];
+    const path = safeWorkspaceArtifactPath(change.path);
+    if (!path) return [];
+    const operation = sanitizeTerminalText(change.operation).trim().toLowerCase();
+    const operationId = redact(change.operationId ?? '', 200).trim();
+    return [{
+      eventName: 'artifact.created',
+      artifactId: `file:${path}`,
+      artifactType: 'file',
+      title: path,
+      path,
+      ...(PROTOCOL_ARTIFACT_OPERATIONS.has(operation) ? {operation} : {}),
+      ...(operationId ? {operationId} : {}),
+      addedLines: Math.max(0, Number(change.addedLines ?? change.added) || 0),
+      removedLines: Math.max(0, Number(change.removedLines ?? change.removed) || 0),
+      diffAvailable: change.diffAvailable !== false,
+      reverted: Boolean(change.reverted),
+      sequence: Math.max(0, Number(change.sequence) || index + 1),
+    }];
+  });
+}
+
 function artifactProjection(event) {
   const artifactType = redact(
     event?.artifactType ?? (event?.type === 'reference' ? 'reference' : ''),

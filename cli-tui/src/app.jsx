@@ -28,6 +28,7 @@ import {
   userFacingErrorMessage,
   verificationToolCallId,
   verificationRows,
+  workspaceChangesToArtifactEvents,
 } from './protocol.js';
 import {MarkdownText, stableMarkdownBoundary} from './markdown.jsx';
 import {
@@ -2894,8 +2895,19 @@ export function App({
       }
       if (message.type === 'turn_completed') {
         setRunRecoveryOpen(false);
+        if (
+          runProjectionRef.current.artifacts.length === 0
+          && Array.isArray(message.changes)
+          && message.changes.length
+        ) {
+          const projected = workspaceChangesToArtifactEvents(message.changes).reduce(
+            (current, event) => projectRunEvent(current, event),
+            runProjectionRef.current,
+          );
+          runProjectionRef.current = projected;
+          setRunProjection(projected);
+        }
         settleCurrentRun(message.cancelled ? 'cancelled' : 'completed');
-        const projectedArtifactCount = runProjectionRef.current.artifacts.length;
         if (message.restored && Array.isArray(message.messages)) {
           lastTurnRequestRef.current = null;
           const restoredQuestion = [...message.messages]
@@ -2929,10 +2941,6 @@ export function App({
           );
         }
         if (message.runId) setCurrentRunId(String(message.runId));
-        if (Array.isArray(message.changes) && message.changes.length && projectedArtifactCount === 0) {
-          const summary = message.changes.map(item => `${item.path} +${item.added ?? 0} -${item.removed ?? 0}`).join(' · ');
-          appendItem('assistant', `本轮修改  ${summary}  · /diff查看`);
-        }
         resetAssistantDraft();
         if (runStartedAtRef.current) {
           setRunElapsedMs(Date.now() - runStartedAtRef.current);

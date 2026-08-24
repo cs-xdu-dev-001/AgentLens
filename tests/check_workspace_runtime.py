@@ -256,7 +256,17 @@ def main() -> None:
         )
         assert edited.output["addedLines"] == 1
         diff = context.diff()
-        assert diff["files"] == [{"path": "report.md", "added": 1, "removed": 0}]
+        assert diff["files"] == [
+            {
+                "path": "report.md",
+                "added": 1,
+                "removed": 0,
+                "operation": "edit",
+                "operationId": edited.output["operationId"],
+                "diffAvailable": True,
+                "reverted": False,
+            }
+        ]
         assert "+new" in diff["patch"]
         outside = root / "outside.txt"
         outside.write_text("outside\n", encoding="utf-8")
