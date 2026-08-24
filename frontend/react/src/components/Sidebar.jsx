@@ -854,7 +854,7 @@ function RuntimeStatus() {
   );
 }
 
-export function Sidebar({ activePage = "chat", collapsed = false }) {
+export function Sidebar({ activePage = "chat", collapsed = false, onPageIntent = null }) {
   const sidebarClassName = collapsed ? "sidebar collapsed" : "sidebar";
   const sidebarToggleLabel = collapsed ? "展开侧边栏" : "收起侧边栏";
   const handlePageChange = (page) => {
@@ -921,6 +921,8 @@ export function Sidebar({ activePage = "chat", collapsed = false }) {
               data-page={tool.page}
               type={"button"}
               aria-label={tool.label}
+              onMouseEnter={() => onPageIntent?.(tool.page)}
+              onFocus={() => onPageIntent?.(tool.page)}
               onClick={() => handlePageChange(tool.page)}
             >
               <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>
