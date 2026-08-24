@@ -1337,6 +1337,17 @@ export function sessionTitleFromPrompt(value, fallback = '') {
   return title.length > 64 ? `${title.slice(0, 63).trimEnd()}…` : title;
 }
 
+export function compactSessionHeaderLabel(value, columns = 80) {
+  const title = sessionTitleFromPrompt(value, '');
+  const width = Math.max(40, Number(columns) || 80);
+  const limit = width < 72
+    ? Math.max(12, Math.min(20, width - 44))
+    : Math.max(24, Math.min(48, Math.floor(width * 0.32)));
+  return title.length > limit
+    ? `${title.slice(0, limit - 1).trimEnd()}…`
+    : title;
+}
+
 function workspaceDiagnosticName(workspace) {
   const source = String(workspace?.cwd || workspace?.projectRoot || '').replace(/[\\/]+$/u, '');
   return publicLabel(source.split(/[\\/]/u).filter(Boolean).at(-1), '未识别', 80);
@@ -4697,11 +4708,16 @@ export function App({
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
   const narrow = (stdout.columns ?? 80) < 72;
-  const fullSessionLabel = sessionTitleFromPrompt(currentSessionTitle, '');
-  const sessionLabelLimit = narrow ? 8 : 12;
-  const currentSessionLabel = fullSessionLabel.length > sessionLabelLimit
-    ? `${fullSessionLabel.slice(0, sessionLabelLimit - 1).trimEnd()}…`
-    : fullSessionLabel;
+  const currentSessionLabel = compactSessionHeaderLabel(currentSessionTitle, stdout.columns);
+  const runHeader = approval || question
+    ? {label: '等待操作', color: WARNING}
+    : queuePaused
+      ? {label: '已暂停', color: WARNING}
+      : running
+        ? {label: '运行中', color: ACCENT}
+        : runProjection.error
+          ? {label: '失败', color: ERROR}
+          : {label: '就绪', color: MUTED};
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   const taskElapsedMs = runStartedAtRef.current
     ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
@@ -4960,7 +4976,12 @@ export function App({
             <Box flexDirection="column" flexShrink={0}>
               <Box justifyContent="space-between">
                 <Text color={PRIMARY}>会话 {currentSessionLabel}</Text>
-                {!narrow ? <Text color={MUTED}>{model || '连接中'} · {workspace?.branch || '工作区'}</Text> : null}
+                {!narrow ? (
+                  <Text>
+                    <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
+                    <Text color={MUTED}> · {model || '连接中'} · {workspace?.branch || '工作区'}</Text>
+                  </Text>
+                ) : null}
               </Box>
               <Box justifyContent="space-between">
                 <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
@@ -4975,8 +4996,9 @@ export function App({
             <Box justifyContent="space-between" flexShrink={0}>
               <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
               {!narrow ? (
-                <Text color={MUTED}>
-                  {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}
+                <Text>
+                  <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
+                  <Text color={MUTED}> · {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}</Text>
                 </Text>
               ) : null}
             </Box>

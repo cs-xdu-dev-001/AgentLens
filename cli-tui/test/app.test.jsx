@@ -9,6 +9,7 @@ import {render} from 'ink-testing-library';
 import {
   App,
   buildTuiDiagnosticReport,
+  compactSessionHeaderLabel,
   expandPastedTextRefs,
   enqueueWaitingInteraction,
   formatPastedTextRef,
@@ -54,6 +55,8 @@ test('session titles are compact and redact credential-shaped text', () => {
     /sk-[A-Za-z0-9]/,
   );
   assert.ok(sessionTitleFromPrompt('很长的任务说明'.repeat(20)).length <= 64);
+  assert.equal(compactSessionHeaderLabel('检查当前工作区并给出修复建议', 120), '检查当前工作区并给出修复建议');
+  assert.match(compactSessionHeaderLabel('检查当前工作区并给出一份非常详细的修复建议', 60), /…$/);
 });
 
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {

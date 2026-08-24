@@ -32,6 +32,9 @@ def main() -> None:
     require("frontend/react/src/controller/chatFlow.js", "sessionTitleFromQuestion", "first task supplies an immediate session title")
     require("frontend/react/src/controller/chatFlow.js", "safeAgentText(question, 80)", "first-task title is redacted before rendering")
     require("frontend/react/src/components/ChatTopbar.jsx", "safeAgentText(value, 160)", "topbar title is redacted before rendering")
+    require("frontend/react/src/components/ChatTopbar.jsx", "knowflow:react-agent-run-updated", "topbar follows the live Agent run")
+    require("frontend/react/src/components/ChatTopbar.jsx", 'waiting: "等待操作"', "topbar exposes the waiting state")
+    require("frontend/react/src/components/ChatTopbar.jsx", "chat-run-progress", "topbar exposes bounded task progress")
     require("frontend/react/src/components/Sidebar.jsx", "safeAgentText(session.title, 160)", "sidebar title is redacted before rendering")
 
     forbid("frontend/react/src/components/Sidebar.jsx", "knowflow:legacy-active-session-updated", "legacy active-session sidebar listener")

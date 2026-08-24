@@ -1,14 +1,38 @@
 import { useEffect, useState } from "react";
 import { safeAgentText } from "../controller/agentEvents.js";
+import { agentWindowFeedback } from "./agentWindowFeedback.js";
+
+
+const RUN_LABELS = {
+  completed: "已完成",
+  failed: "失败",
+  idle: "运行",
+  running: "运行中",
+  waiting: "等待操作",
+};
 
 function cleanSessionTitle(value) {
   return safeAgentText(value, 160);
+}
+
+function runHeaderState(run) {
+  const feedback = agentWindowFeedback(run);
+  const summary = run?.runSummary && typeof run.runSummary === "object"
+    ? run.runSummary
+    : {};
+  const completed = Math.max(0, Number(summary.completedSteps) || 0);
+  const total = Math.max(completed, Number(summary.totalSteps) || 0);
+  return {
+    progress: total ? `${completed}/${total}` : "",
+    state: feedback.state,
+  };
 }
 
 export function ChatTopbar({ drawerCollapsed = true }) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [pendingTitle, setPendingTitle] = useState("");
   const [switching, setSwitching] = useState(false);
+  const [runHeader, setRunHeader] = useState(() => runHeaderState(null));
 
   useEffect(() => {
     const handleActiveSession = (event) => {
@@ -35,6 +59,17 @@ export function ChatTopbar({ drawerCollapsed = true }) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleRunUpdated = (event) => {
+      setRunHeader(runHeaderState(event.detail?.run || null));
+    };
+    window.addEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+    return () => window.removeEventListener(
+      "knowflow:react-agent-run-updated",
+      handleRunUpdated,
+    );
+  }, []);
+
   const handleRefresh = () => window.dispatchEvent(new CustomEvent("knowflow:react-refresh"));
   const handleDrawerToggle = () => window.dispatchEvent(new CustomEvent("knowflow:react-drawer-toggle", {
     detail: {
@@ -42,6 +77,10 @@ export function ChatTopbar({ drawerCollapsed = true }) {
       restoreFocus: !drawerCollapsed,
     },
   }));
+  const runLabel = RUN_LABELS[runHeader.state] || RUN_LABELS.idle;
+  const runAccessibleLabel = [runLabel, runHeader.progress, "Alt+T打开运行详情"]
+    .filter(Boolean)
+    .join("，");
   return (
     <header className={"chat-topbar"}>
       <div className={"chat-session-heading"} aria-busy={switching}>
@@ -52,17 +91,32 @@ export function ChatTopbar({ drawerCollapsed = true }) {
       </div>
       <div className={"chat-topbar-actions"}>
         <button
+          className={`chat-run-toggle is-${runHeader.state}`}
           id={"inspector-toggle"}
           type={"button"}
           aria-controls={"evidence-drawer"}
           aria-expanded={!drawerCollapsed}
           aria-keyshortcuts={"Alt+T"}
-          title={"运行详情（Alt+T）"}
+          aria-label={runAccessibleLabel}
+          title={`${runLabel}${runHeader.progress ? ` · ${runHeader.progress}` : ""}（Alt+T）`}
           onClick={handleDrawerToggle}
         >
-          {"运行"}
+          <span className={"chat-run-dot"} aria-hidden={"true"} />
+          <span aria-live={"polite"}>{runLabel}</span>
+          {runHeader.progress ? <span className={"chat-run-progress"}>{runHeader.progress}</span> : null}
         </button>
-        <button id={"refresh-btn"} type={"button"} onClick={handleRefresh}>{"刷新"}</button>
+        <button
+          aria-label={"刷新当前会话"}
+          id={"refresh-btn"}
+          title={"刷新当前会话"}
+          type={"button"}
+          onClick={handleRefresh}
+        >
+          <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
+            <path d={"M15.7 7.3A6 6 0 1 0 16 11"} />
+            <path d={"M12.8 4.5h3.4v3.4"} />
+          </svg>
+        </button>
       </div>
     </header>
   );

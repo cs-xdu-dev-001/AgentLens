@@ -7499,6 +7499,67 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 650 !important;
 }
 
+#page-chat .chat-run-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+#page-chat .chat-run-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+#page-chat .chat-run-toggle.is-running .chat-run-dot {
+  background: #d97757;
+}
+
+#page-chat .chat-run-toggle.is-waiting .chat-run-dot {
+  background: var(--warning);
+}
+
+#page-chat .chat-run-toggle.is-completed .chat-run-dot {
+  background: var(--success);
+}
+
+#page-chat .chat-run-toggle.is-failed .chat-run-dot {
+  background: var(--danger);
+}
+
+#page-chat .chat-run-toggle.is-running,
+#page-chat .chat-run-toggle.is-waiting,
+#page-chat .chat-run-toggle.is-completed,
+#page-chat .chat-run-toggle.is-failed {
+  background: var(--surface-muted) !important;
+}
+
+#page-chat .chat-run-progress {
+  padding-inline-start: 7px;
+  border-inline-start: 1px solid var(--control-border);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 560;
+}
+
+#page-chat #refresh-btn {
+  width: 38px;
+  padding: 0 !important;
+}
+
+#page-chat #refresh-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 #page-chat .messages {
   display: flex !important;
   flex-direction: column !important;
@@ -7606,6 +7667,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   #page-chat .chat-session-heading h1 {
     max-width: 48vw;
+  }
+
+  #page-chat .chat-run-progress {
+    display: none;
   }
 
   #page-chat .welcome-card {
