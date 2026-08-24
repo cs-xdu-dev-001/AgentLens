@@ -22,6 +22,7 @@ import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
+const doubleEscapeWindowMs = 800;
 const queuePriorityLabels = Object.freeze({ now: "立即", next: "接下来", later: "稍后" });
 const queueBlockLabels = Object.freeze({
   approval: "等待权限确认",
@@ -94,6 +95,7 @@ export function ChatComposerForm() {
   const agentStateResetRef = useRef(null);
   const promptStashRef = useRef(null);
   const pendingStashRestoreRef = useRef(false);
+  const lastEmptyEscapeAtRef = useRef(0);
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -490,6 +492,17 @@ export function ChatComposerForm() {
     if (!detail.handled) notifyCommandUnavailable(unavailableMessage);
   };
 
+  const handleQuickRewindEscape = () => {
+    const now = Date.now();
+    if (now - lastEmptyEscapeAtRef.current <= doubleEscapeWindowMs) {
+      lastEmptyEscapeAtRef.current = 0;
+      runMessageCommand("rewind", "当前会话还没有可回到的历史问题");
+      return;
+    }
+    lastEmptyEscapeAtRef.current = now;
+    notifyCommandUnavailable("再按一次Esc，从最近问题创建新分支");
+  };
+
   const openArtifactCommand = () => {
     const detail = { handled: false };
     window.dispatchEvent(new CustomEvent("knowflow:react-agent-artifacts-open", { detail }));
@@ -691,6 +704,7 @@ export function ChatComposerForm() {
 
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if (event.key !== "Escape") lastEmptyEscapeAtRef.current = 0;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
       if (question.trim() || attachments.length || selectedSkill) {
@@ -743,10 +757,13 @@ export function ChatComposerForm() {
       && !question
       && !pickerOpen
       && !mentionOpen
-      && followUpSuggestion
+      && !menuOpen
+      && !sending
+      && !switchingSession
     ) {
       event.preventDefault();
-      setDismissedFollowUpKey(followUpSuggestionKey);
+      if (followUpSuggestion) setDismissedFollowUpKey(followUpSuggestionKey);
+      handleQuickRewindEscape();
       return;
     }
     if (mentionOpen) {

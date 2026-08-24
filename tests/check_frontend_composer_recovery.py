@@ -38,6 +38,10 @@ for needle in (
     "agentState.recoveryActions",
     'knowflow:react-message-command',
     'knowflow:react-agent-artifacts-open',
+    'doubleEscapeWindowMs = 800',
+    'lastEmptyEscapeAtRef',
+    'handleQuickRewindEscape',
+    'notifyCommandUnavailable("再按一次Esc，从最近问题创建新分支")',
 ):
     assert needle in composer, f"missing composer recovery bridge: {needle}"
 
