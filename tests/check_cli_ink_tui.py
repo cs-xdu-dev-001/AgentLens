@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.agent_execution import AgentExecution  # noqa: E402
 from knowflow.services.agent_event_protocol import AGENT_EVENT_SCHEMA_VERSION  # noqa: E402
+from knowflow.tui.backend import question_with_workspace_attachments  # noqa: E402
 from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: E402
 
 
@@ -28,6 +29,7 @@ class FakeBackend:
         self.selected_model_id = 1
         self.workspace_undo_args = None
         self.reasoning_effort = "default"
+        self.attachment_paths = []
 
     def command_catalog(self):
         return [
@@ -66,8 +68,9 @@ class FakeBackend:
         self.model_label = selected["name"]
         return selected
 
-    def run(self, question, event_sink, reasoning_effort="default"):
+    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
         self.reasoning_effort = reasoning_effort
+        self.attachment_paths = list(attachment_paths or [])
         event_sink({"type": "text_delta", "text": "回答"})
         return AgentExecution(
             result={"paused": False, "runId": "run-ink", "answer": "回答"}
@@ -225,8 +228,9 @@ class ApprovalBackend(FakeBackend):
         super().__init__()
         self.decisions: list[str] = []
 
-    def run(self, question, event_sink, reasoning_effort="default"):
+    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
         self.reasoning_effort = reasoning_effort
+        self.attachment_paths = list(attachment_paths or [])
         approval = {
             "type": "approval_required",
             "approvalId": "approval-ink",
@@ -249,7 +253,8 @@ class ApprovalBackend(FakeBackend):
 
 
 class FailureBackend(FakeBackend):
-    def run(self, question, event_sink, reasoning_effort="default"):
+    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
+        self.attachment_paths = list(attachment_paths or [])
         event_sink(
             {
                 "type": "agent_step",
@@ -286,7 +291,13 @@ def main() -> None:
         input_stream=StringIO(),
         output_stream=output,
     )
-    bridge.handle({"type": "submit", "requestId": "turn-1", "text": "你好", "reasoningEffort": "high"})
+    bridge.handle({
+        "type": "submit",
+        "requestId": "turn-1",
+        "text": "你好",
+        "reasoningEffort": "high",
+        "attachmentPaths": ["README.md", "docs/product brief.md"],
+    })
     rows = wait_for(output, "turn_completed")
     assert any(
         row.get("type") == "agent_event"
@@ -295,6 +306,11 @@ def main() -> None:
     )
     assert any(row.get("answer") == "回答" for row in rows)
     assert backend.reasoning_effort == "high"
+    assert backend.attachment_paths == ["README.md", "docs/product brief.md"]
+    assert question_with_workspace_attachments(
+        "检查文档",
+        ["README.md", "docs/product brief.md", "../secret.txt", "README.md"],
+    ) == '检查文档\n\n工作区上下文：\n@README.md\n@"docs/product brief.md"'
 
     failure_output = StringIO()
     failure_bridge = InkRuntimeBridge(

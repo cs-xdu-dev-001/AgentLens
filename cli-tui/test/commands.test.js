@@ -26,6 +26,7 @@ import {
   applyFileMention,
   fileMentionAtCursor,
   longestSuggestionPrefix,
+  resolveWorkspaceAttachment,
   workspaceFileSuggestions,
 } from '../src/fileSuggestions.js';
 
@@ -45,6 +46,15 @@ test('file mentions follow Claude Code style fuzzy completion and quoting', () =
     {path: 'src/app.jsx'},
     {path: 'src/app.test.jsx'},
   ]), 'src/app.');
+});
+
+test('workspace attachments resolve only indexed non-sensitive relative paths', () => {
+  const paths = ['src/', 'src/app.jsx', 'docs/product brief.md', '.env'];
+  assert.equal(resolveWorkspaceAttachment(paths, '@src\\app.jsx'), 'src/app.jsx');
+  assert.equal(resolveWorkspaceAttachment(paths, '@"docs/product brief.md"'), 'docs/product brief.md');
+  assert.equal(resolveWorkspaceAttachment(paths, '../secret.txt'), '');
+  assert.equal(resolveWorkspaceAttachment(paths, '/etc/passwd'), '');
+  assert.equal(resolveWorkspaceAttachment(paths, '.env'), '');
 });
 
 test('public errors hide upstream account identifiers and alternate key prefixes', () => {
@@ -99,6 +109,8 @@ test('aliases resolve to canonical commands', () => {
   assert.equal(resolveCommand('/fork 方案B', commands).command.value, '/branch');
   assert.equal(resolveCommand('/find 失败', commands).command.value, '/search');
   assert.equal(resolveCommand('/update', commands).command.description, '在TUI内更新AgentLens CLI');
+  assert.equal(resolveCommand('/attach README.md', commands).command.category, '工作区');
+  assert.equal(resolveCommand('/detach all', commands).command.value, '/detach');
   assert.equal(resolveCommand('/version', commands).command.category, '帮助');
 });
 
@@ -112,6 +124,8 @@ test('commands expose argument guidance only after selecting the command', () =>
   assert.equal(commandArgumentHint('/branch ', commands), '[名称]');
   assert.equal(commandArgumentHint('/export ', commands), '[文件名]');
   assert.equal(commandArgumentHint('/search ', commands), '[关键词]');
+  assert.equal(commandArgumentHint('/attach ', commands), '<文件或目录>');
+  assert.equal(commandArgumentHint('/detach ', commands), '[序号 | all]');
   assert.equal(commandArgumentHint('/help ', commands), '');
 });
 

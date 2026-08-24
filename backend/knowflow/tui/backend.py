@@ -14,6 +14,50 @@ from ..services.session_portability import (
 )
 
 
+MAX_TUI_ATTACHMENT_PATHS = 8
+
+
+def _workspace_reference_token(value: Any) -> str:
+    raw = str(value or "").strip()
+    if raw.startswith("@"):
+        raw = raw[1:].strip()
+    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+        raw = raw[1:-1]
+    raw = raw.replace("\\", "/")
+    while raw.startswith("./"):
+        raw = raw[2:]
+    if (
+        not raw
+        or raw.startswith("/")
+        or re.match(r"^[A-Za-z]:/", raw)
+        or '"' in raw
+        or any(ord(character) < 32 or ord(character) == 127 for character in raw)
+        or ".." in raw.split("/")
+    ):
+        return ""
+    return f'@"{raw}"' if any(character.isspace() for character in raw) else f"@{raw}"
+
+
+def question_with_workspace_attachments(
+    question: str,
+    attachment_paths: list[str] | tuple[str, ...] | None,
+) -> str:
+    text = str(question or "").strip()
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for value in attachment_paths or []:
+        token = _workspace_reference_token(value)
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+        if len(tokens) >= MAX_TUI_ATTACHMENT_PATHS:
+            break
+    if not tokens:
+        return text
+    return f"{text}\n\n工作区上下文：\n" + "\n".join(tokens)
+
+
 class TuiBackend:
     """Stateful adapter shared by the local and remote CLI transports."""
 
@@ -625,12 +669,17 @@ class TuiBackend:
         question: str,
         event_sink: AgentEventSink,
         reasoning_effort: str = "default",
+        attachment_paths: list[str] | None = None,
     ) -> AgentExecution:
         self.reasoning_effort = str(reasoning_effort or "default")
+        runtime_question = question_with_workspace_attachments(
+            question,
+            attachment_paths,
+        )
         if self.remote_client is not None:
             execution = self.remote_client.run(
                 {
-                    "question": question,
+                    "question": runtime_question,
                     "sessionId": self.session_id,
                     "chatModelConfigId": self.model_id,
                     "reasoningEffort": self.reasoning_effort,
@@ -643,9 +692,9 @@ class TuiBackend:
         else:
             if self.local_agent is None:
                 raise RuntimeError("本地Agent尚未初始化。")
-            self._auto_compact(event_sink, question)
+            self._auto_compact(event_sink, runtime_question)
             execution = self.local_agent.run(
-                question,
+                runtime_question,
                 history=self.conversation,
                 transcript=self.transcript,
                 context_metadata=self.context_metadata,

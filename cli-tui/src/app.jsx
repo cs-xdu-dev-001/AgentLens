@@ -35,6 +35,7 @@ import {
   fileMentionAtCursor,
   loadWorkspacePaths,
   longestSuggestionPrefix,
+  resolveWorkspaceAttachment,
   workspaceFileSuggestions,
 } from './fileSuggestions.js';
 import {
@@ -145,6 +146,22 @@ function queuedPromptReasoning(item) {
     : 'default';
 }
 
+function queuedPromptAttachments(item) {
+  if (typeof item !== 'object' || !Array.isArray(item?.attachmentPaths)) return [];
+  return [...new Set(item.attachmentPaths.map(path => String(path ?? '').trim()).filter(Boolean))].slice(0, 8);
+}
+
+function attachmentDisplayText(paths, limit = 3) {
+  const values = [...new Set((paths ?? []).map(path => String(path ?? '').trim()).filter(Boolean))];
+  const visible = values.slice(0, limit).join(' · ');
+  return values.length > limit ? `${visible} · 另${values.length - limit}项` : visible;
+}
+
+function userTurnDisplay(displayText, attachmentPaths = []) {
+  const context = attachmentDisplayText(attachmentPaths, 8);
+  return context ? `${displayText}\n上下文：${context}` : displayText;
+}
+
 function queuedPromptHistory(item) {
   const text = queuedPromptText(item);
   return queuedPromptMode(item) === 'shell' ? `!${text}` : text;
@@ -156,6 +173,7 @@ export function turnRequestSnapshot(text, displayText = text, options = {}) {
     displayText: String(displayText ?? text ?? ''),
     mode: options?.mode === 'shell' ? 'shell' : 'prompt',
     reasoningEffort: String(options?.reasoningEffort || 'default'),
+    attachmentPaths: queuedPromptAttachments(options),
   };
 }
 
@@ -724,6 +742,7 @@ function QueuePreview({items, paused, hidden = false}) {
           <Text color={ACCENT}>{index + 1} </Text>
           <Text color={MUTED}>[{QUEUE_PRIORITY_LABELS[queuedPromptPriority(item)]}] </Text>
           {queuedPromptDisplay(item)}
+          {queuedPromptAttachments(item).length ? <Text color={MUTED}> · {queuedPromptAttachments(item).length}项上下文</Text> : null}
         </Text>
       ))}
       {items.length > 3 ? <Text color={MUTED}>另有{items.length - 3}条</Text> : null}
@@ -749,10 +768,22 @@ function QueueManager({items, selected, paused}) {
             <Text color={active ? ACCENT : MUTED}>{active ? '❯ ' : '  '}</Text>
             <Text color={active ? PRIMARY : MUTED} bold={active}>[{QUEUE_PRIORITY_LABELS[queuedPromptPriority(item)]}] </Text>
             <Text color={active ? PRIMARY : MUTED} wrap="truncate-end">{queuedPromptDisplay(item)}</Text>
+            {queuedPromptAttachments(item).length ? <Text color={MUTED}> · {queuedPromptAttachments(item).length}项上下文</Text> : null}
           </Box>
         );
       })}
       <Text color={MUTED}>↑↓选择 · ←→改优先级 · Enter取回编辑 · D移除 · C清空 · Esc关闭</Text>
+    </Box>
+  );
+}
+
+function AttachmentTray({paths}) {
+  if (!paths.length) return null;
+  return (
+    <Box paddingX={1} flexShrink={0}>
+      <Text color={MUTED}>上下文  </Text>
+      <Text color={PRIMARY}>{attachmentDisplayText(paths)}</Text>
+      <Text color={MUTED}>  · /detach移除</Text>
     </Box>
   );
 }
@@ -1916,6 +1947,7 @@ export function App({
   const [dismissedInput, setDismissedInput] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [workspacePaths, setWorkspacePaths] = useState([]);
+  const [attachedPaths, setAttachedPaths] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [staticEpoch, setStaticEpoch] = useState(0);
   const [assistantDraft, setAssistantDraft] = useState('');
@@ -3016,11 +3048,15 @@ export function App({
     const displayText = queuedPromptDisplay(next);
     const mode = queuedPromptMode(next);
     const turnReasoningEffort = queuedPromptReasoning(next);
+    const turnAttachmentPaths = queuedPromptAttachments(next);
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
       : {type: 'submit', requestId, text, reasoningEffort: turnReasoningEffort};
+    if (mode === 'prompt' && turnAttachmentPaths.length) {
+      message.attachmentPaths = turnAttachmentPaths;
+    }
     if (!client.send(message)) {
       setQueue(orderedQueue(queue));
       setQueuePaused(true);
@@ -3058,13 +3094,13 @@ export function App({
     lastTurnRequestRef.current = turnRequestSnapshot(
       text,
       mode === 'shell' ? text : displayText,
-      {mode, reasoningEffort: turnReasoningEffort},
+      {mode, reasoningEffort: turnReasoningEffort, attachmentPaths: turnAttachmentPaths},
     );
     lastQuestionRef.current = historyText;
     setLastQuestion(historyText);
     setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
-    appendItem('user', displayText);
+    appendItem('user', userTurnDisplay(displayText, turnAttachmentPaths));
   }, [approval, appendItem, client, question, queue, queueManagerOpen, queuePaused, ready, resetAssistantDraft, running]);
 
   useEffect(() => {
@@ -3263,7 +3299,7 @@ export function App({
     setHistorySearchChoice(0);
   }, [replacePastedContents, updateComposer]);
 
-  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next', mode = 'prompt', turnReasoningEffort = reasoningEffort) => {
+  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next', mode = 'prompt', turnReasoningEffort = reasoningEffort, attachmentPaths = []) => {
     const normalizedPriority = Object.hasOwn(QUEUE_PRIORITIES, priority) ? priority : 'next';
     queueSequenceRef.current += 1;
     const item = {
@@ -3273,6 +3309,7 @@ export function App({
       sequence: queueSequenceRef.current,
       mode: mode === 'shell' ? 'shell' : 'prompt',
       reasoningEffort: String(turnReasoningEffort || 'default'),
+      attachmentPaths: mode === 'shell' ? [] : queuedPromptAttachments({attachmentPaths}),
     };
     setQueue(items => orderedQueue([...items, item]));
     return item;
@@ -3314,6 +3351,13 @@ export function App({
     const bypassQueuePause = options?.bypassQueuePause === true;
     const mode = options?.mode === 'shell' ? 'shell' : 'prompt';
     const turnReasoningEffort = String(options?.reasoningEffort || reasoningEffort || 'default');
+    const turnAttachmentPaths = mode === 'shell'
+      ? []
+      : queuedPromptAttachments({
+        attachmentPaths: Object.hasOwn(options, 'attachmentPaths')
+          ? options.attachmentPaths
+          : attachedPaths,
+      });
     const historyText = mode === 'shell' ? `!${text}` : text;
     const publicDisplayText = mode === 'shell' ? `! ${displayText}` : displayText;
     if (!ready) {
@@ -3325,7 +3369,8 @@ export function App({
       return;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
-      enqueuePrompt(text, publicDisplayText, 'next', mode, turnReasoningEffort);
+      enqueuePrompt(text, publicDisplayText, 'next', mode, turnReasoningEffort, turnAttachmentPaths);
+      if (mode === 'prompt') setAttachedPaths([]);
       setPhase(queuePaused
         ? `队列已暂停 · 待发送${queue.length + 1}个任务`
         : `已排队${queue.length + 1}个任务`);
@@ -3336,8 +3381,12 @@ export function App({
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
       : {type: 'submit', requestId, text, reasoningEffort: turnReasoningEffort};
+    if (mode === 'prompt' && turnAttachmentPaths.length) {
+      message.attachmentPaths = turnAttachmentPaths;
+    }
     if (!client.send(message)) {
-      enqueuePrompt(text, publicDisplayText, 'now', mode, turnReasoningEffort);
+      enqueuePrompt(text, publicDisplayText, 'now', mode, turnReasoningEffort, turnAttachmentPaths);
+      if (mode === 'prompt') setAttachedPaths([]);
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
       appendItem('error', '任务尚未发送，已保留在队列中。输入/continue重试。');
@@ -3374,13 +3423,15 @@ export function App({
     lastTurnRequestRef.current = turnRequestSnapshot(text, displayText, {
       mode,
       reasoningEffort: turnReasoningEffort,
+      attachmentPaths: turnAttachmentPaths,
     });
     lastQuestionRef.current = historyText;
     setLastQuestion(historyText);
     setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
-    appendItem('user', publicDisplayText);
-  }, [approval, appendItem, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
+    appendItem('user', userTurnDisplay(publicDisplayText, turnAttachmentPaths));
+    if (mode === 'prompt') setAttachedPaths([]);
+  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
 
   const resumeRun = useCallback((runId, title = '') => {
     const identifier = String(runId ?? '').trim();
@@ -3453,6 +3504,7 @@ export function App({
       lastQuestionRef.current = '';
       setLastQuestion('');
       lastAssistantAnswerRef.current = '';
+      setAttachedPaths([]);
       client.send({type: 'reset'});
     } else if (command.value === '/clear') {
       setRunRecoveryOpen(false);
@@ -3478,6 +3530,7 @@ export function App({
       setToolDetailIndex(0);
       setChangeDetailOpen(false);
       setChangeConfirming(false);
+      setAttachedPaths([]);
     } else if (command.value === '/model') {
       const [action, rawId] = args.trim().split(/\s+/, 2);
       if (action === 'config') {
@@ -3536,6 +3589,43 @@ export function App({
       }
     } else if (command.value === '/workspace') {
       client.send({type: 'workspace', action: 'status'});
+    } else if (command.value === '/attach') {
+      const path = resolveWorkspaceAttachment(workspacePaths, args);
+      if (workspace?.remote) {
+        appendItem('error', '远程模式不能读取本机工作区文件；请在服务器工作区启动本地TUI，或在Web端上传文件。');
+      } else if (!args.trim()) {
+        appendItem('assistant', attachedPaths.length
+          ? `下一轮上下文：\n${attachedPaths.map((item, index) => `${index + 1}. ${item}`).join('\n')}`
+          : '尚未附加上下文。用法：/attach <工作区文件或目录>');
+      } else if (!path) {
+        appendItem('error', '找不到该工作区文件或目录。输入@可先补全已索引路径。');
+      } else if (attachedPaths.includes(path)) {
+        showComposerNotice('该路径已在下一轮上下文中');
+      } else if (attachedPaths.length >= 8) {
+        appendItem('error', '每轮最多附加8个工作区文件或目录。');
+      } else {
+        setAttachedPaths(items => [...items, path]);
+        showComposerNotice(`已附加：${path}`);
+      }
+    } else if (command.value === '/detach') {
+      const target = args.trim();
+      if (!target) {
+        appendItem('assistant', attachedPaths.length
+          ? `下一轮上下文：\n${attachedPaths.map((item, index) => `${index + 1}. ${item}`).join('\n')}\n输入/detach <序号>或/detach all移除。`
+          : '下一轮没有待发送的工作区上下文。');
+      } else if (target.toLowerCase() === 'all') {
+        setAttachedPaths([]);
+        showComposerNotice('已移除全部待发送上下文');
+      } else {
+        const index = Number(target) - 1;
+        if (!Number.isInteger(index) || index < 0 || index >= attachedPaths.length) {
+          appendItem('error', '用法：/detach <序号>或/detach all');
+        } else {
+          const removed = attachedPaths[index];
+          setAttachedPaths(items => items.filter((_, itemIndex) => itemIndex !== index));
+          showComposerNotice(`已移除：${removed}`);
+        }
+      }
     } else if (command.value === '/add-dir') {
       if (!args) appendItem('error', '用法：/add-dir <目录>');
       else client.send({type: 'workspace', action: 'add', path: args});
@@ -3607,8 +3697,14 @@ export function App({
       if (!lastQuestion) {
         appendItem('error', '没有可编辑的上一条任务。');
       } else {
+        const editable = retryTurnRequest(
+          lastQuestion,
+          lastTurnRequestRef.current,
+          reasoningEffort,
+        );
         pushComposerUndo();
         loadComposerText(lastQuestion);
+        setAttachedPaths(editable.attachmentPaths);
         setHistoryIndex(-1);
         showComposerNotice('已恢复上一条任务，可修改后重新发送');
       }
@@ -3704,7 +3800,8 @@ export function App({
         if (!Object.hasOwn(QUEUE_PRIORITIES, priority) || !task) {
           appendItem('error', '用法：/tasks add <now|next|later> <任务>');
         } else {
-          enqueuePrompt(task, task, priority);
+          enqueuePrompt(task, task, priority, 'prompt', reasoningEffort, attachedPaths);
+          setAttachedPaths([]);
           if (priority === 'now') requestImmediateQueueRun();
           appendItem('assistant', `已加入[${QUEUE_PRIORITY_LABELS[priority]}]队列：${task}`);
         }
@@ -3751,6 +3848,7 @@ export function App({
             bypassQueuePause: true,
             mode: retry.mode,
             reasoningEffort: retry.reasoningEffort,
+            attachmentPaths: retry.attachmentPaths,
           });
         }
       } else if (args === 'tool') {
@@ -3774,6 +3872,7 @@ export function App({
           ].join('\n'), undefined, {
             bypassQueuePause: true,
             reasoningEffort: retry.reasoningEffort,
+            attachmentPaths: retry.attachmentPaths,
           });
         }
       } else {
@@ -3802,10 +3901,11 @@ export function App({
         ].join('\n'), undefined, {
           bypassQueuePause: true,
           reasoningEffort: retry.reasoningEffort,
+          attachmentPaths: retry.attachmentPaths,
         });
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -3970,6 +4070,7 @@ export function App({
           bypassQueuePause: true,
           mode: retry.mode,
           reasoningEffort: retry.reasoningEffort,
+          attachmentPaths: retry.attachmentPaths,
         });
       }
       else appendItem('error', '找不到失败任务的原始问题。');
@@ -3998,6 +4099,7 @@ export function App({
     ].join('\n'), undefined, {
       bypassQueuePause: true,
       reasoningEffort: retry.reasoningEffort,
+      attachmentPaths: retry.attachmentPaths,
     });
   }, [appendItem, currentRunId, lastFailedRunId, lastQuestion, reasoningEffort, resumeRun, running, startTurn]);
   const recoverFailedTool = useCallback(mode => {
@@ -4371,6 +4473,7 @@ export function App({
         setQueueManagerOpen(false);
         replacePastedContents({});
         setComposerMode(queuedPromptMode(selected));
+        setAttachedPaths(queuedPromptAttachments(selected));
         updateComposer(queuedPromptText(selected));
         showComposerNotice('已取回任务，可修改后重新提交');
       } else if (character.toLowerCase() === 'd' && selected) {
@@ -4622,6 +4725,7 @@ export function App({
         setQueue(items => items.filter(item => item !== latest));
         replacePastedContents({});
         setComposerMode(queuedPromptMode(latest));
+        setAttachedPaths(queuedPromptAttachments(latest));
         updateComposer(queuedPromptText(latest));
         setHistoryIndex(-1);
         showComposerNotice('已取回最近排队任务');
@@ -5004,6 +5108,7 @@ export function App({
               <Text color={PRIMARY}>{argumentHint}</Text>
             </Box>
           ) : null}
+          {!question && attachedPaths.length ? <AttachmentTray paths={attachedPaths} /> : null}
           {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>

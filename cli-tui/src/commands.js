@@ -10,6 +10,8 @@ export const BUILTIN_COMMANDS = [
   {value: '/context', description: '查看模型上下文占用', source: 'builtin', category: '会话'},
   {value: '/compact', description: '压缩早期会话并保留结构化摘要', source: 'builtin', category: '会话', argumentHint: '[补充要求]'},
   {value: '/workspace', description: '查看工作区边界', source: 'builtin', category: '工作区'},
+  {value: '/attach', description: '附加下一轮任务的工作区上下文', source: 'builtin', category: '工作区', argumentHint: '<文件或目录>'},
+  {value: '/detach', description: '移除待发送的工作区上下文', source: 'builtin', category: '工作区', argumentHint: '[序号 | all]'},
   {value: '/add-dir', description: '添加本次会话可访问的目录', source: 'builtin', category: '工作区'},
   {value: '/cd', description: '切换工具执行目录', source: 'builtin', category: '工作区'},
   {value: '/diff', description: '查看本轮文件改动', source: 'builtin', category: '工作区'},

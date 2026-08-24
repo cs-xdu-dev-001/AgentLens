@@ -37,6 +37,27 @@ function visiblePath(value) {
     && !parts.some(part => SKIPPED_DIRECTORIES.has(part));
 }
 
+export function normalizeWorkspaceAttachment(value) {
+  let path = String(value ?? '').trim();
+  if (path.startsWith('@')) path = path.slice(1).trim();
+  if (path.length >= 2 && path.startsWith('"') && path.endsWith('"')) {
+    path = path.slice(1, -1);
+  }
+  path = path.replaceAll('\\', '/').replace(/^\.\//, '');
+  if (!path
+    || path.startsWith('/')
+    || /^[A-Za-z]:\//u.test(path)
+    || /[\u0000-\u001F\u007F"\r\n]/u.test(path)
+    || path.split('/').some(part => part === '..')) return '';
+  return normalizedPath(path);
+}
+
+export function resolveWorkspaceAttachment(paths, value) {
+  const candidate = normalizeWorkspaceAttachment(value);
+  if (!candidate || !visiblePath(candidate)) return '';
+  return (paths ?? []).find(path => normalizedPath(path) === candidate) ?? '';
+}
+
 function directoryEntries(paths) {
   const directories = new Set();
   for (const path of paths) {

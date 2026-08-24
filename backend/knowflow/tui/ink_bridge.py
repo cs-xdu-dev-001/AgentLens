@@ -22,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore
 
 
-PROTOCOL_VERSION = 9
+PROTOCOL_VERSION = 10
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -265,11 +265,18 @@ class InkRuntimeBridge:
         reasoning_effort = str(
             message.get("reasoningEffort") or "default"
         )
+        raw_attachment_paths = message.get("attachmentPaths")
+        attachment_paths = (
+            [str(item) for item in raw_attachment_paths]
+            if isinstance(raw_attachment_paths, list)
+            else []
+        )
         self._start(
             lambda: self.backend.run(
                 text,
                 self._agent_event,
                 reasoning_effort=reasoning_effort,
+                attachment_paths=attachment_paths,
             )
         )
 

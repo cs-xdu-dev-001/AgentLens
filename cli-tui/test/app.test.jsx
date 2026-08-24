@@ -158,7 +158,7 @@ test('retry request snapshots preserve mode, display text, and reasoning effort'
   const snapshot = turnRequestSnapshot(
     '检查完整工作区',
     '[粘贴内容 #1 +20行]',
-    {mode: 'prompt', reasoningEffort: 'high'},
+    {mode: 'prompt', reasoningEffort: 'high', attachmentPaths: ['README.md']},
   );
   assert.deepEqual(retryTurnRequest('检查完整工作区', snapshot, 'low'), snapshot);
   assert.deepEqual(retryTurnRequest('!echo ok', snapshot, 'medium'), {
@@ -166,6 +166,7 @@ test('retry request snapshots preserve mode, display text, and reasoning effort'
     displayText: 'echo ok',
     mode: 'shell',
     reasoningEffort: 'medium',
+    attachmentPaths: [],
   });
 });
 
@@ -512,7 +513,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 9,
+      protocolVersion: 10,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -738,6 +739,65 @@ test('at mentions fuzzy-complete workspace files without exposing sensitive path
   view.stdin.write('\r');
   await tick();
   assert.equal(client.sent.find(item => item.type === 'submit')?.text, '检查 @src/app.jsx');
+});
+
+test('workspace context attachments stay visible and travel with submit, queue, and detach', async t => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'knowflow-attach-'));
+  await mkdir(join(workspaceRoot, 'src'));
+  await writeFile(join(workspaceRoot, 'src', 'app.jsx'), 'export default {};\n');
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.37.0" workspaceRoot={workspaceRoot} />);
+  t.after(async () => {
+    view.unmount();
+    await rm(workspaceRoot, {recursive: true, force: true});
+  });
+  await waitForFrame(view, /deepseek-chat/);
+  await new Promise(resolve => setTimeout(resolve, 120));
+
+  view.stdin.write('/attach src/app.jsx');
+  view.stdin.write('\r');
+  await waitForFrame(view, /上下文\s+src\/app\.jsx/);
+  assert.match(view.lastFrame(), /\/detach移除/);
+
+  view.stdin.write('检查这个组件');
+  view.stdin.write('\r');
+  await tick();
+  const submitted = client.sent.find(item => item.type === 'submit');
+  assert.deepEqual(submitted, {
+    type: 'submit',
+    requestId: 'turn-1',
+    text: '检查这个组件',
+    reasoningEffort: 'default',
+    attachmentPaths: ['src/app.jsx'],
+  });
+  assert.match(view.lastFrame(), /上下文：src\/app\.jsx/);
+  assert.doesNotMatch(view.lastFrame(), /\/detach移除/);
+
+  view.stdin.write('/attach src/app.jsx');
+  view.stdin.write('\r');
+  await waitForFrame(view, /\/detach移除/);
+  view.stdin.write('排队检查组件');
+  view.stdin.write('\r');
+  await waitForFrame(view, /接下来 1/);
+  client.emit('message', {type: 'turn_completed', answer: '完成'});
+  await waitForFrame(view, /完成/);
+  await waitForCondition(
+    () => client.sent.some(item => item.type === 'submit' && item.text === '排队检查组件'),
+    'queued attachment prompt was not submitted',
+  );
+  assert.deepEqual(
+    client.sent.find(item => item.type === 'submit' && item.text === '排队检查组件')?.attachmentPaths,
+    ['src/app.jsx'],
+  );
+  client.emit('message', {type: 'turn_completed', answer: '排队完成'});
+  await waitForFrame(view, /排队完成/);
+  view.stdin.write('/attach src/app.jsx');
+  view.stdin.write('\r');
+  await waitForFrame(view, /\/detach移除/);
+  view.stdin.write('/detach all');
+  view.stdin.write('\r');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /\/detach移除/);
 });
 
 test('Enter executes the highlighted slash command while Tab only completes it', async t => {
@@ -1227,7 +1287,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 9,
+    protocolVersion: 10,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
