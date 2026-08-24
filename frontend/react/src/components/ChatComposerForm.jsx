@@ -80,6 +80,7 @@ export function ChatComposerForm() {
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
   const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState("");
+  const [promptStash, setPromptStash] = useState(null);
   const [contextStatus, setContextStatus] = useState(null);
   const [commandUsage, setCommandUsage] = useState({});
   const textareaRef = useRef(null);
@@ -90,6 +91,8 @@ export function ChatComposerForm() {
   const mentionsLoadedAtRef = useRef(0);
   const requestGenerationRef = useRef(0);
   const agentStateResetRef = useRef(null);
+  const promptStashRef = useRef(null);
+  const pendingStashRestoreRef = useRef(false);
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -110,6 +113,32 @@ export function ChatComposerForm() {
     setMentionRange(null);
     setMentionActiveIndex(-1);
   }, []);
+
+  const updatePromptStash = useCallback((value) => {
+    promptStashRef.current = value;
+    setPromptStash(value);
+  }, []);
+
+  const restorePromptStash = useCallback(() => {
+    const stash = promptStashRef.current;
+    if (!stash) return false;
+    updatePromptStash(null);
+    setQuestion(stash.question);
+    setSelectedSkill(stash.skill || null);
+    window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+      detail: { attachments: stash.attachments || [] },
+    }));
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(stash.question.length, stash.question.length);
+      resizeTextarea(textarea);
+    });
+    return true;
+  }, [closeMentionPicker, closeSkillPicker, updatePromptStash]);
 
   const loadAvailableSkills = useCallback(async () => {
     const requestId = ++requestGenerationRef.current;
@@ -216,6 +245,31 @@ export function ChatComposerForm() {
       const shouldFocus = Boolean(event.detail?.focus);
       const nextQuestion = String(event.detail?.question || "");
       const nextSkillId = event.detail?.skillId ?? null;
+      const stashed = promptStashRef.current;
+      if (pendingStashRestoreRef.current && !nextQuestion && stashed) {
+        pendingStashRestoreRef.current = false;
+        updatePromptStash(null);
+        setQuestion(stashed.question);
+        setSelectedSkill(stashed.skill || null);
+        closeSkillPicker();
+        closeMentionPicker();
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+            detail: { attachments: stashed.attachments || [] },
+          }));
+          window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
+            detail: { message: "已自动恢复暂存草稿" },
+          }));
+        }, 0);
+        window.requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          textarea.setSelectionRange(stashed.question.length, stashed.question.length);
+          resizeTextarea(textarea);
+        });
+        return;
+      }
       setQuestion(nextQuestion);
       setSelectedSkill(
         nextSkillId === null
@@ -231,7 +285,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, [availableSkills, closeMentionPicker, closeSkillPicker]);
+  }, [availableSkills, closeMentionPicker, closeSkillPicker, updatePromptStash]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -375,7 +429,9 @@ export function ChatComposerForm() {
       detail: { question: question.trim() },
     });
     submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    pendingStashRestoreRef.current = Boolean(promptStashRef.current);
     window.dispatchEvent(submitEvent);
+    if (pendingStashRestoreRef.current) pendingStashRestoreRef.current = false;
   };
 
   const handleStopClick = (event) => {
@@ -572,6 +628,27 @@ export function ChatComposerForm() {
 
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (question.trim() || attachments.length || selectedSkill) {
+        updatePromptStash({
+          question,
+          skill: selectedSkill,
+          attachments: attachments.map((attachment) => ({ ...attachment })),
+        });
+        setQuestion("");
+        setSelectedSkill(null);
+        window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+          detail: { attachments: [] },
+        }));
+        closeSkillPicker();
+        closeMentionPicker();
+        window.requestAnimationFrame(() => resizeTextarea());
+      } else {
+        restorePromptStash();
+      }
+      return;
+    }
     if (event.key === "Tab" && event.shiftKey) {
       event.preventDefault();
       closeSkillPicker();
@@ -695,7 +772,9 @@ export function ChatComposerForm() {
       detail: { question: question.trim() },
     });
     submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    pendingStashRestoreRef.current = Boolean(promptStashRef.current);
     window.dispatchEvent(submitEvent);
+    if (pendingStashRestoreRef.current) pendingStashRestoreRef.current = false;
   };
 
   const filteredSkills = useMemo(() => {
@@ -1025,6 +1104,12 @@ export function ChatComposerForm() {
           );
         })}
       </div>
+      {promptStash ? (
+        <div className={"composer-stash-notice"} role={"status"} aria-live={"polite"}>
+          <span>{"草稿已暂存，发送当前输入后自动恢复"}</span>
+          <button type={"button"} title={"Ctrl+S恢复"} onClick={() => restorePromptStash()}>{"立即恢复"}</button>
+        </div>
+      ) : null}
       {visibleAgentState.mode !== "idle" ? (
         <div
           className={`composer-agent-state ${visibleAgentState.mode}`}

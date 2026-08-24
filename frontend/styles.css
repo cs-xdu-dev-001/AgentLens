@@ -25,6 +25,57 @@
   --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
+#chat-form.composer .composer-stash-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 7px 12px 3px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+#chat-form.composer .composer-stash-notice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#chat-form.composer .composer-stash-notice button {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 3px 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#chat-form.composer .composer-stash-notice button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#chat-form.composer .composer-stash-notice button:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  #chat-form.composer .composer-stash-notice {
+    align-items: flex-start;
+  }
+
+  #chat-form.composer .composer-stash-notice span {
+    white-space: normal;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

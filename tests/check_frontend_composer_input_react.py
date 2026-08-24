@@ -30,6 +30,12 @@ def main() -> None:
     require("frontend/react/src/components/ChatComposerForm.jsx", "detail: { question: question.trim() }", "submit sends question payload")
     require("frontend/react/src/controller/knowflowController.js", "requestComposerReset", "controller asks React to reset composer")
     require("frontend/react/src/controller/chatFlow.js", "options.question", "chat flow reads question from React event")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "promptStash", "React composer prompt stash state")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "Ctrl+S", "prompt stash shortcut copy")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "草稿已暂存，发送当前输入后自动恢复", "prompt stash status")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "pendingStashRestoreRef", "accepted-submit stash restoration guard")
+    require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-attachments-replace", "stashed attachment restoration bridge")
+    require("frontend/react/src/styles.css", ".composer-stash-notice", "prompt stash presentation")
 
     for needle, label in [
         ("function resizeComposer", "legacy composer textarea resize helper"),

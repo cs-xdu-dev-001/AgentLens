@@ -3473,17 +3473,17 @@ export function App({
     const publicDisplayText = mode === 'shell' ? `! ${displayText}` : displayText;
     if (!ready) {
       appendItem('error', '运行时尚未准备好。');
-      return;
+      return false;
     }
     const workspaceBlock = workspaceExecutionBlock(workspace);
     if (workspaceBlock) {
       appendItem('warning', workspaceBlock);
       setPhase('未进入项目');
-      return;
+      return false;
     }
     if (updating || restartRequired) {
       appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行knowflow chat。');
-      return;
+      return false;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
       enqueuePrompt(
@@ -3499,7 +3499,7 @@ export function App({
       setPhase(queuePaused
         ? `队列已暂停 · 待发送${queue.length + 1}个任务`
         : `已排队${queue.length + 1}个任务`);
-      return;
+      return true;
     }
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
@@ -3529,7 +3529,7 @@ export function App({
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
       appendItem('error', '任务尚未发送，已保留在队列中。输入/continue重试。');
-      return;
+      return true;
     }
     activeRequestIdRef.current = requestId;
     if (!currentRunId && !currentSessionTitle) {
@@ -3571,6 +3571,7 @@ export function App({
     setHistoryIndex(-1);
     appendItem('user', userTurnDisplay(publicDisplayText, turnAttachmentPaths));
     if (mode === 'prompt') setAttachedPaths([]);
+    return true;
   }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating, workspace]);
 
   const resumeRun = useCallback((runId, title = '') => {
@@ -4077,6 +4078,17 @@ export function App({
     setDismissedInput(next);
   }, [fileMention, pushComposerUndo, selectedSuggestion, suggestions, updateComposer]);
 
+  const restorePromptStash = useCallback((notice = '草稿已恢复') => {
+    if (!promptStash) return false;
+    replacePastedContents(promptStash.pastedContents);
+    setComposerMode(promptStash.mode === 'shell' ? 'shell' : 'prompt');
+    setAttachedPaths(Array.isArray(promptStash.attachmentPaths) ? promptStash.attachmentPaths : []);
+    updateComposer(promptStash.text, promptStash.cursor);
+    setPromptStash(null);
+    showComposerNotice(notice);
+    return true;
+  }, [promptStash, replacePastedContents, showComposerNotice, updateComposer]);
+
   const submitComposer = useCallback(value => {
     const selected = suggestions[selectedSuggestion];
     if (selected && value.trim() !== selected.value) {
@@ -4092,19 +4104,29 @@ export function App({
       showComposerNotice('先指定项目目录，当前输入已保留');
       return;
     }
+    if (!expandedText) return;
+    if (command || slashInput) {
+      updateComposer('', 0);
+      replacePastedContents({});
+      clearComposerUndo();
+      setDismissedInput('');
+      historyDraftRef.current = '';
+      executeInput(expandedText);
+      return;
+    }
+    const accepted = composerMode === 'shell'
+      ? startTurn(expandedText, displayText || expandedText, {mode: 'shell'})
+      : startTurn(expandedText, displayText || expandedText);
+    if (!accepted) return;
     updateComposer('', 0);
     replacePastedContents({});
     clearComposerUndo();
     setDismissedInput('');
     historyDraftRef.current = '';
-    if (composerMode === 'shell') {
-      if (expandedText) startTurn(expandedText, displayText || expandedText, {mode: 'shell'});
-    } else if (command || slashInput) {
-      executeInput(expandedText);
-    } else if (expandedText) {
-      startTurn(expandedText, displayText || expandedText);
+    if (promptStash) {
+      restorePromptStash('草稿已自动恢复');
     }
-  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, replacePastedContents, selectedSuggestion, showComposerNotice, startTurn, suggestions, updateComposer, workspace]);
+  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, promptStash, replacePastedContents, restorePromptStash, selectedSuggestion, showComposerNotice, startTurn, suggestions, updateComposer, workspace]);
 
   const toolRows = useMemo(() => [...activities.values()], [activities]);
   const detailRows = useMemo(() => {
@@ -4767,24 +4789,22 @@ export function App({
       return;
     }
     if (key.ctrl && character === 's') {
-      if (inputRef.current) {
+      if (inputRef.current || attachedPaths.length) {
         setPromptStash({
           text: inputRef.current,
           cursor: cursorOffsetRef.current,
           pastedContents: pastedContentsRef.current,
           mode: composerModeRef.current,
+          attachmentPaths: [...attachedPaths],
         });
         pushComposerUndo();
         updateComposer('', 0);
         replacePastedContents({});
+        setAttachedPaths([]);
         setHistoryIndex(-1);
-        showComposerNotice('草稿已暂存，Ctrl+S恢复');
-      } else if (promptStash?.text) {
-        replacePastedContents(promptStash.pastedContents);
-        setComposerMode(promptStash.mode === 'shell' ? 'shell' : 'prompt');
-        updateComposer(promptStash.text, promptStash.cursor);
-        setPromptStash(null);
-        showComposerNotice('草稿已恢复');
+        showComposerNotice('草稿已暂存，发送当前输入后自动恢复');
+      } else if (promptStash) {
+        restorePromptStash();
       } else {
         showComposerNotice('没有可恢复的草稿');
       }
@@ -5288,6 +5308,11 @@ export function App({
             </Box>
           ) : null}
           {!question && attachedPaths.length ? <AttachmentTray paths={attachedPaths} /> : null}
+          {!question && promptStash ? (
+            <Box paddingLeft={1} flexShrink={0}>
+              <Text color={MUTED}>› 草稿已暂存，发送当前输入后自动恢复 · Ctrl+S立即恢复</Text>
+            </Box>
+          ) : null}
           {!question ? <WorkspaceGuard workspace={workspace} /> : null}
           {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>

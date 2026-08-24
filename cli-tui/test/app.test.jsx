@@ -98,7 +98,7 @@ test('next prompt suggestions only appear for actionable completed or failed run
 
 test('Tab accepts the next prompt suggestion without submitting it immediately', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.40.0" />);
+  const view = render(<App client={client} version="0.41.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -1316,6 +1316,27 @@ test('Ink app searches prompt history, stashes drafts, and restores killed text'
   view.unmount();
 });
 
+test('Ink app auto-restores a stashed prompt after another task is submitted', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.41.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('稍后继续完善发布说明');
+  view.stdin.write('\x13');
+  await waitForFrame(view, /草稿已暂存，发送当前输入后自动恢复/);
+
+  view.stdin.write('先检查当前构建');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.equal(client.sent.at(-1)?.type, 'submit');
+  assert.equal(client.sent.at(-1)?.text, '先检查当前构建');
+  assert.match(view.lastFrame(), /草稿已自动恢复/);
+  assert.match(view.lastFrame(), /稍后继续完善发布说明/);
+  assert.doesNotMatch(view.lastFrame(), /草稿已暂存，发送当前输入后自动恢复 · Ctrl\+S立即恢复/);
+});
+
 test('Ink app collapses multiline paste but submits the full content', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.0" />);
@@ -2335,7 +2356,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 
 test('home workspace keeps the draft and prevents failed task cards', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.40.0" />);
+  const view = render(<App client={client} version="0.41.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
