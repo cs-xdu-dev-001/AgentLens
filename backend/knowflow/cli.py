@@ -832,14 +832,33 @@ def run_task(
 
 @app.command()
 def resume(
-    run_id: str = typer.Argument(..., help="Interrupted run ID."),
+    run_id: str | None = typer.Argument(
+        None,
+        help="Interrupted run ID. Omit it to choose a previous conversation.",
+    ),
     user_id: int | None = typer.Option(None, "--user-id"),
     json_events: bool = typer.Option(False, "--events", "--json"),
     assume_yes: bool = typer.Option(False, "--yes"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
 ) -> None:
-    """Resume an interrupted or approval-paused Agent run."""
+    """Resume a previous conversation or an interrupted Agent run."""
+    if run_id is None:
+        chat(
+            user_id=user_id,
+            model_id=None,
+            skill_id=None,
+            tools=True,
+            assume_yes=assume_yes,
+            server=server,
+            local=local,
+            remote_mode=False,
+            plain=False,
+            workspace=None,
+            resume_session=True,
+            continue_session=False,
+        )
+        return
     renderer = EventRenderer(json_events=json_events)
     try:
         remote = _remote_client(server, local=local)
@@ -992,8 +1011,22 @@ def chat(
         "-w",
         help="Set the local workspace root for this Agent session.",
     ),
+    resume_session: bool = typer.Option(
+        False,
+        "--resume",
+        help="Open the conversation picker after the TUI starts.",
+    ),
+    continue_session: bool = typer.Option(
+        False,
+        "--continue",
+        help="Continue the most recent conversation in this workspace.",
+    ),
 ) -> None:
     """Start an interactive Agent conversation."""
+    if resume_session and continue_session:
+        raise typer.BadParameter("--resume和--continue不能同时使用。")
+    if plain and (resume_session or continue_session):
+        raise typer.BadParameter("--resume和--continue需要全屏TUI。")
     if workspace is not None and (server or remote_mode):
         raise typer.BadParameter("--workspace仅适用于本地模式。")
     if workspace is not None:
@@ -1028,6 +1061,9 @@ def chat(
                 skill_id=skill_id,
             ),
             assume_yes=assume_yes,
+            startup_action=(
+                "continue" if continue_session else "resume" if resume_session else ""
+            ),
         )
         return
     history_path = Path.home() / ".knowflow" / "cli-history"

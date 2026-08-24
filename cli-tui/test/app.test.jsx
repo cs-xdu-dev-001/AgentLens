@@ -2551,6 +2551,42 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   view.unmount();
 });
 
+test('startup resume opens the picker and continue restores the latest workspace session', async t => {
+  const pickerClient = new FakeClient();
+  const picker = render(<App client={pickerClient} version="0.54.0" startupAction="resume" />);
+  t.after(() => picker.unmount());
+  await waitForCondition(
+    () => pickerClient.sent.some(message => message.type === 'sessions' && message.limit === 100),
+    'startup resume did not request the workspace session list',
+  );
+  assert.match(picker.lastFrame(), /正在读取当前工作区的会话/);
+
+  const continueClient = new FakeClient();
+  continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
+    type: 'ready',
+    protocolVersion: 11,
+    agentEventSchemaVersion: 1,
+    model: 'deepseek-chat',
+    commands: [],
+    workspace: {projectRoot: '/workspace', cwd: '/workspace', branch: 'main'},
+    sessions: [
+      {runId: 'run_latest', title: '最近会话', status: 'completed', updatedAt: Date.now() / 1000},
+      {runId: 'run_older', title: '更早会话', status: 'completed', updatedAt: Date.now() / 1000 - 60},
+    ],
+    history: [],
+    models: [],
+  }));
+  const continued = render(<App client={continueClient} version="0.54.0" startupAction="continue" />);
+  t.after(() => continued.unmount());
+  await waitForCondition(
+    () => continueClient.sent.some(message => message.type === 'resume_session'),
+    'startup continue did not restore the latest workspace session',
+  );
+  const request = continueClient.sent.find(message => message.type === 'resume_session');
+  assert.equal(request.runId, 'run_latest');
+  assert.match(continued.lastFrame(), /会话 最近会话/);
+});
+
 test('home workspace keeps the draft and prevents failed task cards', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.42.0" />);

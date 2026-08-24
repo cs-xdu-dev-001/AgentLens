@@ -149,8 +149,8 @@ def main() -> None:
         def isatty():
             return True
 
-    def fake_run_tui(backend, *, assume_yes):
-        tui_calls.append((backend, assume_yes))
+    def fake_run_tui(backend, *, assume_yes, startup_action):
+        tui_calls.append((backend, assume_yes, startup_action))
 
     with (
         patch.object(cli, "_local_agent", return_value=FakeLocalAgent()),
@@ -170,9 +170,33 @@ def main() -> None:
             remote_mode=False,
             plain=False,
             workspace=None,
+            resume_session=False,
+            continue_session=False,
         )
-    assert len(tui_calls) == 1
+        cli.chat(
+            user_id=None,
+            model_id=None,
+            skill_id=None,
+            tools=True,
+            assume_yes=False,
+            server=None,
+            local=False,
+            remote_mode=False,
+            plain=False,
+            workspace=None,
+            resume_session=False,
+            continue_session=True,
+        )
+    assert len(tui_calls) == 2
     assert tui_calls[0][1] is False
+    assert tui_calls[0][2] == ""
+    assert tui_calls[1][2] == "continue"
+
+    with patch.object(cli, "chat") as launch_chat:
+        response = CliRunner().invoke(cli.app, ["resume"])
+    assert response.exit_code == 0, response.output
+    assert launch_chat.call_args.kwargs["resume_session"] is True
+    assert launch_chat.call_args.kwargs["continue_session"] is False
 
     cli_source = (ROOT / "backend" / "knowflow" / "cli.py").read_text(
         encoding="utf-8"

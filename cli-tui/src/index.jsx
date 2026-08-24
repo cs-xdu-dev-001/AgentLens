@@ -33,6 +33,7 @@ const instance = render(
       assumeYes={Boolean(config.assumeYes)}
       fullscreenEnabled={fullscreenEnabled}
       mouseEnabled={mouseEnabled}
+      startupAction={String(config.startupAction || '')}
     />
   </MouseProvider>,
   {

@@ -6,7 +6,12 @@ import os
 from typing import Any
 
 
-def run_tui(backend: Any, *, assume_yes: bool = False) -> None:
+def run_tui(
+    backend: Any,
+    *,
+    assume_yes: bool = False,
+    startup_action: str = "",
+) -> None:
     """Prefer the Ink UI on Linux and keep Textual as a safe fallback."""
 
     selected = os.getenv("KNOWFLOW_TUI", "auto").strip().lower()
@@ -16,7 +21,11 @@ def run_tui(backend: Any, *, assume_yes: bool = False) -> None:
         from .ink_launcher import InkTuiUnavailable, run_ink_tui
 
         try:
-            if run_ink_tui(backend, assume_yes=assume_yes):
+            if run_ink_tui(
+                backend,
+                assume_yes=assume_yes,
+                startup_action=startup_action,
+            ):
                 return
         except InkTuiUnavailable:
             if selected == "ink":

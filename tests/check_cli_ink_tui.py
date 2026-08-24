@@ -607,6 +607,9 @@ def main() -> None:
         encoding="utf-8"
     )
     assert '"workspaceRoot"' in launcher_source
+    assert '"startupAction"' in launcher_source
+    assert 'startup_action in {"resume", "continue"}' in launcher_source
+    assert "startupAction={String(config.startupAction || '')}" in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )

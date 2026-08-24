@@ -2170,6 +2170,7 @@ export function App({
   assumeYes = false,
   fullscreenEnabled = false,
   mouseEnabled = false,
+  startupAction = '',
 }) {
   const {exit} = useApp();
   const {stdout} = useStdout();
@@ -2331,6 +2332,9 @@ export function App({
   const lastTerminalInteractionAtRef = useRef(Date.now());
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
+  const startupActionRef = useRef(
+    ['resume', 'continue'].includes(String(startupAction)) ? String(startupAction) : '',
+  );
   useTerminalFeedback({
     ready,
     connecting: !ready && ['正在启动', '运行时已连接'].includes(phase),
@@ -3906,6 +3910,29 @@ export function App({
       runId: identifier,
     });
   }, [approval, client, question, resetAssistantDraft, running, sessions]);
+
+  useEffect(() => {
+    if (!ready || !startupActionRef.current) return;
+    const action = startupActionRef.current;
+    startupActionRef.current = '';
+    if (action === 'resume') {
+      closeTransientSurfaces('sessions');
+      setSessionPicker(true);
+      setSessionLoading(true);
+      setSessionError('');
+      setSessionQuery('');
+      setSessionChoice(0);
+      client.send({type: 'sessions', limit: 100});
+      return;
+    }
+    const latest = sessions[0];
+    if (!latest?.runId) {
+      appendItem('warning', '当前工作区还没有可继续的历史会话。');
+      setPhase('就绪');
+      return;
+    }
+    resumeRun(latest.runId, latest.title);
+  }, [appendItem, client, closeTransientSurfaces, ready, resumeRun, sessions]);
 
   const executeInput = useCallback(raw => {
     const text = String(raw ?? '').trim();
