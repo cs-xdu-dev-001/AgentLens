@@ -14591,6 +14591,221 @@ select {
   color: var(--danger);
 }
 
+.composer-permission-rules-entry {
+  display: flex;
+  width: calc(100% - 16px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 6px 8px 8px;
+  padding: 11px 10px;
+  border: 0;
+  border-top: 1px solid var(--control-border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-permission-rules-entry:hover,
+.composer-permission-rules-entry:focus-visible {
+  background: var(--panel-bg-soft);
+  outline: none;
+}
+
+.composer-permission-rules-entry > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.composer-permission-rules-entry strong {
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.composer-permission-rules-entry small,
+.composer-permission-rules-entry > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-permission-rules {
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.composer-permission-rules-heading {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-permission-back {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-permission-back:hover,
+.composer-permission-back:focus-visible {
+  background: var(--panel-bg-soft);
+  color: var(--text);
+  outline: none;
+}
+
+.composer-permission-rule-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: 4px 12px 0;
+  padding: 3px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--panel-bg-soft);
+}
+
+.composer-permission-rule-tabs button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.composer-permission-rule-tabs button span {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+}
+
+.composer-permission-rule-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.composer-permission-rule-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer-permission-rule-description {
+  min-height: 20px;
+  margin: 9px 14px 7px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.composer-permission-rule-list {
+  display: grid;
+  max-height: 164px;
+  gap: 2px;
+  margin: 0 8px;
+  overflow-y: auto;
+}
+
+.composer-permission-rule-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 7px 7px 10px;
+  border-radius: 8px;
+}
+
+.composer-permission-rule-row:hover {
+  background: var(--panel-bg-soft);
+}
+
+.composer-permission-rule-row code {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-permission-rule-row button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composer-permission-rule-row button:hover,
+.composer-permission-rule-row button:focus-visible {
+  color: var(--danger);
+  outline: none;
+}
+
+.composer-permission-rule-empty {
+  padding: 15px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.composer-permission-rule-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  margin: 8px 12px 2px;
+}
+
+.composer-permission-rule-add input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.composer-permission-rule-add input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.composer-permission-rule-add button {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.composer-permission-rule-error {
+  margin: 6px 14px 2px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 @media (max-width: 640px) {
   #page-chat.chat-empty #chat-form.composer .composer-shell,
   #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {

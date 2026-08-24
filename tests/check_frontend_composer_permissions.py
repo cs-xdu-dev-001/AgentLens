@@ -29,6 +29,10 @@ def main() -> None:
     require(policy, 'bypass: "full_access"', "legacy full-access migration")
     require(policy, "window.sessionStorage", "browser-session scope")
     require(policy, "permissionModeAllowsApproval", "approval policy projection")
+    require(policy, "COMPOSER_PERMISSION_BEHAVIORS", "tool permission rule categories")
+    require(policy, "composerPermissionRuleBehavior", "tool permission rule projection")
+    require(policy, '["deny", "ask", "allow"]', "safe rule precedence")
+    require(policy, "MAX_RULES_PER_BEHAVIOR", "bounded browser-session rules")
     require(policy, 'approval?.risk === "write"', "safe auto-edit boundary")
     require(policy, "!approval?.destructive", "destructive action guard")
 
@@ -37,7 +41,10 @@ def main() -> None:
     require(picker, '["ArrowDown", "ArrowUp"].includes(event.key)', "keyboard option navigation")
     require(picker, 'event.key === "Enter"', "keyboard permission selection")
     require(picker, 'event.key === "Escape"', "keyboard close")
-    require(picker, "仅影响本次浏览器会话", "session scope copy")
+    require(picker, "本次浏览器会话", "session scope copy")
+    require(picker, "工具规则", "tool rule editor entry")
+    require(picker, "COMPOSER_PERMISSION_BEHAVIORS.map", "rule category tabs")
+    require(picker, "updateComposerPermissionRules", "rule editor persistence")
 
     require(composer, "ComposerPermissionPicker", "composer permission control")
     require(composer, "cycleComposerPermissionMode", "Shift+Tab mode cycle")
@@ -52,10 +59,14 @@ def main() -> None:
     require(approval, "sessionAllowsApproval", "session approval projection")
     require(approval, "transportDecision", "server-side decision boundary")
     require(approval, "autoAttemptRef", "bounded automatic approval attempt")
+    require(approval, 'ruleBehavior === "ask"', "ask rule override")
+    require(approval, 'ruleBehavior === "deny"', "deny rule enforcement")
 
     require(styles, ".composer-permission-picker", "permission trigger layout")
     require(styles, ".composer-permission-popover", "permission popover")
     require(styles, ".composer-permission-option.danger", "full-access warning")
+    require(styles, ".composer-permission-rule-tabs", "permission rule category control")
+    require(styles, ".composer-permission-rule-add", "permission rule input")
 
     require(tui, "本次会话", "TUI session scope")
     require(tui, "权限模式已切换为", "TUI selection feedback")
@@ -64,10 +75,14 @@ def main() -> None:
 
     script = r'''import {
   allowApprovalForSession,
+  composerPermissionRuleBehavior,
   clearApprovalSessionGrants,
+  emptyComposerPermissionRules,
   normalizeComposerPermissionMode,
+  normalizeComposerPermissionRules,
   permissionModeAllowsApproval,
   sessionAllowsApproval,
+  updateComposerPermissionRules,
 } from "./frontend/react/src/components/composerPermissions.js";
 
 if (normalizeComposerPermissionMode("invalid") !== "ask") process.exit(1);
@@ -86,6 +101,18 @@ if (!sessionAllowsApproval(approval)) process.exit(10);
 if (sessionAllowsApproval({...approval, destructive: true})) process.exit(11);
 clearApprovalSessionGrants();
 if (sessionAllowsApproval(approval)) process.exit(12);
+
+let rules = emptyComposerPermissionRules();
+rules = updateComposerPermissionRules(rules, "allow", "web_*");
+if (composerPermissionRuleBehavior("WEB_SEARCH", rules) !== "allow") process.exit(14);
+rules = updateComposerPermissionRules(rules, "ask", "web_search");
+if (composerPermissionRuleBehavior("web_search", rules) !== "ask") process.exit(15);
+rules = updateComposerPermissionRules(rules, "deny", "*");
+if (composerPermissionRuleBehavior("web_search", rules) !== "deny") process.exit(16);
+const conflict = normalizeComposerPermissionRules({allow: ["write_file"], deny: ["write_file"]});
+if (conflict.deny[0] !== "write_file" || conflict.allow.length) process.exit(17);
+const unchanged = updateComposerPermissionRules(rules, "allow", "bad rule name");
+if (JSON.stringify(unchanged) !== JSON.stringify(rules)) process.exit(18);
 '''
     subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -93,7 +120,7 @@ if (sessionAllowsApproval(approval)) process.exit(12);
         check=True,
     )
 
-    print("web and TUI permission modes share real session-scoped behavior")
+    print("web and TUI permissions share real session-scoped modes and tool rules")
 
 
 if __name__ == "__main__":
