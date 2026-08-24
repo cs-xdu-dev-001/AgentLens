@@ -1278,7 +1278,9 @@ function ReferenceDetailPanel({rows, selected, hasTools}) {
   );
 }
 
-function ChangeDetailPanel({artifacts, selected, patch, loading, confirming}) {
+const CHANGE_DIFF_PAGE_SIZE = 14;
+
+function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, offset = 0}) {
   const artifact = artifacts[selected];
   if (!artifact) return null;
   const target = artifact.path || artifact.title || '文件变更';
@@ -1287,7 +1289,10 @@ function ChangeDetailPanel({artifacts, selected, patch, loading, confirming}) {
     artifact.removedLines ? `-${artifact.removedLines}` : '',
   ].filter(Boolean).join(' ');
   const allDiffRows = useMemo(() => buildDiffPresentation(patch), [patch]);
-  const diffRows = allDiffRows.slice(0, 14);
+  const maxOffset = Math.max(0, allDiffRows.length - CHANGE_DIFF_PAGE_SIZE);
+  const safeOffset = Math.max(0, Math.min(Number(offset) || 0, maxOffset));
+  const diffRows = allDiffRows.slice(safeOffset, safeOffset + CHANGE_DIFF_PAGE_SIZE);
+  const visibleEnd = Math.min(allDiffRows.length, safeOffset + diffRows.length);
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1}>
       <Text bold>文件变更 <Text color={MUTED}>{selected + 1}/{artifacts.length}</Text></Text>
@@ -1302,18 +1307,20 @@ function ChangeDetailPanel({artifacts, selected, patch, loading, confirming}) {
         const color = row.kind === 'add' ? SUCCESS : row.kind === 'remove' ? ERROR : row.kind === 'hunk' ? ACCENT : MUTED;
         const lineNumber = row.kind === 'add' ? row.newLine : row.oldLine;
         return (
-          <Text key={`${index}:${row.oldLine}:${row.newLine}`} color={color} wrap="truncate-end">
+          <Text key={`${safeOffset + index}:${row.oldLine}:${row.newLine}`} color={color} wrap="truncate-end">
             <Text color={MUTED}>{lineNumber == null ? '     ' : String(lineNumber).padStart(4, ' ')} </Text>{row.text || ' '}
           </Text>
         );
       }) : null}
-      {!loading && allDiffRows.length > diffRows.length ? <Text color={MUTED}>另有{allDiffRows.length - diffRows.length}行</Text> : null}
+      {!loading && allDiffRows.length ? (
+        <Text color={MUTED}>差异行 {safeOffset + 1}-{visibleEnd}/{allDiffRows.length}</Text>
+      ) : null}
       {!artifact.reverted && artifact.operationId ? (
         <Text color={confirming ? WARNING : MUTED}>
           {confirming ? '再次按D确认安全撤销，Esc取消' : 'D撤销此文件'}
         </Text>
       ) : null}
-      <Text color={MUTED}>↑↓切换文件  Enter刷新diff  Ctrl+G或Esc关闭</Text>
+      <Text color={MUTED}>PgUp/PgDn滚动差异  Home/End首尾  ↑↓切换文件  Enter刷新diff  Ctrl+G或Esc关闭</Text>
     </Box>
   );
 }
@@ -2171,6 +2178,7 @@ export function App({
   const changeDetailOpenRef = useRef(false);
   const [changeDetailIndex, setChangeDetailIndex] = useState(0);
   const [changePatch, setChangePatch] = useState('');
+  const [changePatchOffset, setChangePatchOffset] = useState(0);
   const [changeLoading, setChangeLoading] = useState(false);
   const [changeConfirming, setChangeConfirming] = useState(false);
   const [transcriptMode, setTranscriptMode] = useState(false);
@@ -3197,6 +3205,7 @@ export function App({
         if (message.action === 'diff') {
           if (changeDetailOpenRef.current) {
             setChangePatch(result.patch || '没有可显示的文本差异。');
+            setChangePatchOffset(0);
             setChangeLoading(false);
           } else {
             const files = Array.isArray(result.files) ? result.files : [];
@@ -3220,6 +3229,7 @@ export function App({
           setChangeConfirming(false);
           if (changeDetailOpenRef.current) {
             setChangePatch('该文件变更已安全撤销。');
+            setChangePatchOffset(0);
           } else appendItem('assistant', `已安全撤销 ${result.path}。`);
           if (result.workspace) setWorkspace(result.workspace);
         } else {
@@ -3232,6 +3242,7 @@ export function App({
         if (changeDetailOpenRef.current) {
           setChangeLoading(false);
           setChangePatch(`操作失败：${message.message ?? '工作区操作失败。'}`);
+          setChangePatchOffset(0);
           setChangeConfirming(false);
         } else appendItem('error', message.message ?? '工作区操作失败。');
         return;
@@ -3982,6 +3993,7 @@ export function App({
         closeTransientSurfaces('changes');
         setChangeDetailIndex(index);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
         setChangeDetailOpen(true);
         setChangeLoading(true);
@@ -3996,6 +4008,7 @@ export function App({
         closeTransientSurfaces('changes');
         setChangeDetailIndex(index);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
         setChangeDetailOpen(true);
       }
@@ -4426,6 +4439,7 @@ export function App({
         closeTransientSurfaces('changes');
         setChangeDetailIndex(index);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
         setChangeDetailOpen(true);
         return;
@@ -4871,13 +4885,25 @@ export function App({
       } else if (key.upArrow && artifacts.length) {
         setChangeDetailIndex(value => (value + artifacts.length - 1) % artifacts.length);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
       } else if (key.downArrow && artifacts.length) {
         setChangeDetailIndex(value => (value + 1) % artifacts.length);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
+      } else if (key.pageUp) {
+        setChangePatchOffset(value => Math.max(0, value - CHANGE_DIFF_PAGE_SIZE));
+      } else if (key.pageDown) {
+        const maxOffset = Math.max(0, buildDiffPresentation(changePatch).length - CHANGE_DIFF_PAGE_SIZE);
+        setChangePatchOffset(value => Math.min(maxOffset, value + CHANGE_DIFF_PAGE_SIZE));
+      } else if (key.home) {
+        setChangePatchOffset(0);
+      } else if (key.end) {
+        setChangePatchOffset(Math.max(0, buildDiffPresentation(changePatch).length - CHANGE_DIFF_PAGE_SIZE));
       } else if (key.return && selected?.path) {
         setChangeLoading(true);
+        setChangePatchOffset(0);
         client.send({type: 'workspace', action: 'diff', path: selected.path});
       } else if (character.toLowerCase() === 'd' && selected?.operationId && !selected.reverted && !running) {
         if (!changeConfirming) setChangeConfirming(true);
@@ -5080,6 +5106,7 @@ export function App({
         closeTransientSurfaces('changes');
         setChangeDetailIndex(0);
         setChangePatch('');
+        setChangePatchOffset(0);
         setChangeConfirming(false);
         setChangeDetailOpen(true);
       }
@@ -5555,6 +5582,7 @@ export function App({
           artifacts={runProjection.artifacts || []}
           selected={changeDetailIndex}
           patch={changePatch}
+          offset={changePatchOffset}
           loading={changeLoading}
           confirming={changeConfirming}
         />

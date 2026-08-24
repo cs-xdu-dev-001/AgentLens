@@ -2025,7 +2025,7 @@ test('final-only workspace changes render the same delivery card as artifact eve
 
 test('/diff and /undo reuse the interactive change panel before mutating files', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.48.0" />);
+  const view = render(<App client={client} version="0.49.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -2058,9 +2058,15 @@ test('/diff and /undo reuse the interactive change panel before mutating files',
   client.emit('message', {
     type: 'workspace_result',
     action: 'diff',
-    result: {patch: '+updated report'},
+    result: {patch: Array.from({length: 30}, (_, index) => `+updated report ${index + 1}`).join('\n')},
   });
-  await waitForFrame(view, /\+updated report/);
+  await waitForFrame(view, /\+updated report 1/);
+  assert.match(view.lastFrame(), /差异行 1-14\/30/);
+  assert.doesNotMatch(view.lastFrame(), /\+updated report 20/);
+  view.stdin.write('\u001b[6~');
+  await waitForFrame(view, /\+updated report 20/);
+  assert.match(view.lastFrame(), /差异行 15-28\/30/);
+  assert.doesNotMatch(view.lastFrame(), /\+updated report 1(?:\D|$)/);
   view.stdin.write('\u001b');
   await tick();
 
