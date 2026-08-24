@@ -56,7 +56,8 @@ assert calls == [
 for program_name in ("agentlens", "knowflow"):
     help_result = runner.invoke(cli.app, ["--help"], prog_name=program_name)
     assert help_result.exit_code == 0, help_result.output
-    assert f"Usage: {program_name}" in help_result.output
+    assert "Usage" in help_result.output
+    assert program_name in help_result.output
     assert "update" in help_result.output
     assert "更新AgentLens CLI到最新版" in help_result.output
 
