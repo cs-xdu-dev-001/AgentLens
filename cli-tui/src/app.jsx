@@ -1963,6 +1963,8 @@ export function App({
   const transcriptModeRef = useRef(false);
   const [transcriptSnapshot, setTranscriptSnapshot] = useState(null);
   const [running, setRunning] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [phase, setPhase] = useState('正在启动');
   const [waitingInteractions, setWaitingInteractions] = useState([]);
@@ -2958,6 +2960,25 @@ export function App({
         }
         return;
       }
+      if (message.type === 'cli_update_started') {
+        setUpdating(true);
+        setPhase(`正在更新AgentLens v${message.currentVersion || version}`);
+        return;
+      }
+      if (message.type === 'cli_update_completed') {
+        setUpdating(false);
+        setRestartRequired(true);
+        const nextVersion = message.nextVersion || '最新版';
+        appendItem('assistant', `AgentLens CLI已更新到v${nextVersion}。退出并重新运行knowflow chat后生效。`);
+        setPhase('更新完成 · 重启生效');
+        return;
+      }
+      if (message.type === 'cli_update_failed') {
+        setUpdating(false);
+        appendItem('error', `更新失败：${message.message || '请稍后重试，或在终端运行knowflow update。'}`);
+        setPhase('更新失败');
+        return;
+      }
       if (['doctor_failed', 'startup_failed', 'protocol_error'].includes(message.type)) {
         const stderr = Array.isArray(message.stderr) && message.stderr.length
           ? `\n\nPython stderr：\n${message.stderr.join('\n')}`
@@ -3299,6 +3320,10 @@ export function App({
       appendItem('error', '运行时尚未准备好。');
       return;
     }
+    if (updating || restartRequired) {
+      appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行knowflow chat。');
+      return;
+    }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
       enqueuePrompt(text, publicDisplayText, 'next', mode, turnReasoningEffort);
       setPhase(queuePaused
@@ -3355,7 +3380,7 @@ export function App({
     setHistory(items => [...items.filter(item => item !== historyText), historyText].slice(-100));
     setHistoryIndex(-1);
     appendItem('user', publicDisplayText);
-  }, [approval, appendItem, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, running]);
+  }, [approval, appendItem, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
 
   const resumeRun = useCallback((runId, title = '') => {
     const identifier = String(runId ?? '').trim();
@@ -3644,6 +3669,24 @@ export function App({
         'assistant',
         `${report}\n\n${stdout?.isTTY ? '已发送终端剪贴板请求；若未生效，请选择上方内容复制。' : '当前终端不支持自动复制，请选择上方内容复制。'}`,
       );
+    } else if (command.value === '/update') {
+      if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再更新CLI。');
+      } else if (restartRequired) {
+        showComposerNotice('更新已完成，请重启AgentLens');
+      } else if (updating) {
+        showComposerNotice('AgentLens正在更新');
+      } else {
+        setUpdating(true);
+        setPhase('正在准备CLI更新');
+        if (!client.send({type: 'cli_update'})) {
+          setUpdating(false);
+          setPhase('更新请求未发送');
+          appendItem('error', '运行时已断开，更新请求未发送。请退出后在终端运行knowflow update。');
+        }
+      }
+    } else if (command.value === '/version') {
+      appendItem('assistant', `AgentLens CLI v${version} · TUI协议v${PROTOCOL_VERSION} · Agent事件协议v${AGENT_EVENT_SCHEMA_VERSION}`);
     } else if (command.value === '/tasks') {
       const [action, firstArg, ...restArgs] = args.trim().split(/\s+/).filter(Boolean);
       const ordered = orderedQueue(queue);
@@ -3762,7 +3805,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, version, workspace]);
+  }, [activeModel, approval, appendItem, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -4711,7 +4754,9 @@ export function App({
   const currentSessionLabel = compactSessionHeaderLabel(currentSessionTitle, stdout.columns);
   const runHeader = approval || question
     ? {label: '等待操作', color: WARNING}
-    : queuePaused
+    : updating
+      ? {label: '更新中', color: ACCENT}
+      : queuePaused
       ? {label: '已暂停', color: WARNING}
       : running
         ? {label: '运行中', color: ACCENT}
@@ -4742,6 +4787,8 @@ export function App({
     commands: '↑↓选择 · Enter执行 · Tab/→补全 · Esc关闭',
     composer: composerMode === 'shell'
       ? 'Shell模式 · 命令在SRT沙箱中运行 · Esc返回问答'
+      : updating ? '正在更新CLI，完成后请重启'
+      : restartRequired ? '更新完成，退出并重新运行knowflow chat'
       : running ? '继续输入会加入队列' : '输入任务，/查看命令 · !进入Shell',
   }[interactionFocus];
   const interactionStatus = interactionFocus === 'composer' || interactionFocus === 'commands'

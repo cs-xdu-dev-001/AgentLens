@@ -455,6 +455,58 @@ def main() -> None:
     bridge.handle({"type": "capabilities", "section": "tools"})
     rows = wait_for(output, "capability_status")
     assert rows[-1]["status"]["webSearch"]["enabled"] is True
+
+    from knowflow import cli as cli_module  # noqa: E402
+    from knowflow.tui import ink_bridge as ink_bridge_module  # noqa: E402
+
+    update_output = StringIO()
+    update_bridge = InkRuntimeBridge(
+        backend,
+        input_stream=StringIO(),
+        output_stream=update_output,
+    )
+    original_update_command = cli_module._cli_update_command
+    original_installed_version = cli_module._installed_cli_version
+    original_update_run = ink_bridge_module.subprocess.run
+    versions = iter(("0.35.0", "0.36.0"))
+    try:
+        cli_module._cli_update_command = lambda: ["pipx", "install", "--force", "agentlens"]
+        cli_module._installed_cli_version = lambda: next(versions)
+        ink_bridge_module.subprocess.run = lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, "", ""
+        )
+        update_bridge.handle({"type": "cli_update"})
+        update_rows = wait_for(update_output, "cli_update_completed")
+    finally:
+        cli_module._cli_update_command = original_update_command
+        cli_module._installed_cli_version = original_installed_version
+        ink_bridge_module.subprocess.run = original_update_run
+    assert update_rows[0]["type"] == "cli_update_started"
+    assert update_rows[-1]["currentVersion"] == "0.35.0"
+    assert update_rows[-1]["nextVersion"] == "0.36.0"
+    assert update_rows[-1]["restartRequired"] is True
+
+    failed_update_output = StringIO()
+    failed_update_bridge = InkRuntimeBridge(
+        backend,
+        input_stream=StringIO(),
+        output_stream=failed_update_output,
+    )
+    try:
+        cli_module._cli_update_command = lambda: ["pipx", "install", "private-package"]
+        cli_module._installed_cli_version = lambda: "0.35.0"
+        ink_bridge_module.subprocess.run = lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, "", "https://x-access-token:ghp_secretvalue@example.invalid/repo"
+        )
+        failed_update_bridge.handle({"type": "cli_update"})
+        failed_update_rows = wait_for(failed_update_output, "cli_update_failed")
+    finally:
+        cli_module._cli_update_command = original_update_command
+        cli_module._installed_cli_version = original_installed_version
+        ink_bridge_module.subprocess.run = original_update_run
+    assert "ghp_secretvalue" not in str(failed_update_rows[-1])
+    assert "knowflow update" in failed_update_rows[-1]["message"]
+
     bridge.handle({"type": "reset"})
     assert backend.reset_count == 1
 
@@ -510,6 +562,8 @@ def main() -> None:
     assert "对话记录" in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source
+    assert "cli_update_completed" in app_source
+    assert "client.send({type: 'cli_update'})" in app_source
 
     shutil.rmtree(history_root, ignore_errors=True)
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")

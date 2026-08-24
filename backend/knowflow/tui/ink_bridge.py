@@ -5,6 +5,7 @@ from contextlib import redirect_stdout
 from hashlib import sha256
 import json
 from pathlib import Path
+import subprocess
 import sys
 from threading import Lock, Thread
 from typing import Any, TextIO
@@ -21,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore
 
 
-PROTOCOL_VERSION = 8
+PROTOCOL_VERSION = 9
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -84,6 +85,7 @@ class InkRuntimeBridge:
         self._queued_answer: dict[str, Any] | None = None
         self._request_id = ""
         self._run_id = ""
+        self._updating_cli = False
         self.history_store = PromptHistoryStore(
             local_data_dir() / "history" / f"{_history_scope(backend)}.jsonl"
         )
@@ -383,6 +385,55 @@ class InkRuntimeBridge:
         except Exception as exc:
             self.send({"type": "doctor_failed", "message": self._public_error(exc)})
 
+    def _update_cli(self) -> None:
+        with self._state_lock:
+            if self._running:
+                self.send({"type": "cli_update_failed", "message": "请等待当前任务结束后再更新CLI。"})
+                return
+            if self._updating_cli:
+                self.send({"type": "cli_update_failed", "message": "CLI正在更新，请稍候。"})
+                return
+            self._updating_cli = True
+
+        def worker() -> None:
+            try:
+                from ..cli import _cli_update_command, _installed_cli_version
+
+                current = _installed_cli_version()
+                self.send({"type": "cli_update_started", "currentVersion": current})
+                result = subprocess.run(
+                    _cli_update_command(),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"pipx更新失败（退出码{result.returncode}）。"
+                        "请退出后在终端运行knowflow update查看详情。"
+                    )
+                self.send(
+                    {
+                        "type": "cli_update_completed",
+                        "currentVersion": current,
+                        "nextVersion": _installed_cli_version(),
+                        "restartRequired": True,
+                    }
+                )
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "cli_update_failed",
+                        "message": self._public_error(exc),
+                    }
+                )
+            finally:
+                with self._state_lock:
+                    self._updating_cli = False
+
+        Thread(target=worker, daemon=True).start()
+
     def _workspace(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
         try:
@@ -646,6 +697,8 @@ class InkRuntimeBridge:
                 )
         elif message_type == "doctor":
             Thread(target=self._doctor, daemon=True).start()
+        elif message_type == "cli_update":
+            self._update_cli()
         elif message_type == "workspace":
             self._workspace(message)
         elif message_type == "sessions":

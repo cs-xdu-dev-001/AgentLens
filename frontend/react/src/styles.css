@@ -6884,8 +6884,30 @@ body.sidebar-collapsed .app-shell {
   font-weight: 720 !important;
 }
 
-.sidebar .brand-copy span,
+.sidebar .brand-copy span {
+  display: none !important;
+}
+
 .sidebar .runtime-card {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  min-height: 26px !important;
+  margin: 0 10px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #777777 !important;
+  font-size: 11px !important;
+}
+
+.sidebar .runtime-card strong {
+  color: #28795f !important;
+  font-weight: 620 !important;
+}
+
+.sidebar.collapsed .runtime-card {
   display: none !important;
 }
 

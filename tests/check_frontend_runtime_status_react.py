@@ -27,6 +27,8 @@ def main() -> None:
     require("frontend/react/src/components/Sidebar.jsx", "setRuntime", "React owns runtime state")
     require("frontend/react/src/components/Sidebar.jsx", "setFailed", "React owns runtime failure state")
     require("frontend/react/src/components/Sidebar.jsx", "在线", "compact connected status copy")
+    require("frontend/react/src/components/Sidebar.jsx", "runtime.version", "visible runtime version")
+    require("backend/knowflow/app.py", '"version": app.version', "runtime version payload")
     require("frontend/react/src/components/Sidebar.jsx", "连接中", "compact loading status copy")
     require("frontend/react/src/components/Sidebar.jsx", "离线", "compact disconnected status copy")
     forbid("frontend/react/src/components/Sidebar.jsx", "知识库与对话可用", "verbose connected status copy")

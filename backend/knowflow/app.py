@@ -19,7 +19,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="AgentLens API",
-    version="0.35.0",
+    version="0.36.0",
     description=(
         "AgentLens API for a personal knowledge workspace. "
         "Core workflows include model configuration, document ingestion, RAG retrieval debugging, chat, and session management."
@@ -132,6 +132,7 @@ def health_check() -> dict[str, Any]:
 def runtime_info() -> dict[str, Any]:
     return api_success(
         {
+            "version": app.version,
             "database": db.dialect,
             "vectorBackend": vector_store.backend,
         }

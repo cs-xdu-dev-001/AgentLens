@@ -98,6 +98,8 @@ test('aliases resolve to canonical commands', () => {
   assert.equal(resolveCommand('/copy code 2', commands).command.value, '/copy');
   assert.equal(resolveCommand('/fork 方案B', commands).command.value, '/branch');
   assert.equal(resolveCommand('/find 失败', commands).command.value, '/search');
+  assert.equal(resolveCommand('/update', commands).command.description, '在TUI内更新AgentLens CLI');
+  assert.equal(resolveCommand('/version', commands).command.category, '帮助');
 });
 
 test('commands expose argument guidance only after selecting the command', () => {

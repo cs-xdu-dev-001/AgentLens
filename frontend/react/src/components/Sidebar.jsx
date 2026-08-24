@@ -794,8 +794,9 @@ function RuntimeStatus() {
   }
 
   return (
-    <div className={"runtime-card"} id={"runtime-box"}>
+    <div className={"runtime-card"} id={"runtime-box"} aria-label={`AgentLens ${runtime.version || ""} 在线`}>
       <strong>{"在线"}</strong>
+      <span>{runtime.version ? `v${runtime.version}` : "AgentLens"}</span>
     </div>
   );
 }

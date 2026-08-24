@@ -365,6 +365,49 @@ test('task queue manager changes priority and retrieves a task for editing', asy
   assert.doesNotMatch(view.lastFrame(), /接下来 1/);
 });
 
+test('TUI update command delegates to Python and requires a restart after success', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.35.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/update');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'cli_update'});
+  assert.match(view.lastFrame(), /正在准备CLI更新|更新中/);
+
+  client.emit('message', {type: 'cli_update_started', currentVersion: '0.35.0'});
+  await tick();
+  assert.match(view.lastFrame(), /正在更新AgentLens v0\.35\.0/);
+
+  client.emit('message', {type: 'cli_update_completed', nextVersion: '0.36.0', restartRequired: true});
+  await tick();
+  assert.match(view.lastFrame(), /已更新到v0\.36\.0/);
+  assert.match(view.lastFrame(), /重启生效/);
+
+  const sentCount = client.sent.length;
+  view.stdin.write('/update');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.length, sentCount);
+  assert.match(view.lastFrame(), /更新已完成，请重启AgentLens/);
+});
+
+test('TUI update command recovers when the runtime request cannot be sent', async t => {
+  const client = new FakeClient();
+  client.send = () => false;
+  const view = render(<App client={client} version="0.35.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/update');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /更新请求未发送/);
+  assert.doesNotMatch(view.lastFrame(), /更新中/);
+});
+
 test('empty Escape retrieves the most recently queued prompt', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);
@@ -469,7 +512,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 8,
+      protocolVersion: 9,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1184,7 +1227,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 8,
+    protocolVersion: 9,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
