@@ -31,6 +31,7 @@ import {
   transcriptSearchMatches,
   transcriptSearchText,
   turnRequestSnapshot,
+  workspaceExecutionBlock,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {createRunProjection, projectRunEvent} from '../src/protocol.js';
@@ -67,6 +68,15 @@ test('model catalog keeps the active and recent models first and tolerates fuzzy
   ];
   assert.deepEqual(rankModelOptions(models, ['3']).map(item => item.id), [2, 3, 1]);
   assert.equal(rankModelOptions(models, [], 'kimk')[0]?.id, 3);
+});
+
+test('home workspaces block execution while preserving remote and project workspaces', () => {
+  assert.match(
+    workspaceExecutionBlock({workspaceKind: 'home'}),
+    /knowflow chat --workspace <项目目录>/,
+  );
+  assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
+  assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
 });
 
 test('terminal feedback mirrors idle, running, waiting, and failed Agent states', () => {
@@ -2274,6 +2284,40 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   assert.equal(client.sent.at(-1).runId, 'run_restore');
   await waitForFrame(view, /会话 恢复测试/);
   view.unmount();
+});
+
+test('home workspace keeps the draft and prevents failed task cards', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.39.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'status',
+    result: {
+      projectRoot: '/home/tester',
+      cwd: '/home/tester',
+      allowedDirectories: ['/home/tester'],
+      protectedPatterns: ['.git', '.env*'],
+      workspaceKind: 'home',
+      warnings: ['当前工作区是HOME目录。'],
+    },
+  });
+  await waitForFrame(view, /未进入项目/);
+
+  view.stdin.write('检查当前服务器');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  assert.match(view.lastFrame(), /检查当前服务器/);
+  assert.match(view.lastFrame(), /先指定项目目录/);
+
+  view.stdin.write('\u0015');
+  view.stdin.write('/workspace');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'workspace', action: 'status'});
 });
 
 test('session rename, branch and export commands stay inside the runtime protocol', async () => {

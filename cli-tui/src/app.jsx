@@ -1451,6 +1451,11 @@ function workspaceText(workspace) {
   ].join('\n');
 }
 
+export function workspaceExecutionBlock(workspace) {
+  if (!workspace || workspace.remote || workspace.workspaceKind !== 'home') return '';
+  return '当前工作区是HOME目录，任务未发送。请退出后运行：knowflow chat --workspace <项目目录>';
+}
+
 function contextText(status) {
   const value = status && typeof status === 'object' ? status : {};
   const roleTokens = value.roleTokens ?? {};
@@ -1647,6 +1652,18 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   );
 });
 
+const WorkspaceGuard = React.memo(function WorkspaceGuard({workspace}) {
+  const blocked = workspaceExecutionBlock(workspace);
+  if (!blocked) return null;
+  return (
+    <Box paddingX={1} marginTop={1}>
+      <Text color={WARNING} bold>未进入项目</Text>
+      <Text color={MUTED}> · 重启：</Text>
+      <Text color={PRIMARY}>knowflow chat --workspace {'<项目目录>'}</Text>
+    </Box>
+  );
+});
+
 const TranscriptRow = React.memo(function TranscriptRow({
   item,
   taskExpanded = false,
@@ -1750,6 +1767,8 @@ const TranscriptRow = React.memo(function TranscriptRow({
       {item.role === 'user' ? <Text color={ACCENT} bold>› </Text> : null}
       {item.role === 'error' ? (
         <Text color={ERROR}>错误：{item.content}</Text>
+      ) : item.role === 'warning' ? (
+        <Text color={WARNING}>提醒：{item.content}</Text>
       ) : assistant ? (
         <MarkdownText>{item.content}</MarkdownText>
       ) : (
@@ -2403,7 +2422,7 @@ export function App({
         if (message.workspace) {
           setWorkspace(message.workspace);
           const warnings = Array.isArray(message.workspace.warnings) ? message.workspace.warnings.filter(Boolean) : [];
-          if (warnings.length) appendItem('error', warnings.join('\n'));
+          if (warnings.length) appendItem('warning', warnings.join('\n'));
         }
         setPhase('运行时已连接');
         return;
@@ -3407,6 +3426,12 @@ export function App({
       appendItem('error', '运行时尚未准备好。');
       return;
     }
+    const workspaceBlock = workspaceExecutionBlock(workspace);
+    if (workspaceBlock) {
+      appendItem('warning', workspaceBlock);
+      setPhase('未进入项目');
+      return;
+    }
     if (updating || restartRequired) {
       appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行knowflow chat。');
       return;
@@ -3497,7 +3522,7 @@ export function App({
     setHistoryIndex(-1);
     appendItem('user', userTurnDisplay(publicDisplayText, turnAttachmentPaths));
     if (mode === 'prompt') setAttachedPaths([]);
-  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
+  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating, workspace]);
 
   const resumeRun = useCallback((runId, title = '') => {
     const identifier = String(runId ?? '').trim();
@@ -4011,6 +4036,13 @@ export function App({
     }
     const displayText = String(value ?? '').trim();
     const expandedText = expandPastedTextRefs(value, pastedContentsRef.current).trim();
+    const command = resolveCommand(expandedText, commands);
+    const slashInput = /^\//.test(expandedText);
+    if (expandedText && !command && !slashInput && workspaceExecutionBlock(workspace)) {
+      setPhase('未进入项目');
+      showComposerNotice('先指定项目目录，当前输入已保留');
+      return;
+    }
     updateComposer('', 0);
     replacePastedContents({});
     clearComposerUndo();
@@ -4018,12 +4050,12 @@ export function App({
     historyDraftRef.current = '';
     if (composerMode === 'shell') {
       if (expandedText) startTurn(expandedText, displayText || expandedText, {mode: 'shell'});
-    } else if (resolveCommand(expandedText, commands) || /^\//.test(expandedText)) {
+    } else if (command || slashInput) {
       executeInput(expandedText);
     } else if (expandedText) {
       startTurn(expandedText, displayText || expandedText);
     }
-  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, replacePastedContents, selectedSuggestion, startTurn, suggestions, updateComposer]);
+  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, replacePastedContents, selectedSuggestion, showComposerNotice, startTurn, suggestions, updateComposer, workspace]);
 
   const toolRows = useMemo(() => [...activities.values()], [activities]);
   const detailRows = useMemo(() => {
@@ -5195,6 +5227,7 @@ export function App({
             </Box>
           ) : null}
           {!question && attachedPaths.length ? <AttachmentTray paths={attachedPaths} /> : null}
+          {!question ? <WorkspaceGuard workspace={workspace} /> : null}
           {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
@@ -5204,7 +5237,9 @@ export function App({
                 placeholder={interactionFocus === 'composer' || interactionFocus === 'commands'
                   ? (composerMode === 'shell'
                     ? (running ? '输入命令可加入队列' : '输入Shell命令')
-                    : (running ? '继续输入可加入队列' : '输入任务，/查看命令'))
+                    : (workspaceExecutionBlock(workspace)
+                      ? '先指定项目目录，/仍可用'
+                      : (running ? '继续输入可加入队列' : '输入任务，/查看命令')))
                   : `${INTERACTION_FOCUS_LABELS[interactionFocus]}正在接收按键`}
               />
             </Box>
