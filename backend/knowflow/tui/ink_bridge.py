@@ -498,7 +498,19 @@ class InkRuntimeBridge:
             self.send({"type": "busy", "message": "请等待当前任务结束后再创建分支。"})
             return
         try:
-            result = self.backend.branch_session(str(message.get("title") or ""))
+            result = self.backend.branch_session(
+                str(message.get("title") or ""),
+                before_message_id=(
+                    int(message["messageId"])
+                    if message.get("messageId") is not None
+                    else None
+                ),
+                before_message_index=(
+                    int(message["messageIndex"])
+                    if message.get("messageIndex") is not None
+                    else None
+                ),
+            )
         except Exception as exc:
             self.send(
                 {
@@ -511,6 +523,27 @@ class InkRuntimeBridge:
                 {
                     "type": "session_branched",
                     "result": _public_value(result, max_chars=200_000),
+                }
+            )
+
+    def _rewind_points(self) -> None:
+        if self._running:
+            self.send({"type": "busy", "message": "请等待当前任务结束后再回退会话。"})
+            return
+        try:
+            points = self.backend.rewind_points()
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "rewind_points_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "rewind_points",
+                    "points": _public_value(points, max_chars=100_000),
                 }
             )
 
@@ -725,6 +758,8 @@ class InkRuntimeBridge:
             self._resume_session(message)
         elif message_type == "branch_session":
             self._branch_session(message)
+        elif message_type == "rewind_points":
+            self._rewind_points()
         elif message_type == "rename_session":
             self._rename_session(message)
         elif message_type == "export_session":

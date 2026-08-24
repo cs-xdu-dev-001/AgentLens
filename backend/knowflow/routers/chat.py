@@ -573,6 +573,31 @@ def branch_session(
         """,
         {"session_id": session_id},
     )
+    restored_question = ""
+    if payload.beforeMessageId is not None:
+        branch_point = next(
+            (
+                message
+                for message in source_messages
+                if int(message["id"]) == payload.beforeMessageId
+            ),
+            None,
+        )
+        if branch_point is None or branch_point.get("role") != "user":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "session_branch_point_not_found",
+                    "message": "The selected user message is not in this session.",
+                    "data": None,
+                },
+            )
+        restored_question = str(branch_point.get("content") or "")
+        source_messages = [
+            message
+            for message in source_messages
+            if int(message["id"]) < payload.beforeMessageId
+        ]
     with db.engine.begin() as conn:
         conn.execute(
             text(
@@ -662,6 +687,8 @@ def branch_session(
             "updated_at": created_at,
             "sourceSessionId": session_id,
             "messageCount": len(source_messages),
+            "restoredQuestion": restored_question,
+            "rewindMessageId": payload.beforeMessageId,
         }
     )
 

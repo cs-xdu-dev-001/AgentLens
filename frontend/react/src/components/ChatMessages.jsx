@@ -27,6 +27,7 @@ const actionEvents = {
   copy: "knowflow:react-message-copy",
   edit: "knowflow:react-message-edit",
   retry: "knowflow:react-message-retry",
+  rewind: "knowflow:react-message-rewind",
 };
 const MEMORY_ACTIVITY_MAX_POLLS = 240;
 
@@ -244,6 +245,7 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
     className: bubbleClassName,
     "data-raw-content": message.rawContent,
     "data-react-message-id": message.id,
+    "data-source-message-id": message.sourceMessageId || undefined,
     "aria-busy": message.thinking ? "true" : undefined,
   };
 
@@ -392,6 +394,19 @@ function MessageRow({
       />
       {message.role === "user" ? (
         <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
+          {message.sourceMessageId ? (
+            <button
+              type={"button"}
+              data-message-action={"rewind"}
+              aria-label={"从此处继续"}
+              title={"从此处继续（原会话和文件不变）"}
+            >
+              <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
+                <path d={"M9 14 4 9l5-5"}></path>
+                <path d={"M4 9h9a7 7 0 0 1 7 7v4"}></path>
+              </svg>
+            </button>
+          ) : null}
           <button
             type={"button"}
             data-message-action={"edit"}
@@ -567,6 +582,7 @@ export function ChatMessages() {
       toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : [],
       run: payload.run || null,
       memoryActivity: payload.memoryActivity || null,
+      sourceMessageId: payload.sourceMessageId ?? null,
     };
   };
   const updateMessage = (messageId, updater) => {
@@ -628,6 +644,7 @@ export function ChatMessages() {
           detail: {
             bubble,
             messageId: bubble?.dataset.reactMessageId || "",
+            sourceMessageId: bubble?.dataset.sourceMessageId || "",
             rawContent: bubble?.dataset.rawContent || "",
           },
         }),

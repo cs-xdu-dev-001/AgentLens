@@ -108,6 +108,7 @@ test('aliases resolve to canonical commands', () => {
   assert.equal(resolveCommand('/edit', commands).command.description, '取回上一条任务继续修改');
   assert.equal(resolveCommand('/copy code 2', commands).command.value, '/copy');
   assert.equal(resolveCommand('/fork 方案B', commands).command.value, '/branch');
+  assert.equal(resolveCommand('/checkpoint', commands).command.value, '/rewind');
   assert.equal(resolveCommand('/find 失败', commands).command.value, '/search');
   assert.equal(resolveCommand('/update', commands).command.description, '在TUI内更新AgentLens CLI');
   assert.equal(resolveCommand('/attach README.md', commands).command.category, '工作区');

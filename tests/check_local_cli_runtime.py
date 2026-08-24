@@ -222,6 +222,38 @@ def main() -> None:
         renamed = runtime.rename_session(stored[0]["runId"], "  发布 复盘  ")
         assert renamed["title"] == "发布 复盘"
         assert runtime.load_session(stored[0]["runId"])["title"] == "发布 复盘"
+        runtime.sessions.save(
+            "run_rewindsource",
+            title="回退来源",
+            status="completed",
+            messages=[
+                {"role": "user", "content": "第一个问题"},
+                {"role": "assistant", "content": "第一个回答"},
+                {"role": "user", "content": "需要重新处理的问题"},
+                {"role": "assistant", "content": "应被丢弃的回答"},
+            ],
+            contextMessages=[
+                {"role": "user", "content": "第一个问题"},
+                {"role": "assistant", "content": "第一个回答"},
+                {"role": "user", "content": "需要重新处理的问题"},
+                {"role": "assistant", "content": "应被丢弃的回答"},
+            ],
+            compaction={"summary": "不应带入新分支"},
+            answer="应被丢弃的回答",
+            **runtime._session_workspace_fields(),
+        )
+        rewound = runtime.branch_session(
+            "run_rewindsource",
+            before_message_index=2,
+        )
+        assert rewound["restoredQuestion"] == "需要重新处理的问题"
+        assert rewound["messages"] == [
+            {"role": "user", "content": "第一个问题"},
+            {"role": "assistant", "content": "第一个回答"},
+        ]
+        assert rewound["contextMessages"] == rewound["messages"]
+        assert rewound["compaction"] == {}
+        assert rewound["answer"] == "第一个回答"
         assert runtime.workspace_status()["cwd"] == str((root / "workspace").resolve())
         extra = root / "extra-workspace"
         extra.mkdir()

@@ -39,6 +39,8 @@ def main() -> None:
     require(messages, 'aria-label={"重新生成"}', "localized retry action label")
     require(messages, 'aria-label={"编辑并重新发送"}', "localized user edit action label")
     require(messages, 'edit: "knowflow:react-message-edit"', "user edit action event")
+    require(messages, 'rewind: "knowflow:react-message-rewind"', "user rewind action event")
+    require(messages, "message.sourceMessageId", "rewind action requires a persisted message id")
     require(
         "frontend/react/src/controller/bridgeBindings.js",
         'window.addEventListener("knowflow:react-message-edit"',
@@ -49,6 +51,13 @@ def main() -> None:
         'requestComposerReset({ focus: true, question })',
         "user message edit restores composer",
     )
+    require(
+        "frontend/react/src/controller/bridgeBindings.js",
+        'window.addEventListener("knowflow:react-message-rewind"',
+        "user message rewind bridge",
+    )
+    require(chat_flow, "beforeMessageId: branchPoint", "rewind branch point reaches the API")
+    require(chat_flow, "restoredQuestion", "rewind restores the selected question")
     require(messages, 'from "../controller/markdown.js"', "React message component renders markdown internally")
     require(message_events, "retryable", "message bridge carries retry availability")
     require("frontend/styles.css", ".message-actions button svg", "bounded message action icons")

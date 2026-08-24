@@ -187,7 +187,13 @@ class FakeBackend:
             }
         )
 
-    def branch_session(self, title=""):
+    def branch_session(
+        self,
+        title="",
+        *,
+        before_message_id=None,
+        before_message_index=None,
+    ):
         return {
             "runId": "run_branch",
             "title": title or "测试会话（分支）",
@@ -196,7 +202,17 @@ class FakeBackend:
                 {"role": "user", "content": "旧问题"},
                 {"role": "assistant", "content": "旧回答"},
             ],
+            "restoredQuestion": "要重新处理的问题" if before_message_index is not None else "",
         }
+
+    def rewind_points(self):
+        return [
+            {
+                "messageId": None,
+                "messageIndex": 0,
+                "preview": "要重新处理的问题",
+            }
+        ]
 
     def rename_session(self, title=""):
         return {"runId": "run_ink", "title": title}
@@ -454,6 +470,12 @@ def main() -> None:
     branch_rows = wait_for(ready_output, "session_branched")
     assert branch_rows[-1]["result"]["runId"] == "run_branch"
     assert branch_rows[-1]["result"]["title"] == "方案B"
+    ready_bridge.handle({"type": "rewind_points"})
+    rewind_rows = wait_for(ready_output, "rewind_points")
+    assert rewind_rows[-1]["points"][0]["messageIndex"] == 0
+    ready_bridge.handle({"type": "branch_session", "messageIndex": 0})
+    rewound_rows = wait_for(ready_output, "session_branched")
+    assert rewound_rows[-1]["result"]["restoredQuestion"] == "要重新处理的问题"
     ready_bridge.handle({"type": "rename_session", "title": "发布复盘"})
     rename_rows = wait_for(ready_output, "session_renamed")
     assert rename_rows[-1]["result"]["runId"] == "run_ink"

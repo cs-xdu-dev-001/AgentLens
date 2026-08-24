@@ -5,6 +5,7 @@ export function appendReactMessage(role, content, options = {}) {
     streaming: Boolean(options.streaming),
     thinking: Boolean(options.thinking),
     retryable: Boolean(options.retryable ?? (role === "assistant" && options.thinking)),
+    sourceMessageId: options.sourceMessageId ?? null,
   };
   const detail = {
     role,
@@ -18,6 +19,7 @@ export function appendReactMessage(role, content, options = {}) {
     toolCalls: Array.isArray(options.toolCalls) ? options.toolCalls : [],
     run: options.run || null,
     memoryActivity: options.memoryActivity || null,
+    sourceMessageId: message.sourceMessageId,
   };
   window.dispatchEvent(new CustomEvent("knowflow:react-message-append", { detail }));
   message.messageId = detail.messageId || "";

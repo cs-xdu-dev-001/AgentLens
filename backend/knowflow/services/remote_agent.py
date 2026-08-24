@@ -208,11 +208,20 @@ class RemoteAgentClient:
             return payload["data"]
         return payload
 
-    def branch_session(self, session_id: str, title: str = "") -> dict[str, Any]:
+    def branch_session(
+        self,
+        session_id: str,
+        title: str = "",
+        *,
+        before_message_id: int | None = None,
+    ) -> dict[str, Any]:
         payload = self.request(
             "POST",
             f"/api/sessions/{session_id}/branch",
-            body={"title": title or None},
+            body={
+                "title": title or None,
+                "beforeMessageId": before_message_id,
+            },
         )
         return payload if isinstance(payload, dict) else {}
 

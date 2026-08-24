@@ -225,6 +225,7 @@ function bindEvents() {
     resolveChatModelConfigId: catalogSync.resolveChatModelConfigId,
     resolveKnowledgeBaseId: catalogSync.resolveKnowledgeBaseId,
     retryAnswer: chatFlow.retryAnswer,
+    rewindSessionAtMessage: chatFlow.rewindSessionAtMessage,
     resumeQueuedChats: chatFlow.resumeQueuedChats,
     showAppScreen: authFlow.showAppScreen,
     showAuthScreen: authFlow.showAuthScreen,

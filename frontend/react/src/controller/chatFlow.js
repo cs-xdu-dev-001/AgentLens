@@ -742,6 +742,7 @@ export function createChatFlow({
           toolCalls: Array.isArray(message.toolCalls) ? message.toolCalls : [],
           run: message.run || null,
           memoryActivity: message.memoryActivity || null,
+          sourceMessageId: message.id ?? null,
         },
       );
       if (
@@ -821,6 +822,41 @@ export function createChatFlow({
         });
     }
     return true;
+  }
+
+  async function rewindSessionAtMessage(messageId, question) {
+    const sourceSessionId = String(state.currentSessionId || "").trim();
+    const branchPoint = Number(messageId);
+    const restoredQuestion = String(question || "").trim();
+    if (!sourceSessionId || !Number.isInteger(branchPoint) || branchPoint <= 0) {
+      throw new Error("这条消息还没有可用的会话检查点，请刷新后重试。");
+    }
+    if (state.activeRunId) {
+      throw new Error("请等待当前Agent任务结束后再回到历史消息。");
+    }
+    const branch = await request(
+      `/api/sessions/${encodeURIComponent(sourceSessionId)}/branch`,
+      {
+        method: "POST",
+        body: { beforeMessageId: branchPoint },
+      },
+    );
+    const branchId = String(branch?.id || "").trim();
+    if (!branchId) throw new Error("服务器没有返回新的会话分支。");
+    const modelId = branch?.chat_model_config_id ?? null;
+    const opened = await continueSession(branchId, {
+      title: branch?.title || "新会话（回退）",
+      chatModelConfigId: modelId,
+    });
+    if (!opened) return null;
+    state.selectedChatModelConfigId = modelId;
+    notifyReactModelSelectionUpdated(modelId);
+    requestComposerReset({
+      focus: true,
+      question: String(branch?.restoredQuestion || restoredQuestion),
+    });
+    requestReactSessionsRefresh();
+    return branch;
   }
 
   function startNewChat() {
@@ -1526,6 +1562,7 @@ export function createChatFlow({
   return {
     clearQueuedChats,
     continueSession,
+    rewindSessionAtMessage,
     removeQueuedChat,
     retrieveQueuedChat,
     reprioritizeQueuedChat,

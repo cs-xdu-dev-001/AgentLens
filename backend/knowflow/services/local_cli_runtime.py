@@ -525,7 +525,13 @@ class LocalAgentRuntime:
             self.workspace.change_directory(cwd)
         return session
 
-    def branch_session(self, run_id: str, title: str = "") -> dict[str, Any]:
+    def branch_session(
+        self,
+        run_id: str,
+        title: str = "",
+        *,
+        before_message_index: int | None = None,
+    ) -> dict[str, Any]:
         source = self.load_session(run_id)
         if str(source.get("status") or "") not in {"completed", "cancelled"}:
             raise ValueError("请等待当前运行结束后再创建分支。")
@@ -537,8 +543,34 @@ class LocalAgentRuntime:
             max_length=160,
         )
         branch_id = f"run_{uuid4().hex[:12]}"
-        messages = list(source.get("messages") or [])
-        context_messages = list(source.get("contextMessages") or messages)
+        source_messages = list(source.get("messages") or [])
+        restored_question = ""
+        if before_message_index is not None:
+            if (
+                isinstance(before_message_index, bool)
+                or before_message_index < 0
+                or before_message_index >= len(source_messages)
+                or source_messages[before_message_index].get("role") != "user"
+            ):
+                raise ValueError("所选用户消息不在当前会话中。")
+            restored_question = str(
+                source_messages[before_message_index].get("content") or ""
+            )
+            messages = source_messages[:before_message_index]
+            context_messages = list(messages)
+            compaction: dict[str, Any] = {}
+        else:
+            messages = source_messages
+            context_messages = list(source.get("contextMessages") or messages)
+            compaction = dict(source.get("compaction") or {})
+        latest_answer = next(
+            (
+                str(message.get("content") or "")
+                for message in reversed(messages)
+                if message.get("role") == "assistant"
+            ),
+            "",
+        )
         payload = self.sessions.save(
             branch_id,
             title=branch_title,
@@ -547,8 +579,10 @@ class LocalAgentRuntime:
             **self._session_workspace_fields(),
             messages=messages,
             contextMessages=context_messages,
-            compaction=dict(source.get("compaction") or {}),
-            answer=str(source.get("answer") or ""),
+            compaction=compaction,
+            answer=latest_answer,
+            restoredQuestion=restored_question,
+            rewindMessageIndex=before_message_index,
         )
         return payload
 

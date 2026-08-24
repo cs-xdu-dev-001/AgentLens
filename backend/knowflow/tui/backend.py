@@ -416,11 +416,46 @@ class TuiBackend:
             "title": session.get("title") or next_title,
         }
 
-    def branch_session(self, title: str = "") -> dict[str, Any]:
+    def rewind_points(self) -> list[dict[str, Any]]:
+        if self.remote_client is not None:
+            if not self.session_id:
+                raise RuntimeError("当前没有可回退的远程会话。")
+            source = self.remote_client.request(
+                "GET",
+                f"/api/sessions/{self.session_id}/messages",
+            )
+            messages = source if isinstance(source, list) else []
+        else:
+            if self.local_agent is None or not self.current_run_id:
+                raise RuntimeError("当前没有可回退的本地会话。")
+            source = self.local_agent.load_session(self.current_run_id)
+            messages = list(source.get("messages") or [])
+        return [
+            {
+                "messageId": message.get("id"),
+                "messageIndex": index,
+                "preview": str(message.get("content") or "").strip(),
+            }
+            for index, message in enumerate(messages)
+            if message.get("role") == "user"
+            and str(message.get("content") or "").strip()
+        ]
+
+    def branch_session(
+        self,
+        title: str = "",
+        *,
+        before_message_id: int | None = None,
+        before_message_index: int | None = None,
+    ) -> dict[str, Any]:
         if self.remote_client is not None:
             if not self.session_id:
                 raise RuntimeError("当前没有可创建分支的远程会话。")
-            branch = self.remote_client.branch_session(self.session_id, title)
+            branch = self.remote_client.branch_session(
+                self.session_id,
+                title,
+                before_message_id=before_message_id,
+            )
             branch_id = str(branch.get("id") or "")
             if not branch_id:
                 raise RuntimeError("服务器未返回新的会话分支。")
@@ -431,7 +466,11 @@ class TuiBackend:
             self.session_id = branch_id
             self.current_run_id = None
             self.conversation = [
-                {"role": item.get("role"), "content": item.get("content")}
+                {
+                    "id": item.get("id"),
+                    "role": item.get("role"),
+                    "content": item.get("content"),
+                }
                 for item in (messages if isinstance(messages, list) else [])
                 if item.get("role") in {"user", "assistant"}
             ]
@@ -443,10 +482,15 @@ class TuiBackend:
                 "title": branch.get("title"),
                 "messageCount": len(self.transcript),
                 "messages": self.transcript,
+                "restoredQuestion": branch.get("restoredQuestion") or "",
             }
         if self.local_agent is None or not self.current_run_id:
             raise RuntimeError("当前没有可创建分支的本地会话。")
-        branch = self.local_agent.branch_session(self.current_run_id, title)
+        branch = self.local_agent.branch_session(
+            self.current_run_id,
+            title,
+            before_message_index=before_message_index,
+        )
         branch_id = str(branch.get("runId") or "")
         self.current_run_id = branch_id or self.current_run_id
         self.conversation = list(
@@ -460,6 +504,7 @@ class TuiBackend:
             "title": branch.get("title"),
             "messageCount": len(self.transcript),
             "messages": self.transcript,
+            "restoredQuestion": branch.get("restoredQuestion") or "",
         }
 
     def export_session(self, filename: str = "") -> dict[str, Any]:

@@ -25,6 +25,7 @@ export function bindReactControllerEvents({
   resolveChatModelConfigId,
   resolveKnowledgeBaseId,
   retryAnswer,
+  rewindSessionAtMessage,
   resumeQueuedChats,
   showAppScreen,
   showAuthScreen,
@@ -84,6 +85,17 @@ export function bindReactControllerEvents({
 
   window.addEventListener("knowflow:react-message-retry", (event) => {
     retryAnswer(event.detail?.messageId || null).catch((error) => toast(error.message || "重试失败", 4200, "error"));
+  });
+
+  window.addEventListener("knowflow:react-message-rewind", (event) => {
+    rewindSessionAtMessage(
+      event.detail?.sourceMessageId,
+      event.detail?.rawContent,
+    )
+      .then((branch) => {
+        if (branch) toast("已从所选问题创建新分支，原会话和文件保持不变");
+      })
+      .catch((error) => toast(error.message || "回到历史消息失败", 4200, "error"));
   });
 
   window.addEventListener("knowflow:react-page-change", (event) => {

@@ -98,7 +98,7 @@ test('next prompt suggestions only appear for actionable completed or failed run
 
 test('Tab accepts the next prompt suggestion without submitting it immediately', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.41.0" />);
+  const view = render(<App client={client} version="0.42.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -1318,7 +1318,7 @@ test('Ink app searches prompt history, stashes drafts, and restores killed text'
 
 test('Ink app auto-restores a stashed prompt after another task is submitted', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.41.0" />);
+  const view = render(<App client={client} version="0.42.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -2356,7 +2356,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 
 test('home workspace keeps the draft and prevents failed task cards', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.41.0" />);
+  const view = render(<App client={client} version="0.42.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -2435,6 +2435,53 @@ test('session rename, branch and export commands stay inside the runtime protoco
     result: {path: '/workspace/review.md', filename: 'review.md', messageCount: 2},
   });
   await waitForFrame(view, /已导出2条消息：.*review\.md/);
+  view.unmount();
+});
+
+test('/rewind forks before a selected user message and restores its prompt', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/rewind');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'rewind_points'});
+  client.emit('message', {
+    type: 'rewind_points',
+    points: [
+      {messageId: null, messageIndex: 0, preview: '最早的问题'},
+      {messageId: null, messageIndex: 2, preview: '需要重新处理的问题'},
+    ],
+  });
+  await waitForFrame(view, /回到历史消息.*1\/2/);
+  assert.match(view.lastFrame(), /需要重新处理的问题/);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'branch_session',
+    title: '',
+    messageId: null,
+    messageIndex: 2,
+  });
+  client.emit('message', {
+    type: 'session_branched',
+    result: {
+      runId: 'run_rewound',
+      title: '测试会话（分支）',
+      messageCount: 2,
+      messages: [
+        {role: 'user', content: '最早的问题'},
+        {role: 'assistant', content: '最早的回答'},
+      ],
+      restoredQuestion: '需要重新处理的问题',
+    },
+  });
+  await waitForFrame(view, /已回到历史消息/);
+  assert.match(view.lastFrame(), /需要重新处理的问题/);
+  assert.match(view.lastFrame(), /原会话/);
   view.unmount();
 });
 

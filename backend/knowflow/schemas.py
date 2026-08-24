@@ -97,6 +97,7 @@ class SessionUpdate(BaseModel):
 class SessionBranchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, max_length=255)
+    beforeMessageId: int | None = Field(default=None, gt=0)
 
 
 class SyncTaskIn(BaseModel):

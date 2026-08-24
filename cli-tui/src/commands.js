@@ -19,6 +19,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/resume', description: '恢复本工作区的历史会话', source: 'builtin', category: '会话'},
   {value: '/rename', description: '重命名当前会话', source: 'builtin', category: '会话', argumentHint: '<新名称>'},
   {value: '/branch', description: '从当前会话创建独立分支', source: 'builtin', category: '会话', aliases: ['/fork'], argumentHint: '[名称]'},
+  {value: '/rewind', description: '回到历史问题并从那里继续', source: 'builtin', category: '会话', aliases: ['/checkpoint']},
   {value: '/export', description: '把当前会话导出为Markdown', source: 'builtin', category: '会话', argumentHint: '[文件名]'},
   {value: '/search', description: '搜索当前对话中实际显示的内容', source: 'builtin', category: '会话', aliases: ['/find'], argumentHint: '[关键词]'},
   {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', category: '会话', argumentHint: '[关键词 | clear]'},

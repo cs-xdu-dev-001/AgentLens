@@ -251,6 +251,7 @@ const INTERACTION_FOCUS_LABELS = Object.freeze({
   queueManager: '任务队列',
   help: '命令浏览',
   sessions: '恢复会话',
+  rewind: '回到历史消息',
   models: '选择模型',
   reasoning: '推理强度',
   history: '搜索历史',
@@ -271,6 +272,7 @@ export function resolveInteractionFocus(state = {}) {
   if (state.queueManagerOpen) return 'queueManager';
   if (state.taskNavigationOpen) return 'taskNavigation';
   if (state.sessionPicker) return 'sessions';
+  if (state.rewindPicker) return 'rewind';
   if (state.modelPicker) return 'models';
   if (state.reasoningPicker) return 'reasoning';
   if (state.transcriptSearchOpen) return 'transcriptSearch';
@@ -1580,6 +1582,34 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
   );
 });
 
+const RewindPicker = React.memo(function RewindPicker({points, selected, loading, error, maxVisible = 7}) {
+  const spinner = useSpinner(loading, '读取历史消息');
+  const visibleCount = Math.max(1, Math.min(maxVisible, points.length || 1));
+  const start = Math.max(0, Math.min(selected - 2, Math.max(0, points.length - visibleCount)));
+  const visible = points.slice(start, start + visibleCount);
+  return (
+    <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} paddingY={1} marginTop={1}>
+      <Box justifyContent="space-between">
+        <Text bold>回到历史消息{points.length ? <Text color={MUTED}>  {selected + 1}/{points.length}</Text> : null}</Text>
+        <Text color={MUTED}>原会话与文件保持不变</Text>
+      </Box>
+      {loading ? <Text color={MUTED}>{spinner} 正在读取用户消息…</Text> : null}
+      {!loading && error ? <Text color={ERROR}>读取失败：{error}</Text> : null}
+      {!loading && !error && !points.length ? <Text color={MUTED}>当前会话还没有可回退的用户消息</Text> : null}
+      {!loading && !error ? visible.map((point, offset) => {
+        const index = start + offset;
+        const selectedRow = index === selected;
+        return (
+          <Text key={`${point.messageId ?? 'local'}-${point.messageIndex}`} color={selectedRow ? PRIMARY : MUTED} bold={selectedRow} wrap="truncate-end">
+            {selectedRow ? '❯ ' : '  '}{publicLabel(point.preview, '空消息', 160)}
+          </Text>
+        );
+      }) : null}
+      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter从此继续 · Esc关闭</Text>
+    </Box>
+  );
+});
+
 const ModelPicker = React.memo(function ModelPicker({models, selected, query, loading, error, maxVisible = 6}) {
   const spinner = useSpinner(loading, '读取模型');
   const visibleCount = Math.max(1, Math.min(maxVisible, models.length || 1));
@@ -1971,6 +2001,11 @@ export function App({
   const [sessionQuery, setSessionQuery] = useState('');
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
+  const [rewindPoints, setRewindPoints] = useState([]);
+  const [rewindPicker, setRewindPicker] = useState(false);
+  const [rewindChoice, setRewindChoice] = useState(0);
+  const [rewindLoading, setRewindLoading] = useState(false);
+  const [rewindError, setRewindError] = useState('');
   const [models, setModels] = useState([]);
   const [recentModelIds, setRecentModelIds] = useState([]);
   const [modelPicker, setModelPicker] = useState(false);
@@ -2131,6 +2166,13 @@ export function App({
       setSessionPicker(false);
       setSessionQuery('');
       setSessionError('');
+    }
+    if (keep !== 'rewind') {
+      setRewindPicker(false);
+      setRewindPoints([]);
+      setRewindChoice(0);
+      setRewindLoading(false);
+      setRewindError('');
     }
     if (keep !== 'models') {
       setModelPicker(false);
@@ -2766,6 +2808,7 @@ export function App({
         ).trim();
         setTranscript(messages.map((item, index) => ({
           id: `branch-${index}`,
+          messageId: item.id ?? null,
           role: item.role,
           content: String(item.content ?? ''),
         })));
@@ -2780,13 +2823,44 @@ export function App({
           ...current.filter(item => item.runId !== String(result.runId || '')),
         ].filter(item => item.runId));
         setTaskArchived(true);
+        const restoredQuestion = String(result.restoredQuestion || '').trim();
+        if (restoredQuestion) {
+          inputRef.current = restoredQuestion;
+          setInput(restoredQuestion);
+          cursorOffsetRef.current = restoredQuestion.length;
+          setCursorOffset(restoredQuestion.length);
+          pastedContentsRef.current = {};
+          setPastedContents({});
+          setComposerMode('prompt');
+          composerModeRef.current = 'prompt';
+        }
+        closeTransientSurfaces();
         appendItem('assistant', `已创建会话分支“${publicLabel(result.title, '新会话（分支）', 160)}”，后续任务不会改动原会话。`);
-        setPhase('分支已就绪');
+        setPhase(restoredQuestion ? '已回到历史消息' : '分支已就绪');
         return;
       }
       if (message.type === 'session_branch_failed') {
         appendItem('error', message.message ?? '创建会话分支失败。');
         setPhase('就绪');
+        return;
+      }
+      if (message.type === 'rewind_points') {
+        const points = Array.isArray(message.points) ? [...message.points].reverse() : [];
+        setRewindPoints(points);
+        setRewindChoice(0);
+        setRewindLoading(false);
+        setRewindError('');
+        closeTransientSurfaces('rewind');
+        setRewindPicker(true);
+        setPhase(points.length ? '选择回退位置' : '没有可回退的消息');
+        return;
+      }
+      if (message.type === 'rewind_points_failed') {
+        closeTransientSurfaces('rewind');
+        setRewindLoading(false);
+        setRewindError(message.message || '读取历史消息失败。');
+        setRewindPicker(true);
+        setPhase('读取回退位置失败');
         return;
       }
       if (message.type === 'session_renamed') {
@@ -3278,6 +3352,7 @@ export function App({
     taskNavigationOpen,
     queueManagerOpen,
     sessionPicker,
+    rewindPicker,
     modelPicker,
     reasoningPicker,
     transcriptSearchOpen,
@@ -3804,6 +3879,19 @@ export function App({
       } else {
         setPhase('创建会话分支');
         client.send({type: 'branch_session', title: args});
+      }
+    } else if (command.value === '/rewind') {
+      if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再回退会话。');
+      } else {
+        closeTransientSurfaces('rewind');
+        setRewindPoints([]);
+        setRewindChoice(0);
+        setRewindLoading(true);
+        setRewindError('');
+        setRewindPicker(true);
+        setPhase('读取历史消息');
+        client.send({type: 'rewind_points'});
       }
     } else if (command.value === '/export') {
       if (running || approval || question) {
@@ -4458,6 +4546,31 @@ export function App({
           setSessionQuery(value => value + text);
           setSessionChoice(0);
         }
+      }
+      return;
+    }
+    if (interactionFocus === 'rewind' && rewindPicker) {
+      if (key.escape) {
+        closeTransientSurfaces();
+        setPhase('就绪');
+      } else if (rewindError && character.toLowerCase() === 'r') {
+        setRewindLoading(true);
+        setRewindError('');
+        client.send({type: 'rewind_points'});
+      } else if (key.upArrow && rewindPoints.length) {
+        setRewindChoice(value => (value + rewindPoints.length - 1) % rewindPoints.length);
+      } else if (key.downArrow && rewindPoints.length) {
+        setRewindChoice(value => (value + 1) % rewindPoints.length);
+      } else if (key.return && rewindPoints.length) {
+        const selected = rewindPoints[rewindChoice];
+        setRewindLoading(true);
+        setPhase('创建安全会话分支');
+        client.send({
+          type: 'branch_session',
+          title: '',
+          messageId: selected?.messageId ?? null,
+          messageIndex: selected?.messageIndex,
+        });
       }
       return;
     }
@@ -5261,6 +5374,15 @@ export function App({
               maxVisible={Math.max(2, Math.min(6, (stdout.rows ?? 24) - 15))}
             />
           ) : null}
+          {rewindPicker ? (
+            <RewindPicker
+              points={rewindPoints}
+              selected={rewindChoice}
+              loading={rewindLoading}
+              error={rewindError}
+              maxVisible={Math.max(2, Math.min(7, (stdout.rows ?? 24) - 15))}
+            />
+          ) : null}
           {modelPicker ? (
             <ModelPicker
               models={filteredModels}
@@ -5314,7 +5436,7 @@ export function App({
             </Box>
           ) : null}
           {!question ? <WorkspaceGuard workspace={workspace} /> : null}
-          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || rewindPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput
