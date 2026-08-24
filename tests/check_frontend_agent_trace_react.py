@@ -1551,6 +1551,21 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentDeliveryCard.jsx",
+        'label: "验证通过"',
+        "delivery summary exposes verification success",
+    )
+    require(
+        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        'label: "未验证"',
+        "delivery summary distinguishes missing verification",
+    )
+    require(
+        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "查看失败步骤与恢复操作",
+        "failed delivery deep links to recovery context",
+    )
+    require(
+        "frontend/react/src/components/AgentDeliveryCard.jsx",
         "项已撤销",
         "delivery summary reports reverted changes",
     )

@@ -12,6 +12,16 @@ function changeMetrics(artifacts) {
   }), { added: 0, removed: 0 });
 }
 
+function deliveryState(verifications) {
+  if (!verifications.length) {
+    return { className: "unverified", label: "未验证" };
+  }
+  if (verifications.some((item) => item.status === "failed")) {
+    return { className: "failed", label: "验证失败" };
+  }
+  return { className: "passed", label: "验证通过" };
+}
+
 export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals = [] }) {
   const sourceArtifacts = useMemo(() => (
     Array.isArray(run?.artifacts)
@@ -24,6 +34,7 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
     [run?.verifications, trace],
   );
   const failedVerification = verifications.some((item) => item.status === "failed");
+  const delivery = deliveryState(verifications);
   const [expanded, setExpanded] = useState(failedVerification);
 
   useEffect(() => setArtifacts(sourceArtifacts), [sourceArtifacts]);
@@ -40,9 +51,6 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
     fileCount ? `${fileCount}个文件已更改` : "",
     externalCount ? `${externalCount}个链接已生成` : "",
     revertedCount ? `${revertedCount}项已撤销` : "",
-    verifications.length
-      ? `验证${verifications.filter((item) => item.status === "passed").length}/${verifications.length}`
-      : "",
   ].filter(Boolean).join(" · ");
   const title = artifacts.length ? "本轮交付" : "本轮验收";
 
@@ -81,11 +89,14 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
         </svg>
         <span className={"agent-delivery-card-copy"}>
           <strong>{title}</strong>
-          <small>{summary}</small>
+          {summary ? <span>{summary}</span> : null}
         </span>
         <span className={"agent-delivery-card-diff"} aria-label={"代码行变更"}>
           {metrics.added ? <b>{`+${metrics.added}`}</b> : null}
           {metrics.removed ? <i>{`−${metrics.removed}`}</i> : null}
+        </span>
+        <span className={`agent-delivery-card-status is-${delivery.className}`}>
+          {delivery.label}
         </span>
         <span className={"agent-delivery-card-state"}>{expanded ? "收起" : "查看"}</span>
       </button>
@@ -137,9 +148,17 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
             <button
               className={"agent-delivery-card-open"}
               type={"button"}
-              onClick={artifacts.length ? openArtifacts : () => openRunPanel("trace")}
+              onClick={failedVerification
+                ? () => openVerification(verifications.find((item) => item.status === "failed"))
+                : artifacts.length
+                  ? openArtifacts
+                  : () => openRunPanel("trace")}
             >
-              {artifacts.length ? "在运行面板查看全部" : "查看完整运行过程"}
+              {failedVerification
+                ? "查看失败步骤与恢复操作"
+                : artifacts.length
+                  ? "在运行面板查看全部"
+                  : "查看完整运行过程"}
             </button>
           ) : null}
         </div>

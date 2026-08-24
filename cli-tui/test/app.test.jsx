@@ -1673,6 +1673,16 @@ test('Ink app renders a live task summary and collapses it after completion', as
         inputSummary: stepId === 'step-model'
           ? JSON.stringify({estimatedTokenCount: 637})
           : undefined,
+        verification: stepId === 'step-tool'
+          ? {
+            id: 'verification:step-tool',
+            kind: 'check',
+            tool: 'git_diff_check',
+            status: 'passed',
+            exitCode: 0,
+            durationMs: 120,
+          }
+          : undefined,
         durationMs: 500,
       },
     });
@@ -1689,6 +1699,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(completedFrame, /已完成/);
   assert.match(completedFrame, /已完成并保存1个产物/);
   assert.match(completedFrame, /本轮交付/);
+  assert.match(completedFrame, /验证通过/);
   assert.match(completedFrame, /1个文件已更改/);
   assert.match(completedFrame, /已撤销\s+reports\/report\.md\s+\+12 · -2 · 512B/);
   assert.doesNotMatch(completedFrame, /本轮修改/);

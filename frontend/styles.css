@@ -10015,7 +10015,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 9px;
   padding: 12px 14px;
@@ -10059,9 +10059,9 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 720;
 }
 
-.agent-delivery-card-copy small {
+.agent-delivery-card-copy > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .agent-delivery-card-diff {
@@ -10085,6 +10085,26 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .agent-delivery-card-state {
   color: var(--muted);
   font-size: 12px;
+}
+
+.agent-delivery-card-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.agent-delivery-card-status.is-passed {
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
+.agent-delivery-card-status.is-failed {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
 }
 
 .agent-delivery-card-body {
@@ -10227,7 +10247,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 @media (max-width: 760px) {
   .agent-delivery-card > button {
-    grid-template-columns: 16px minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, 1fr) auto auto;
   }
 
   .agent-delivery-card-state {

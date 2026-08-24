@@ -1633,22 +1633,29 @@ const TranscriptRow = React.memo(function TranscriptRow({
     const externalCount = artifacts.filter(artifact => /^https?:\/\//i.test(String(artifact.url || artifact.href || ''))).length;
     const fileCount = artifacts.length - externalCount;
     const revertedCount = artifacts.filter(artifact => artifact.reverted).length;
+    const failedVerification = verifications.some(row => row.status === 'failed');
+    const deliveryStateLabel = verifications.length
+      ? failedVerification ? '验证失败' : '验证通过'
+      : '未验证';
+    const deliveryStateColor = failedVerification
+      ? ERROR
+      : verifications.length ? SUCCESS : MUTED;
     const summary = [
       fileCount ? `${fileCount}个文件已更改` : '',
       externalCount ? `${externalCount}个链接已生成` : '',
       revertedCount ? `${revertedCount}项已撤销` : '',
-      verifications.length
-        ? `验证${verifications.filter(row => row.status === 'passed').length}/${verifications.length}`
-        : '',
     ].filter(Boolean).join(' · ');
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1} marginLeft={1} borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingY={1}>
-        <Box>
-          <Text color={ACCENT}>⌁ </Text>
-          <Text color={PRIMARY} bold>{artifacts.length ? '本轮交付' : '本轮验收'}</Text>
-          <Text color={MUTED}>  {summary}</Text>
-          {added ? <Text color={SUCCESS}>  +{added}</Text> : null}
-          {removed ? <Text color={ERROR}>  -{removed}</Text> : null}
+        <Box justifyContent="space-between">
+          <Box>
+            <Text color={ACCENT}>⌁ </Text>
+            <Text color={PRIMARY} bold>{artifacts.length ? '本轮交付' : '本轮验收'}</Text>
+            {summary ? <Text color={MUTED}>  {summary}</Text> : null}
+            {added ? <Text color={SUCCESS}>  +{added}</Text> : null}
+            {removed ? <Text color={ERROR}>  -{removed}</Text> : null}
+          </Box>
+          <Text color={deliveryStateColor} bold={failedVerification}>{deliveryStateLabel}</Text>
         </Box>
         {artifacts.slice(0, 4).map((artifact, index) => {
           const operation = artifact.reverted
@@ -1683,6 +1690,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
             ))}
           </Box>
         ) : null}
+        {failedVerification ? <Text color={ERROR}>  Ctrl+E查看失败步骤与恢复操作</Text> : null}
         {artifacts.length ? <Text color={MUTED}>  Ctrl+G查看diff与安全撤销</Text> : null}
       </Box>
     );
