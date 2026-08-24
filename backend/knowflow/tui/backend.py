@@ -669,9 +669,13 @@ class TuiBackend:
         question: str,
         event_sink: AgentEventSink,
         reasoning_effort: str = "default",
+        execution_mode: str = "auto",
         attachment_paths: list[str] | None = None,
     ) -> AgentExecution:
         self.reasoning_effort = str(reasoning_effort or "default")
+        execution_mode = (
+            "plan_only" if execution_mode == "plan_only" else "auto"
+        )
         runtime_question = question_with_workspace_attachments(
             question,
             attachment_paths,
@@ -683,6 +687,7 @@ class TuiBackend:
                     "sessionId": self.session_id,
                     "chatModelConfigId": self.model_id,
                     "reasoningEffort": self.reasoning_effort,
+                    "executionMode": execution_mode,
                     "autoAgent": True,
                     "enableTools": self.tools,
                     "skillId": self.skill_id,
@@ -700,6 +705,7 @@ class TuiBackend:
                 context_metadata=self.context_metadata,
                 tools=self.tools,
                 reasoning_effort=self.reasoning_effort,
+                execution_mode=execution_mode,
                 event_sink=event_sink,
             )
         self._finish(execution)

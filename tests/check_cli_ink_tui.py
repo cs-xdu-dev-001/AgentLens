@@ -29,6 +29,7 @@ class FakeBackend:
         self.selected_model_id = 1
         self.workspace_undo_args = None
         self.reasoning_effort = "default"
+        self.execution_mode = "auto"
         self.attachment_paths = []
 
     def command_catalog(self):
@@ -68,8 +69,16 @@ class FakeBackend:
         self.model_label = selected["name"]
         return selected
 
-    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
         self.reasoning_effort = reasoning_effort
+        self.execution_mode = execution_mode
         self.attachment_paths = list(attachment_paths or [])
         event_sink({"type": "text_delta", "text": "回答"})
         return AgentExecution(
@@ -228,8 +237,16 @@ class ApprovalBackend(FakeBackend):
         super().__init__()
         self.decisions: list[str] = []
 
-    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
         self.reasoning_effort = reasoning_effort
+        self.execution_mode = execution_mode
         self.attachment_paths = list(attachment_paths or [])
         approval = {
             "type": "approval_required",
@@ -253,7 +270,15 @@ class ApprovalBackend(FakeBackend):
 
 
 class FailureBackend(FakeBackend):
-    def run(self, question, event_sink, reasoning_effort="default", attachment_paths=None):
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
+        self.execution_mode = execution_mode
         self.attachment_paths = list(attachment_paths or [])
         event_sink(
             {
@@ -296,6 +321,7 @@ def main() -> None:
         "requestId": "turn-1",
         "text": "你好",
         "reasoningEffort": "high",
+        "executionMode": "plan_only",
         "attachmentPaths": ["README.md", "docs/product brief.md"],
     })
     rows = wait_for(output, "turn_completed")
@@ -306,6 +332,7 @@ def main() -> None:
     )
     assert any(row.get("answer") == "回答" for row in rows)
     assert backend.reasoning_effort == "high"
+    assert backend.execution_mode == "plan_only"
     assert backend.attachment_paths == ["README.md", "docs/product brief.md"]
     assert question_with_workspace_attachments(
         "检查文档",

@@ -39,6 +39,7 @@ from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
 from .mcp_oauth import McpOAuthCoordinator
 from .skill_runtime import SkillActivationSession
+from .task_planner import parse_execution_mode, register_task_planner
 from .web_fetch import PublicWebFetcher
 from .web_search import TavilyWebSearch
 from .workspace_runtime import (
@@ -951,12 +952,23 @@ class LocalAgentRuntime:
         context_metadata: dict[str, Any] | None = None,
         tools: bool = True,
         reasoning_effort: str = "default",
+        execution_mode: str = "auto",
         run_id: str | None = None,
         approval_decision: str | None = None,
         resume_value: Any = None,
         resume_from_checkpoint: bool = False,
         event_sink: AgentEventSink | None = None,
     ) -> AgentExecution:
+        command_mode, normalized_task = parse_execution_mode(task)
+        execution_mode = (
+            "plan_only"
+            if command_mode == "plan_only" or execution_mode == "plan_only"
+            else "auto"
+        )
+        if command_mode == "plan_only":
+            task = normalized_task
+        if execution_mode == "plan_only" and not task.strip():
+            raise ValueError("计划模式需要一个具体任务。")
         config = {
             **gateway_config(self.config_store.load()),
             "reasoning_effort": reasoning_effort,
@@ -967,6 +979,15 @@ class LocalAgentRuntime:
             messages.append(self._system_message(self.workspace))
         elif messages[0].get("role") == "system":
             messages[0] = self._system_message(self.workspace)
+        else:
+            messages.insert(0, self._system_message(self.workspace))
+        if execution_mode == "plan_only":
+            messages[0]["content"] += (
+                "\nYou are in Plan Mode. Inspect read-only context as needed. "
+                "Do not modify files, execute shell commands, or perform the plan. "
+                "You must finish by calling create_task_plan with 2 to 8 concise, "
+                "public steps."
+            )
         transcript_messages = list(transcript if transcript is not None else messages)
         if not transcript_messages:
             transcript_messages.append(self._system_message(self.workspace))
@@ -1000,6 +1021,7 @@ class LocalAgentRuntime:
             messages=transcript_messages,
             contextMessages=messages,
             compaction=dict(context_metadata or {}),
+            executionMode=execution_mode,
         )
 
         def emit(event: dict[str, Any]) -> None:
@@ -1122,6 +1144,7 @@ class LocalAgentRuntime:
                 emit(artifact)
 
         memory_provider = self.extensions.memory_provider()
+        plan_snapshot: dict[str, Any] | None = None
         emit({
             "type": "run_started",
             "runId": identifier,
@@ -1174,6 +1197,29 @@ class LocalAgentRuntime:
                     cancel_check=cancel_event.is_set,
                     mcp_pool=mcp_pool,
                 )
+                if execution_mode == "plan_only":
+                    for tool_name in registry.names():
+                        definition = registry.definition(tool_name)
+                        if (
+                            definition is None
+                            or not definition.read_only
+                            or definition.destructive
+                        ):
+                            registry.unregister(tool_name)
+
+                    def capture_plan(snapshot: dict[str, Any]) -> None:
+                        nonlocal plan_snapshot
+                        plan_snapshot = dict(snapshot)
+                        emit(
+                            {
+                                "type": "plan_created",
+                                "runId": identifier,
+                                "plan": plan_snapshot,
+                                "executionMode": "plan_only",
+                            }
+                        )
+
+                    register_task_planner(registry, capture_plan)
                 available_skill_dependencies = set(registry.names())
                 available_skill_dependencies.update(
                     str(server.get("slug") or "")
@@ -1187,7 +1233,11 @@ class LocalAgentRuntime:
                     user_id=LOCAL_USER_ID,
                     available_tools=available_skill_dependencies,
                 )
-                catalog = activation.catalog() if tools else []
+                catalog = (
+                    activation.catalog()
+                    if tools and execution_mode != "plan_only"
+                    else []
+                )
                 if catalog:
                     activation.register_activation_tool(registry)
                     if approval_decision is None:
@@ -1276,6 +1326,23 @@ class LocalAgentRuntime:
                 current = self._cancel_events.get(identifier)
                 if current is cancel_event:
                     self._cancel_events.pop(identifier, None)
+        if execution_mode == "plan_only" and not result.paused:
+            if plan_snapshot:
+                steps = [
+                    str(step.get("title") or "").strip()
+                    for step in plan_snapshot.get("steps") or []
+                    if isinstance(step, dict)
+                    and str(step.get("title") or "").strip()
+                ]
+                result.answer = "\n".join(
+                    ["计划已生成，本轮未执行修改。", ""]
+                    + [f"{index}. {title}" for index, title in enumerate(steps, 1)]
+                    + ["", "切换到询问或自动编辑模式后，再确认执行。"]
+                )
+            elif result.answer:
+                result.answer = (
+                    "计划模式未执行任何修改。\n\n" + result.answer
+                )
         if result.paused:
             interrupt = result.interrupt or {}
             tool_call_id = str(
@@ -1335,7 +1402,12 @@ class LocalAgentRuntime:
                     pendingQuestion=None,
                 )
         else:
-            if memory_provider is not None and memory_task and result.answer:
+            if (
+                execution_mode != "plan_only"
+                and memory_provider is not None
+                and memory_task
+                and result.answer
+            ):
                 emit(
                     {
                         "type": "memory_started",
@@ -1387,6 +1459,7 @@ class LocalAgentRuntime:
                 compaction=dict(context_metadata or {}),
                 pendingApproval=None,
                 pendingQuestion=None,
+                executionMode=execution_mode,
                 **self._session_workspace_fields(),
                 changes=self.workspace.diff(run_id=identifier).get("files", []),
             )
@@ -1399,6 +1472,7 @@ class LocalAgentRuntime:
                 "messages": messages,
                 "transcriptMessages": transcript_messages,
                 "compaction": dict(context_metadata or {}),
+                "executionMode": execution_mode,
             },
             events=events,
         )

@@ -1,5 +1,10 @@
 export const COMPOSER_PERMISSION_MODES = Object.freeze([
   {
+    id: "plan",
+    label: "计划",
+    description: "只分析并制定计划，不执行修改",
+  },
+  {
     id: "ask",
     label: "询问",
     description: "写入和命令执行前确认",

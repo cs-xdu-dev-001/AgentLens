@@ -96,6 +96,7 @@ test('commands merge dynamic entries and prefer exact or prefix matches', () => 
   ]);
   assert.equal(commands[0].value, '/tool:read-file');
   assert.equal(commandSuggestions('/perm', commands)[0].value, '/permissions');
+  assert.equal(commandSuggestions('/pla', commands)[0].value, '/plan');
   assert.equal(commandSuggestions('/read', commands)[0].value, '/tool:read-file');
   assert.equal(commandCategoryLabel(commandSuggestions('/perm', commands)[0]), '安全');
   assert.equal(commandCategoryLabel(commands[0]), '工具');

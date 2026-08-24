@@ -25,6 +25,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/edit', description: '取回上一条任务继续修改', source: 'builtin', category: '会话'},
   {value: '/copy', description: '复制最近回答或其中的代码块', source: 'builtin', category: '会话', argumentHint: '[answer | code [序号]]'},
   {value: '/continue', description: '从最近失败点继续', source: 'builtin', category: '恢复'},
+  {value: '/plan', description: '切换计划模式，或只为指定任务制定计划', source: 'builtin', category: '安全', argumentHint: '[任务]'},
   {value: '/permissions', description: '切换权限模式', source: 'builtin', category: '安全', aliases: ['/allowed-tools']},
   {value: '/tools', description: '查看本地工具状态', source: 'builtin', category: '扩展'},
   {value: '/tools:configure', description: '查看联网搜索配置方法', source: 'builtin', category: '扩展'},

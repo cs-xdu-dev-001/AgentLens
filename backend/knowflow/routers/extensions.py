@@ -709,6 +709,15 @@ def execute_agent_chat(
                 cancel_event=cancel_event,
                 run_id=durable_run_id,
             )
+            if execution_mode == "plan_only":
+                for tool_name in registry.names():
+                    definition = registry.definition(tool_name)
+                    if (
+                        definition is None
+                        or not definition.read_only
+                        or definition.destructive
+                    ):
+                        registry.unregister(tool_name)
             available_skill_dependencies = set(registry.names())
             if payload.enableTools:
                 available_skill_dependencies.update(
@@ -771,7 +780,7 @@ def execute_agent_chat(
             history = get_recent_history(session_id)
 
             catalog = []
-            if payload.skillId is None:
+            if payload.skillId is None and execution_mode != "plan_only":
                 catalog = activation.catalog()
                 if catalog:
                     activation.register_activation_tool(registry)

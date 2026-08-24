@@ -158,7 +158,7 @@ test('retry request snapshots preserve mode, display text, and reasoning effort'
   const snapshot = turnRequestSnapshot(
     '检查完整工作区',
     '[粘贴内容 #1 +20行]',
-    {mode: 'prompt', reasoningEffort: 'high', attachmentPaths: ['README.md']},
+    {mode: 'prompt', reasoningEffort: 'high', permissionMode: 'plan', attachmentPaths: ['README.md']},
   );
   assert.deepEqual(retryTurnRequest('检查完整工作区', snapshot, 'low'), snapshot);
   assert.deepEqual(retryTurnRequest('!echo ok', snapshot, 'medium'), {
@@ -166,6 +166,7 @@ test('retry request snapshots preserve mode, display text, and reasoning effort'
     displayText: 'echo ok',
     mode: 'shell',
     reasoningEffort: 'medium',
+    permissionMode: 'ask',
     attachmentPaths: [],
   });
 });
@@ -513,7 +514,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 10,
+      protocolVersion: 11,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -768,6 +769,7 @@ test('workspace context attachments stay visible and travel with submit, queue, 
     requestId: 'turn-1',
     text: '检查这个组件',
     reasoningEffort: 'default',
+    executionMode: 'auto',
     attachmentPaths: ['src/app.jsx'],
   });
   assert.match(view.lastFrame(), /上下文：src\/app\.jsx/);
@@ -1040,7 +1042,28 @@ test('reasoning picker changes the session effort and forwards it with submissio
     requestId: 'turn-1',
     text: '检查复杂问题',
     reasoningEffort: 'high',
+    executionMode: 'auto',
   });
+});
+
+test('plan command switches the session to read-only planning and forwards execution mode', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.38.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/plan 先检查当前工作区再给出改造步骤');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'submit',
+    requestId: 'turn-1',
+    text: '先检查当前工作区再给出改造步骤',
+    reasoningEffort: 'default',
+    executionMode: 'plan_only',
+  });
+  assert.match(view.lastFrame(), /计划 · Shift\+Tab切换/);
 });
 
 test('opening a new picker replaces the previous keyboard owner', async t => {
@@ -1287,7 +1310,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 10,
+    protocolVersion: 11,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],

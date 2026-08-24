@@ -15,6 +15,10 @@ import {
   shouldProcessAgentEvent,
 } from "./agentEvents.js";
 import { isActiveRun } from "./agentRunState.js";
+import {
+  readComposerPermissionMode,
+  setComposerPermissionMode,
+} from "../components/composerPermissions.js";
 
 export { mergeAgentToolCall as mergeToolCall } from "./agentEvents.js";
 
@@ -441,6 +445,7 @@ export function createChatFlow({
         ? Number(state.selectedChatModelConfigId)
         : null,
       reasoningEffort: state.selectedReasoningEffort || "default",
+      permissionMode: readComposerPermissionMode(),
       attachments: state.chatAttachments.map(
         ({ attachmentId, filename, fileType, mimeType, content, previewUrl }) => ({
           attachmentId,
@@ -504,6 +509,9 @@ export function createChatFlow({
       ? String(request.chatModelConfigId)
       : "";
     state.selectedReasoningEffort = request.reasoningEffort || "default";
+    if (request.permissionMode) {
+      setComposerPermissionMode(request.permissionMode);
+    }
     requestComposerReset({
       focus: true,
       question: request.question,
@@ -871,6 +879,9 @@ export function createChatFlow({
       ?? queuedRequest?.reasoningEffort
       ?? state.selectedReasoningEffort
       ?? "default";
+    const permissionMode = retryRequest?.payload?.executionMode === "plan_only"
+      ? "plan"
+      : queuedRequest?.permissionMode ?? readComposerPermissionMode();
     const skillId = retryRequest?.payload?.skillId ?? queuedRequest?.skillId ?? options.skillId ?? null;
     const attachments =
       retryRequest?.payload?.attachments ||
@@ -889,6 +900,7 @@ export function createChatFlow({
       question,
       chatModelConfigId,
       reasoningEffort,
+      executionMode: permissionMode === "plan" ? "plan_only" : "auto",
       useRag: Boolean(knowledgeBaseId),
       enableTools: true,
       autoAgent: true,

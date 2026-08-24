@@ -10,6 +10,7 @@ import {
 import {
   clearApprovalSessionGrants,
   cycleComposerPermissionMode,
+  setComposerPermissionMode,
 } from "./composerPermissions.js";
 import {
   applyWorkspaceMention,
@@ -478,6 +479,20 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-composer-model-open", {
         detail: { focus: "context" },
       }));
+      return;
+    }
+    if (command.action === "plan") {
+      setComposerPermissionMode("plan");
+      const task = String(args || "").trim();
+      if (task) {
+        const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
+          detail: {
+            question: task,
+            skillId: selectedSkill?.id ?? null,
+          },
+        });
+        window.dispatchEvent(submitEvent);
+      }
       return;
     }
     if (command.action === "permissions") {

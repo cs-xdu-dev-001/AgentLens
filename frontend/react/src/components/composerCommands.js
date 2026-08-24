@@ -82,9 +82,16 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "context",
   },
   {
+    value: "/plan",
+    label: "计划模式",
+    description: "只分析并制定计划，不执行修改",
+    category: "会话",
+    action: "plan",
+  },
+  {
     value: "/permissions",
     label: "权限模式",
-    description: "选择询问、自动编辑或完全访问",
+    description: "选择计划、询问、自动编辑或完全访问",
     category: "会话",
     action: "permissions",
   },

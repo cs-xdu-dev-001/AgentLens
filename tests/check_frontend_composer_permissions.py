@@ -23,8 +23,8 @@ def main() -> None:
     styles = "frontend/styles.css"
     tui = "cli-tui/src/app.jsx"
 
-    for token in ('id: "ask"', 'id: "auto_edit"', 'id: "full_access"'):
-        require(policy, token, "three-level permission policy")
+    for token in ('id: "plan"', 'id: "ask"', 'id: "auto_edit"', 'id: "full_access"'):
+        require(policy, token, "four-level permission policy")
     require(policy, 'autoEdit: "auto_edit"', "legacy auto-edit migration")
     require(policy, 'bypass: "full_access"', "legacy full-access migration")
     require(policy, "window.sessionStorage", "browser-session scope")
@@ -43,6 +43,9 @@ def main() -> None:
     require(composer, "cycleComposerPermissionMode", "Shift+Tab mode cycle")
     require(composer, "clearApprovalSessionGrants", "session grant reset owner")
     require(commands, 'value: "/permissions"', "permission slash command")
+    require(commands, 'value: "/plan"', "plan slash command")
+    require("frontend/react/src/controller/chatFlow.js", 'executionMode: permissionMode === "plan" ? "plan_only" : "auto"', "plan request projection")
+    require("backend/knowflow/routers/extensions.py", 'payload.skillId is None and execution_mode != "plan_only"', "plan mode skill activation boundary")
     require(approval, "subscribeComposerPermissionMode", "live policy updates")
     require(approval, 'handleDecision("allow_once")', "automatic approval submission")
     require(approval, 'handleDecision("allow_session")', "session approval action")
@@ -66,6 +69,7 @@ def main() -> None:
 } from "./frontend/react/src/components/composerPermissions.js";
 
 if (normalizeComposerPermissionMode("invalid") !== "ask") process.exit(1);
+if (permissionModeAllowsApproval("plan", {risk: "write"})) process.exit(13);
 if (permissionModeAllowsApproval("ask", {risk: "write"})) process.exit(2);
 if (!permissionModeAllowsApproval("auto_edit", {risk: "write", destructive: false})) process.exit(3);
 if (permissionModeAllowsApproval("auto_edit", {risk: "write", destructive: true})) process.exit(4);

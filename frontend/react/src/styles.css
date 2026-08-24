@@ -14503,6 +14503,10 @@ select {
   color: var(--warning) !important;
 }
 
+.composer-permission-picker.mode-plan .composer-permission-trigger {
+  color: var(--accent) !important;
+}
+
 .composer-permission-picker.mode-full_access .composer-permission-trigger {
   color: var(--danger) !important;
 }

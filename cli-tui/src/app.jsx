@@ -146,6 +146,11 @@ function queuedPromptReasoning(item) {
     : 'default';
 }
 
+function queuedPromptPermission(item) {
+  const value = typeof item === 'object' ? String(item?.permissionMode ?? '') : '';
+  return PERMISSION_MODES.some(mode => mode.id === value) ? value : 'ask';
+}
+
 function queuedPromptAttachments(item) {
   if (typeof item !== 'object' || !Array.isArray(item?.attachmentPaths)) return [];
   return [...new Set(item.attachmentPaths.map(path => String(path ?? '').trim()).filter(Boolean))].slice(0, 8);
@@ -173,6 +178,7 @@ export function turnRequestSnapshot(text, displayText = text, options = {}) {
     displayText: String(displayText ?? text ?? ''),
     mode: options?.mode === 'shell' ? 'shell' : 'prompt',
     reasoningEffort: String(options?.reasoningEffort || 'default'),
+    permissionMode: queuedPromptPermission(options),
     attachmentPaths: queuedPromptAttachments(options),
   };
 }
@@ -357,6 +363,7 @@ export function transcriptSearchMatches(items = [], query = '') {
 }
 
 const PERMISSION_MODES = [
+  {id: 'plan', label: '计划', detail: '只分析并制定计划，不执行修改'},
   {id: 'ask', label: '询问', detail: '写入和命令执行前确认'},
   {id: 'auto_edit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
   {id: 'full_access', label: '完全访问', detail: '本会话自动执行，仍受工作区与沙箱限制'},
@@ -2457,6 +2464,24 @@ export function App({
         } else if (eventName === 'runtime.warning') {
           appendItem('assistant', `⚠ ${event.message ?? '运行时已降级，本轮任务仍会继续。'}`);
           setPhase('临时模式运行');
+        } else if (eventName === 'run.plan_created' || event.type === 'plan_created') {
+          const planSteps = Array.isArray(event.plan?.steps) ? event.plan.steps : [];
+          let nextTraceSteps = traceStepsRef.current;
+          planSteps.forEach((step, index) => {
+            nextTraceSteps = traceStepFromEvent(nextTraceSteps, {
+              eventName: 'step.waiting',
+              stepId: `plan-${index + 1}`,
+              kind: String(step?.kind || 'reasoning'),
+              name: 'task_plan',
+              status: 'waiting',
+              title: String(step?.title || `计划步骤${index + 1}`),
+              details: {toolName: step?.tool_name || null},
+            });
+          });
+          traceStepsRef.current = nextTraceSteps;
+          setTraceSteps(nextTraceSteps);
+          setTaskExpanded(true);
+          setPhase(`计划已生成 · ${planSteps.length}步`);
         } else if (eventName === 'artifact.created' || eventName === 'artifact.updated') {
           setPhase('整理运行产物');
         } else if (eventName === 'error.raised' || eventName === 'run.failed') {
@@ -3048,12 +3073,19 @@ export function App({
     const displayText = queuedPromptDisplay(next);
     const mode = queuedPromptMode(next);
     const turnReasoningEffort = queuedPromptReasoning(next);
+    const turnPermissionMode = queuedPromptPermission(next);
     const turnAttachmentPaths = queuedPromptAttachments(next);
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
-      : {type: 'submit', requestId, text, reasoningEffort: turnReasoningEffort};
+      : {
+        type: 'submit',
+        requestId,
+        text,
+        reasoningEffort: turnReasoningEffort,
+        executionMode: turnPermissionMode === 'plan' ? 'plan_only' : 'auto',
+      };
     if (mode === 'prompt' && turnAttachmentPaths.length) {
       message.attachmentPaths = turnAttachmentPaths;
     }
@@ -3094,7 +3126,12 @@ export function App({
     lastTurnRequestRef.current = turnRequestSnapshot(
       text,
       mode === 'shell' ? text : displayText,
-      {mode, reasoningEffort: turnReasoningEffort, attachmentPaths: turnAttachmentPaths},
+      {
+        mode,
+        reasoningEffort: turnReasoningEffort,
+        permissionMode: turnPermissionMode,
+        attachmentPaths: turnAttachmentPaths,
+      },
     );
     lastQuestionRef.current = historyText;
     setLastQuestion(historyText);
@@ -3299,7 +3336,7 @@ export function App({
     setHistorySearchChoice(0);
   }, [replacePastedContents, updateComposer]);
 
-  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next', mode = 'prompt', turnReasoningEffort = reasoningEffort, attachmentPaths = []) => {
+  const enqueuePrompt = useCallback((text, displayText = text, priority = 'next', mode = 'prompt', turnReasoningEffort = reasoningEffort, attachmentPaths = [], turnPermissionMode = permissionMode) => {
     const normalizedPriority = Object.hasOwn(QUEUE_PRIORITIES, priority) ? priority : 'next';
     queueSequenceRef.current += 1;
     const item = {
@@ -3309,11 +3346,14 @@ export function App({
       sequence: queueSequenceRef.current,
       mode: mode === 'shell' ? 'shell' : 'prompt',
       reasoningEffort: String(turnReasoningEffort || 'default'),
+      permissionMode: PERMISSION_MODES.some(item => item.id === turnPermissionMode)
+        ? turnPermissionMode
+        : 'ask',
       attachmentPaths: mode === 'shell' ? [] : queuedPromptAttachments({attachmentPaths}),
     };
     setQueue(items => orderedQueue([...items, item]));
     return item;
-  }, [reasoningEffort]);
+  }, [permissionMode, reasoningEffort]);
 
   const requestImmediateQueueRun = useCallback(() => {
     if (!running || queueInterruptRequestRef.current) return false;
@@ -3351,6 +3391,9 @@ export function App({
     const bypassQueuePause = options?.bypassQueuePause === true;
     const mode = options?.mode === 'shell' ? 'shell' : 'prompt';
     const turnReasoningEffort = String(options?.reasoningEffort || reasoningEffort || 'default');
+    const turnPermissionMode = PERMISSION_MODES.some(item => item.id === options?.permissionMode)
+      ? options.permissionMode
+      : permissionMode;
     const turnAttachmentPaths = mode === 'shell'
       ? []
       : queuedPromptAttachments({
@@ -3369,7 +3412,15 @@ export function App({
       return;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
-      enqueuePrompt(text, publicDisplayText, 'next', mode, turnReasoningEffort, turnAttachmentPaths);
+      enqueuePrompt(
+        text,
+        publicDisplayText,
+        'next',
+        mode,
+        turnReasoningEffort,
+        turnAttachmentPaths,
+        turnPermissionMode,
+      );
       if (mode === 'prompt') setAttachedPaths([]);
       setPhase(queuePaused
         ? `队列已暂停 · 待发送${queue.length + 1}个任务`
@@ -3380,12 +3431,26 @@ export function App({
     const requestId = `turn-${requestCounter.current}`;
     const message = mode === 'shell'
       ? {type: 'shell', requestId, command: text}
-      : {type: 'submit', requestId, text, reasoningEffort: turnReasoningEffort};
+      : {
+        type: 'submit',
+        requestId,
+        text,
+        reasoningEffort: turnReasoningEffort,
+        executionMode: turnPermissionMode === 'plan' ? 'plan_only' : 'auto',
+      };
     if (mode === 'prompt' && turnAttachmentPaths.length) {
       message.attachmentPaths = turnAttachmentPaths;
     }
     if (!client.send(message)) {
-      enqueuePrompt(text, publicDisplayText, 'now', mode, turnReasoningEffort, turnAttachmentPaths);
+      enqueuePrompt(
+        text,
+        publicDisplayText,
+        'now',
+        mode,
+        turnReasoningEffort,
+        turnAttachmentPaths,
+        turnPermissionMode,
+      );
       if (mode === 'prompt') setAttachedPaths([]);
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
@@ -3423,6 +3488,7 @@ export function App({
     lastTurnRequestRef.current = turnRequestSnapshot(text, displayText, {
       mode,
       reasoningEffort: turnReasoningEffort,
+      permissionMode: turnPermissionMode,
       attachmentPaths: turnAttachmentPaths,
     });
     lastQuestionRef.current = historyText;
@@ -3431,7 +3497,7 @@ export function App({
     setHistoryIndex(-1);
     appendItem('user', userTurnDisplay(publicDisplayText, turnAttachmentPaths));
     if (mode === 'prompt') setAttachedPaths([]);
-  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
+  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
 
   const resumeRun = useCallback((runId, title = '') => {
     const identifier = String(runId ?? '').trim();
@@ -3727,6 +3793,14 @@ export function App({
       setQueuePaused(false);
       if (resumable) resumeRun(resumable);
       else if (!queue.length) appendItem('error', '没有可继续的失败、中断会话或排队任务。');
+    } else if (command.value === '/plan') {
+      setPermissionMode('plan');
+      permissionRef.current = 'plan';
+      if (args.trim()) {
+        startTurn(args.trim(), args.trim(), {permissionMode: 'plan'});
+      } else {
+        showComposerNotice('已切换到计划模式：只分析并制定计划，不执行修改');
+      }
     } else if (command.value === '/permissions') {
       setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
       closeTransientSurfaces('permissions');
@@ -3848,6 +3922,7 @@ export function App({
             bypassQueuePause: true,
             mode: retry.mode,
             reasoningEffort: retry.reasoningEffort,
+            permissionMode: retry.permissionMode,
             attachmentPaths: retry.attachmentPaths,
           });
         }
@@ -3872,6 +3947,7 @@ export function App({
           ].join('\n'), undefined, {
             bypassQueuePause: true,
             reasoningEffort: retry.reasoningEffort,
+            permissionMode: retry.permissionMode,
             attachmentPaths: retry.attachmentPaths,
           });
         }
@@ -3901,6 +3977,7 @@ export function App({
         ].join('\n'), undefined, {
           bypassQueuePause: true,
           reasoningEffort: retry.reasoningEffort,
+          permissionMode: retry.permissionMode,
           attachmentPaths: retry.attachmentPaths,
         });
       }
@@ -4070,6 +4147,7 @@ export function App({
           bypassQueuePause: true,
           mode: retry.mode,
           reasoningEffort: retry.reasoningEffort,
+          permissionMode: retry.permissionMode,
           attachmentPaths: retry.attachmentPaths,
         });
       }
@@ -4099,6 +4177,7 @@ export function App({
     ].join('\n'), undefined, {
       bypassQueuePause: true,
       reasoningEffort: retry.reasoningEffort,
+      permissionMode: retry.permissionMode,
       attachmentPaths: retry.attachmentPaths,
     });
   }, [appendItem, currentRunId, lastFailedRunId, lastQuestion, reasoningEffort, resumeRun, running, startTurn]);
@@ -4854,6 +4933,13 @@ export function App({
   });
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
+  const permissionColor = permissionMode === 'full_access'
+    ? ERROR
+    : permissionMode === 'auto_edit'
+      ? WARNING
+      : permissionMode === 'plan'
+        ? ACCENT
+        : MUTED;
   const narrow = (stdout.columns ?? 80) < 72;
   const currentSessionLabel = compactSessionHeaderLabel(currentSessionTitle, stdout.columns);
   const runHeader = approval || question
@@ -5136,7 +5222,7 @@ export function App({
                 ) : null}
               </Box>
               <Box justifyContent="space-between">
-                <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
+                <Text color={permissionColor}>{interactionStatus}</Text>
                 {!narrow ? (
                   <Text color={MUTED}>
                     {interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换${!fullscreenEnabled ? ' · 终端滚轮选择复制' : ''}` : 'Esc返回输入'}
@@ -5146,7 +5232,7 @@ export function App({
             </Box>
           ) : (
             <Box justifyContent="space-between" flexShrink={0}>
-              <Text color={permissionMode === 'full_access' ? ERROR : permissionMode === 'auto_edit' ? WARNING : MUTED}>{interactionStatus}</Text>
+              <Text color={permissionColor}>{interactionStatus}</Text>
               {!narrow ? (
                 <Text>
                   <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>

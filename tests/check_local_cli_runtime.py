@@ -273,6 +273,81 @@ def main() -> None:
         ]
         sandbox_runner.return_value.run.assert_called_once()
 
+    class PlanGateway:
+        def __init__(self):
+            self.tool_names: set[str] = set()
+
+        def complete(self, _messages, _config, **kwargs):
+            self.tool_names = {
+                str(item.get("function", {}).get("name") or "")
+                for item in (kwargs.get("tools") or [])
+            }
+            return {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_plan",
+                        "type": "function",
+                        "function": {
+                            "name": "create_task_plan",
+                            "arguments": json.dumps(
+                                {
+                                    "steps": [
+                                        {
+                                            "title": "检查现有实现",
+                                            "kind": "tool",
+                                            "tool_name": "read_workspace_file",
+                                        },
+                                        {
+                                            "title": "整理最小改造方案",
+                                            "kind": "answer",
+                                        },
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
+            }
+
+    with TemporaryDirectory() as folder:
+        root = Path(folder)
+        store = LocalCliConfigStore(root / "config")
+        store.save(
+            provider="custom",
+            base_url="https://gateway.example/v1",
+            model_name="agent-model",
+            api_mode="responses",
+            api_key="secret-value",
+        )
+        runtime = LocalAgentRuntime(
+            config_store=store,
+            workspace_root=root / "workspace",
+            data_root=root / "data",
+        )
+        gateway = PlanGateway()
+        runtime.engine._gateway = gateway
+        execution = runtime.run(
+            "检查项目并给出方案",
+            execution_mode="plan_only",
+        )
+        assert "计划已生成，本轮未执行修改" in execution.result["answer"]
+        assert "1. 检查现有实现" in execution.result["answer"]
+        assert "create_task_plan" in gateway.tool_names
+        assert "read_workspace_file" in gateway.tool_names
+        assert "write_workspace_file" not in gateway.tool_names
+        assert "edit_workspace_file" not in gateway.tool_names
+        assert "run_sandbox_command" not in gateway.tool_names
+        assert any(
+            event.get("eventName") == "run.plan_created"
+            for event in execution.events
+        )
+        loaded = runtime.load_session(execution.result["runId"])
+        assert loaded["executionMode"] == "plan_only"
+        assert loaded["changes"] == []
+
     class ReferenceGateway:
         def __init__(self):
             self.messages = []
