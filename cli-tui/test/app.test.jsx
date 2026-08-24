@@ -533,6 +533,23 @@ test('empty Escape retrieves the most recently queued prompt', async t => {
   assert.equal(client.sent.filter(item => item.type === 'submit').length, 1);
 });
 
+test('double Escape opens the rewind picker from an empty composer', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.54.1" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /再按一次Esc回到历史消息/);
+  assert.equal(client.sent.some(item => item.type === 'rewind_points'), false);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'rewind_points'});
+  assert.match(view.lastFrame(), /回到历史消息/);
+});
+
 test('now priority interrupts the active request and ignores its late terminal event', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);
@@ -2553,7 +2570,7 @@ test('workspace commands and resume picker use the runtime as source of truth', 
 
 test('startup resume opens the picker and continue restores the latest workspace session', async t => {
   const pickerClient = new FakeClient();
-  const picker = render(<App client={pickerClient} version="0.54.0" startupAction="resume" />);
+  const picker = render(<App client={pickerClient} version="0.54.1" startupAction="resume" />);
   t.after(() => picker.unmount());
   await waitForCondition(
     () => pickerClient.sent.some(message => message.type === 'sessions' && message.limit === 100),
@@ -2576,7 +2593,7 @@ test('startup resume opens the picker and continue restores the latest workspace
     history: [],
     models: [],
   }));
-  const continued = render(<App client={continueClient} version="0.54.0" startupAction="continue" />);
+  const continued = render(<App client={continueClient} version="0.54.1" startupAction="continue" />);
   t.after(() => continued.unmount());
   await waitForCondition(
     () => continueClient.sent.some(message => message.type === 'resume_session'),

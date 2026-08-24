@@ -64,6 +64,41 @@ const X10_MOUSE_INPUT = /(?:\u001b)?\[M[\x20-\x7f]{3}/g;
 const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 const PASTE_THRESHOLD = 800;
 const PASTE_REFERENCE_PATTERN = /\[粘贴内容 #(\d+) \+(\d+)行\]/g;
+const DOUBLE_PRESS_TIMEOUT_MS = 800;
+
+function useDoublePress(setPending, onDoublePress, onFirstPress) {
+  const lastPressRef = useRef(0);
+  const timeoutRef = useRef(null);
+
+  const clearPending = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }, []);
+
+  useEffect(() => clearPending, [clearPending]);
+
+  return useCallback(() => {
+    const now = Date.now();
+    const isDoublePress = now - lastPressRef.current <= DOUBLE_PRESS_TIMEOUT_MS
+      && timeoutRef.current !== null;
+    lastPressRef.current = now;
+
+    if (isDoublePress) {
+      clearPending();
+      setPending(false);
+      onDoublePress();
+      return;
+    }
+
+    onFirstPress?.();
+    setPending(true);
+    clearPending();
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      setPending(false);
+    }, DOUBLE_PRESS_TIMEOUT_MS);
+  }, [clearPending, onDoublePress, onFirstPress, setPending]);
+}
 
 function envEnabled(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
@@ -3633,6 +3668,25 @@ export function App({
     composerNoticeTimerRef.current = setTimeout(() => setComposerNotice(''), 2400);
   }, []);
 
+  const openRewindPicker = useCallback(() => {
+    closeTransientSurfaces('rewind');
+    setRewindPoints([]);
+    setRewindChoice(0);
+    setRewindLoading(true);
+    setRewindError('');
+    setRewindPicker(true);
+    setPhase('读取历史消息');
+    client.send({type: 'rewind_points'});
+  }, [client, closeTransientSurfaces]);
+
+  const handleEmptyEscape = useDoublePress(
+    pending => setComposerNotice(current => (
+      !pending && current === '再按一次Esc回到历史消息' ? '' : current
+    )),
+    openRewindPicker,
+    () => showComposerNotice('再按一次Esc回到历史消息'),
+  );
+
   const pushComposerUndo = useCallback(({coalesce = false} = {}) => {
     const now = Date.now();
     if (coalesce && composerUndoCoalescingRef.current && now - lastUndoPushRef.current < 350) return;
@@ -4161,14 +4215,7 @@ export function App({
       if (running || approval || question) {
         appendItem('error', '请等待当前任务和确认操作结束后再回退会话。');
       } else {
-        closeTransientSurfaces('rewind');
-        setRewindPoints([]);
-        setRewindChoice(0);
-        setRewindLoading(true);
-        setRewindError('');
-        setRewindPicker(true);
-        setPhase('读取历史消息');
-        client.send({type: 'rewind_points'});
+        openRewindPicker();
       }
     } else if (command.value === '/export') {
       if (running || approval || question) {
@@ -4444,7 +4491,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -5403,6 +5450,10 @@ export function App({
     if (key.escape && composerModeRef.current === 'shell' && !inputRef.current) {
       setComposerMode('prompt');
       showComposerNotice('已返回问答模式');
+      return;
+    }
+    if (key.escape && !inputRef.current && !running && !approval && !question) {
+      handleEmptyEscape();
       return;
     }
     if (!inputRef.current && history.length && key.upArrow) {
