@@ -215,7 +215,7 @@ class WorkspaceContext:
         warnings: list[str] = []
         if is_home:
             warnings.append(
-                "当前工作区是HOME目录。建议用knowflow chat --workspace <项目目录>进入真实项目，避免Agent只看到用户配置文件。"
+                "当前工作区是HOME目录。建议用agentlens chat --workspace <项目目录>进入真实项目，避免Agent只看到用户配置文件。"
             )
         elif not has_project_marker:
             warnings.append(

@@ -1582,7 +1582,7 @@ function workspaceText(workspace) {
 
 export function workspaceExecutionBlock(workspace) {
   if (!workspace || workspace.remote || workspace.workspaceKind !== 'home') return '';
-  return '当前工作区是HOME目录，任务未发送。请退出后运行：knowflow chat --workspace <项目目录>';
+  return '当前工作区是HOME目录，任务未发送。请退出后运行：agentlens chat --workspace <项目目录>';
 }
 
 function contextText(status) {
@@ -1741,7 +1741,7 @@ const ModelPicker = React.memo(function ModelPicker({models, selected, query, lo
       {!loading && !error && active ? (
         <Text color={MUTED} wrap="truncate-end">
           {'  '}{publicLabel(active.modelName, active.name, 100)} · {modelProtocolLabel(active.apiMode)}
-          {active.switchable === false ? ' · 采样参数由模型服务决定 · 运行knowflow configure修改' : ''}
+          {active.switchable === false ? ' · 采样参数由模型服务决定 · 运行agentlens configure修改' : ''}
         </Text>
       ) : null}
       <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter切换 · 输入搜索 · Esc关闭</Text>
@@ -1816,7 +1816,7 @@ const WorkspaceGuard = React.memo(function WorkspaceGuard({workspace}) {
     <Box paddingX={1} marginTop={1}>
       <Text color={WARNING} bold>未进入项目</Text>
       <Text color={MUTED}> · 重启：</Text>
-      <Text color={PRIMARY}>knowflow chat --workspace {'<项目目录>'}</Text>
+      <Text color={PRIMARY}>agentlens chat --workspace {'<项目目录>'}</Text>
     </Box>
   );
 });
@@ -1998,7 +1998,7 @@ function capabilityText(section, status) {
       ...names.slice(0, 20).map(name => `✓ ${name}`),
       names.length > 20 ? `另有${names.length - 20}个工具` : '',
       `web_search  ${web.configured ? (web.enabled ? '已启用' : '已停用') : '未配置'} · 联网搜索`,
-      web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：knowflow tools configure web-search',
+      web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：agentlens tools configure web-search',
     ].filter(Boolean).join('\n');
   }
   if (section === 'mcp') {
@@ -2007,7 +2007,7 @@ function capabilityText(section, status) {
     return [
       `MCP  ${mcp.connected ?? 0}/${mcp.count ?? servers.length}已连接`,
       ...servers.map(item => `${item.status === 'connected' ? '✓' : '·'} ${item.name}  ${item.status}  ${(item.enabledTools ?? []).length}个工具`),
-      servers.length ? '管理：knowflow mcp list' : '添加：knowflow mcp add <名称> <URL> --auth oauth',
+      servers.length ? '管理：agentlens mcp list' : '添加：agentlens mcp add <名称> <URL> --auth oauth',
     ].join('\n');
   }
   if (section === 'skills') {
@@ -2016,7 +2016,7 @@ function capabilityText(section, status) {
     return [
       `Skills  ${skills.count ?? items.length}个可用`,
       ...items.map(item => `✓ ${item.name ?? item.slug}  ${item.version ?? ''}  [${item.sourceKind ?? 'local'}]`),
-      '安装：knowflow skills install <目录或SKILL.md>',
+      '安装：agentlens skills install <目录或SKILL.md>',
     ].join('\n');
   }
   const memory = value.memory ?? {};
@@ -2029,7 +2029,7 @@ function capabilityText(section, status) {
       return content ? `${index + 1}. ${content.slice(0, 96)}${content.length > 96 ? '…' : ''}` : '';
     }).filter(Boolean),
     memory.enabled && memory.configured && !memories.length ? '当前还没有长期记忆。' : '',
-    memory.configured ? '管理：knowflow memory list|enable|disable' : '配置：knowflow memory configure',
+    memory.configured ? '管理：agentlens memory list|enable|disable' : '配置：agentlens memory configure',
   ].filter(Boolean).join('\n');
 }
 
@@ -3279,13 +3279,13 @@ export function App({
         setUpdating(false);
         setRestartRequired(true);
         const nextVersion = message.nextVersion || '最新版';
-        appendItem('assistant', `AgentLens CLI已更新到v${nextVersion}。退出并重新运行knowflow chat后生效。`);
+        appendItem('assistant', `AgentLens CLI已更新到v${nextVersion}。退出并重新运行agentlens chat后生效。`);
         setPhase('更新完成 · 重启生效');
         return;
       }
       if (message.type === 'cli_update_failed') {
         setUpdating(false);
-        appendItem('error', `更新失败：${message.message || '请稍后重试，或在终端运行knowflow update。'}`);
+        appendItem('error', `更新失败：${message.message || '请稍后重试，或在终端运行agentlens update。'}`);
         setPhase('更新失败');
         return;
       }
@@ -3686,7 +3686,7 @@ export function App({
       return false;
     }
     if (updating || restartRequired) {
-      appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行knowflow chat。');
+      appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行agentlens chat。');
       return false;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
@@ -3879,7 +3879,7 @@ export function App({
     } else if (command.value === '/model') {
       const [action, rawId] = args.trim().split(/\s+/, 2);
       if (action === 'config') {
-        appendItem('assistant', '本地模式运行knowflow configure修改模型；远程模式请到Web设置页管理模型配置。');
+        appendItem('assistant', '本地模式运行agentlens configure修改模型；远程模式请到Web设置页管理模型配置。');
       } else if (action === 'use') {
         if (!rawId) appendItem('error', '用法：/model use <ID>');
         else {
@@ -4155,15 +4155,15 @@ export function App({
       client.send({type: 'capabilities', section: command.value.slice(1)});
       setPhase(`读取${command.value.slice(1)}状态`);
     } else if (command.value === '/tools:configure') {
-      appendItem('assistant', '在另一个终端运行：knowflow tools configure web-search\nKey会隐藏输入并写入独立credentials.json。');
+      appendItem('assistant', '在另一个终端运行：agentlens tools configure web-search\nKey会隐藏输入并写入独立credentials.json。');
     } else if (command.value === '/mcp:add') {
-      appendItem('assistant', '添加OAuth MCP：knowflow mcp add <名称> <URL> --auth oauth\n添加后按提示运行knowflow mcp oauth <ID>。');
+      appendItem('assistant', '添加OAuth MCP：agentlens mcp add <名称> <URL> --auth oauth\n添加后按提示运行agentlens mcp oauth <ID>。');
     } else if (command.value === '/mcp:oauth') {
-      appendItem('assistant', '运行：knowflow mcp oauth <ID>\nCLI会打开浏览器并在本机回环地址接收OAuth回调。');
+      appendItem('assistant', '运行：agentlens mcp oauth <ID>\nCLI会打开浏览器并在本机回环地址接收OAuth回调。');
     } else if (command.value === '/skills:install') {
-      appendItem('assistant', '运行：knowflow skills install <目录或SKILL.md>');
+      appendItem('assistant', '运行：agentlens skills install <目录或SKILL.md>');
     } else if (command.value === '/memory:configure') {
-      appendItem('assistant', '运行：knowflow memory configure\n配置完成后运行knowflow memory enable。');
+      appendItem('assistant', '运行：agentlens memory configure\n配置完成后运行agentlens memory enable。');
     } else if (command.value === '/doctor') {
       client.send({type: 'doctor'});
       setPhase('检查SRT沙箱');
@@ -4198,7 +4198,7 @@ export function App({
         if (!client.send({type: 'cli_update'})) {
           setUpdating(false);
           setPhase('更新请求未发送');
-          appendItem('error', '运行时已断开，更新请求未发送。请退出后在终端运行knowflow update。');
+          appendItem('error', '运行时已断开，更新请求未发送。请退出后在终端运行agentlens update。');
         }
       }
     } else if (command.value === '/version') {
@@ -4777,7 +4777,7 @@ export function App({
           setModelPicker(false);
           setModelQuery('');
         } else if (selected?.switchable === false) {
-          setModelError('本地CLI只有当前配置；请运行knowflow configure修改模型。');
+          setModelError('本地CLI只有当前配置；请运行agentlens configure修改模型。');
         } else {
           setModelLoading(true);
           setModelError('');
@@ -5451,7 +5451,7 @@ export function App({
     composer: composerMode === 'shell'
       ? 'Shell模式 · 命令在SRT沙箱中运行 · Esc返回问答'
       : updating ? '正在更新CLI，完成后请重启'
-      : restartRequired ? '更新完成，退出并重新运行knowflow chat'
+      : restartRequired ? '更新完成，退出并重新运行agentlens chat'
       : running ? '继续输入会加入队列' : '输入任务，/查看命令 · !进入Shell',
   }[interactionFocus];
   const interactionStatus = interactionFocus === 'composer' || interactionFocus === 'commands'

@@ -189,6 +189,7 @@ def main() -> None:
     assert "def resume(" in cli_source
     assert "def list_models(" in cli_source
     assert "KNOWFLOW_CLI_USER_ID" in cli_source
+    assert 'agentlens = "knowflow.cli:main"' in pyproject
     assert 'knowflow = "knowflow.cli:main"' in pyproject
     extension_source = (
         ROOT / "backend" / "knowflow" / "routers" / "extensions.py"

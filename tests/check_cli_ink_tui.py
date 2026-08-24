@@ -570,7 +570,7 @@ def main() -> None:
         cli_module._installed_cli_version = original_installed_version
         ink_bridge_module.subprocess.run = original_update_run
     assert "ghp_secretvalue" not in str(failed_update_rows[-1])
-    assert "knowflow update" in failed_update_rows[-1]["message"]
+    assert "agentlens update" in failed_update_rows[-1]["message"]
 
     bridge.handle({"type": "reset"})
     assert backend.reset_count == 1

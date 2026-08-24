@@ -20,10 +20,11 @@ configuration = tomllib.loads(
 project = configuration["project"]
 assert project["name"] == "knowflow-ai"
 assert project["requires-python"] == ">=3.10"
+assert project["scripts"]["agentlens"] == "knowflow.cli:main"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.49.0"
-assert 'version="0.49.0"' in (ROOT / "backend" / "knowflow" / "app.py").read_text(encoding="utf-8")
+assert project["version"] == "0.50.0"
+assert 'version="0.50.0"' in (ROOT / "backend" / "knowflow" / "app.py").read_text(encoding="utf-8")
 package_data = configuration["tool"]["setuptools"]["package-data"]["knowflow"]
 assert "ink_tui/*.mjs" in package_data
 assert "ink_tui/*.txt" in package_data
@@ -82,6 +83,9 @@ assert 'run_pipx install --force "$PACKAGE_SPEC"' in installer
 assert "knowflow-ai[agent] @ git+" in installer
 assert "KNOWFLOW_CLI_SPEC" in installer
 assert '"pipx==1.16.1"' in installer
+assert '"$BIN_DIR/agentlens" --help' in installer
+assert '"$BIN_DIR/knowflow" --help' in installer
+assert "agentlens configure" in installer
 assert "sudo" not in installer
 assert "Node.js 22+" in installer
 

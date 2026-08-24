@@ -24,31 +24,31 @@ pipx install "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlo
 Configure a model and start the local TUI:
 
 ```bash
-knowflow configure
-knowflow chat
+agentlens configure
+agentlens chat
 ```
 
 Optional local capabilities:
 
 ```bash
-knowflow tools configure web-search
-knowflow mcp add notion https://mcp.notion.com/mcp --auth oauth
-knowflow skills install ./my-skill
-knowflow memory configure
+agentlens tools configure web-search
+agentlens mcp add notion https://mcp.notion.com/mcp --auth oauth
+agentlens skills install ./my-skill
+agentlens memory configure
 ```
 
 Use the legacy line-oriented interface when native terminal scrollback is more
 important than the full-screen UI:
 
 ```bash
-knowflow chat --plain
+agentlens chat --plain
 ```
 
 Connecting to an AgentLens Web deployment is optional:
 
 ```bash
-knowflow auth login https://ai.example.com
-knowflow chat --remote
+agentlens auth login https://ai.example.com
+agentlens chat --remote
 ```
 
 ## Upgrade and uninstall

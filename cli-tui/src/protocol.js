@@ -781,7 +781,7 @@ export class RuntimeClient extends EventEmitter {
           type: 'protocol_error',
           message: `Python运行时返回了非JSON事件：${redact(line, 300) || '空行'}`,
           stderr: [...this.stderr],
-          hint: '运行knowflow doctor --cli检查本地运行环境；如果刚更新过，请重新打开终端后再试。',
+          hint: '运行agentlens doctor --cli检查本地运行环境；如果刚更新过，请重新打开终端后再试。',
         });
       }
     });

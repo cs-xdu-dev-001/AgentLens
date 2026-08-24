@@ -168,7 +168,7 @@ class RemoteAgentClient:
             pass
         if response.status_code == 401:
             code = "authentication_required"
-            message = "登录已失效，请重新执行knowflow auth login。"
+            message = "登录已失效，请重新执行agentlens auth login。"
         return RemoteAgentError(code, message)
 
     def request(

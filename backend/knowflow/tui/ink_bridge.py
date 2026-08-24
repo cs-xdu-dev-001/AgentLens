@@ -424,7 +424,7 @@ class InkRuntimeBridge:
                 if result.returncode != 0:
                     raise RuntimeError(
                         f"pipx更新失败（退出码{result.returncode}）。"
-                        "请退出后在终端运行knowflow update查看详情。"
+                        "请退出后在终端运行agentlens update查看详情。"
                     )
                 self.send(
                     {
@@ -855,7 +855,7 @@ def _backend(config: dict[str, Any]) -> TuiBackend:
             else ""
         )
         if not token:
-            raise RuntimeError("远程登录已失效，请重新运行knowflow auth login。")
+            raise RuntimeError("远程登录已失效，请重新运行agentlens auth login。")
         remote = RemoteAgentClient(server, token=token)
         local_agent = None
     else:

@@ -76,7 +76,7 @@ test('model catalog keeps the active and recent models first and tolerates fuzzy
 test('home workspaces block execution while preserving remote and project workspaces', () => {
   assert.match(
     workspaceExecutionBlock({workspaceKind: 'home'}),
-    /knowflow chat --workspace <项目目录>/,
+    /agentlens chat --workspace <项目目录>/,
   );
   assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
   assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
@@ -2025,7 +2025,7 @@ test('final-only workspace changes render the same delivery card as artifact eve
 
 test('/diff and /undo reuse the interactive change panel before mutating files', async t => {
   const client = new FakeClient();
-  const view = render(<App client={client} version="0.49.0" />);
+  const view = render(<App client={client} version="0.50.0" />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 

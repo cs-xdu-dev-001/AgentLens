@@ -60,12 +60,19 @@ run_pipx install --force "$PACKAGE_SPEC" || fail "pipx安装失败。"
 run_pipx ensurepath >/dev/null 2>&1 || true
 
 BIN_DIR="${PIPX_BIN_DIR:-$HOME/.local/bin}"
-if [ -x "$BIN_DIR/knowflow" ]; then
-  "$BIN_DIR/knowflow" --help >/dev/null || fail "CLI安装后自检失败。"
-elif command -v knowflow >/dev/null 2>&1; then
-  knowflow --help >/dev/null || fail "CLI安装后自检失败。"
+if [ -x "$BIN_DIR/agentlens" ]; then
+  "$BIN_DIR/agentlens" --help >/dev/null || fail "CLI安装后自检失败。"
+elif command -v agentlens >/dev/null 2>&1; then
+  agentlens --help >/dev/null || fail "CLI安装后自检失败。"
 else
-  fail "CLI已安装，但未找到knowflow命令。"
+  fail "CLI已安装，但未找到agentlens命令。"
+fi
+if [ -x "$BIN_DIR/knowflow" ]; then
+  "$BIN_DIR/knowflow" --help >/dev/null || fail "旧版knowflow兼容命令自检失败。"
+elif command -v knowflow >/dev/null 2>&1; then
+  knowflow --help >/dev/null || fail "旧版knowflow兼容命令自检失败。"
+else
+  fail "CLI已安装，但缺少旧版knowflow兼容命令。"
 fi
 
 printf '\nAgentLens CLI安装完成。重新打开终端后运行：\n'
@@ -80,9 +87,10 @@ esac
 if [ "$NODE_MAJOR" -lt 22 ]; then
   printf '  提示：安装Node.js 22+后启用新版Ink界面；当前会回退Textual。\n'
 fi
-printf '  knowflow configure\n'
-printf '  knowflow doctor --cli\n'
-printf '  knowflow chat\n'
+printf '  agentlens configure\n'
+printf '  agentlens doctor --cli\n'
+printf '  agentlens chat\n'
+printf '  旧版knowflow命令仍可继续使用。\n'
 printf '\n连接已有AgentLens服务器（可选）：\n'
-printf '  knowflow auth login https://你的AgentLens服务器\n'
-printf '  knowflow chat --remote\n'
+printf '  agentlens auth login https://你的AgentLens服务器\n'
+printf '  agentlens chat --remote\n'

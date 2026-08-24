@@ -29,9 +29,13 @@ def main() -> None:
     assert "KNOWFLOW AI" not in read("frontend/react/src/components/AppErrorBoundary.jsx")
 
     compatibility_surfaces = {
-        "backend/pyproject.toml": ['name = "knowflow-ai"', 'knowflow = "knowflow.cli:main"'],
-        "README.md": ["knowflow update", "`KNOWFLOW_*`"],
-        "install.sh": ["knowflow-ai", "knowflow configure"],
+        "backend/pyproject.toml": [
+            'name = "knowflow-ai"',
+            'agentlens = "knowflow.cli:main"',
+            'knowflow = "knowflow.cli:main"',
+        ],
+        "README.md": ["`agentlens`", "knowflow update", "`KNOWFLOW_*`"],
+        "install.sh": ["knowflow-ai", "agentlens configure", "旧版knowflow命令"],
     }
     for relative_path, required_values in compatibility_surfaces.items():
         source = read(relative_path)

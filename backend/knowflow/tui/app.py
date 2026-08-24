@@ -919,7 +919,7 @@ class KnowFlowTui(App[None]):
 
     async def _cmd_update(self, args: list[str]) -> bool:
         await self.query_one(TranscriptView).add_notice(
-            "更新CLI：执行 `knowflow update`（与主程序版本同步）。"
+            "更新CLI：执行 `agentlens update`（与主程序版本同步）。"
         )
         return True
 
@@ -946,7 +946,7 @@ class KnowFlowTui(App[None]):
         if part == "list":
             if self.backend.remote_client is None:
                 await self.query_one(TranscriptView).add_notice(
-                    "本地模式请先执行 knowflow configure。"
+                    "本地模式请先执行 agentlens configure。"
                 )
                 return True
             await self._cmd_model_list_remote()
@@ -954,7 +954,7 @@ class KnowFlowTui(App[None]):
         if part == "use":
             if self.backend.remote_client is None:
                 await self.query_one(TranscriptView).add_notice(
-                    "本地模式不支持在会话内切换模型ID。请重新配置 knowflow configure。"
+                    "本地模式不支持在会话内切换模型ID。请重新配置 agentlens configure。"
                 )
                 return True
             if len(args) < 2:
@@ -974,7 +974,7 @@ class KnowFlowTui(App[None]):
             return True
         if part == "config":
             await self.query_one(TranscriptView).add_notice(
-                "模型配置请使用 knowflow configure，或在 /model list 后在网页调整。"
+                "模型配置请使用 agentlens configure，或在 /model list 后在网页调整。"
             )
             return True
         await self.query_one(TranscriptView).add_notice(
@@ -1170,12 +1170,12 @@ class KnowFlowTui(App[None]):
             memory = dict(status.get("memory") or {})
             if not memory.get("configured"):
                 await self.query_one(TranscriptView).add_notice(
-                    "长期记忆未配置。运行knowflow memory configure开始配置。"
+                    "长期记忆未配置。运行agentlens memory configure开始配置。"
                 )
                 return True
             if not memory.get("enabled"):
                 await self.query_one(TranscriptView).add_notice(
-                    "长期记忆已配置但未启用。运行knowflow memory enable启用。"
+                    "长期记忆已配置但未启用。运行agentlens memory enable启用。"
                 )
                 return True
             items = list(memory.get("items") or [])

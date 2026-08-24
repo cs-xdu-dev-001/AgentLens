@@ -136,13 +136,13 @@ def _remote_client(
         requested = normalize_server_url(requested)
         if not profile or profile.get("server") != requested:
             raise typer.BadParameter(
-                "该服务器尚未登录，请先执行knowflow auth login。"
+                "该服务器尚未登录，请先执行agentlens auth login。"
             )
     elif profile:
         requested = str(profile["server"])
     if not requested:
         raise typer.BadParameter(
-            "尚未登录远程服务器，请先执行knowflow auth login <服务器地址>；"
+            "尚未登录远程服务器，请先执行agentlens auth login <服务器地址>；"
             "本地直连请显式使用--local。"
         )
     if not profile or not profile.get("token"):
@@ -487,7 +487,7 @@ def update() -> None:
             "请重新运行官网安装命令。[/red]"
         )
         raise typer.Exit(result.returncode or 1)
-    console.print("[green]更新完成。[/green]请重新运行knowflow。")
+    console.print("[green]更新完成。[/green]请重新运行agentlens。")
 
 
 @auth_app.command("login")
@@ -1042,12 +1042,12 @@ def chat(
     current_model_id = model_id
     conversation: list[dict[str, Any]] = []
     console.print(
-        "[dim]输入/exit退出，/new开始新会话。模型配置使用knowflow configure。[/dim]"
+        "[dim]输入/exit退出，/new开始新会话。模型配置使用agentlens configure。[/dim]"
     )
     with nullcontext():
         while True:
             try:
-                question = session.prompt("knowflow> ").strip()
+                question = session.prompt("agentlens> ").strip()
             except (EOFError, KeyboardInterrupt):
                 break
             if not question:
@@ -1062,7 +1062,7 @@ def chat(
             if question.startswith("/model"):
                 if remote is None:
                     console.print(
-                        "[dim]本地模型由knowflow configure管理。[/dim]"
+                        "[dim]本地模型由agentlens configure管理。[/dim]"
                     )
                     continue
                 parts = question.split(maxsplit=1)
@@ -1443,9 +1443,9 @@ def add_mcp(
         raise typer.Exit(1) from exc
     console.print(f"已添加MCP：{item['name']}（ID {item['id']}）")
     if normalized == "oauth":
-        console.print(f"下一步：knowflow mcp oauth {item['id']}")
+        console.print(f"下一步：agentlens mcp oauth {item['id']}")
     else:
-        console.print(f"下一步：knowflow mcp connect {item['id']}")
+        console.print(f"下一步：agentlens mcp connect {item['id']}")
 
 
 @mcp_app.command("connect")
@@ -1625,7 +1625,7 @@ def configure_memory(
             "embedder_api_key": resolved_embed_key,
         },
     )
-    console.print("Mem0配置已保存，运行knowflow memory enable启用。")
+    console.print("Mem0配置已保存，运行agentlens memory enable启用。")
 
 
 @memory_app.command("enable")

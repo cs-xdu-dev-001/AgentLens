@@ -175,13 +175,13 @@ class LangGraphCheckpointStore:
         if isinstance(exc, ImportError):
             return LangGraphCheckpointError(
                 "langgraph_checkpoint_dependency_missing",
-                "LangGraph checkpoint依赖不完整。请运行knowflow update后重试。",
+                "LangGraph checkpoint依赖不完整。请运行agentlens update后重试。",
             )
         marker = str(exc).lower()
         if isinstance(exc, PermissionError) or "unable to open database file" in marker:
             return LangGraphCheckpointError(
                 "langgraph_checkpoint_permission_denied",
-                "LangGraph checkpoint没有读写权限。请运行knowflow doctor --cli检查本地数据目录；修复权限后重试。",
+                "LangGraph checkpoint没有读写权限。请运行agentlens doctor --cli检查本地数据目录；修复权限后重试。",
             )
         if isinstance(exc, sqlite3.DatabaseError) and any(
             value in marker for value in ("malformed", "not a database")
@@ -197,5 +197,5 @@ class LangGraphCheckpointStore:
             )
         return LangGraphCheckpointError(
             "langgraph_checkpoint_unavailable",
-            "LangGraph checkpoint存储暂不可用。请运行knowflow doctor --cli检查本地运行环境。",
+            "LangGraph checkpoint存储暂不可用。请运行agentlens doctor --cli检查本地运行环境。",
         )

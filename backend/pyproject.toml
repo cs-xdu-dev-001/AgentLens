@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "knowflow-ai"
-version = "0.49.0"
+version = "0.50.0"
 description = "AgentLens backend and Linux Agent CLI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -73,6 +73,7 @@ Issues = "https://github.com/cs-xdu-dev-001/KnowFlow-AI/issues"
 Source = "https://github.com/cs-xdu-dev-001/KnowFlow-AI"
 
 [project.scripts]
+agentlens = "knowflow.cli:main"
 knowflow = "knowflow.cli:main"
 
 [tool.setuptools.packages.find]

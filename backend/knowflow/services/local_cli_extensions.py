@@ -587,7 +587,7 @@ class LocalExtensionStore:
     def set_memory_enabled(self, enabled: bool) -> None:
         settings = self.memory_settings()
         if enabled and not settings["configured"]:
-            raise LocalExtensionError("请先运行knowflow memory configure。")
+            raise LocalExtensionError("请先运行agentlens memory configure。")
 
         def update(value: dict[str, Any]) -> None:
             memory = _nested(value, "memory")

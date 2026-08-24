@@ -154,7 +154,7 @@ class TuiBackend:
             models = self.model_catalog()
             if models and str(model_id) in {"", "local", str(models[0]["id"])}:
                 return models[0]
-            raise RuntimeError("本地CLI只有当前配置；请运行knowflow configure修改模型。")
+            raise RuntimeError("本地CLI只有当前配置；请运行agentlens configure修改模型。")
         try:
             identifier = int(model_id)
         except (TypeError, ValueError) as exc:
@@ -344,7 +344,7 @@ class TuiBackend:
                 {
                     "name": "mode",
                     "ready": False,
-                    "detail": "远程模式请在服务器运行knowflow doctor。",
+                    "detail": "远程模式请在服务器运行agentlens doctor。",
                 }
             ]
         diagnostic = getattr(self.local_agent, "sandbox_diagnostics", None)

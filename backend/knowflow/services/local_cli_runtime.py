@@ -252,7 +252,7 @@ def validate_local_config(value: dict[str, Any]) -> dict[str, str]:
     ]
     if missing:
         raise LocalCliConfigError(
-            "本地模型配置不完整，请先运行knowflow configure。"
+            "本地模型配置不完整，请先运行agentlens configure。"
         )
     if config["api_mode"] not in {"responses", "chat_completions"}:
         raise LocalCliConfigError(
