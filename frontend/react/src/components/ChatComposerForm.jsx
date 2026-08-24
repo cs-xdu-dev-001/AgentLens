@@ -478,6 +478,28 @@ export function ChatComposerForm() {
     }));
   };
 
+  const notifyCommandUnavailable = (message) => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
+      detail: { message, duration: 2600, tone: "neutral" },
+    }));
+  };
+
+  const runMessageCommand = (action, unavailableMessage) => {
+    const detail = { action, handled: false };
+    window.dispatchEvent(new CustomEvent("knowflow:react-message-command", { detail }));
+    if (!detail.handled) notifyCommandUnavailable(unavailableMessage);
+  };
+
+  const openArtifactCommand = () => {
+    const detail = { handled: false };
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-artifacts-open", { detail }));
+    if (!detail.handled) {
+      notifyCommandUnavailable("当前会话还没有可查看的文件变更");
+      return;
+    }
+    handleOpenAgentWorkbench();
+  };
+
   const handleRecoveryCommand = (action) => {
     const advertised = new Set(agentState.recoveryActions);
     if (action === "continue" && !advertised.has("continue") && queuePaused) {
@@ -545,6 +567,20 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-transcript-search-open", {
         detail: { query: String(args || "").trim() },
       }));
+      return;
+    }
+    if (command.action.startsWith("message-")) {
+      const action = command.action.slice("message-".length);
+      const unavailableMessages = {
+        copy: "当前会话还没有可复制的完整回答",
+        edit: "当前会话还没有可编辑的问题",
+        rewind: "当前会话还没有可回到的历史问题",
+      };
+      runMessageCommand(action, unavailableMessages[action]);
+      return;
+    }
+    if (command.action.startsWith("artifacts-")) {
+      openArtifactCommand();
       return;
     }
     if (command.action.startsWith("session-")) {

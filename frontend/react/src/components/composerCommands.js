@@ -54,6 +54,27 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     action: "transcript-search",
   },
   {
+    value: "/copy",
+    label: "复制最近回答",
+    description: "复制最近一条完整回答",
+    category: "会话",
+    action: "message-copy",
+  },
+  {
+    value: "/edit",
+    label: "编辑上一问题",
+    description: "把最近一条问题放回输入框",
+    category: "会话",
+    action: "message-edit",
+  },
+  {
+    value: "/rewind",
+    label: "从历史继续",
+    description: "从最近一个可回退问题创建会话分支",
+    category: "会话",
+    action: "message-rewind",
+  },
+  {
     value: "/model",
     label: "切换模型",
     description: "选择本轮对话使用的模型",
@@ -138,6 +159,20 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     description: "查看Agent可访问的项目边界",
     category: "工作区",
     action: "workspace",
+  },
+  {
+    value: "/diff",
+    label: "查看文件变更",
+    description: "打开最近任务的文件差异",
+    category: "工作区",
+    action: "artifacts-diff",
+  },
+  {
+    value: "/undo",
+    label: "撤销文件修改",
+    description: "打开最近任务并选择要安全撤销的修改",
+    category: "工作区",
+    action: "artifacts-undo",
   },
   {
     value: "/tools",

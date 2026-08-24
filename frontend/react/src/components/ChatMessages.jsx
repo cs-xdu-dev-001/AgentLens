@@ -650,8 +650,23 @@ export function ChatMessages() {
         }),
       );
     };
+    const handleMessageCommand = (event) => {
+      const detail = event.detail || {};
+      const action = String(detail.action || "");
+      if (!["copy", "edit", "rewind"].includes(action)) return;
+      const buttons = Array.from(
+        messagesNode.querySelectorAll(`[data-message-action="${action}"]`),
+      ).filter((button) => !button.disabled);
+      const button = buttons[buttons.length - 1];
+      detail.handled = Boolean(button);
+      if (button) button.click();
+    };
     messagesNode.addEventListener("click", handleMessageActionClick);
-    return () => messagesNode.removeEventListener("click", handleMessageActionClick);
+    window.addEventListener("knowflow:react-message-command", handleMessageCommand);
+    return () => {
+      messagesNode.removeEventListener("click", handleMessageActionClick);
+      window.removeEventListener("knowflow:react-message-command", handleMessageCommand);
+    };
   }, []);
 
   useEffect(() => {

@@ -423,6 +423,14 @@ export function ChatEvidenceDrawer() {
       setRun(nextRun);
       selectLifecycleTab(nextRun);
     };
+    const handleAgentArtifactsOpen = (event) => {
+      const detail = event.detail || {};
+      const artifacts = Array.isArray(runRef.current?.artifacts)
+        ? runRef.current.artifacts.filter((artifact) => artifact?.artifactType !== "reference")
+        : [];
+      detail.handled = artifacts.length > 0;
+      if (detail.handled) selectTab("artifacts", { manual: true });
+    };
     const handleAgentApprovalsUpdated = (event) => {
       setApprovals(
         Array.isArray(event.detail?.approvals)
@@ -438,6 +446,7 @@ export function ChatEvidenceDrawer() {
     window.addEventListener("knowflow:react-agent-approvals-updated", handleAgentApprovalsUpdated);
     window.addEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
     window.addEventListener("knowflow:react-agent-artifacts-updated", handleAgentArtifactsUpdated);
+    window.addEventListener("knowflow:react-agent-artifacts-open", handleAgentArtifactsOpen);
     window.addEventListener("knowflow:react-workbench-focus", handleWorkbenchFocus);
     return () => {
       window.removeEventListener("knowflow:react-references-updated", handleReferencesUpdated);
@@ -448,6 +457,7 @@ export function ChatEvidenceDrawer() {
       window.removeEventListener("knowflow:react-agent-approvals-updated", handleAgentApprovalsUpdated);
       window.removeEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
       window.removeEventListener("knowflow:react-agent-artifacts-updated", handleAgentArtifactsUpdated);
+      window.removeEventListener("knowflow:react-agent-artifacts-open", handleAgentArtifactsOpen);
       window.removeEventListener("knowflow:react-workbench-focus", handleWorkbenchFocus);
     };
   }, []);

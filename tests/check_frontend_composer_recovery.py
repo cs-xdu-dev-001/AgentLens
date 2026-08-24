@@ -11,6 +11,8 @@ def read(path: str) -> str:
 
 commands = read("frontend/react/src/components/composerCommands.js")
 composer = read("frontend/react/src/components/ChatComposerForm.jsx")
+messages = read("frontend/react/src/components/ChatMessages.jsx")
+drawer = read("frontend/react/src/components/ChatEvidenceDrawer.jsx")
 flow = read("frontend/react/src/controller/chatFlow.js")
 
 for needle in (
@@ -20,6 +22,11 @@ for needle in (
     'aliases: ["/find"]',
     'when: "continue"',
     'when: "retry"',
+    'value: "/copy"',
+    'value: "/edit"',
+    'value: "/rewind"',
+    'value: "/diff"',
+    'value: "/undo"',
 ):
     assert needle in commands, f"missing contextual recovery command: {needle}"
 
@@ -29,8 +36,14 @@ for needle in (
     'action === "continue" ? "resume" : "restart"',
     'handleQueueAction("resume")',
     "agentState.recoveryActions",
+    'knowflow:react-message-command',
+    'knowflow:react-agent-artifacts-open',
 ):
     assert needle in composer, f"missing composer recovery bridge: {needle}"
+
+assert 'data-message-action="${action}"' in messages
+assert 'knowflow:react-message-command' in messages
+assert 'knowflow:react-agent-artifacts-open' in drawer
 
 for needle in (
     "composerRecoveryContext",
@@ -44,7 +57,7 @@ import { composerCommandSuggestions, parseComposerCommand, resolveComposerComman
 
 const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
 const idle = values();
-for (const required of ["/help", "/reasoning", "/status"]) {
+for (const required of ["/help", "/reasoning", "/status", "/copy", "/edit", "/rewind", "/diff", "/undo"]) {
   if (!idle.includes(required)) throw new Error(`missing Web parity command: ${required}`);
 }
 if (!idle.includes("/compact")) {
