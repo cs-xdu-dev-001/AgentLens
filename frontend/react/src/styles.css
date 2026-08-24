@@ -1122,6 +1122,62 @@ p {
   gap: 6px;
 }
 
+.active-task-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  width: min(100%, 900px);
+  min-width: 0;
+  margin: -8px auto 4px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.active-task-anchor strong {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.active-task-anchor span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-task-anchor svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--muted);
+}
+
+.active-task-anchor:hover {
+  background: color-mix(in srgb, var(--surface-hover) 76%, var(--surface));
+}
+
+.active-task-anchor:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .message-row.user {
   justify-items: end;
 }
@@ -11797,6 +11853,15 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 @media (max-width: 760px) {
   #page-chat:not(.chat-empty) .messages {
     padding: 18px 16px 66px !important;
+  }
+
+  .active-task-anchor {
+    margin-top: -2px;
+    grid-template-columns: minmax(0, 1fr) 18px;
+  }
+
+  .active-task-anchor strong {
+    display: none;
   }
 
   #page-chat:not(.chat-empty) #chat-form.composer {

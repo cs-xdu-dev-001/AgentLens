@@ -29,6 +29,45 @@ const actionEvents = {
   retry: "knowflow:react-message-retry",
   rewind: "knowflow:react-message-rewind",
 };
+
+const ACTIVE_RUN_STATUSES = new Set([
+  "pending",
+  "planning",
+  "queued",
+  "running",
+  "started",
+  "waiting",
+  "waiting_approval",
+  "waiting_input",
+]);
+
+function compactTaskAnchorText(value, maxLength = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+export function activeTaskAnchor(messages = []) {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  let assistantIndex = -1;
+  for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
+    const message = safeMessages[index];
+    if (message?.role !== "assistant") continue;
+    const status = String(message.run?.status || "").toLowerCase();
+    if (message.thinking || message.streaming || ACTIVE_RUN_STATUSES.has(status)) {
+      assistantIndex = index;
+      break;
+    }
+  }
+  if (assistantIndex < 0) return null;
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = safeMessages[index];
+    if (message?.role !== "user") continue;
+    const text = compactTaskAnchorText(message.rawContent);
+    return text ? { messageId: String(message.id || ""), text } : null;
+  }
+  return null;
+}
 const MEMORY_ACTIVITY_MAX_POLLS = 240;
 
 function memoryOperations(activity) {
@@ -475,11 +514,24 @@ export function ChatMessages() {
     () => activeAgentInteractionOwner(messages),
     [messages],
   );
+  const currentTask = useMemo(
+    () => activeTaskAnchor(messages),
+    [messages],
+  );
   const pendingInteractionCount = interactionOwner
     ? interactionOwner.queuedCount + 1
     : 0;
   const findBubble = (messageId) =>
     messagesRef.current?.querySelector('[data-react-message-id="' + messageId + '"]') || null;
+  const revealCurrentTask = () => {
+    const row = findBubble(currentTask?.messageId)?.closest(".message-row");
+    if (!row) return;
+    setFollowOutput(false);
+    row.scrollIntoView({
+      block: "start",
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
   const setFollowOutput = (nextValue) => {
     const next = Boolean(nextValue);
     followOutputRef.current = next;
@@ -923,6 +975,22 @@ export function ChatMessages() {
         aria-busy={sessionSwitch?.status === "loading"}
         onScroll={handleMessagesScroll}
       >
+        {currentTask ? (
+          <button
+            className={"active-task-anchor"}
+            type={"button"}
+            onClick={revealCurrentTask}
+            aria-label={`回到当前任务：${currentTask.text}`}
+            title={currentTask.text}
+          >
+            <strong>{"当前任务"}</strong>
+            <span>{currentTask.text}</span>
+            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M7 4h9v9"}></path>
+              <path d={"M16 4 5 15"}></path>
+            </svg>
+          </button>
+        ) : null}
         {sessionSwitch ? (
           <div
             className={`session-switch-state ${sessionSwitch.status}`}

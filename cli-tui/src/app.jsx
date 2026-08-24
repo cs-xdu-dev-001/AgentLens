@@ -1885,6 +1885,17 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   );
 });
 
+const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({goal}) {
+  const label = publicLabel(goal, "", 180);
+  if (!label) return null;
+  return (
+    <Box flexShrink={0} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1}>
+      <Text color={MUTED}>当前任务  </Text>
+      <Text color={PRIMARY} bold wrap="truncate-end">{label}</Text>
+    </Box>
+  );
+});
+
 const WorkspaceGuard = React.memo(function WorkspaceGuard({workspace}) {
   const blocked = workspaceExecutionBlock(workspace);
   if (!blocked) return null;
@@ -5834,6 +5845,7 @@ export function App({
       <>
         {staticConversation}
         <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
+          {fullscreenEnabled && frozen.running ? <ActiveTaskAnchor goal={frozen.goal ?? lastQuestion} /> : null}
           <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
             {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
             <ScrollView
@@ -5873,6 +5885,7 @@ export function App({
 
   return (
     <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
+      {running ? <ActiveTaskAnchor goal={lastQuestion} /> : null}
       <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
         {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
         <ScrollView

@@ -2758,6 +2758,21 @@ test('long markdown replies stay inside the terminal viewport without raw marker
   view.unmount();
 });
 
+test('fullscreen mode pins the active task above output until the turn settles', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.52.0" fullscreenEnabled />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查当前项目并修复问题');
+  view.stdin.write('\r');
+  const activeFrame = await waitForFrame(view, /当前任务\s+检查当前项目并修复问题/);
+  assert.match(activeFrame, /当前任务\s+检查当前项目并修复问题/);
+
+  client.emit('message', {type: 'turn_completed', answer: '检查完成'});
+  await waitForFrame(view, /检查完成/);
+  assert.doesNotMatch(view.lastFrame(), /当前任务\s+检查当前项目并修复问题/);
+  view.unmount();
+});
+
 test('terminal mode defaults to native scrollback and gates mouse capture behind fullscreen', () => {
   assert.deepEqual(resolveTerminalMode({}), {
     fullscreenEnabled: false,

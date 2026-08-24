@@ -625,6 +625,9 @@ def main() -> None:
     assert "/tasks remove <序号>" in app_source
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
+    assert "const ActiveTaskAnchor" in app_source
+    assert "fullscreenEnabled && frozen.running" in app_source
+    assert '<ActiveTaskAnchor goal={lastQuestion}' in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source
     assert "cli_update_completed" in app_source

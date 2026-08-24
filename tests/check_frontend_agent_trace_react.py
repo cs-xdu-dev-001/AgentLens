@@ -1615,6 +1615,26 @@ def main() -> None:
         "assistant evidence strip placement",
     )
     require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "export function activeTaskAnchor",
+        "active task selection remains independently testable",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        'className={"active-task-anchor"}',
+        "active task anchor is rendered in the conversation viewport",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "scrollIntoView",
+        "active task anchor returns to the originating prompt",
+    )
+    require(
+        "frontend/styles.css",
+        ".active-task-anchor",
+        "active task anchor has a stable visual treatment",
+    )
+    require(
         "frontend/react/src/components/AgentEvidenceStrip.jsx",
         'activeTab: "evidence"',
         "evidence drawer deep link",
