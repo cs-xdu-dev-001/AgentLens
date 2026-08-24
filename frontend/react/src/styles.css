@@ -9965,6 +9965,11 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: color-mix(in srgb, var(--warning) 88%, var(--text));
 }
 
+.agent-run-status.warning {
+  background: color-mix(in srgb, var(--warning) 11%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 88%, var(--text));
+}
+
 .agent-artifact-list {
   display: grid;
   margin: 0 0 12px;
@@ -12263,6 +12268,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-color: color-mix(in srgb, var(--warning) 34%, var(--control-border));
 }
 
+.agent-task-capsule.warning {
+  border-color: color-mix(in srgb, var(--warning) 26%, var(--control-border));
+}
+
 .agent-task-capsule.failed {
   border-color: color-mix(in srgb, var(--danger) 30%, var(--control-border));
 }
@@ -12366,6 +12375,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   background: var(--danger);
 }
 
+.agent-task-capsule.warning .agent-task-capsule-progress > span {
+  background: var(--warning);
+}
+
 .agent-task-capsule-status.running,
 .agent-task-capsule-status.success {
   background: color-mix(in srgb, var(--success) 11%, var(--surface));
@@ -12373,6 +12386,11 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-task-capsule-status.waiting {
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 86%, var(--text));
+}
+
+.agent-task-capsule-status.warning {
   background: color-mix(in srgb, var(--warning) 12%, var(--surface));
   color: color-mix(in srgb, var(--warning) 86%, var(--text));
 }

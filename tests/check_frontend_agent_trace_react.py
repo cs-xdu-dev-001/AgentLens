@@ -617,6 +617,19 @@ const compacted = buildAgentRunPresentation({{
     {{ stepId: "search-3", kind: "tool", name: "web_search", status: "success", durationMs: 300 }},
   ],
 }});
+const completedWithWarning = buildAgentRunPresentation({{
+  run: {{
+    id: "run-warning",
+    status: "completed",
+    goalSummary: "完成联网调研",
+  }},
+  trace: [
+    {{ stepId: "root-warning", kind: "agent", name: "agent_run", status: "success" }},
+    {{ stepId: "fetch-warning", kind: "tool", name: "web_fetch", status: "failed", errorCode: "unsupported_content" }},
+    {{ stepId: "search-warning", kind: "tool", name: "web_search", status: "success" }},
+    {{ stepId: "answer-warning", kind: "model", name: "model_completion", status: "success" }},
+  ],
+}});
 const targeted = [
   {{ stepId: "write-a", kind: "workspace", name: "write_workspace_file", status: "success", inputSummary: {{ path: "src/a.py" }}, outputSummary: {{ writtenBytes: 12 }} }},
   {{ stepId: "write-b", kind: "workspace", name: "write_workspace_file", status: "success", inputSummary: {{ path: "src/b.py" }}, outputSummary: {{ writtenBytes: 20 }} }},
@@ -719,6 +732,12 @@ console.log(JSON.stringify({{
     }})),
     toolCalls: compacted.toolCalls,
   }},
+  completedWithWarning: {{
+    active: completedWithWarning.active,
+    failedOperationCount: completedWithWarning.failedOperationCount,
+    processSummary: completedWithWarning.processSummary,
+    status: completedWithWarning.status,
+  }},
   targeted: targeted.map((row) => ({{ ...row, title: row.title, outcome: row.outcome }})),
   planned: {{
     hasPlan: planned.hasPlan,
@@ -789,6 +808,17 @@ console.log(JSON.stringify({{
             },
         ],
         "toolCalls": 3,
+    }
+    assert result["completedWithWarning"] == {
+        "active": False,
+        "failedOperationCount": 1,
+        "processSummary": "任务已完成，1个工具调用未成功",
+        "status": {
+            "className": "warning",
+            "detail": "任务已完成，1个工具调用未成功",
+            "freshness": "已保存",
+            "label": "完成，有警告",
+        },
     }
     targeted = result["targeted"]
     assert [

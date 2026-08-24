@@ -29,6 +29,7 @@ import {
   shouldAnimateRuntimeStatus,
   shouldCollapsePaste,
   streamingPreview,
+  taskOutcomeState,
   thinkingStateForPhase,
   transcriptSearchMatches,
   transcriptSearchText,
@@ -71,6 +72,34 @@ test('model catalog keeps the active and recent models first and tolerates fuzzy
   ];
   assert.deepEqual(rankModelOptions(models, ['3']).map(item => item.id), [2, 3, 1]);
   assert.equal(rankModelOptions(models, [], 'kimk')[0]?.id, 3);
+});
+
+test('completed runs keep child tool failures as warnings instead of failing the whole turn', () => {
+  const completed = taskOutcomeState({
+    failure: {message: '旧的工具错误'},
+    phase: '工具执行失败',
+    rows: [
+      {status: 'success'},
+      {status: 'failed', repeatCount: 2},
+      {status: 'waiting'},
+    ],
+    runSummary: {status: 'completed'},
+    running: false,
+  });
+  assert.deepEqual(completed, {
+    childFailureCount: 2,
+    completedWithWarnings: true,
+    failed: false,
+    runStatus: 'completed',
+    waiting: false,
+  });
+
+  const failed = taskOutcomeState({
+    rows: [{status: 'failed'}],
+    running: false,
+  });
+  assert.equal(failed.failed, true);
+  assert.equal(failed.completedWithWarnings, false);
 });
 
 test('home workspaces block execution while preserving remote and project workspaces', () => {
@@ -749,7 +778,8 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
     },
   });
   await tick();
-  assert.match(view.lastFrame(), /run_sandbox_command/);
+  assert.match(view.lastFrame(), /正在运行/);
+  assert.doesNotMatch(view.lastFrame(), /run_sandbox_command/);
   assert.match(view.lastFrame(), /0\.4s/);
   assert.match(view.lastFrame(), /实时输出/);
   assert.match(view.lastFrame(), /up 3 days/);

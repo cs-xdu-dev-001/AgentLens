@@ -446,6 +446,37 @@ function useSpinner(active, phase) {
   return frames[frame % frames.length];
 }
 
+function useStableActivityLabel(value, active, minimumMs = 2000) {
+  const normalized = String(value ?? '');
+  const [stable, setStable] = useState(normalized);
+  const committedAtRef = useRef(Date.now());
+  const activeRef = useRef(active);
+
+  useEffect(() => {
+    const wasActive = activeRef.current;
+    activeRef.current = active;
+    if (!active || !wasActive) {
+      committedAtRef.current = Date.now();
+      setStable(normalized);
+      return undefined;
+    }
+    if (normalized === stable) return undefined;
+    const remaining = Math.max(0, minimumMs - (Date.now() - committedAtRef.current));
+    const commit = () => {
+      committedAtRef.current = Date.now();
+      setStable(normalized);
+    };
+    if (!remaining) {
+      commit();
+      return undefined;
+    }
+    const timer = setTimeout(commit, remaining);
+    return () => clearTimeout(timer);
+  }, [active, minimumMs, normalized, stable]);
+
+  return active ? stable : normalized;
+}
+
 export function shouldAnimateRuntimeStatus({
   running,
   blocked = false,
@@ -468,6 +499,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
   running,
   waitingCount,
 }) {
+  const stablePhase = useStableActivityLabel(phase, running);
   const animate = shouldAnimateRuntimeStatus({
     running,
     blocked: Boolean(approval || question),
@@ -475,10 +507,10 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
     hasVisibleStream,
     hasVisibleWork,
   });
-  const spinner = useSpinner(animate, phase);
+  const spinner = useSpinner(animate, stablePhase);
   return (
     <Box marginTop={1}>
-      <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${phase}` : phase}</Text>
+      <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${stablePhase}` : stablePhase}</Text>
       {running ? <Text color={cancelPending ? WARNING : MUTED}>{cancelPending ? ' · 取消中' : ' · Ctrl+C取消'}</Text> : null}
       {waitingCount ? <Text color={WARNING}> · 待处理{waitingCount}</Text> : null}
       {queueLength ? <Text color={MUTED}> · 队列{queueLength}</Text> : null}
@@ -691,6 +723,38 @@ export function nextPromptSuggestion(projection = {}) {
   return '';
 }
 const FAILURE_RUNTIME_STATUSES = new Set(['error', 'failed', 'interrupted']);
+const SUCCESS_RUN_STATUSES = new Set(['completed', 'success', 'succeeded']);
+const TERMINAL_RUN_STATUSES = new Set([
+  ...SUCCESS_RUN_STATUSES,
+  ...FAILURE_RUNTIME_STATUSES,
+  'cancelled',
+]);
+
+export function taskOutcomeState({
+  failure = null,
+  phase = '',
+  rows = [],
+  runSummary = null,
+  running = false,
+} = {}) {
+  const runStatus = String(runSummary?.status ?? '').toLowerCase();
+  const childFailureCount = rows.reduce((total, row) => (
+    FAILURE_RUNTIME_STATUSES.has(String(row?.status ?? '').toLowerCase())
+      ? total + Math.max(1, Number(row?.repeatCount) || 1)
+      : total
+  ), 0);
+  const authoritativeTerminal = TERMINAL_RUN_STATUSES.has(runStatus);
+  const failed = FAILURE_RUNTIME_STATUSES.has(runStatus) || (
+    !authoritativeTerminal
+    && !running
+    && Boolean(failure || childFailureCount || /失败|错误/.test(String(phase ?? '')))
+  );
+  const completedWithWarnings = SUCCESS_RUN_STATUSES.has(runStatus) && childFailureCount > 0;
+  const waiting = !authoritativeTerminal && rows.some(row => (
+    ['waiting', 'waiting_approval', 'waiting_input'].includes(String(row?.status ?? '').toLowerCase())
+  ));
+  return {childFailureCount, completedWithWarnings, failed, runStatus, waiting};
+}
 const RECOVERY_ACTION_OPTIONS = Object.freeze([
   {id: 'continue', label: '从checkpoint继续', shortcut: 'C'},
   {id: 'retry', label: '重试本轮', shortcut: 'R'},
@@ -922,22 +986,22 @@ const TaskSummary = React.memo(function TaskSummary({
   navigationActive = false,
   selectedNavigationKey = '',
 }) {
-  const spinner = useSpinner(running && !streaming, phase);
+  const stablePhase = useStableActivityLabel(phase, running);
+  const spinner = useSpinner(running && !streaming, stablePhase);
   const {tracedRows, operations, planRows, rows} = taskSummaryModel(
     activities,
     traceSteps,
     artifacts,
     references,
   );
-  const failed = rows.some(row => FAILURE_RUNTIME_STATUSES.has(row.status))
-    || /失败|错误/.test(String(phase ?? ''));
+  const outcome = taskOutcomeState({failure, phase, rows, runSummary, running});
+  const {childFailureCount, completedWithWarnings, failed, waiting} = outcome;
   if (!running && !rows.length && !artifacts.length && !references.length && !failed) return null;
   const protocolTotal = Math.max(0, Number(runSummary?.totalSteps) || 0);
   const localCompleted = rows.filter(row => ['success', 'succeeded', 'completed', 'cancelled'].includes(row.status)).length;
   const completed = protocolTotal
     ? Math.min(Math.max(0, Number(runSummary?.completedSteps) || 0), protocolTotal)
     : localCompleted;
-  const waiting = rows.some(row => row.status === 'waiting');
   const estimatedTokens = tracedRows.reduce((total, row) => {
     if (row.kind !== 'model') return total;
     return total + Math.max(0, Number(parseSummary(row.inputSummary).estimatedTokenCount) || 0);
@@ -969,17 +1033,29 @@ const TaskSummary = React.memo(function TaskSummary({
       ? `${modelRetry.reason || '模型请求失败'}，${retryRemainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
       : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`
     : '';
-  const stateLabel = modelRetry ? '等待重试' : waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
-  const stateColor = failed ? ERROR : modelRetry || waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const stateLabel = modelRetry
+    ? '等待重试'
+    : waiting
+      ? '等待确认'
+      : running
+        ? '执行中'
+        : failed
+          ? '失败'
+          : completedWithWarnings
+            ? '完成，有警告'
+            : '已完成';
+  const stateColor = failed ? ERROR : modelRetry || waiting || completedWithWarnings ? WARNING : running ? ACCENT : SUCCESS;
   const failureMessage = failed && failure?.message
     ? userFacingErrorMessage(failure.message)
     : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
   const processLabel = running
-    ? retryLabel || publicLabel(phase || currentRow?.title, '正在执行')
+    ? retryLabel || publicLabel(stablePhase || currentRow?.title, '正在执行')
     : failed
       ? failureMessage || '执行失败，可选择恢复操作'
+      : completedWithWarnings
+        ? `任务已完成，${childFailureCount}个工具调用未成功`
       : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
@@ -3352,6 +3428,7 @@ export function App({
     activeRequestIdRef.current = requestId;
     setQueue(remaining);
     setRunning(true);
+    setPhase(mode === 'shell' ? '正在执行命令' : '正在启动Agent');
     setCancelPending(false);
     setRunRecoveryOpen(false);
     const emptyActivities = new Map();
@@ -3740,6 +3817,7 @@ export function App({
       setCurrentSessionTitle(sessionTitleFromPrompt(publicDisplayText, '新会话'));
     }
     setRunning(true);
+    setPhase(mode === 'shell' ? '正在执行命令' : '正在启动Agent');
     setCancelPending(false);
     setRunRecoveryOpen(false);
     const emptyActivities = new Map();

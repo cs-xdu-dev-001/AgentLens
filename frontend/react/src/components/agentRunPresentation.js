@@ -595,7 +595,21 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
   const statusRun = protocolSummary?.status
     ? { ...(run || {}), status: protocolSummary.status }
     : run;
-  const status = statusPresentation(statusRun, step, waitState, backgroundPending);
+  let status = statusPresentation(statusRun, step, waitState, backgroundPending);
+  const failedOperationCount = operations.reduce((total, row) => (
+    ["failed", "interrupted"].includes(row.status)
+      ? total + Math.max(1, Number(row.repeatCount) || 1)
+      : total
+  ), 0);
+  const completedWithWarnings = status.className === "success" && failedOperationCount > 0;
+  if (completedWithWarnings) {
+    status = {
+      className: "warning",
+      detail: `任务已完成，${failedOperationCount}个工具调用未成功`,
+      freshness: "已保存",
+      label: "完成，有警告",
+    };
+  }
   const active = ["running", "waiting"].includes(status.className);
   const rootStep = safeTrace.find((item) => item.name === "agent_run") || safeTrace[0];
   const startedAt = Date.parse(protocolSummary?.startedAt || run?.startedAt || rootStep?.startedAt || "");
@@ -650,7 +664,9 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     ? modelRetrySummary(run?.modelRetry, now)
       || status.detail
       || `当前：${activeRow?.title || headline}${activeProgress ? ` · ${activeProgress}` : ""}`
-    : artifacts.length
+    : completedWithWarnings
+      ? status.detail
+      : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
   const context = contextPresentation(run);
@@ -663,6 +679,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     context,
     elapsed: formatElapsed(elapsedMs),
     elapsedMs,
+    failedOperationCount,
     headline,
     hasPlan: Boolean(Array.isArray(run?.steps) && run.steps.length),
     metrics: [
