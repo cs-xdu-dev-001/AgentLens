@@ -629,8 +629,12 @@ def main() -> None:
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
     assert "const ActiveTaskAnchor" in app_source
+    assert "activeTaskAnchorMetrics" in app_source
     assert "fullscreenEnabled && frozen.running" in app_source
-    assert '<ActiveTaskAnchor goal={lastQuestion}' in app_source
+    assert "<ActiveTaskAnchor" in app_source
+    assert "goal={lastQuestion}" in app_source
+    assert "metrics={activeTaskMetrics}" in app_source
+    assert "state={runHeader}" in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source
     assert "cli_update_completed" in app_source

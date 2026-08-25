@@ -1177,9 +1177,10 @@ p {
   margin: -8px auto 4px;
   padding: 10px 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 18px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto 18px;
   align-items: center;
   gap: 10px;
+  overflow: hidden;
   border: 1px solid var(--control-border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
@@ -1189,19 +1190,64 @@ p {
   cursor: pointer;
 }
 
+.active-task-anchor::after {
+  position: absolute;
+  inset-inline-start: 0;
+  bottom: 0;
+  width: var(--task-progress, 0%);
+  height: 2px;
+  background: var(--accent);
+  content: "";
+  transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .active-task-anchor strong {
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.active-task-anchor span {
+.active-task-anchor-copy {
   min-width: 0;
   overflow: hidden;
   color: var(--text-soft);
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.active-task-anchor-metrics {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.active-task-anchor-state {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.active-task-anchor-state.success {
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
+.active-task-anchor-state.failed,
+.active-task-anchor-state.interrupted {
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+  color: var(--danger);
+}
+
+.active-task-anchor-state.waiting,
+.active-task-anchor-state.warning {
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface));
+  color: var(--warning);
 }
 
 .active-task-anchor svg {
@@ -12107,10 +12153,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   .active-task-anchor {
     margin-top: -2px;
-    grid-template-columns: minmax(0, 1fr) 18px;
+    grid-template-columns: minmax(0, 1fr) auto 18px;
   }
 
   .active-task-anchor strong {
+    display: none;
+  }
+
+  .active-task-anchor-metrics {
     display: none;
   }
 

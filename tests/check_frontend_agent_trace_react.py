@@ -1631,6 +1631,16 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatMessages.jsx",
+        "currentTask.presentation?.metrics",
+        "active task anchor surfaces live duration, token, tool, and progress metrics",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "active-task-anchor-state",
+        "active task anchor exposes the live run state",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
         "scrollIntoView",
         "active task anchor returns to the originating prompt",
     )

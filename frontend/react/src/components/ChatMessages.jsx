@@ -20,6 +20,7 @@ import {
 } from "./chatScrollState.js";
 import {
   activeAgentInteractionOwner,
+  buildAgentRunPresentation,
   pendingAgentInteractions,
 } from "./agentRunPresentation.js";
 
@@ -47,7 +48,7 @@ function compactTaskAnchorText(value, maxLength = 180) {
   return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
 }
 
-export function activeTaskAnchor(messages = []) {
+export function activeTaskAnchor(messages = [], now = Date.now()) {
   const safeMessages = Array.isArray(messages) ? messages : [];
   let assistantIndex = -1;
   for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
@@ -60,11 +61,22 @@ export function activeTaskAnchor(messages = []) {
     }
   }
   if (assistantIndex < 0) return null;
+  const assistantMessage = safeMessages[assistantIndex];
+  const presentation = buildAgentRunPresentation({
+    run: assistantMessage?.run || null,
+    trace: assistantMessage?.trace || [],
+    now,
+  });
   for (let index = assistantIndex - 1; index >= 0; index -= 1) {
     const message = safeMessages[index];
     if (message?.role !== "user") continue;
     const text = compactTaskAnchorText(message.rawContent);
-    return text ? { messageId: String(message.id || ""), text } : null;
+    return text ? {
+      assistantMessageId: String(assistantMessage?.id || ""),
+      messageId: String(message.id || ""),
+      presentation,
+      text,
+    } : null;
   }
   return null;
 }
@@ -501,6 +513,7 @@ export function ChatMessages() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCursor, setSearchCursor] = useState(0);
+  const [taskClock, setTaskClock] = useState(() => Date.now());
   const searchMatches = useMemo(
     () => transcriptSearchMatches(messages, searchQuery),
     [messages, searchQuery],
@@ -515,9 +528,16 @@ export function ChatMessages() {
     [messages],
   );
   const currentTask = useMemo(
-    () => activeTaskAnchor(messages),
-    [messages],
+    () => activeTaskAnchor(messages, taskClock),
+    [messages, taskClock],
   );
+  const currentTaskId = currentTask?.assistantMessageId || "";
+  useEffect(() => {
+    if (!currentTaskId) return undefined;
+    setTaskClock(Date.now());
+    const timer = window.setInterval(() => setTaskClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [currentTaskId]);
   const pendingInteractionCount = interactionOwner
     ? interactionOwner.queuedCount + 1
     : 0;
@@ -980,11 +1000,18 @@ export function ChatMessages() {
             className={"active-task-anchor"}
             type={"button"}
             onClick={revealCurrentTask}
-            aria-label={`回到当前任务：${currentTask.text}`}
+            aria-label={`回到当前任务：${currentTask.text}；${currentTask.presentation?.status?.label || "执行中"}`}
             title={currentTask.text}
+            style={{ "--task-progress": `${currentTask.presentation?.progressPercent || 0}%` }}
           >
-            <strong>{"当前任务"}</strong>
-            <span>{currentTask.text}</span>
+            <strong>{"任务"}</strong>
+            <span className={"active-task-anchor-copy"}>{currentTask.text}</span>
+            {currentTask.presentation?.metrics ? (
+              <span className={"active-task-anchor-metrics"}>{currentTask.presentation.metrics}</span>
+            ) : null}
+            <span className={`active-task-anchor-state ${currentTask.presentation?.status?.className || "running"}`}>
+              {currentTask.presentation?.status?.label || "执行中"}
+            </span>
             <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
               <path d={"M7 4h9v9"}></path>
               <path d={"M16 4 5 15"}></path>

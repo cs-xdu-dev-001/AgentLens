@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
 import {
+  activeTaskAnchorMetrics,
   App,
   buildTuiDiagnosticReport,
   compactSessionHeaderLabel,
@@ -100,6 +101,16 @@ test('completed runs keep child tool failures as warnings instead of failing the
   });
   assert.equal(failed.failed, true);
   assert.equal(failed.completedWithWarnings, false);
+});
+
+test('active task anchor reports live duration, token usage, and protocol progress', () => {
+  assert.equal(activeTaskAnchorMetrics({
+    elapsedMs: 4_200,
+    runProjection: {
+      runSummary: {completedSteps: 1, totalSteps: 3, totalTokens: 637},
+    },
+  }), '4s · ~637 tokens · 1/3');
+  assert.equal(activeTaskAnchorMetrics({elapsedMs: 0}), '0ms');
 });
 
 test('home workspaces block execution while preserving remote and project workspaces', () => {
@@ -2817,12 +2828,12 @@ test('fullscreen mode pins the active task above output until the turn settles',
   await waitForFrame(view, /deepseek-chat/);
   view.stdin.write('检查当前项目并修复问题');
   view.stdin.write('\r');
-  const activeFrame = await waitForFrame(view, /当前任务\s+检查当前项目并修复问题/);
-  assert.match(activeFrame, /当前任务\s+检查当前项目并修复问题/);
+  const activeFrame = await waitForFrame(view, /任务\s+检查当前项目并修复问题.*运行中/);
+  assert.match(activeFrame, /任务\s+检查当前项目并修复问题.*\d+(?:ms|s).*运行中/);
 
   client.emit('message', {type: 'turn_completed', answer: '检查完成'});
   await waitForFrame(view, /检查完成/);
-  assert.doesNotMatch(view.lastFrame(), /当前任务\s+检查当前项目并修复问题/);
+  assert.doesNotMatch(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
   view.unmount();
 });
 

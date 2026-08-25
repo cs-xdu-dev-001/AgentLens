@@ -1920,13 +1920,31 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   );
 });
 
-const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({goal}) {
+export function activeTaskAnchorMetrics({elapsedMs = 0, runProjection = null} = {}) {
+  const summary = runProjection?.runSummary ?? {};
+  const total = Math.max(0, Number(summary.totalSteps) || 0);
+  const completed = total
+    ? Math.min(Math.max(0, Number(summary.completedSteps) || 0), total)
+    : 0;
+  return [
+    formatTaskElapsed(elapsedMs),
+    formatTaskTokens(summary.totalTokens ?? runProjection?.usage?.totalTokens ?? runProjection?.usage?.estimatedTokens),
+    total ? `${completed}/${total}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({goal, metrics = '', state = null}) {
   const label = publicLabel(goal, "", 180);
   if (!label) return null;
   return (
-    <Box flexShrink={0} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1}>
-      <Text color={MUTED}>当前任务  </Text>
-      <Text color={PRIMARY} bold wrap="truncate-end">{label}</Text>
+    <Box flexShrink={0} justifyContent="space-between" borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1}>
+      <Box flexShrink={1}>
+        <Text color={MUTED}>任务  </Text>
+        <Text color={PRIMARY} bold wrap="truncate-end">{label}</Text>
+      </Box>
+      <Text color={state?.color ?? ACCENT} bold={state?.label === '失败'}>
+        {metrics ? `${metrics}  ` : ''}{state?.label ?? '运行中'}
+      </Text>
     </Box>
   );
 });
@@ -5607,6 +5625,10 @@ export function App({
   const taskElapsedMs = runStartedAtRef.current
     ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
     : 0;
+  const activeTaskMetrics = activeTaskAnchorMetrics({
+    elapsedMs: taskElapsedMs,
+    runProjection,
+  });
   const interactionHint = {
     question: `↑↓选择 · Enter确认${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     approval: `←→选择 · Enter确认 · Esc拒绝${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
@@ -5933,7 +5955,16 @@ export function App({
       <>
         {staticConversation}
         <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
-          {fullscreenEnabled && frozen.running ? <ActiveTaskAnchor goal={frozen.goal ?? lastQuestion} /> : null}
+          {fullscreenEnabled && frozen.running ? (
+            <ActiveTaskAnchor
+              goal={frozen.goal ?? lastQuestion}
+              metrics={activeTaskAnchorMetrics({
+                elapsedMs: frozen.elapsedMs ?? taskElapsedMs,
+                runProjection: frozen.runProjection ?? runProjection,
+              })}
+              state={runHeader}
+            />
+          ) : null}
           <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
             {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
             <ScrollView
@@ -5973,7 +6004,13 @@ export function App({
 
   return (
     <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
-      {running ? <ActiveTaskAnchor goal={lastQuestion} /> : null}
+      {running ? (
+        <ActiveTaskAnchor
+          goal={lastQuestion}
+          metrics={activeTaskMetrics}
+          state={runHeader}
+        />
+      ) : null}
       <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
         {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
         <ScrollView
