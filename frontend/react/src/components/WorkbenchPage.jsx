@@ -85,6 +85,8 @@ export function WorkbenchPage({ active = false }) {
 
         <div className="workspace-runtime-strip" role="status">
           <span className={status?.enabled ? "ready" : ""}>{status?.enabled ? "工作区已启用" : "工作区未启用"}</span>
+          <span className={status?.isolation === "user" ? "ready" : ""}>{status?.isolation === "user" ? "仅当前用户可见" : "隔离状态未知"}</span>
+          <span className={status?.protectedPatterns?.length ? "ready" : ""}>{status?.protectedPatterns?.length ? "敏感路径受保护" : "敏感路径保护未知"}</span>
           <span className={status?.sandboxReady ? "ready" : ""}>{status?.sandboxReady ? "Linux沙箱可用" : "命令执行未启用"}</span>
         </div>
 

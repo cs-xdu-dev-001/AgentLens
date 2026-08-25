@@ -2282,7 +2282,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-radius: 999px;
   color: var(--muted);
   background: var(--control-bg);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
 }
 .workspace-runtime-strip span.ready { color: var(--success); }
 

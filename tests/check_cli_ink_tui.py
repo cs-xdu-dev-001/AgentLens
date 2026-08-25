@@ -203,6 +203,15 @@ class FakeBackend:
             "changedFiles": 0,
         }
 
+    def workspace_switch_root(self, path):
+        self.workspace_root = path
+        self.reset()
+        return {
+            **self.workspace_status(),
+            "workspaceKind": "project",
+            "message": f"已切换工作区：{path}",
+        }
+
     def workspace_diff(self, path=None):
         return {"files": [], "patch": ""}
 
@@ -519,6 +528,23 @@ def main() -> None:
     ready_bridge.handle({"type": "workspace", "action": "status"})
     workspace_rows = wait_for(ready_output, "workspace_result")
     assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace"
+    initial_history_path = ready_bridge.history_store.path
+    ready_bridge._running = True
+    ready_bridge.handle(
+        {"type": "workspace", "action": "switch", "path": "/workspace/busy"}
+    )
+    assert wait_for(ready_output, "workspace_failed")[-1]["action"] == "switch"
+    assert backend.workspace_root == "/workspace"
+    ready_bridge._running = False
+    ready_bridge.handle(
+        {"type": "workspace", "action": "switch", "path": "/workspace/project"}
+    )
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert workspace_rows[-1]["action"] == "switch"
+    assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace/project"
+    assert workspace_rows[-1]["sessions"][0]["runId"] == "run_ink"
+    assert ready_bridge.history_store.path != initial_history_path
+    assert wait_for(ready_output, "session_reset")
     ready_bridge.handle(
         {
             "type": "workspace",
@@ -648,8 +674,9 @@ def main() -> None:
     assert "ghp_secretvalue" not in str(failed_update_rows[-1])
     assert "agentlens update" in failed_update_rows[-1]["message"]
 
+    reset_count = backend.reset_count
     bridge.handle({"type": "reset"})
-    assert backend.reset_count == 1
+    assert backend.reset_count == reset_count + 1
 
     package = (ROOT / "backend" / "pyproject.toml").read_text(encoding="utf-8")
     assert '"ink_tui/*.mjs"' in package

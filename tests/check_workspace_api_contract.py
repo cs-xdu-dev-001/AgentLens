@@ -29,12 +29,17 @@ def main() -> None:
     assert "operation_id=payload.operationId" in router
     assert "WorkspaceRuntime(" in router
     assert '"itemCount": item_count' in router
+    assert '"isolation": "user"' in router
+    assert '"protectedPatterns"' in router
+    assert '"symlinkWriteProtected": True' in router
     assert "workspace_router" in registry
     assert "workspaceApi" in client
     assert "undoChange" in client and "workspace/changes" in client
     assert "工作区" in page and "Linux沙箱可用" in page
+    assert "仅当前用户可见" in page and "敏感路径受保护" in page
     assert "workspaceApi.status()" in topbar
     assert "chat-workspace-toggle" in topbar
+    assert "隔离工作区" in topbar
     assert "knowflow:react-workspace-updated" in topbar
 
     print("workspace API and frontend preserve authenticated user isolation")

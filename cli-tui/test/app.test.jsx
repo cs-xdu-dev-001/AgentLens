@@ -155,7 +155,7 @@ test('active task anchor reports live duration, token usage, and protocol progre
 test('home workspaces block execution while preserving remote and project workspaces', () => {
   assert.match(
     workspaceExecutionBlock({workspaceKind: 'home'}),
-    /agentlens chat --workspace <项目目录>/,
+    /\/workspace <项目目录>/,
   );
   assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
   assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
@@ -2755,10 +2755,31 @@ test('home workspace keeps the draft and prevents failed task cards', async t =>
   assert.match(view.lastFrame(), /先指定项目目录/);
 
   view.stdin.write('\u0015');
-  view.stdin.write('/workspace');
+  view.stdin.write('/workspace /workspace/project');
   view.stdin.write('\r');
   await tick();
-  assert.deepEqual(client.sent.at(-1), {type: 'workspace', action: 'status'});
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'switch',
+    path: '/workspace/project',
+  });
+  client.emit('message', {type: 'session_reset'});
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'switch',
+    history: ['新工作区历史'],
+    sessions: [{runId: 'run_project', title: '项目会话', status: 'completed'}],
+    result: {
+      projectRoot: '/workspace/project',
+      cwd: '/workspace/project',
+      allowedDirectories: ['/workspace/project'],
+      protectedPatterns: ['.git', '.env*'],
+      workspaceKind: 'project',
+      message: '已切换工作区：/workspace/project',
+    },
+  });
+  await waitForFrame(view, /已切换工作区/);
+  assert.doesNotMatch(view.lastFrame(), /未进入项目/);
 });
 
 test('session rename, branch and export commands stay inside the runtime protocol', async () => {

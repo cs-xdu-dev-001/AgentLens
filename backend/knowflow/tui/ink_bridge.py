@@ -449,9 +449,25 @@ class InkRuntimeBridge:
 
     def _workspace(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
+        if action == "switch":
+            with self._state_lock:
+                blocked = self._running or self._pending is not None
+            if blocked:
+                self.send(
+                    {
+                        "type": "workspace_failed",
+                        "action": action,
+                        "message": "当前任务尚未结束，请先完成、拒绝或取消后再切换工作区。",
+                    }
+                )
+                return
         try:
             if action == "status":
                 result = self.backend.workspace_status()
+            elif action == "switch":
+                result = self.backend.workspace_switch_root(
+                    str(message.get("path") or "")
+                )
             elif action == "add":
                 result = self.backend.workspace_add_directory(str(message.get("path") or ""))
             elif action == "cd":
@@ -474,13 +490,25 @@ class InkRuntimeBridge:
                 }
             )
         else:
-            self.send(
-                {
-                    "type": "workspace_result",
-                    "action": action,
-                    "result": _public_value(result, max_chars=100_000),
-                }
-            )
+            payload = {
+                "type": "workspace_result",
+                "action": action,
+                "result": _public_value(result, max_chars=100_000),
+            }
+            if action == "switch":
+                self._request_id = ""
+                self._run_id = ""
+                self.history_store = PromptHistoryStore(
+                    local_data_dir()
+                    / "history"
+                    / f"{_history_scope(self.backend)}.jsonl"
+                )
+                payload["history"] = _public_history(self.history_store.load())
+                payload["sessions"] = _public_sessions(
+                    self.backend.list_sessions(limit=8)
+                )
+                self.send({"type": "session_reset"})
+            self.send(payload)
 
     def _resume_session(self, message: dict[str, Any]) -> None:
         run_id = str(message.get("runId") or "")

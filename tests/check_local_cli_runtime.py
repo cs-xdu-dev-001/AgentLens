@@ -30,6 +30,7 @@ from knowflow.services.langgraph_agent_engine import (  # noqa: E402
 from knowflow.services.workspace_runtime import (  # noqa: E402
     SandboxCommandResult,
     WorkspaceRuntime,
+    WorkspaceRuntimeError,
     register_workspace_tools,
 )
 from knowflow.tui.state import PromptHistoryStore, TuiSessionState  # noqa: E402
@@ -89,6 +90,31 @@ def main() -> None:
         "next",
         "later",
     ]
+
+    with TemporaryDirectory() as folder:
+        root = Path(folder)
+        initial = root / "initial"
+        target = root / "project"
+        initial.mkdir()
+        target.mkdir()
+        runtime = LocalAgentRuntime(
+            workspace_root=initial,
+            data_root=root / "data",
+        )
+        initial_state_root = runtime.workspace.state_root
+        switched = runtime.workspace_switch_root(str(target))
+        assert switched["projectRoot"] == str(target.resolve())
+        assert switched["cwd"] == str(target.resolve())
+        assert switched["allowedDirectories"] == [str(target.resolve())]
+        assert switched["workspaceKind"] != "home"
+        assert runtime.workspace.state_root != initial_state_root
+        assert "已切换工作区" in switched["message"]
+        try:
+            runtime.workspace_switch_root(str(root / "missing"))
+        except WorkspaceRuntimeError as exc:
+            assert exc.code == "workspace_root_missing"
+        else:
+            raise AssertionError("missing workspace root unexpectedly accepted")
 
     with TemporaryDirectory() as folder:
         store = LocalCliConfigStore(Path(folder) / "config")

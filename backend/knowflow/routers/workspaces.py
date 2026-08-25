@@ -106,6 +106,9 @@ def workspace_status(request: Request) -> dict:
             "platform": "linux" if sys.platform.startswith("linux") else "unsupported",
             "maxFileBytes": WORKSPACE_MAX_FILE_BYTES,
             "itemCount": item_count,
+            "isolation": "user",
+            "protectedPatterns": [".git", ".env*", ".ssh", ".tmp"],
+            "symlinkWriteProtected": True,
         }
     )
 

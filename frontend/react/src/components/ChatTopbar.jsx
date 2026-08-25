@@ -34,7 +34,7 @@ export function workspaceHeaderState(status, loading = false) {
   if (!status?.enabled) return { label: "工作区关闭", state: "disabled" };
   const itemCount = Math.max(0, Number(status.itemCount) || 0);
   return {
-    label: itemCount ? `个人工作区 · ${itemCount}项` : "个人工作区",
+    label: itemCount ? `隔离工作区 · ${itemCount}项` : "隔离工作区",
     state: status.sandboxReady ? "ready" : "available",
   };
 }
@@ -136,7 +136,7 @@ export function ChatTopbar({ drawerCollapsed = true }) {
           className={`chat-workspace-toggle is-${workspaceHeader.state}`}
           type={"button"}
           aria-label={`${workspaceHeader.label}，打开工作区`}
-          title={`${workspaceHeader.label}（打开工作区）`}
+          title={`${workspaceHeader.label}，仅当前用户可见（打开工作区）`}
           onClick={handleWorkspaceOpen}
         >
           <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>

@@ -413,6 +413,15 @@ class TuiBackend:
             return {}
         return dict(self.local_agent.workspace_status())
 
+    def workspace_switch_root(self, path: str) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式不能切换服务器工作区。")
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        result = dict(self.local_agent.workspace_switch_root(path))
+        self.reset()
+        return result
+
     def workspace_add_directory(self, path: str) -> dict[str, Any]:
         if self.remote_client is not None:
             raise RuntimeError("远程模式暂不支持从CLI添加本地目录。")

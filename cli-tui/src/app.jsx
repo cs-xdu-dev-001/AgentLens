@@ -1739,7 +1739,7 @@ function workspaceText(workspace) {
 
 export function workspaceExecutionBlock(workspace) {
   if (!workspace || workspace.remote || workspace.workspaceKind !== 'home') return '';
-  return '当前工作区是HOME目录，任务未发送。请退出后运行：agentlens chat --workspace <项目目录>';
+  return '当前工作区是HOME目录，任务未发送。输入/workspace <项目目录>切换后继续。';
 }
 
 function contextText(status) {
@@ -2001,8 +2001,8 @@ const WorkspaceGuard = React.memo(function WorkspaceGuard({workspace}) {
   return (
     <Box paddingX={1} marginTop={1}>
       <Text color={WARNING} bold>未进入项目</Text>
-      <Text color={MUTED}> · 重启：</Text>
-      <Text color={PRIMARY}>agentlens chat --workspace {'<项目目录>'}</Text>
+      <Text color={MUTED}> · 输入</Text>
+      <Text color={PRIMARY}>/workspace {'<项目目录>'}</Text>
     </Box>
   );
 });
@@ -3491,6 +3491,25 @@ export function App({
           if (result.workspace) setWorkspace(result.workspace);
         } else {
           setWorkspace(result);
+          if (message.action === 'switch') {
+            lastAssistantAnswerRef.current = '';
+            setAttachedPaths([]);
+            setSessions(Array.isArray(message.sessions) ? message.sessions : []);
+            setHistory(Array.isArray(message.history) ? message.history : []);
+            setHistoryIndex(-1);
+            setQueue([]);
+            setQueuePaused(false);
+            setPromptStash(null);
+            killBufferRef.current = '';
+            composerUndoRef.current = [];
+            setPastedContents({});
+            setChangeDetailOpen(false);
+            setChangeLoading(false);
+            setChangeConfirming(false);
+            setChangePatch('');
+            setChangePatchOffset(0);
+            setPhase('工作区已切换');
+          }
           appendItem('assistant', message.action === 'status' ? workspaceText(result) : (result.message || workspaceText(result)));
         }
         return;
@@ -4264,7 +4283,11 @@ export function App({
         client.send({type: 'context', action: 'compact', instructions: args});
       }
     } else if (command.value === '/workspace') {
-      client.send({type: 'workspace', action: 'status'});
+      const target = args.trim();
+      if (!target) client.send({type: 'workspace', action: 'status'});
+      else if (running || approval || question) {
+        appendItem('error', '当前任务尚未结束，请先完成、拒绝或取消后再切换工作区。');
+      } else client.send({type: 'workspace', action: 'switch', path: target});
     } else if (command.value === '/attach') {
       const path = resolveWorkspaceAttachment(workspacePaths, args);
       if (workspace?.remote) {

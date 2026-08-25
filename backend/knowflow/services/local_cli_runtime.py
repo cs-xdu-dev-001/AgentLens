@@ -47,6 +47,7 @@ from .workspace_runtime import (
     SrtSandboxRunner,
     WorkspaceContext,
     WorkspaceRuntime,
+    WorkspaceRuntimeError,
     register_workspace_tools,
 )
 from .workspace_references import (
@@ -551,13 +552,7 @@ class LocalAgentRuntime:
         if os.name != "nt":
             self.data_root.chmod(0o700)
         self.gateway = _gateway()
-        workspace_state = self.data_root / "workspace-state" / hashlib.sha256(
-            str(self.workspace_root).encode("utf-8")
-        ).hexdigest()[:16]
-        self.workspace = WorkspaceContext(
-            self.workspace_root,
-            state_root=workspace_state,
-        )
+        self.workspace = self._workspace_context(self.workspace_root)
         self.sessions = LocalSessionStore(self.data_root / "sessions")
         self.extensions = LocalExtensionStore(
             self.config_store,
@@ -575,6 +570,12 @@ class LocalAgentRuntime:
         )
         self._cancel_lock = Lock()
         self._cancel_events: dict[str, Event] = {}
+
+    def _workspace_context(self, root: Path) -> WorkspaceContext:
+        workspace_state = self.data_root / "workspace-state" / hashlib.sha256(
+            str(root).encode("utf-8")
+        ).hexdigest()[:16]
+        return WorkspaceContext(root, state_root=workspace_state)
 
     def cancel(self, run_id: str | None = None) -> bool:
         """Cancel interruptible tools now and stop at the next graph boundary."""
@@ -604,6 +605,36 @@ class LocalAgentRuntime:
 
     def workspace_status(self) -> dict[str, Any]:
         return self.workspace.status()
+
+    def workspace_switch_root(self, path: str) -> dict[str, Any]:
+        raw = str(path or "").strip()
+        if not raw:
+            raise WorkspaceRuntimeError(
+                "workspace_root_required",
+                "请输入要打开的项目目录。",
+            )
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            target = self.workspace.cwd / target
+        try:
+            target = target.resolve(strict=True)
+        except OSError as exc:
+            raise WorkspaceRuntimeError(
+                "workspace_root_missing",
+                "项目目录不存在，请检查路径后重试。",
+            ) from exc
+        if not target.is_dir():
+            raise WorkspaceRuntimeError(
+                "workspace_root_not_directory",
+                "工作区必须是一个目录。",
+            )
+        if target != self.workspace_root:
+            self.workspace_root = target
+            self.workspace = self._workspace_context(target)
+        return {
+            **self.workspace.status(),
+            "message": f"已切换工作区：{target}",
+        }
 
     def workspace_add_directory(self, path: str) -> dict[str, Any]:
         return self.workspace.add_directory(path)
