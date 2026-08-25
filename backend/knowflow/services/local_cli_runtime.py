@@ -271,6 +271,53 @@ def validate_local_config(value: dict[str, Any]) -> dict[str, str]:
     return config
 
 
+def normalize_local_api_mode(value: Any) -> str | None:
+    """Normalize the two public protocol choices without guessing typos."""
+    token = str(value or "").strip().lower().replace("-", "_")
+    return {
+        "1": "responses",
+        "response": "responses",
+        "responses": "responses",
+        "2": "chat_completions",
+        "chat": "chat_completions",
+        "chat_completion": "chat_completions",
+        "chat_completions": "chat_completions",
+    }.get(token)
+
+
+def explain_local_connection_error(detail: Any) -> str:
+    """Turn gateway failures into short, actionable BYOK diagnostics."""
+    original = str(detail or "模型服务拒绝连接。").strip()[:800]
+    lowered = original.lower()
+    if "http 401" in lowered or "authentication" in lowered or "unauthorized" in lowered:
+        action = "认证失败（HTTP 401）。请检查API Key是否有效，以及Key是否属于当前中转站。"
+    elif "http 403" in lowered or "forbidden" in lowered:
+        action = (
+            "上游拒绝访问（HTTP 403）。请检查Key分组权限、模型映射，"
+            "以及该模型是否开放当前接口协议。"
+        )
+    elif "http 404" in lowered or "not_found" in lowered or "not found" in lowered:
+        action = (
+            "接口或模型不存在（HTTP 404）。请确认API地址以/v1结尾、模型名精确匹配，"
+            "并检查中转站是否开放当前接口。"
+        )
+    elif "http 429" in lowered or "rate_limit" in lowered:
+        action = "请求受到限流（HTTP 429）。请稍后重试，或检查Key的RPM与并发额度。"
+    elif (
+        "http 503" in lowered
+        or "无可用渠道" in original
+        or "unavailable channel" in lowered
+        or "no available channel" in lowered
+    ):
+        action = (
+            "当前模型没有可用上游渠道（HTTP 503）。请检查模型名称、渠道状态，"
+            "以及Key所属分组的模型权限。"
+        )
+    else:
+        return original
+    return f"{action}\n原始错误：{original}"
+
+
 class _PlaintextCipher:
     @staticmethod
     def decrypt(value: Any) -> str:
@@ -396,7 +443,7 @@ def gateway_config(value: dict[str, Any]) -> dict[str, Any]:
 def test_local_connection(value: dict[str, Any]) -> str:
     status, detail = _gateway().test(gateway_config(value))
     if status != "available":
-        raise LocalCliConfigError(detail)
+        raise LocalCliConfigError(explain_local_connection_error(detail))
     return detail
 
 

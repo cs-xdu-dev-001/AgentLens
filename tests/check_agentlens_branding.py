@@ -15,6 +15,7 @@ def main() -> None:
         "frontend/react/src/components/AppErrorBoundary.jsx": '>{"AgentLens"}<',
         "frontend/react/src/components/Sidebar.jsx": "AgentLens",
         "cli-tui/src/app.jsx": "AgentLens",
+        "backend/knowflow/cli.py": 'name="agentlens"',
         "backend/knowflow/app.py": 'title="AgentLens API"',
         "backend/knowflow/tui/app.py": 'TITLE = "AgentLens"',
         "README.md": "# AgentLens",

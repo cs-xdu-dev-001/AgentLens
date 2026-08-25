@@ -12,11 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.local_cli_runtime import (  # noqa: E402
+    explain_local_connection_error,
     gateway_config,
     LocalAgentRuntime,
     LocalCliConfigError,
     LocalCliConfigStore,
     local_cli_max_tool_rounds,
+    normalize_local_api_mode,
     validate_local_config,
 )
 from knowflow.services.agent_trace import sanitize_trace_value  # noqa: E402
@@ -34,6 +36,20 @@ from knowflow.tui.state import PromptHistoryStore, TuiSessionState  # noqa: E402
 
 
 def main() -> None:
+    assert normalize_local_api_mode("1") == "responses"
+    assert normalize_local_api_mode("responses") == "responses"
+    assert normalize_local_api_mode("2") == "chat_completions"
+    assert normalize_local_api_mode("chat-completions") == "chat_completions"
+    assert normalize_local_api_mode("respinses") is None
+    forbidden = explain_local_connection_error(
+        "Responses API connection failed: HTTP 403: upstream_error"
+    )
+    assert "上游拒绝访问" in forbidden and "Key分组权限" in forbidden
+    unavailable = explain_local_connection_error(
+        "Chat Completions connection failed: HTTP 503: 无可用渠道"
+    )
+    assert "没有可用上游渠道" in unavailable and "模型权限" in unavailable
+
     sanitized = sanitize_trace_value(
         {
             "command": "curl --token cli-secret https://example.test",

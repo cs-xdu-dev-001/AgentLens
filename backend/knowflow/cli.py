@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 app = typer.Typer(
-    name="knowflow",
+    name="agentlens",
     help="AgentLens Linux Agent CLI",
     no_args_is_help=True,
 )
@@ -57,6 +57,21 @@ profile_store = RemoteProfileStore()
 DEFAULT_CLI_PACKAGE_SPEC = (
     "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
 )
+
+
+def _prompt_local_api_mode(current: str) -> str:
+    from .services.local_cli_runtime import normalize_local_api_mode
+
+    default_choice = "2" if current == "chat_completions" else "1"
+    console.print("接口协议")
+    console.print("  [bold cyan]1[/bold cyan]  Responses API（推荐，适合新模型）")
+    console.print("  [bold cyan]2[/bold cyan]  Chat Completions（兼容传统中转站）")
+    while True:
+        selected = typer.prompt("选择", default=default_choice)
+        normalized = normalize_local_api_mode(selected)
+        if normalized:
+            return normalized
+        error_console.print("[red]请输入1或2；也可输入responses或chat_completions。[/red]")
 
 
 def _version_callback(value: bool) -> None:
@@ -415,6 +430,7 @@ def configure(
     from .services.local_cli_runtime import (
         LocalCliConfigError,
         LocalCliConfigStore,
+        normalize_local_api_mode,
         test_local_connection,
         validate_local_config,
     )
@@ -432,10 +448,17 @@ def configure(
     resolved_provider = (
         provider or current.get("provider") or "custom"
     )
-    resolved_mode = api_mode or typer.prompt(
-        "接口协议",
-        default=current.get("api_mode") or "responses",
-    )
+    if api_mode is None:
+        resolved_mode = _prompt_local_api_mode(
+            str(current.get("api_mode") or "responses")
+        )
+    else:
+        resolved_mode = normalize_local_api_mode(api_mode)
+        if resolved_mode is None:
+            error_console.print(
+                "[red]配置失败：--api-mode必须是responses或chat_completions。[/red]"
+            )
+            raise typer.Exit(2)
     resolved_key = api_key or typer.prompt(
         "API Key",
         hide_input=True,
