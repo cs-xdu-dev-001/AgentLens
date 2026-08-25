@@ -18,10 +18,12 @@ flow = read("frontend/react/src/controller/chatFlow.js")
 for needle in (
     'value: "/continue"',
     'value: "/retry"',
+    'value: "/fix"',
     'value: "/search"',
     'aliases: ["/find"]',
     'when: "continue"',
     'when: "retry"',
+    'when: "fix"',
     'value: "/copy"',
     'value: "/edit"',
     'value: "/rewind"',
@@ -33,7 +35,7 @@ for needle in (
 for needle in (
     'knowflow:react-agent-run-action',
     'knowflow:react-transcript-search-open',
-    'action === "continue" ? "resume" : "restart"',
+    'action === "continue" ? "resume" : action === "fix" ? "fix" : "restart"',
     'handleQueueAction("resume")',
     "agentState.recoveryActions",
     'knowflow:react-message-command',
@@ -70,20 +72,24 @@ if (!idle.includes("/compact")) {
 if (values({ usage: { "/status": 3 } })[0] !== "/status") {
   throw new Error("frequently used commands are not promoted");
 }
-if (idle.includes("/continue") || idle.includes("/retry")) {
+if (idle.includes("/continue") || idle.includes("/retry") || idle.includes("/fix")) {
   throw new Error("idle composer exposed recovery commands");
 }
-const failed = values({ recoveryActions: ["continue", "retry"] });
-if (!failed.includes("/continue") || !failed.includes("/retry")) {
+const failed = values({ recoveryActions: ["continue", "retry", "fix"] });
+if (!failed.includes("/continue") || !failed.includes("/retry") || !failed.includes("/fix")) {
   throw new Error("failed composer omitted recovery commands");
 }
 const queued = values({ queuePaused: true });
-if (!queued.includes("/continue") || queued.includes("/retry")) {
+if (!queued.includes("/continue") || queued.includes("/retry") || queued.includes("/fix")) {
   throw new Error("paused queue recovery commands are incorrect");
 }
 const retrySearch = composerCommandSuggestions("重新", { recoveryActions: ["retry"] });
 if (retrySearch.length !== 1 || retrySearch[0].value !== "/retry") {
   throw new Error("localized recovery search failed");
+}
+const fixSearch = composerCommandSuggestions("分析错误", { recoveryActions: ["fix"] });
+if (fixSearch.length !== 1 || fixSearch[0].value !== "/fix") {
+  throw new Error("localized fix recovery search failed");
 }
 const feedback = resolveComposerCommand("/bug");
 if (feedback?.value !== "/feedback" || feedback?.action !== "feedback") {

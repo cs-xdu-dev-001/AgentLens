@@ -1281,8 +1281,13 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        'aria-keyshortcuts={"1"}',
-        "run workbench announces numbered tab shortcuts",
+        'aria-keyshortcuts={"Alt+E 1"}',
+        "run workbench announces global and numbered trace shortcuts",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        'aria-keyshortcuts={"Alt+G 3"}',
+        "run workbench announces global and numbered artifact shortcuts",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",

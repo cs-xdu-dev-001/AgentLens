@@ -158,19 +158,25 @@ function WorkbenchShell() {
     const handleWorkbenchShortcut = (event) => {
       if (event.repeat) return;
       const key = String(event.key || "").toLowerCase();
-      const webShortcut = event.altKey && event.key.toLowerCase() === "t"
+      const webShortcut = event.altKey && ["t", "e", "g"].includes(key)
         && !event.ctrlKey && !event.metaKey;
-      const desktopShortcut = event.ctrlKey && key === "t"
+      const desktopShortcut = event.ctrlKey && ["t", "e", "g"].includes(key)
         && !event.altKey && !event.metaKey;
       if (!webShortcut && !desktopShortcut) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
 
       const workbench = document.getElementById("evidence-drawer");
       const hasWorkbenchContent = workbench?.dataset.hasRun === "true";
-      if (drawerCollapsed && !hasWorkbenchContent) return;
+      const requestedTab = key === "g" ? "artifacts" : "trace";
+      const artifactCount = Number(workbench?.dataset.artifactCount || 0);
+      if (
+        (key === "t" && drawerCollapsed && !hasWorkbenchContent)
+        || (key !== "t" && !hasWorkbenchContent)
+        || (key === "g" && artifactCount < 1)
+      ) return;
 
       event.preventDefault();
-      const nextCollapsed = activePage === "chat" ? !drawerCollapsed : false;
+      const nextCollapsed = key === "t" && activePage === "chat" ? !drawerCollapsed : false;
       if (nextCollapsed) {
         const origin = drawerFocusOriginRef.current;
         drawerFocusOriginRef.current = null;
@@ -178,6 +184,9 @@ function WorkbenchShell() {
       } else {
         drawerFocusOriginRef.current = currentFocusOutsideWorkbench();
         pendingWorkbenchFocusRef.current = true;
+        window.dispatchEvent(new CustomEvent("knowflow:react-workbench-select-tab", {
+          detail: { activeTab: requestedTab },
+        }));
       }
       drawerCollapsedRef.current = nextCollapsed;
       writeStoredBoolean("knowflow.drawerCollapsed", nextCollapsed);

@@ -529,7 +529,7 @@ export function ChatComposerForm() {
     }
     window.dispatchEvent(new CustomEvent("knowflow:react-agent-run-action", {
       detail: {
-        action: action === "continue" ? "resume" : "restart",
+        action: action === "continue" ? "resume" : action === "fix" ? "fix" : "restart",
         failedStepTitle: agentState.failedStepTitle,
         failureCode: agentState.failureCode || "agent_run_failed",
         messageId: agentState.messageId,
@@ -647,7 +647,7 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
       return;
     }
-    if (["continue", "retry"].includes(command.action)) {
+    if (["continue", "retry", "fix"].includes(command.action)) {
       handleRecoveryCommand(command.action);
       return;
     }

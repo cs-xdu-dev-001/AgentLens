@@ -126,7 +126,7 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
   {
     value: "/tasks",
     label: "运行详情",
-    description: "打开当前任务、工具与恢复操作",
+    description: "打开当前任务、工具与恢复操作，Alt+E直达过程",
     category: "会话",
     action: "tasks",
   },
@@ -147,6 +147,14 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
     when: "retry",
   },
   {
+    value: "/fix",
+    label: "分析错误并继续",
+    description: "让Agent分析最近的工具错误并继续执行",
+    category: "恢复",
+    action: "fix",
+    when: "fix",
+  },
+  {
     value: "/knowledge",
     label: "知识库",
     description: "管理文档与检索设置",
@@ -163,7 +171,7 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
   {
     value: "/diff",
     label: "查看文件变更",
-    description: "打开最近任务的文件差异",
+    description: "打开最近任务的文件差异，Alt+G直达变更",
     category: "工作区",
     action: "artifacts-diff",
   },
@@ -242,6 +250,7 @@ export function composerCommandSuggestions(
     if (command.when === "sending" && !sending) return false;
     if (command.when === "continue" && !recoverable.has("continue") && !queuePaused) return false;
     if (command.when === "retry" && !recoverable.has("retry")) return false;
+    if (command.when === "fix" && !recoverable.has("fix")) return false;
     return true;
   });
   if (!normalized) {
