@@ -368,6 +368,7 @@ export function transcriptSearchText(item = {}) {
       item.phase,
       ...(Array.isArray(item.activities) ? item.activities.flatMap(([, activity]) => [activity?.label, activity?.title, activity?.toolName]) : []),
       ...(Array.isArray(item.traceSteps) ? item.traceSteps.flatMap(([, step]) => [step?.label, step?.title, step?.toolName]) : []),
+      ...(Array.isArray(item.verifications) ? item.verifications.flatMap(row => [row?.label, row?.tool, row?.statusLabel]) : []),
     ].filter(Boolean).join('\n');
   }
   if (item.role === 'delivery_summary') {
@@ -1023,6 +1024,7 @@ const TaskSummary = React.memo(function TaskSummary({
   usage = {},
   artifacts = [],
   references = [],
+  verifications = [],
   recoveryActions = [],
   runSummary = null,
   modelRetry = null,
@@ -1037,10 +1039,11 @@ const TaskSummary = React.memo(function TaskSummary({
     traceSteps,
     artifacts,
     references,
+    verifications,
   );
   const outcome = taskOutcomeState({failure, phase, rows, runSummary, running});
   const {childFailureCount, completedWithWarnings, failed, waiting} = outcome;
-  if (!running && !rows.length && !artifacts.length && !references.length && !failed) return null;
+  if (!running && !rows.length && !artifacts.length && !references.length && !verifications.length && !failed) return null;
   const protocolTotal = Math.max(0, Number(runSummary?.totalSteps) || 0);
   const localCompleted = rows.filter(row => ['success', 'succeeded', 'completed', 'cancelled'].includes(row.status)).length;
   const completed = protocolTotal
@@ -1067,6 +1070,7 @@ const TaskSummary = React.memo(function TaskSummary({
     toolCount ? `${toolCount}次工具` : '',
     artifacts.length ? `${artifacts.length}个产物` : '',
     references.length ? `${references.length}个来源` : '',
+    verifications.length ? `验证${verifications.filter(row => row.status === 'passed').length}/${verifications.length}` : '',
     total ? `${completed}/${total}` : '',
   ].filter(Boolean).join(' · ');
   const retryRemainingSeconds = modelRetry
@@ -1113,7 +1117,7 @@ const TaskSummary = React.memo(function TaskSummary({
   ].filter(Boolean).join('  ');
   const detailControls = [
     navigationActive ? '↑↓选择 · Enter查看 · Esc返回' : 'Ctrl+T选择任务',
-    toolCount || references.length ? 'Ctrl+E运行详情' : '',
+    toolCount || references.length || verifications.length ? 'Ctrl+E运行详情' : '',
     artifacts.length ? 'Ctrl+G文件变更' : '',
   ].filter(Boolean).join(' · ');
   const taskTitle = publicLabel(String(runSummary?.headline || goal || '').replace(/\s+/g, ' ').trim(), '本次运行');
@@ -1246,6 +1250,27 @@ const TaskSummary = React.memo(function TaskSummary({
             );
           })}
           {artifacts.length > 5 ? <Text color={MUTED}>  另有{artifacts.length - 5}个产物</Text> : null}
+          {verifications.length ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={PRIMARY} bold>  验证 <Text color={MUTED}>{verifications.filter(row => row.status === 'passed').length}/{verifications.length}通过</Text></Text>
+              {verifications.slice(0, 5).map((verification, index) => {
+                const navigationKey = `verification:${verification.id || index}`;
+                const selected = navigationActive && selectedNavigationKey === navigationKey;
+                const passed = verification.status === 'passed';
+                return (
+                  <Text key={verification.id || index} color={selected ? PRIMARY : passed ? SUCCESS : ERROR} bold={selected} wrap="truncate-end">
+                    {selected ? '  › ' : passed ? '  ✓ ' : '  ✕ '}
+                    <Text color={PRIMARY}>{verification.label}</Text>
+                    <Text color={MUTED}>  {verification.tool}</Text>
+                    {verification.durationMs != null ? <Text color={MUTED}> · {formatTaskElapsed(verification.durationMs)}</Text> : null}
+                    <Text> · {verification.statusLabel}</Text>
+                    {verification.exitCode != null && verification.exitCode !== 0 ? <Text> · 退出码{verification.exitCode}</Text> : null}
+                  </Text>
+                );
+              })}
+              {verifications.length > 5 ? <Text color={MUTED}>    另有{verifications.length - 5}项验证</Text> : null}
+            </Box>
+          ) : null}
           {references.length ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={PRIMARY} bold>  来源 <Text color={MUTED}>{references.length}</Text></Text>
@@ -2001,6 +2026,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
         usage={item.usage ?? {}}
         artifacts={item.artifacts ?? []}
         references={item.references ?? []}
+        verifications={item.verifications ?? []}
         recoveryActions={item.recoveryActions ?? []}
         runSummary={item.runSummary ?? null}
         failure={item.failure ?? null}
@@ -2629,6 +2655,7 @@ export function App({
         usage: runProjectionRef.current.usage,
         artifacts: runProjectionRef.current.artifacts,
         references: runProjectionRef.current.references,
+        verifications,
         recoveryActions: runProjectionRef.current.recoveryActions,
         runSummary: runProjectionRef.current.runSummary,
         failure: runProjectionRef.current.error,
@@ -5885,6 +5912,7 @@ export function App({
           usage={runProjection.usage}
           artifacts={runProjection.artifacts}
           references={runProjection.references}
+          verifications={verificationRows([...traceSteps.values()], runProjection.verifications)}
           recoveryActions={runProjection.recoveryActions}
           runSummary={runProjection.runSummary}
           failure={runProjection.error}
@@ -5938,6 +5966,10 @@ export function App({
           usage={frozen.runProjection?.usage ?? {}}
           artifacts={frozen.runProjection?.artifacts ?? []}
           references={frozen.runProjection?.references ?? []}
+          verifications={verificationRows(
+            [...(frozen.traceSteps ?? new Map()).values()],
+            frozen.runProjection?.verifications,
+          )}
           recoveryActions={frozen.runProjection?.recoveryActions ?? []}
           runSummary={frozen.runProjection?.runSummary ?? null}
           failure={frozen.runProjection?.error ?? null}

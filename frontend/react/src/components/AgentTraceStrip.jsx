@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
+import { evidenceReferences } from "./agentEvidencePresentation.js";
 import { nextTraceStepId } from "./agentTraceNavigation.js";
-import { buildAgentRunPresentation } from "./agentRunPresentation.js";
+import {
+  buildAgentRunPresentation,
+  buildAgentVerificationPresentation,
+  verificationTraceStepId,
+} from "./agentRunPresentation.js";
 
 export function AgentTraceStrip({
   interactionPending = false,
@@ -17,6 +22,11 @@ export function AgentTraceStrip({
     () => buildAgentRunPresentation({ run, trace: safeTrace, now }),
     [now, run, safeTrace],
   );
+  const verifications = useMemo(
+    () => buildAgentVerificationPresentation(safeTrace, run?.verifications),
+    [run?.verifications, safeTrace],
+  );
+  const references = useMemo(() => evidenceReferences(run), [run]);
   const active = Boolean(presentation?.active);
   const status = presentation?.status || { className: "waiting", label: "等待开始" };
   const [expanded, setExpanded] = useState(active);
@@ -76,6 +86,8 @@ export function AgentTraceStrip({
     total: progressTotal,
   } = presentation;
   const settled = status.className === "success" && !expanded;
+  const failedVerification = verifications.find((item) => item.status === "failed");
+  const passedVerificationCount = verifications.filter((item) => item.status === "passed").length;
 
   const handleOpen = (activeTab = "trace", focusStepId = "") => {
     if (focusStepId) setFocusedStepId(String(focusStepId));
@@ -157,7 +169,7 @@ export function AgentTraceStrip({
       <div className={"agent-task-capsule-disclosure"} aria-hidden={!expanded}>
         <div className={"agent-task-capsule-body"}>
           <div className={"agent-task-capsule-section-head"}>
-            <strong>{"执行过程"}</strong>
+            <strong>{"运行时间线"}</strong>
             <span>{`${progressCompleted}/${progressTotal || rows.length}完成`}</span>
           </div>
           <ol className={"agent-task-capsule-steps"}>
@@ -202,6 +214,38 @@ export function AgentTraceStrip({
               <span className={"agent-context-pressure-track"} aria-hidden={"true"}>
                 <i style={{ transform: `scaleX(${context.percent / 100})` }}></i>
               </span>
+            </div>
+          ) : null}
+          {artifacts.length || verifications.length || references.length ? (
+            <div className={"agent-task-capsule-outcomes"} aria-label={"运行结果"}>
+              <strong>{"结果"}</strong>
+              <div>
+                {artifacts.length ? (
+                  <button type={"button"} onClick={() => handleOpen("artifacts")}>
+                    <span>{"变更"}</span>
+                    <b>{`${artifacts.length}项`}</b>
+                  </button>
+                ) : null}
+                {verifications.length ? (
+                  <button
+                    className={failedVerification ? "failed" : "passed"}
+                    type={"button"}
+                    onClick={() => handleOpen(
+                      "trace",
+                      verificationTraceStepId(failedVerification || verifications.at(-1), safeTrace),
+                    )}
+                  >
+                    <span>{"验证"}</span>
+                    <b>{`${passedVerificationCount}/${verifications.length}通过`}</b>
+                  </button>
+                ) : null}
+                {references.length ? (
+                  <button type={"button"} onClick={() => handleOpen("evidence")}>
+                    <span>{"来源"}</span>
+                    <b>{`${references.length}个`}</b>
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
           <AgentRecoveryPanel

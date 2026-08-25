@@ -1565,6 +1565,21 @@ def main() -> None:
         "post-answer delivery summary",
     )
     require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "运行时间线",
+        "run capsule uses one chronological information hierarchy",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "agent-task-capsule-outcomes",
+        "run timeline summarizes changes, verification, and evidence inline",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        'handleOpen("evidence")',
+        "run timeline deep links to evidence",
+    )
+    require(
         "frontend/react/src/components/AgentDeliveryCard.jsx",
         'openRunPanel("artifacts")',
         "delivery card artifact deep link",
@@ -1658,6 +1673,11 @@ def main() -> None:
         "frontend/styles.css",
         ".active-task-anchor",
         "active task anchor has a stable visual treatment",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-task-capsule-outcomes",
+        "run outcome summary has a compact shared visual treatment",
     )
     require(
         "frontend/react/src/components/AgentEvidenceStrip.jsx",

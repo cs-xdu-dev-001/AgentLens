@@ -13028,6 +13028,58 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-size: 12px;
 }
 
+.agent-task-capsule-outcomes {
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--control-border);
+}
+
+.agent-task-capsule-outcomes > strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.agent-task-capsule-outcomes > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.agent-task-capsule-outcomes button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.agent-task-capsule-outcomes button b {
+  color: var(--text-soft);
+  font-weight: 680;
+}
+
+.agent-task-capsule-outcomes button.passed b {
+  color: var(--success);
+}
+
+.agent-task-capsule-outcomes button.failed b {
+  color: var(--danger);
+}
+
+.agent-task-capsule-outcomes button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 1px;
+}
+
 .agent-context-pressure {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -13125,6 +13177,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   .agent-task-capsule-toggle:hover,
   .agent-task-capsule-detail:hover,
+  .agent-task-capsule-outcomes button:hover,
   .agent-task-capsule-step-button:hover {
     background: var(--control-bg-hover);
     color: var(--text);

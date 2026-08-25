@@ -170,8 +170,8 @@ console.log(JSON.stringify({
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "执行过程",
-        "inline run process heading",
+        "运行时间线",
+        "inline chronological run heading",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",

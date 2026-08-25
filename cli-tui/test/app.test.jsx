@@ -2143,6 +2143,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(completedFrame, /1\/1/);
   assert.match(completedFrame, /已完成/);
   assert.match(completedFrame, /✓ 检查服务状态/);
+  assert.match(completedFrame, /验证1\/1/);
   assert.doesNotMatch(completedFrame, /已完成并保存1个产物/);
   assert.match(completedFrame, /本轮交付/);
   assert.match(completedFrame, /验证通过/);
