@@ -33,7 +33,7 @@ from .langgraph_agent_engine import (
     AgentRunCancelledError,
     LangGraphAgentEngine,
 )
-from .model_gateway import ModelGateway
+from .model_gateway import ModelGateway, model_connection_diagnostic
 from .local_cli_extensions import LocalExtensionStore
 from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
@@ -288,31 +288,32 @@ def normalize_local_api_mode(value: Any) -> str | None:
 def explain_local_connection_error(detail: Any) -> str:
     """Turn gateway failures into short, actionable BYOK diagnostics."""
     original = str(detail or "模型服务拒绝连接。").strip()[:800]
-    lowered = original.lower()
-    if "http 401" in lowered or "authentication" in lowered or "unauthorized" in lowered:
+    code = model_connection_diagnostic("unavailable", original)["code"]
+    if code == "connection_failed" and "无可用渠道" in original:
+        code = "upstream_unavailable"
+    if code == "authentication_failed":
         action = "认证失败（HTTP 401）。请检查API Key是否有效，以及Key是否属于当前中转站。"
-    elif "http 403" in lowered or "forbidden" in lowered:
+    elif code == "access_denied":
         action = (
             "上游拒绝访问（HTTP 403）。请检查Key分组权限、模型映射，"
             "以及该模型是否开放当前接口协议。"
         )
-    elif "http 404" in lowered or "not_found" in lowered or "not found" in lowered:
+    elif code == "not_found":
         action = (
             "接口或模型不存在（HTTP 404）。请确认API地址以/v1结尾、模型名精确匹配，"
             "并检查中转站是否开放当前接口。"
         )
-    elif "http 429" in lowered or "rate_limit" in lowered:
+    elif code == "rate_limited":
         action = "请求受到限流（HTTP 429）。请稍后重试，或检查Key的RPM与并发额度。"
-    elif (
-        "http 503" in lowered
-        or "无可用渠道" in original
-        or "unavailable channel" in lowered
-        or "no available channel" in lowered
-    ):
+    elif code == "upstream_unavailable":
         action = (
             "当前模型没有可用上游渠道（HTTP 503）。请检查模型名称、渠道状态，"
             "以及Key所属分组的模型权限。"
         )
+    elif code == "protocol_unsupported":
+        action = "当前渠道不支持所选接口协议。请在Responses API与Chat Completions之间切换。"
+    elif code == "incompatible_parameters":
+        action = "当前模型不接受已有采样参数。请清空temperature、top_p和max_tokens后重试。"
     else:
         return original
     return f"{action}\n原始错误：{original}"

@@ -26,6 +26,47 @@ RATE_LIMIT_RETRY_BASE_SECONDS = 5.0
 TRANSIENT_RETRY_BASE_SECONDS = 1.0
 
 
+def model_connection_diagnostic(status: Any, detail: Any) -> dict[str, Any]:
+    """Classify model connection results without exposing provider-specific secrets."""
+
+    normalized_status = str(status or "").strip().lower()
+    text = " ".join(str(detail or "").split())[:800]
+    lowered = text.lower()
+    if normalized_status in {"available", "success"}:
+        return {"code": "available", "retryable": False}
+    if "invalid temperature" in lowered or "unsupported parameter" in lowered:
+        code = "incompatible_parameters"
+    elif "http 401" in lowered or "authentication" in lowered or "unauthorized" in lowered:
+        code = "authentication_failed"
+    elif "http 403" in lowered or "forbidden" in lowered:
+        code = "access_denied"
+    elif "http 404" in lowered or "model_not_found" in lowered or "not found" in lowered:
+        code = "not_found"
+    elif "http 429" in lowered or "rate_limit" in lowered:
+        code = "rate_limited"
+    elif (
+        ("not support" in lowered or "unsupported" in lowered)
+        and ("chat completion" in lowered or "responses" in lowered or "protocol" in lowered)
+    ):
+        code = "protocol_unsupported"
+    elif (
+        "http 503" in lowered
+        or "no available channel" in lowered
+        or "unavailable channel" in lowered
+    ):
+        code = "upstream_unavailable"
+    elif "timeout" in lowered or "timed out" in lowered or "connection error" in lowered:
+        code = "network_error"
+    elif "http 400" in lowered or "invalid_request" in lowered:
+        code = "invalid_request"
+    else:
+        code = "connection_failed"
+    return {
+        "code": code,
+        "retryable": code in {"rate_limited", "upstream_unavailable", "network_error"},
+    }
+
+
 class ChatCompletionsStreamAccumulator:
     """Build one assistant message from OpenAI-compatible chat SSE chunks."""
 

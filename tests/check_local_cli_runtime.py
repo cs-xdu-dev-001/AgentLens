@@ -49,6 +49,10 @@ def main() -> None:
         "Chat Completions connection failed: HTTP 503: 无可用渠道"
     )
     assert "没有可用上游渠道" in unavailable and "模型权限" in unavailable
+    unsupported = explain_local_connection_error(
+        "Responses API connection failed: protocol not supported"
+    )
+    assert "不支持所选接口协议" in unsupported and "Chat Completions" in unsupported
 
     sanitized = sanitize_trace_value(
         {

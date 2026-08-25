@@ -2606,10 +2606,43 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 680;
 }
 
-.model-config-connection-result span:last-child {
+.model-config-connection-summary,
+.model-config-connection-action {
+  display: block;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.model-config-connection-action {
+  color: var(--text);
+}
+
+.model-config-connection-technical {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.model-config-connection-technical-toggle {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.model-config-connection-technical code {
+  display: block;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
 }
 
 .model-config-connection-result[data-status="success"] .model-config-connection-dot {

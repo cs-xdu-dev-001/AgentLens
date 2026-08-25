@@ -33,6 +33,20 @@ def main() -> None:
         assert client.post("/api/model-configs", json={**base, "apiMode": "auto"}).status_code == 400
         assert client.post("/api/model-configs", json={**base, "modelType": "embedding", "apiMode": "responses"}).status_code == 400
         assert client.post("/api/model-configs", json={**base, "modelType": "rerank", "apiMode": "responses"}).status_code == 400
+        import knowflow.routers.model_configs as model_configs_router
+
+        original_test = model_configs_router.gateway.test
+        try:
+            model_configs_router.gateway.test = lambda _config: (
+                "unavailable",
+                "Responses API connection failed: HTTP 403: upstream_error",
+            )
+            diagnosed = client.post(f"/api/model-configs/{cid}/test").json()["data"]
+            assert diagnosed["status"] == "unavailable"
+            assert diagnosed["code"] == "access_denied"
+            assert diagnosed["retryable"] is False
+        finally:
+            model_configs_router.gateway.test = original_test
         import knowflow.runtime as runtime
         runtime.db.engine.dispose()
 

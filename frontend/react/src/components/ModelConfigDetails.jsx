@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { connectionResultStatus } from "./modelConnectionState.js";
+import { connectionResultPresentation, connectionResultStatus } from "./modelConnectionState.js";
 
 const modelTypeLabel = {
   chat: "聊天模型",
@@ -37,6 +37,38 @@ function DetailItem({ label, value }) {
   );
 }
 
+function ConnectionResult({ result, status, presentation }) {
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  return (
+    <div className={"model-config-connection-result"} data-status={status} data-code={presentation.code} role={status === "error" ? "alert" : "status"}>
+      <span className={"model-config-connection-dot"} aria-hidden={"true"} />
+      <div>
+        <strong>
+          {presentation.title}
+          {Number.isFinite(result.latencyMs) ? ` · ${result.latencyMs}ms` : ""}
+        </strong>
+        <span className={"model-config-connection-summary"}>{presentation.summary}</span>
+        {presentation.action ? (
+          <span className={"model-config-connection-action"}>{`建议：${presentation.action}`}</span>
+        ) : null}
+        {status === "error" && result.message ? (
+          <div className={"model-config-connection-technical"}>
+            <button
+              className={"model-config-connection-technical-toggle"}
+              type={"button"}
+              aria-expanded={technicalOpen}
+              onClick={() => setTechnicalOpen((current) => !current)}
+            >
+              {technicalOpen ? "收起技术详情" : "查看技术详情"}
+            </button>
+            {technicalOpen ? <code>{result.message}</code> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function ModelConfigDetails({
   model,
   busy = false,
@@ -59,6 +91,7 @@ export function ModelConfigDetails({
 
   const status = model.status || "untested";
   const connectionStatus = connectionResultStatus(connectionResult);
+  const connectionPresentation = connectionResultPresentation(connectionResult);
   const protocol = model.modelType === "chat"
     ? apiModeLabel[model.apiMode] || apiModeLabel.chat_completions
     : "不适用";
@@ -100,20 +133,12 @@ export function ModelConfigDetails({
       </dl>
 
       {connectionResult ? (
-        <div className={"model-config-connection-result"} data-status={connectionStatus} role={connectionStatus === "error" ? "alert" : "status"}>
-          <span className={"model-config-connection-dot"} aria-hidden={"true"} />
-          <div>
-            <strong>
-              {connectionStatus === "checking"
-                ? "正在检查连接"
-                : connectionStatus === "success"
-                  ? "连接可用"
-                  : "连接失败"}
-              {Number.isFinite(connectionResult.latencyMs) ? ` · ${connectionResult.latencyMs}ms` : ""}
-            </strong>
-            <span>{connectionResult.message}</span>
-          </div>
-        </div>
+        <ConnectionResult
+          key={`${model.id}:${connectionResult.message || ""}:${connectionResult.latencyMs || ""}`}
+          result={connectionResult}
+          status={connectionStatus}
+          presentation={connectionPresentation}
+        />
       ) : null}
 
       <div className={"model-config-detail-actions"}>
