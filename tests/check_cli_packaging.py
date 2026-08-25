@@ -23,8 +23,8 @@ assert project["requires-python"] == ">=3.10"
 assert project["scripts"]["agentlens"] == "knowflow.cli:main"
 assert project["scripts"]["knowflow"] == "knowflow.cli:main"
 assert "--version" in (BACKEND / "knowflow/cli.py").read_text(encoding="utf-8")
-assert project["version"] == "0.54.7"
-assert 'version="0.54.7"' in (ROOT / "backend" / "knowflow" / "app.py").read_text(encoding="utf-8")
+assert project["version"] == "0.54.8"
+assert 'version="0.54.8"' in (ROOT / "backend" / "knowflow" / "app.py").read_text(encoding="utf-8")
 package_data = configuration["tool"]["setuptools"]["package-data"]["knowflow"]
 assert "ink_tui/*.mjs" in package_data
 assert "ink_tui/*.txt" in package_data

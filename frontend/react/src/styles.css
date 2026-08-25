@@ -12641,6 +12641,45 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-color: color-mix(in srgb, var(--danger) 30%, var(--control-border));
 }
 
+.agent-task-capsule.settled:not(.expanded) {
+  margin-bottom: 10px;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-head {
+  min-height: 38px;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-toggle {
+  min-height: 36px;
+  gap: 8px;
+  padding: 0;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-toggle strong {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-metrics {
+  padding: 0;
+  background: transparent;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-status {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.agent-task-capsule.settled:not(.expanded) .agent-task-capsule-progress {
+  display: none;
+}
+
 .agent-task-capsule-head {
   min-height: 62px;
   display: grid;
@@ -12691,15 +12730,26 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-task-capsule-chevron {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transform: rotate(-90deg);
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .agent-task-capsule.expanded .agent-task-capsule-chevron {
   transform: rotate(0deg);
+}
+
+.agent-task-capsule.settled .agent-task-capsule-chevron {
+  color: var(--success);
+  transform: none;
 }
 
 .agent-task-capsule-meta {
@@ -13081,6 +13131,22 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .agent-task-capsule-head {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
+  }
+
+  .agent-task-capsule.settled:not(.expanded) .agent-task-capsule-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .agent-task-capsule.settled:not(.expanded) .agent-task-capsule-meta {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .agent-task-capsule.settled:not(.expanded) .agent-task-capsule-metrics {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .agent-task-capsule-meta {

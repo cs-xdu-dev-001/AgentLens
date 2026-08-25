@@ -75,6 +75,7 @@ export function AgentTraceStrip({
     rows,
     total: progressTotal,
   } = presentation;
+  const settled = status.className === "success" && !expanded;
 
   const handleOpen = (activeTab = "trace", focusStepId = "") => {
     if (focusStepId) setFocusedStepId(String(focusStepId));
@@ -105,7 +106,7 @@ export function AgentTraceStrip({
   return (
     <section
       ref={capsuleRef}
-      className={`agent-task-capsule ${status.className}${expanded ? " expanded" : ""}`}
+      className={`agent-task-capsule ${status.className}${expanded ? " expanded" : ""}${settled ? " settled" : ""}`}
       aria-label={"本次运行过程"}
     >
       <div className={"agent-task-capsule-head"}>
@@ -116,10 +117,21 @@ export function AgentTraceStrip({
           aria-expanded={expanded}
           aria-label={expanded ? "收起任务过程" : "展开任务过程"}
         >
-          <span className={"agent-task-capsule-chevron"} aria-hidden={"true"}>⌄</span>
+          <svg
+            className={"agent-task-capsule-chevron"}
+            viewBox={"0 0 20 20"}
+            aria-hidden={"true"}
+            focusable={"false"}
+          >
+            {settled ? (
+              <path d={"M4.5 10.3 8.2 14l7.3-8"} />
+            ) : (
+              <path d={"m6 8 4 4 4-4"} />
+            )}
+          </svg>
           <span className={"agent-task-capsule-title"}>
             <strong>{headline}</strong>
-            <span className={"agent-task-capsule-summary"}>{processSummary}</span>
+            {!settled ? <span className={"agent-task-capsule-summary"}>{processSummary}</span> : null}
           </span>
         </button>
         <div className={"agent-task-capsule-meta"}>

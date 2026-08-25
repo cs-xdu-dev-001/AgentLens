@@ -1117,18 +1117,23 @@ const TaskSummary = React.memo(function TaskSummary({
     || shellPreview.cancelled
     || shellPreview.timedOut
   );
+  const compactSettled = !expanded
+    && !running
+    && !failed
+    && !waiting
+    && !completedWithWarnings;
 
   return (
     <Box flexDirection="column" marginTop={1} marginLeft={1} marginBottom={1}>
       <Box justifyContent="space-between">
         <Box>
-          <Text color={ACCENT}>{expanded ? '⌄' : '›'} </Text>
+          <Text color={compactSettled ? SUCCESS : ACCENT}>{compactSettled ? '✓' : expanded ? '⌄' : '›'} </Text>
           <Text color={PRIMARY} bold>{compactTitle}</Text>
           {metrics ? <Text color={MUTED}>  {metrics}</Text> : null}
         </Box>
         <Text color={stateColor} bold={running || failed}>{stateLabel}</Text>
       </Box>
-      <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text>
+      {!compactSettled ? <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text> : null}
       {failed && !expanded ? (
         <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
       ) : null}

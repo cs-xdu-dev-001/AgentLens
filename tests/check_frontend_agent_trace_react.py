@@ -1396,6 +1396,16 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
+        'status.className === "success" && !expanded',
+        "completed run compaction",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-task-capsule.settled:not(.expanded)",
+        "completed run visual handoff",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
         "AgentRecoveryPanel",
         "inline failed-run recovery",
     )
