@@ -11722,6 +11722,210 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   line-height: 1.4;
 }
 
+/* Command help follows the same anchored, keyboard-first pattern as mature coding clients. */
+.composer-command-help {
+  position: absolute;
+  z-index: 36;
+  left: 50%;
+  bottom: calc(100% - 6px);
+  width: min(720px, calc(100% - 56px));
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    0 18px 42px rgba(0, 0, 0, 0.16);
+  transform: translateX(-50%);
+}
+
+.composer-command-help-heading,
+.composer-command-help-footer {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.composer-command-help-heading {
+  justify-content: space-between;
+}
+
+.composer-command-help-heading strong {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.composer-command-help-heading button,
+.composer-command-help-footer button,
+.composer-command-help-tabs button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.composer-command-help-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.composer-command-help-tabs button.active {
+  background: var(--control-bg-hover);
+  color: var(--text);
+}
+
+.composer-command-help-search {
+  display: block;
+  padding: 8px;
+}
+
+.composer-command-help-search input {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.composer-command-help-search input:focus-visible {
+  border-color: color-mix(in srgb, var(--text) 58%, var(--control-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.composer-command-help-list {
+  max-height: min(360px, 44dvh);
+  padding: 0 6px 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-command-help-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(92px, 0.35fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.composer-command-help-item.active {
+  background: var(--control-bg-hover);
+}
+
+.composer-command-help-item code {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-command-help-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.composer-command-help-copy strong,
+.composer-command-help-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-command-help-copy strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.composer-command-help-copy > span,
+.composer-command-help-source,
+.composer-command-help-footer > span,
+.composer-command-help-state {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.composer-command-help-source {
+  white-space: nowrap;
+}
+
+.composer-command-help-state {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.composer-command-help-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--control-border);
+}
+
+.composer-command-help-footer > span {
+  margin-right: auto;
+}
+
+.composer-command-help-heading button:focus-visible,
+.composer-command-help-footer button:focus-visible,
+.composer-command-help-tabs button:focus-visible,
+.composer-command-help-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--text) 62%, transparent);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .composer-command-help-heading button:hover,
+  .composer-command-help-footer button:hover,
+  .composer-command-help-tabs button:hover,
+  button.composer-command-help-item:hover {
+    background: var(--control-bg-hover);
+  }
+}
+
+@media (max-width: 760px) {
+  .composer-command-help {
+    left: 0;
+    right: 0;
+    width: auto;
+    margin-inline: 10px;
+    transform: none;
+  }
+
+  .composer-command-help-item {
+    grid-template-columns: minmax(84px, 0.4fr) minmax(0, 1fr);
+  }
+
+  .composer-command-help-source,
+  .composer-command-help-footer > span {
+    display: none;
+  }
+}
+
 .skill-picker-loading {
   min-height: 34px;
   display: flex;

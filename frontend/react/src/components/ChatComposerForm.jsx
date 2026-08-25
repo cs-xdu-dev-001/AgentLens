@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
+import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
@@ -64,6 +65,7 @@ export function ChatComposerForm() {
   const [pickerQuery, setPickerQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
   const [slashRange, setSlashRange] = useState(null);
+  const [commandHelpOpen, setCommandHelpOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionStatus, setMentionStatus] = useState("idle");
   const [mentionPaths, setMentionPaths] = useState([]);
@@ -108,6 +110,12 @@ export function ChatComposerForm() {
     setPickerQuery("");
     setActiveIndex(-1);
     setSlashRange(null);
+  }, []);
+
+  const closeCommandHelp = useCallback((restoreFocus = true) => {
+    setCommandHelpOpen(false);
+    if (!restoreFocus) return;
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
   const closeMentionPicker = useCallback(() => {
@@ -562,18 +570,10 @@ export function ChatComposerForm() {
       return;
     }
     if (command.action === "help") {
-      setQuestion("/");
-      setPickerOpen(true);
-      setPickerQuery("");
-      setActiveIndex(0);
-      setSlashRange({ start: 0, end: 1 });
-      window.requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        textarea.setSelectionRange(1, 1);
-        resizeTextarea(textarea);
-      });
+      closeSkillPicker();
+      closeMentionPicker();
+      setCommandHelpOpen(true);
+      if (!skillsLoadedRef.current && skillsStatus !== "loading") loadAvailableSkills();
       return;
     }
     if (command.action === "transcript-search") {
@@ -877,6 +877,16 @@ export function ChatComposerForm() {
     [agentState.recoveryActions, commandUsage, pickerQuery, queuePaused, sending],
   );
 
+  const helpCommands = useMemo(
+    () => composerCommandSuggestions("", {
+      sending,
+      recoveryActions: agentState.recoveryActions,
+      queuePaused,
+      usage: commandUsage,
+    }),
+    [agentState.recoveryActions, commandUsage, queuePaused, sending],
+  );
+
   const slashOptions = useMemo(() => [
     ...filteredCommands.map((command) => ({ kind: "command", command })),
     ...filteredSkills.map((skill) => ({ kind: "skill", skill })),
@@ -986,6 +996,24 @@ export function ChatComposerForm() {
     });
   };
 
+  const takeHelpCommand = (command) => {
+    const completed = `${command.value} `;
+    setQuestion(completed);
+    closeCommandHelp(false);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(completed.length, completed.length);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const takeHelpSkill = (skill) => {
+    setSelectedSkill(skill);
+    closeCommandHelp();
+  };
+
   const completeWorkspaceMention = () => {
     if (!mentionRange || !filteredMentionPaths.length) return;
     const commonPrefix = workspaceMentionCommonPrefix(filteredMentionPaths);
@@ -1014,6 +1042,7 @@ export function ChatComposerForm() {
 
   const handleManageSkills = () => {
     closeSkillPicker();
+    closeCommandHelp(false);
     window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
       detail: { page: "skills" },
     }));
@@ -1074,6 +1103,18 @@ export function ChatComposerForm() {
 
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
+      {commandHelpOpen ? (
+        <ComposerCommandHelp
+          commands={helpCommands}
+          skills={availableSkills}
+          skillsStatus={skillsStatus}
+          onClose={closeCommandHelp}
+          onCommand={takeHelpCommand}
+          onSkill={takeHelpSkill}
+          onRetrySkills={loadAvailableSkills}
+          onManageSkills={handleManageSkills}
+        />
+      ) : null}
       {mentionOpen ? (
         <WorkspaceMentionPicker
           paths={filteredMentionPaths}
