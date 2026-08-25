@@ -14,9 +14,6 @@ class InkTuiUnavailable(RuntimeError):
     pass
 
 
-INK_CONFIGURE_EXIT_CODE = 42
-
-
 def _node_major(node: str) -> int:
     try:
         result = subprocess.run(
@@ -88,25 +85,16 @@ def run_ink_tui(
             "KNOWFLOW_CLI_VERSION": _installed_version(),
         }
     )
-    while True:
-        try:
-            completed = subprocess.run(
-                [node, str(entry)],
-                check=False,
-                env=environment,
-            )
-        except OSError as exc:
-            raise InkTuiUnavailable("无法启动Ink终端界面。") from exc
-        if completed.returncode == INK_CONFIGURE_EXIT_CODE:
-            subprocess.run(
-                [sys.executable, "-m", "knowflow.cli", "configure"],
-                check=False,
-                env=os.environ,
-            )
-            continue
-        if completed.returncode not in {0, 130}:
-            raise RuntimeError(f"Ink终端界面异常退出（{completed.returncode}）。")
-        break
+    try:
+        completed = subprocess.run(
+            [node, str(entry)],
+            check=False,
+            env=environment,
+        )
+    except OSError as exc:
+        raise InkTuiUnavailable("无法启动Ink终端界面。") from exc
+    if completed.returncode not in {0, 130}:
+        raise RuntimeError(f"Ink终端界面异常退出（{completed.returncode}）。")
     return True
 
 

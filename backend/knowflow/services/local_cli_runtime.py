@@ -126,6 +126,14 @@ class LocalCliConfigError(ValueError):
 
 
 class LocalCliConfigStore:
+    ENVIRONMENT_OVERRIDES = {
+        "provider": "KNOWFLOW_PROVIDER",
+        "base_url": "KNOWFLOW_API_BASE",
+        "model_name": "KNOWFLOW_MODEL",
+        "api_mode": "KNOWFLOW_API_MODE",
+        "api_key": "KNOWFLOW_API_KEY",
+    }
+
     def __init__(self, root: Path | None = None) -> None:
         self.root = (root or local_config_dir()).expanduser().resolve()
         self.config_path = self.root / "config.json"
@@ -189,18 +197,98 @@ class LocalCliConfigStore:
             "api_mode": str(public.get("api_mode") or "responses"),
             "api_key": str(credentials.get("api_key") or ""),
         }
-        overrides = {
-            "provider": "KNOWFLOW_PROVIDER",
-            "base_url": "KNOWFLOW_API_BASE",
-            "model_name": "KNOWFLOW_MODEL",
-            "api_mode": "KNOWFLOW_API_MODE",
-            "api_key": "KNOWFLOW_API_KEY",
-        }
-        for key, environment_name in overrides.items():
+        for key, environment_name in self.ENVIRONMENT_OVERRIDES.items():
             value = os.getenv(environment_name, "").strip()
             if value:
                 values[key] = value
         return values
+
+    def editable_snapshot(self) -> dict[str, Any]:
+        """Return effective local model settings without exposing the API key."""
+        values = self.load()
+        overridden = {
+            key: environment_name
+            for key, environment_name in self.ENVIRONMENT_OVERRIDES.items()
+            if os.getenv(environment_name, "").strip()
+        }
+        return {
+            "provider": values["provider"],
+            "base_url": values["base_url"],
+            "model_name": values["model_name"],
+            "api_mode": values["api_mode"],
+            "has_api_key": bool(values["api_key"]),
+            "overridden_fields": overridden,
+        }
+
+    def validate_editable(
+        self,
+        *,
+        provider: str,
+        base_url: str,
+        model_name: str,
+        api_mode: str,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
+        """Validate an interactive edit while respecting environment overrides."""
+        current = self.load()
+        candidate = {
+            "provider": provider,
+            "base_url": base_url,
+            "model_name": model_name,
+            "api_mode": api_mode,
+            "api_key": str(api_key or "").strip() or current["api_key"],
+        }
+        for field, environment_name in self.ENVIRONMENT_OVERRIDES.items():
+            override = os.getenv(environment_name, "").strip()
+            if not override:
+                continue
+            if (
+                field != "api_key"
+                and str(candidate[field]).strip() != str(current[field]).strip()
+            ):
+                raise LocalCliConfigError(
+                    f"{environment_name}正在覆盖{field}，请先在Shell中修改该环境变量。"
+                )
+            candidate[field] = current[field]
+        return validate_local_config(candidate)
+
+    def save_editable(
+        self,
+        *,
+        provider: str,
+        base_url: str,
+        model_name: str,
+        api_mode: str,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
+        """Save an interactive edit while respecting environment overrides."""
+        validated = self.validate_editable(
+            provider=provider,
+            base_url=base_url,
+            model_name=model_name,
+            api_mode=api_mode,
+            api_key=api_key,
+        )
+
+        overridden = {
+            field
+            for field, environment_name in self.ENVIRONMENT_OVERRIDES.items()
+            if os.getenv(environment_name, "").strip()
+        }
+
+        def update_public(value: dict[str, Any]) -> None:
+            for field in ("provider", "base_url", "model_name", "api_mode"):
+                if field not in overridden:
+                    value[field] = validated[field]
+
+        self.update_public(update_public)
+        if "api_key" not in overridden:
+
+            def update_credentials(value: dict[str, Any]) -> None:
+                value["api_key"] = validated["api_key"]
+
+            self.update_credentials(update_credentials)
+        return validated
 
     def save(
         self,

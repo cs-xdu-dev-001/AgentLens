@@ -44,6 +44,13 @@ import {
   terminalCopySelection,
   useTerminalFeedback,
 } from './terminalFeedback.js';
+import {
+  LOCAL_MODEL_CONFIG_FIELDS,
+  LocalModelConfigPanel,
+  editLocalModelConfigText,
+  localModelConfigPayload,
+  normalizeLocalModelConfig,
+} from './localModelConfig.jsx';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -288,6 +295,7 @@ const INTERACTION_FOCUS_LABELS = Object.freeze({
   help: '命令浏览',
   sessions: '恢复会话',
   rewind: '回到历史消息',
+  localConfig: '配置本地模型',
   models: '选择模型',
   reasoning: '推理强度',
   history: '搜索历史',
@@ -309,6 +317,7 @@ export function resolveInteractionFocus(state = {}) {
   if (state.taskNavigationOpen) return 'taskNavigation';
   if (state.sessionPicker) return 'sessions';
   if (state.rewindPicker) return 'rewind';
+  if (state.localConfigOpen) return 'localConfig';
   if (state.modelPicker) return 'models';
   if (state.reasoningPicker) return 'reasoning';
   if (state.transcriptSearchOpen) return 'transcriptSearch';
@@ -2236,7 +2245,7 @@ export function App({
   fullscreenEnabled = false,
   mouseEnabled = false,
   startupAction = '',
-  onConfigure = null,
+  localMode = true,
 }) {
   const {exit} = useApp();
   const {stdout} = useStdout();
@@ -2264,6 +2273,14 @@ export function App({
   const [modelQuery, setModelQuery] = useState('');
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState('');
+  const [localConfigOpen, setLocalConfigOpen] = useState(false);
+  const [localConfigLoading, setLocalConfigLoading] = useState(false);
+  const [localConfigSaving, setLocalConfigSaving] = useState(false);
+  const [localConfigError, setLocalConfigError] = useState('');
+  const [localConfigNotice, setLocalConfigNotice] = useState('');
+  const [localConfigChoice, setLocalConfigChoice] = useState(0);
+  const [localConfigCursor, setLocalConfigCursor] = useState(0);
+  const [localConfigDraft, setLocalConfigDraft] = useState(() => normalizeLocalModelConfig());
   const [reasoningEffort, setReasoningEffort] = useState('default');
   const [reasoningPicker, setReasoningPicker] = useState(false);
   const [reasoningChoice, setReasoningChoice] = useState(0);
@@ -2440,6 +2457,16 @@ export function App({
       setModelPicker(false);
       setModelQuery('');
       setModelError('');
+    }
+    if (keep !== 'localConfig') {
+      setLocalConfigOpen(false);
+      setLocalConfigLoading(false);
+      setLocalConfigSaving(false);
+      setLocalConfigError('');
+      setLocalConfigNotice('');
+      setLocalConfigChoice(0);
+      setLocalConfigCursor(0);
+      setLocalConfigDraft(value => ({...value, apiKey: ''}));
     }
     if (keep !== 'reasoning') setReasoningPicker(false);
     if (keep !== 'permissions') setPermissionPicker(false);
@@ -3055,6 +3082,52 @@ export function App({
         setModelPicker(true);
         return;
       }
+      if (message.type === 'local_model_config') {
+        const next = normalizeLocalModelConfig(message.config);
+        closeTransientSurfaces('localConfig');
+        setLocalConfigDraft(next);
+        setLocalConfigChoice(0);
+        setLocalConfigCursor(next.baseUrl.length);
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigError('');
+        setLocalConfigNotice('');
+        setLocalConfigOpen(true);
+        setPhase('配置本地模型');
+        return;
+      }
+      if (message.type === 'local_model_config_testing') {
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice('正在测试模型连接…');
+        setPhase('正在测试模型连接');
+        return;
+      }
+      if (message.type === 'local_model_config_saved') {
+        const label = publicLabel(message.model, '默认模型', 120);
+        const nextModels = Array.isArray(message.models) ? message.models : [];
+        setModel(label);
+        setModels(nextModels);
+        setLocalConfigSaving(false);
+        setLocalConfigOpen(false);
+        setLocalConfigError('');
+        setLocalConfigNotice('');
+        setLocalConfigDraft(value => ({...value, apiKey: ''}));
+        appendItem('assistant', `模型连接可用，已保存${label}。从下一轮任务开始生效。`);
+        setPhase('就绪');
+        return;
+      }
+      if (message.type === 'local_model_config_failed') {
+        closeTransientSurfaces('localConfig');
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigNotice('');
+        setLocalConfigError(message.message || '模型配置失败。');
+        setLocalConfigOpen(true);
+        setPhase('模型配置失败');
+        return;
+      }
       if (message.type === 'capability_failed') {
         appendItem('error', message.message ?? '读取能力状态失败。');
         return;
@@ -3451,8 +3524,8 @@ export function App({
           ? `\n\nPython stderr：\n${message.stderr.join('\n')}`
           : '';
         const hint = message.hint ? `\n\n建议：${message.hint}` : '';
-        const recovery = message.type === 'startup_failed' && typeof onConfigure === 'function'
-          ? '\n\n输入/configure重新配置模型，完成后会自动返回TUI。'
+        const recovery = message.type === 'startup_failed' && localMode
+          ? '\n\n输入/configure可在当前TUI内重新配置模型。'
           : '';
         appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}${recovery}`);
         if (message.type === 'startup_failed') {
@@ -3477,7 +3550,7 @@ export function App({
       client.off('exit', onExit);
       client.close();
     };
-  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, onConfigure, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
+  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, localMode, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
 
   useEffect(() => {
     if (running || approval || question || queueManagerOpen || queuePaused || !ready || queue.length === 0) return;
@@ -3643,6 +3716,7 @@ export function App({
     queueManagerOpen,
     sessionPicker,
     rewindPicker,
+    localConfigOpen,
     modelPicker,
     reasoningPicker,
     transcriptSearchOpen,
@@ -4027,13 +4101,24 @@ export function App({
       appendItem('error', '请等待当前任务和确认操作结束后再修改模型配置。');
       return;
     }
-    if (typeof onConfigure !== 'function') {
+    if (!localMode) {
       appendItem('assistant', '远程模式请到Web设置页管理模型配置。');
       return;
     }
-    setPhase('正在打开模型配置');
-    onConfigure();
-  }, [approval, appendItem, onConfigure, question, running]);
+    closeTransientSurfaces('localConfig');
+    setLocalConfigOpen(true);
+    setLocalConfigLoading(true);
+    setLocalConfigSaving(false);
+    setLocalConfigError('');
+    setLocalConfigNotice('');
+    setLocalConfigChoice(0);
+    setPhase('读取本地模型配置');
+    if (!client.send({type: 'local_model_config', action: 'get'})) {
+      setLocalConfigLoading(false);
+      setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+      setPhase('模型配置失败');
+    }
+  }, [approval, appendItem, client, closeTransientSurfaces, localMode, question, running]);
 
   const executeInput = useCallback(raw => {
     const text = String(raw ?? '').trim();
@@ -4812,6 +4897,7 @@ export function App({
     isActive: !approval
       && !question
       && !sessionPicker
+      && !localConfigOpen
       && !modelPicker
       && !reasoningPicker
       && !permissionPicker
@@ -4825,6 +4911,26 @@ export function App({
       && !historySearchOpen
       && !transcriptMode,
   });
+
+  usePaste(rawText => {
+    if (!localConfigOpen || localConfigLoading || localConfigSaving) return;
+    const field = LOCAL_MODEL_CONFIG_FIELDS[localConfigChoice]?.id;
+    if (!['baseUrl', 'modelName', 'apiKey'].includes(field)) return;
+    const overrideKey = {baseUrl: 'base_url', modelName: 'model_name', apiKey: 'api_key'}[field];
+    if (localConfigDraft.overriddenFields?.[overrideKey]) {
+      setLocalConfigNotice(`${localConfigDraft.overriddenFields[overrideKey]}正在控制该字段`);
+      return;
+    }
+    const text = sanitizeComposerInput(rawText).replace(/[\r\n]/g, '').slice(0, 2_000);
+    if (!text) return;
+    const current = String(localConfigDraft[field] || '');
+    const cursor = Math.max(0, Math.min(localConfigCursor, current.length));
+    const value = (current.slice(0, cursor) + text + current.slice(cursor)).slice(0, 2_000);
+    setLocalConfigDraft(draft => ({...draft, [field]: value}));
+    setLocalConfigCursor(Math.min(2_000, cursor + text.length));
+    setLocalConfigError('');
+    setLocalConfigNotice('');
+  }, {isActive: localConfigOpen});
 
   useInput((character, key) => {
     lastTerminalInteractionAtRef.current = Date.now();
@@ -4886,6 +4992,76 @@ export function App({
         runRecoveryOpenRef.current = false;
         setRunRecoveryOpen(false);
         updateComposer(character, character.length);
+      }
+      return;
+    }
+    if (interactionFocus === 'localConfig' && localConfigOpen) {
+      const fields = LOCAL_MODEL_CONFIG_FIELDS;
+      const field = fields[localConfigChoice]?.id || 'baseUrl';
+      const overrideKey = {
+        baseUrl: 'base_url',
+        modelName: 'model_name',
+        apiMode: 'api_mode',
+        apiKey: 'api_key',
+      }[field];
+      const lockedBy = overrideKey ? localConfigDraft.overriddenFields?.[overrideKey] : '';
+      const selectField = next => {
+        const index = (next + fields.length) % fields.length;
+        const nextField = fields[index]?.id;
+        setLocalConfigChoice(index);
+        setLocalConfigCursor(String(localConfigDraft[nextField] || '').length);
+        setLocalConfigNotice('');
+      };
+      if (key.escape) {
+        if (!localConfigSaving) closeTransientSurfaces();
+      } else if (localConfigLoading || localConfigSaving) {
+        return;
+      } else if (key.upArrow || (key.tab && key.shift)) {
+        selectField(localConfigChoice - 1);
+      } else if (key.downArrow || key.tab) {
+        selectField(localConfigChoice + 1);
+      } else if (field === 'save' && key.return) {
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice('正在测试模型连接…');
+        setPhase('正在测试模型连接');
+        if (!client.send({
+          type: 'local_model_config',
+          action: 'test_and_save',
+          config: localModelConfigPayload(localConfigDraft),
+        })) {
+          setLocalConfigSaving(false);
+          setLocalConfigNotice('');
+          setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+          setPhase('模型配置失败');
+        }
+      } else if (field === 'apiMode' && (key.leftArrow || key.rightArrow)) {
+        if (lockedBy) setLocalConfigNotice(`${lockedBy}正在控制该字段`);
+        else {
+          setLocalConfigDraft(value => ({
+            ...value,
+            apiMode: value.apiMode === 'responses' ? 'chat_completions' : 'responses',
+          }));
+          setLocalConfigError('');
+        }
+      } else if (key.return) {
+        selectField(localConfigChoice + 1);
+      } else if (['baseUrl', 'modelName', 'apiKey'].includes(field)) {
+        if (lockedBy && (character || key.backspace || key.delete)) {
+          setLocalConfigNotice(`${lockedBy}正在控制该字段`);
+        } else {
+          const next = editLocalModelConfigText(
+            localConfigDraft[field],
+            localConfigCursor,
+            {character, key},
+          );
+          if (next.value !== localConfigDraft[field]) {
+            setLocalConfigDraft(value => ({...value, [field]: next.value}));
+            setLocalConfigError('');
+            setLocalConfigNotice('');
+          }
+          setLocalConfigCursor(next.cursor);
+        }
       }
       return;
     }
@@ -4989,7 +5165,7 @@ export function App({
           setModelPicker(false);
           setModelQuery('');
         } else if (selected?.switchable === false) {
-          setModelError('本地CLI只有当前配置；请运行agentlens configure修改模型。');
+          setModelError('本地CLI只有当前配置；输入/configure即可修改。');
         } else {
           setModelLoading(true);
           setModelError('');
@@ -5670,6 +5846,7 @@ export function App({
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
     sessions: '↑↓选择 · Enter恢复 · Esc关闭',
+    localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',
@@ -5861,6 +6038,17 @@ export function App({
               maxVisible={Math.max(2, Math.min(7, (stdout.rows ?? 24) - 15))}
             />
           ) : null}
+          {localConfigOpen ? (
+            <LocalModelConfigPanel
+              draft={localConfigDraft}
+              selected={localConfigChoice}
+              cursor={localConfigCursor}
+              loading={localConfigLoading}
+              saving={localConfigSaving}
+              error={localConfigError}
+              notice={localConfigNotice}
+            />
+          ) : null}
           {modelPicker ? (
             <ModelPicker
               models={filteredModels}
@@ -5924,7 +6112,7 @@ export function App({
             </Box>
           ) : null}
           {!question ? <WorkspaceGuard workspace={workspace} /> : null}
-          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || rewindPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+          {!question && !localConfigOpen ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || rewindPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput

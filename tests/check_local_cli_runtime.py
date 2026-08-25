@@ -124,6 +124,46 @@ def main() -> None:
         assert loaded["model_name"] == "environment-model"
         assert loaded["api_key"] == "environment-secret"
 
+        snapshot = store.editable_snapshot()
+        assert snapshot["has_api_key"] is True
+        assert "api_key" not in snapshot
+        assert snapshot["overridden_fields"] == {}
+        updated = store.save_editable(
+            provider="custom",
+            base_url="https://next-gateway.example/v1/",
+            model_name="next-agent-model",
+            api_mode="chat_completions",
+        )
+        assert updated["api_key"] == "secret-value"
+        assert store.load()["model_name"] == "next-agent-model"
+        assert "secret-value" not in json.dumps(
+            store.editable_snapshot(),
+            ensure_ascii=False,
+        )
+        with patch.dict(
+            os.environ,
+            {"KNOWFLOW_MODEL": "environment-model"},
+        ):
+            store.save_editable(
+                provider="custom",
+                base_url="https://third-gateway.example/v1",
+                model_name="environment-model",
+                api_mode="chat_completions",
+            )
+            try:
+                store.save_editable(
+                    provider="custom",
+                    base_url="https://next-gateway.example/v1",
+                    model_name="attempted-change",
+                    api_mode="chat_completions",
+                )
+            except LocalCliConfigError as exc:
+                assert "KNOWFLOW_MODEL" in str(exc)
+            else:
+                raise AssertionError("environment-overridden model was editable")
+        assert store.load()["model_name"] == "next-agent-model"
+        assert store.load()["base_url"] == "https://third-gateway.example/v1"
+
     try:
         validate_local_config(
             {

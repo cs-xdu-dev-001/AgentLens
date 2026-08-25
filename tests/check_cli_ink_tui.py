@@ -21,7 +21,7 @@ from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: 
 from knowflow.tui import ink_launcher  # noqa: E402
 
 
-def check_reconfigure_relaunch() -> None:
+def check_launcher_single_run() -> None:
     calls: list[list[str]] = []
     original_run = ink_launcher.subprocess.run
     original_which = ink_launcher.shutil.which
@@ -31,8 +31,6 @@ def check_reconfigure_relaunch() -> None:
 
     def fake_run(command, **_kwargs):
         calls.append([str(part) for part in command])
-        if len(calls) == 1:
-            return SimpleNamespace(returncode=ink_launcher.INK_CONFIGURE_EXIT_CODE)
         return SimpleNamespace(returncode=0)
 
     try:
@@ -53,8 +51,8 @@ def check_reconfigure_relaunch() -> None:
         else:
             os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = previous_allow
 
-    assert len(calls) == 3
-    assert calls[1] == [sys.executable, "-m", "knowflow.cli", "configure"]
+    assert len(calls) == 1
+    assert calls[0] == ["node", "index.mjs"]
 
 
 class FakeBackend:
@@ -106,6 +104,25 @@ class FakeBackend:
         selected = next(item for item in self.model_catalog() if item["id"] == self.selected_model_id)
         self.model_label = selected["name"]
         return selected
+
+    def local_model_configuration(self):
+        return {
+            "provider": "custom",
+            "baseUrl": "https://api.example.com/v1",
+            "modelName": self.model_label,
+            "apiMode": "chat_completions",
+            "hasApiKey": True,
+            "overriddenFields": {},
+        }
+
+    def configure_local_model(self, value):
+        assert value["apiKey"] == "sk-test-secret"
+        self.model_label = str(value["modelName"])
+        return {
+            "detail": "连接可用",
+            "model": self.model_label,
+            "config": self.local_model_configuration(),
+        }
 
     def run(
         self,
@@ -359,7 +376,7 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 
 def main() -> None:
-    check_reconfigure_relaunch()
+    check_launcher_single_run()
     history_root = ROOT / ".tmp-check-cli-ink-history"
     os.environ["XDG_DATA_HOME"] = str(history_root)
     if history_root.exists():
@@ -460,6 +477,26 @@ def main() -> None:
     model_rows = wait_for(ready_output, "model_changed")
     assert model_rows[-1]["model"] == "GPT 5.5"
     assert backend.selected_model_id == 2
+
+    ready_bridge.handle({"type": "local_model_config", "action": "get"})
+    config_rows = wait_for(ready_output, "local_model_config")
+    assert config_rows[-1]["config"]["hasApiKey"] is True
+    assert "apiKey" not in config_rows[-1]["config"]
+    ready_bridge.handle(
+        {
+            "type": "local_model_config",
+            "action": "test_and_save",
+            "config": {
+                "baseUrl": "https://api.example.com/v1",
+                "modelName": "gpt-5.6-sol",
+                "apiMode": "responses",
+                "apiKey": "sk-test-secret",
+            },
+        }
+    )
+    config_rows = wait_for(ready_output, "local_model_config_saved")
+    assert config_rows[-1]["model"] == "gpt-5.6-sol"
+    assert "sk-test-secret" not in ready_output.getvalue()
 
     isolated_output = StringIO()
     isolated_bridge = InkRuntimeBridge(
@@ -648,11 +685,11 @@ def main() -> None:
     assert '"workspaceRoot"' in launcher_source
     assert '"startupAction"' in launcher_source
     assert 'startup_action in {"resume", "continue"}' in launcher_source
-    assert "INK_CONFIGURE_EXIT_CODE = 42" in launcher_source
-    assert '[sys.executable, "-m", "knowflow.cli", "configure"]' in launcher_source
+    assert "INK_CONFIGURE_EXIT_CODE" not in launcher_source
+    assert '[sys.executable, "-m", "knowflow.cli", "configure"]' not in launcher_source
     assert "startupAction={String(config.startupAction || '')}" in entry_source
-    assert "const CONFIGURE_EXIT_CODE = 42" in entry_source
-    assert "onConfigure={config.mode === 'remote' ? null : requestConfigure}" in entry_source
+    assert "CONFIGURE_EXIT_CODE" not in entry_source
+    assert "localMode={config.mode !== 'remote'}" in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
@@ -682,8 +719,9 @@ def main() -> None:
     assert "agentEventSchemaVersion" in app_source
     assert "cli_update_completed" in app_source
     assert "client.send({type: 'cli_update'})" in app_source
-    assert "输入/configure重新配置模型" in app_source
+    assert "输入/configure可在当前TUI内重新配置模型" in app_source
     assert "requestLocalConfiguration" in app_source
+    assert "<LocalModelConfigPanel" in app_source
 
     shutil.rmtree(history_root, ignore_errors=True)
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")

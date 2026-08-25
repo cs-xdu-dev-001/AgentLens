@@ -42,6 +42,11 @@ import {
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {createRunProjection, projectRunEvent} from '../src/protocol.js';
 import {
+  editLocalModelConfigText,
+  localModelConfigPayload,
+  normalizeLocalModelConfig,
+} from '../src/localModelConfig.jsx';
+import {
   sanitizeTerminalTitle,
   shouldNotifyTerminalTransition,
   supportsTerminalProgress,
@@ -86,6 +91,27 @@ test('model catalog keeps the active and recent models first and tolerates fuzzy
   ];
   assert.deepEqual(rankModelOptions(models, ['3']).map(item => item.id), [2, 3, 1]);
   assert.equal(rankModelOptions(models, [], 'kimk')[0]?.id, 3);
+});
+
+test('local model configuration keeps secrets out of snapshots and edits text at the cursor', () => {
+  const snapshot = normalizeLocalModelConfig({
+    baseUrl: 'https://api.example.com/v1',
+    modelName: 'gpt-test',
+    apiMode: 'responses',
+    hasApiKey: true,
+  });
+  assert.equal(snapshot.apiKey, '');
+  assert.equal(snapshot.hasApiKey, true);
+  assert.deepEqual(
+    editLocalModelConfigText('gpt-test', 3, {character: 'X', key: {}}),
+    {value: 'gptX-test', cursor: 4},
+  );
+  assert.deepEqual(localModelConfigPayload({...snapshot, apiKey: ''}), {
+    provider: 'custom',
+    baseUrl: 'https://api.example.com/v1',
+    modelName: 'gpt-test',
+    apiMode: 'responses',
+  });
 });
 
 test('completed runs keep child tool failures as warnings instead of failing the whole turn', () => {
@@ -657,7 +683,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 11,
+      protocolVersion: 12,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1121,16 +1147,9 @@ test('Ink app searches and switches models from the composer', async () => {
   view.unmount();
 });
 
-test('Ink app reopens local model configuration after startup failure', async t => {
+test('Ink app configures the local model in place without exposing the API key', async t => {
   const client = new FakeClient();
-  let configureRequests = 0;
-  const view = render(
-    <App
-      client={client}
-      version="0.56.0"
-      onConfigure={() => { configureRequests += 1; }}
-    />,
-  );
+  const view = render(<App client={client} version="0.58.0" localMode />);
   t.after(() => view.unmount());
   await waitForFrame(view, /deepseek-chat/);
 
@@ -1139,12 +1158,64 @@ test('Ink app reopens local model configuration after startup failure', async t 
     message: 'Responses API connection failed: HTTP 403',
   });
   await tick();
-  assert.match(view.lastFrame(), /输入\/configure重新配置模型/);
+  assert.match(view.lastFrame(), /输入\/configure可在当前TUI内重新配置模型/);
 
   view.stdin.write('/configure');
   view.stdin.write('\r');
   await tick();
-  assert.equal(configureRequests, 1);
+  assert.deepEqual(client.sent.at(-1), {type: 'local_model_config', action: 'get'});
+
+  client.emit('message', {
+    type: 'local_model_config',
+    config: {
+      provider: 'custom',
+      baseUrl: 'https://api.example.com/v1',
+      modelName: 'gpt-5.6-sol',
+      apiMode: 'responses',
+      hasApiKey: false,
+      overriddenFields: {},
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /配置本地模型/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('sk-test-secret-123456789');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /sk-test-secret/);
+  assert.match(view.lastFrame(), /••••/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  const request = client.sent.at(-1);
+  assert.equal(request.type, 'local_model_config');
+  assert.equal(request.action, 'test_and_save');
+  assert.equal(request.config.apiKey, 'sk-test-secret-123456789');
+
+  client.emit('message', {
+    type: 'local_model_config_failed',
+    action: 'test_and_save',
+    message: '上游拒绝访问（HTTP 403）。请检查Key分组权限。',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /上游拒绝访问（HTTP 403）/);
+  assert.match(view.lastFrame(), /配置本地模型/);
+
+  client.emit('message', {
+    type: 'local_model_config_saved',
+    model: 'gpt-5.6-sol',
+    detail: '连接可用',
+    config: {},
+    models: [{id: 'local', name: 'gpt-5.6-sol', selected: true, switchable: false}],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /已保存gpt-5\.6-sol/);
+  assert.doesNotMatch(view.lastFrame(), /配置本地模型/);
 });
 
 test('local model status explains protocol and provider-controlled sampling', async t => {
@@ -1555,7 +1626,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 11,
+    protocolVersion: 12,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -2632,7 +2703,7 @@ test('startup resume opens the picker and continue restores the latest workspace
   const continueClient = new FakeClient();
   continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
     type: 'ready',
-    protocolVersion: 11,
+    protocolVersion: 12,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],

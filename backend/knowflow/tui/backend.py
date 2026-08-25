@@ -169,6 +169,54 @@ class TuiBackend:
             item["selected"] = item.get("id") == identifier
         return {**selected, "selected": True, "label": self._model_label}
 
+    def local_model_configuration(self) -> dict[str, Any]:
+        """Return editable local model metadata without exposing credentials."""
+        if self.remote_client is not None or self.local_agent is None:
+            raise RuntimeError("远程模式请到Web设置页管理模型配置。")
+        value = self.local_agent.config_store.editable_snapshot()
+        return {
+            "provider": str(value.get("provider") or "custom"),
+            "baseUrl": str(value.get("base_url") or ""),
+            "modelName": str(value.get("model_name") or ""),
+            "apiMode": str(value.get("api_mode") or "responses"),
+            "hasApiKey": bool(value.get("has_api_key")),
+            "overriddenFields": dict(value.get("overridden_fields") or {}),
+        }
+
+    def configure_local_model(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Test and persist a local BYOK model without restarting the TUI."""
+        if self.remote_client is not None or self.local_agent is None:
+            raise RuntimeError("远程模式请到Web设置页管理模型配置。")
+        from ..services.local_cli_runtime import test_local_connection
+
+        store = self.local_agent.config_store
+        current = store.load()
+        candidate = store.validate_editable(
+            provider=str(value.get("provider") or current.get("provider") or "custom"),
+            base_url=str(value.get("baseUrl") or ""),
+            model_name=str(value.get("modelName") or ""),
+            api_mode=str(value.get("apiMode") or "responses"),
+            api_key=(
+                str(value.get("apiKey") or "").strip()
+                if "apiKey" in value
+                else None
+            ),
+        )
+        detail = test_local_connection(candidate)
+        saved = store.save_editable(
+            provider=candidate["provider"],
+            base_url=candidate["base_url"],
+            model_name=candidate["model_name"],
+            api_mode=candidate["api_mode"],
+            api_key=(candidate["api_key"] if "apiKey" in value else None),
+        )
+        self._model_label = saved["model_name"]
+        return {
+            "detail": str(detail or "连接可用"),
+            "model": self._model_label,
+            "config": self.local_model_configuration(),
+        }
+
     def reset(self) -> None:
         self.session_id = None
         self.conversation = []

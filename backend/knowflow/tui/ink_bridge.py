@@ -22,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore
 
 
-PROTOCOL_VERSION = 11
+PROTOCOL_VERSION = 12
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -679,6 +679,77 @@ class InkRuntimeBridge:
                 }
             )
 
+    def _local_model_config(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "get")
+        if action == "get":
+            try:
+                config = self.backend.local_model_configuration()
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "local_model_config_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "local_model_config",
+                        "config": _public_value(config, max_chars=4_000),
+                    }
+                )
+            return
+        if action != "test_and_save":
+            self.send(
+                {
+                    "type": "local_model_config_failed",
+                    "action": action,
+                    "message": "未知本地模型配置操作。",
+                }
+            )
+            return
+        if not self._set_running(True):
+            self.send(
+                {
+                    "type": "local_model_config_failed",
+                    "action": action,
+                    "message": "请等待当前任务结束后再修改模型配置。",
+                }
+            )
+            return
+        raw = message.get("config")
+        candidate = dict(raw) if isinstance(raw, dict) else {}
+        self.send({"type": "local_model_config_testing"})
+
+        def test_and_save() -> None:
+            try:
+                with redirect_stdout(sys.stderr):
+                    result = self.backend.configure_local_model(candidate)
+                self.send(
+                    {
+                        "type": "local_model_config_saved",
+                        **_public_value(result, max_chars=8_000),
+                        "models": _public_value(
+                            self.backend.model_catalog(),
+                            max_chars=20_000,
+                        ),
+                    }
+                )
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "local_model_config_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            finally:
+                candidate.clear()
+                self._set_running(False)
+
+        Thread(target=test_and_save, daemon=True).start()
+
     def handle(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "")
         if message_type == "submit":
@@ -770,6 +841,8 @@ class InkRuntimeBridge:
             self._history(message)
         elif message_type == "models":
             self._models(message)
+        elif message_type == "local_model_config":
+            self._local_model_config(message)
         elif message_type == "shutdown":
             self._stopping = True
             if self._running:
