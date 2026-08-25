@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,43 @@ from knowflow.services.agent_execution import AgentExecution  # noqa: E402
 from knowflow.services.agent_event_protocol import AGENT_EVENT_SCHEMA_VERSION  # noqa: E402
 from knowflow.tui.backend import question_with_workspace_attachments  # noqa: E402
 from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: E402
+from knowflow.tui import ink_launcher  # noqa: E402
+
+
+def check_reconfigure_relaunch() -> None:
+    calls: list[list[str]] = []
+    original_run = ink_launcher.subprocess.run
+    original_which = ink_launcher.shutil.which
+    original_entry_path = ink_launcher._entry_path
+    original_node_major = ink_launcher._node_major
+    previous_allow = os.environ.get("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED")
+
+    def fake_run(command, **_kwargs):
+        calls.append([str(part) for part in command])
+        if len(calls) == 1:
+            return SimpleNamespace(returncode=ink_launcher.INK_CONFIGURE_EXIT_CODE)
+        return SimpleNamespace(returncode=0)
+
+    try:
+        os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = "1"
+        ink_launcher.subprocess.run = fake_run
+        ink_launcher.shutil.which = lambda _name: "node"
+        ink_launcher._entry_path = lambda: Path("index.mjs")
+        ink_launcher._node_major = lambda _node: 22
+        backend = SimpleNamespace(remote_client=None, local_agent=None)
+        assert ink_launcher.run_ink_tui(backend) is True
+    finally:
+        ink_launcher.subprocess.run = original_run
+        ink_launcher.shutil.which = original_which
+        ink_launcher._entry_path = original_entry_path
+        ink_launcher._node_major = original_node_major
+        if previous_allow is None:
+            os.environ.pop("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED", None)
+        else:
+            os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = previous_allow
+
+    assert len(calls) == 3
+    assert calls[1] == [sys.executable, "-m", "knowflow.cli", "configure"]
 
 
 class FakeBackend:
@@ -321,6 +359,7 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 
 def main() -> None:
+    check_reconfigure_relaunch()
     history_root = ROOT / ".tmp-check-cli-ink-history"
     os.environ["XDG_DATA_HOME"] = str(history_root)
     if history_root.exists():
@@ -609,7 +648,11 @@ def main() -> None:
     assert '"workspaceRoot"' in launcher_source
     assert '"startupAction"' in launcher_source
     assert 'startup_action in {"resume", "continue"}' in launcher_source
+    assert "INK_CONFIGURE_EXIT_CODE = 42" in launcher_source
+    assert '[sys.executable, "-m", "knowflow.cli", "configure"]' in launcher_source
     assert "startupAction={String(config.startupAction || '')}" in entry_source
+    assert "const CONFIGURE_EXIT_CODE = 42" in entry_source
+    assert "onConfigure={config.mode === 'remote' ? null : requestConfigure}" in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
@@ -639,6 +682,8 @@ def main() -> None:
     assert "agentEventSchemaVersion" in app_source
     assert "cli_update_completed" in app_source
     assert "client.send({type: 'cli_update'})" in app_source
+    assert "输入/configure重新配置模型" in app_source
+    assert "requestLocalConfiguration" in app_source
 
     shutil.rmtree(history_root, ignore_errors=True)
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")

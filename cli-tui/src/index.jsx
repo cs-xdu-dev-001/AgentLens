@@ -23,8 +23,16 @@ const python = process.env.KNOWFLOW_RUNTIME_PYTHON || 'python3';
 const version = process.env.KNOWFLOW_CLI_VERSION || 'development';
 const {fullscreenEnabled, mouseEnabled} = resolveTerminalMode(process.env);
 const client = new RuntimeClient({python, config});
+const CONFIGURE_EXIT_CODE = 42;
+let instance;
 
-const instance = render(
+const requestConfigure = () => {
+  client.close();
+  instance?.unmount();
+  setImmediate(() => process.exit(CONFIGURE_EXIT_CODE));
+};
+
+instance = render(
   <MouseProvider autoEnable={mouseEnabled}>
     <App
       client={client}
@@ -34,6 +42,7 @@ const instance = render(
       fullscreenEnabled={fullscreenEnabled}
       mouseEnabled={mouseEnabled}
       startupAction={String(config.startupAction || '')}
+      onConfigure={config.mode === 'remote' ? null : requestConfigure}
     />
   </MouseProvider>,
   {

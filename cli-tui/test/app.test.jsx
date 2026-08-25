@@ -1121,6 +1121,32 @@ test('Ink app searches and switches models from the composer', async () => {
   view.unmount();
 });
 
+test('Ink app reopens local model configuration after startup failure', async t => {
+  const client = new FakeClient();
+  let configureRequests = 0;
+  const view = render(
+    <App
+      client={client}
+      version="0.56.0"
+      onConfigure={() => { configureRequests += 1; }}
+    />,
+  );
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'startup_failed',
+    message: 'Responses API connection failed: HTTP 403',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /输入\/configure重新配置模型/);
+
+  view.stdin.write('/configure');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(configureRequests, 1);
+});
+
 test('local model status explains protocol and provider-controlled sampling', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.2" />);

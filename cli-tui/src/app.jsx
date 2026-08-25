@@ -2236,6 +2236,7 @@ export function App({
   fullscreenEnabled = false,
   mouseEnabled = false,
   startupAction = '',
+  onConfigure = null,
 }) {
   const {exit} = useApp();
   const {stdout} = useStdout();
@@ -3450,7 +3451,10 @@ export function App({
           ? `\n\nPython stderr：\n${message.stderr.join('\n')}`
           : '';
         const hint = message.hint ? `\n\n建议：${message.hint}` : '';
-        appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}`);
+        const recovery = message.type === 'startup_failed' && typeof onConfigure === 'function'
+          ? '\n\n输入/configure重新配置模型，完成后会自动返回TUI。'
+          : '';
+        appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}${recovery}`);
         if (message.type === 'startup_failed') {
           setRunning(false);
           setCancelPending(false);
@@ -3473,7 +3477,7 @@ export function App({
       client.off('exit', onExit);
       client.close();
     };
-  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
+  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, onConfigure, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
 
   useEffect(() => {
     if (running || approval || question || queueManagerOpen || queuePaused || !ready || queue.length === 0) return;
@@ -4018,6 +4022,19 @@ export function App({
     resumeRun(latest.runId, latest.title);
   }, [appendItem, client, closeTransientSurfaces, ready, resumeRun, sessions]);
 
+  const requestLocalConfiguration = useCallback(() => {
+    if (running || approval || question) {
+      appendItem('error', '请等待当前任务和确认操作结束后再修改模型配置。');
+      return;
+    }
+    if (typeof onConfigure !== 'function') {
+      appendItem('assistant', '远程模式请到Web设置页管理模型配置。');
+      return;
+    }
+    setPhase('正在打开模型配置');
+    onConfigure();
+  }, [approval, appendItem, onConfigure, question, running]);
+
   const executeInput = useCallback(raw => {
     const text = String(raw ?? '').trim();
     if (!text) return;
@@ -4079,7 +4096,7 @@ export function App({
     } else if (command.value === '/model') {
       const [action, rawId] = args.trim().split(/\s+/, 2);
       if (action === 'config') {
-        appendItem('assistant', '本地模式运行agentlens configure修改模型；远程模式请到Web设置页管理模型配置。');
+        requestLocalConfiguration();
       } else if (action === 'use') {
         if (!rawId) appendItem('error', '用法：/model use <ID>');
         else {
@@ -4096,6 +4113,8 @@ export function App({
         setModelChoice(0);
         client.send({type: 'models', action: 'list'});
       } else appendItem('error', '用法：/model、/model use <ID>或/model config');
+    } else if (command.value === '/configure') {
+      requestLocalConfiguration();
     } else if (command.value === '/reasoning') {
       const value = args.trim().toLowerCase();
       if (!value) {
@@ -4521,7 +4540,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
