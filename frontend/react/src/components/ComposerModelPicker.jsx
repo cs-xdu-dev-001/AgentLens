@@ -89,6 +89,8 @@ export function ComposerModelPicker({
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const searchRef = useRef(null);
+  const reasoningButtonRefs = useRef([]);
+  const pickerFocusRef = useRef("model");
 
   const orderedModels = useMemo(() => {
     const rank = new Map(recentModelIds.map((id, index) => [valueOf(id), index]));
@@ -238,6 +240,9 @@ export function ComposerModelPicker({
         }));
         return;
       }
+      pickerFocusRef.current = ["context", "reasoning"].includes(event.detail?.focus)
+        ? event.detail.focus
+        : "model";
       setOpen(true);
       const focusTarget = {
         context: ".composer-context-section",
@@ -258,12 +263,19 @@ export function ComposerModelPicker({
 
   useEffect(() => {
     const handleShortcut = (event) => {
-      if (disabled || event.defaultPrevented || !event.altKey || event.key.toLocaleLowerCase() !== "p") return;
+      const shortcut = event.key.toLocaleLowerCase();
+      if (
+        disabled
+        || event.defaultPrevented
+        || !event.altKey
+        || !["p", "r"].includes(shortcut)
+      ) return;
       event.preventDefault();
       if (!models.length) {
         openSettings();
         return;
       }
+      pickerFocusRef.current = shortcut === "r" ? "reasoning" : "model";
       setOpen(true);
     };
     window.addEventListener("keydown", handleShortcut);
@@ -276,7 +288,24 @@ export function ComposerModelPicker({
       (model) => valueOf(model.id) === selectedModelId,
     );
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
-    window.requestAnimationFrame(() => searchRef.current?.focus());
+    window.requestAnimationFrame(() => {
+      const focusTarget = pickerFocusRef.current;
+      if (focusTarget === "reasoning") {
+        const reasoningIndex = Math.max(
+          0,
+          REASONING_EFFORTS.findIndex((item) => item.id === reasoningEffort),
+        );
+        reasoningButtonRefs.current[reasoningIndex]?.focus();
+      } else {
+        searchRef.current?.focus();
+      }
+      if (focusTarget === "context") {
+        rootRef.current
+          ?.querySelector(".composer-context-section")
+          ?.scrollIntoView({ block: "nearest" });
+      }
+      pickerFocusRef.current = "model";
+    });
   }, [open, selectedModelId, visibleModels]);
 
   const selectModel = (model) => {
@@ -310,6 +339,7 @@ export function ComposerModelPicker({
       closePicker();
       return;
     }
+    pickerFocusRef.current = "model";
     setOpen(true);
   };
 
@@ -322,6 +352,24 @@ export function ComposerModelPicker({
       triggerRef.current?.focus();
       return;
     }
+    const target = event.target instanceof Element ? event.target : null;
+    const reasoningButton = target?.closest(".composer-reasoning-section button");
+    if (reasoningButton) {
+      if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const currentIndex = Number(reasoningButton.dataset.reasoningIndex) || 0;
+        const nextIndex = event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? REASONING_EFFORTS.length - 1
+            : (currentIndex + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + REASONING_EFFORTS.length)
+              % REASONING_EFFORTS.length;
+        selectReasoningEffort(REASONING_EFFORTS[nextIndex].id);
+        window.requestAnimationFrame(() => reasoningButtonRefs.current[nextIndex]?.focus());
+      }
+      return;
+    }
+    if (target?.closest(".composer-context-section button, .composer-model-manage")) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!open) {
@@ -362,6 +410,7 @@ export function ComposerModelPicker({
         aria-controls={open ? "composer-model-listbox" : undefined}
         aria-haspopup={"listbox"}
         aria-keyshortcuts={"Alt+P"}
+        title={"切换模型（Alt+P） · 推理强度（Alt+R）"}
         onClick={togglePicker}
       >
         <span className={"composer-model-mark"} aria-hidden={"true"}>
@@ -449,14 +498,17 @@ export function ComposerModelPicker({
           </div>
           <div className={"composer-reasoning-section"}>
             <strong>{"推理强度"}</strong>
-            <div role={"radiogroup"} aria-label={"推理强度"}>
-              {REASONING_EFFORTS.map((item) => (
+            <div role={"radiogroup"} aria-label={"推理强度"} aria-keyshortcuts={"Alt+R"}>
+              {REASONING_EFFORTS.map((item, index) => (
                 <button
                   className={item.id === reasoningEffort ? "selected" : ""}
+                  data-reasoning-index={index}
                   key={item.id}
+                  ref={(node) => { reasoningButtonRefs.current[index] = node; }}
                   type={"button"}
                   role={"radio"}
                   aria-checked={item.id === reasoningEffort}
+                  tabIndex={item.id === reasoningEffort ? 0 : -1}
                   onClick={() => selectReasoningEffort(item.id)}
                 >
                   {item.label}
