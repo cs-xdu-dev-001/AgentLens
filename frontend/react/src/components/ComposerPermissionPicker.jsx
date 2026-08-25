@@ -30,7 +30,11 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
   const [ruleError, setRuleError] = useState("");
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
+  const listboxRef = useRef(null);
   const ruleInputRef = useRef(null);
+  const ruleTabRefs = useRef([]);
+  const permissionItemCount = COMPOSER_PERMISSION_MODES.length + 1;
+  const rulesItemIndex = COMPOSER_PERMISSION_MODES.length;
 
   const selectedMode = useMemo(
     () => COMPOSER_PERMISSION_MODES.find((item) => item.id === mode)
@@ -69,7 +73,9 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
 
   useEffect(() => {
     const handleOpenRequest = () => {
-      if (!disabled) setOpen(true);
+      if (disabled) return;
+      setPage("modes");
+      setOpen(true);
     };
     window.addEventListener(
       "knowflow:react-composer-permissions-open",
@@ -80,6 +86,11 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
       handleOpenRequest,
     );
   }, [disabled]);
+
+  useEffect(() => {
+    if (!open || page !== "modes") return;
+    window.requestAnimationFrame(() => listboxRef.current?.focus());
+  }, [open, page]);
 
   useEffect(() => {
     if (disabled && open) closePicker();
@@ -95,6 +106,36 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
     setPage("rules");
     setRuleError("");
     window.requestAnimationFrame(() => ruleInputRef.current?.focus());
+  };
+
+  const selectRuleBehavior = (nextBehavior, focus = false) => {
+    const index = COMPOSER_PERMISSION_BEHAVIORS.findIndex(
+      (item) => item.id === nextBehavior,
+    );
+    if (index < 0) return;
+    setRuleBehavior(nextBehavior);
+    setRuleError("");
+    if (focus) {
+      window.requestAnimationFrame(() => ruleTabRefs.current[index]?.focus());
+    }
+  };
+
+  const handleRuleTabKeyDown = (event, index) => {
+    let nextIndex = index;
+    if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
+      nextIndex = (index + COMPOSER_PERMISSION_BEHAVIORS.length - 1)
+        % COMPOSER_PERMISSION_BEHAVIORS.length;
+    } else if (["ArrowRight", "ArrowDown"].includes(event.key)) {
+      nextIndex = (index + 1) % COMPOSER_PERMISSION_BEHAVIORS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = COMPOSER_PERMISSION_BEHAVIORS.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    selectRuleBehavior(COMPOSER_PERMISSION_BEHAVIORS[nextIndex].id, true);
   };
 
   const persistRules = (nextRules) => {
@@ -141,15 +182,25 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
       }
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActiveIndex((current) => (
-        current + direction + COMPOSER_PERMISSION_MODES.length
-      ) % COMPOSER_PERMISSION_MODES.length);
+        current + direction + permissionItemCount
+      ) % permissionItemCount);
       return;
     }
-    if (event.key === "Enter" && open) {
+    if (["Home", "End"].includes(event.key) && open) {
       event.preventDefault();
-      chooseMode(COMPOSER_PERMISSION_MODES[activeIndex].id);
+      setActiveIndex(event.key === "Home" ? 0 : rulesItemIndex);
+      return;
+    }
+    if (["Enter", " "].includes(event.key) && open) {
+      event.preventDefault();
+      if (activeIndex === rulesItemIndex) openRules();
+      else chooseMode(COMPOSER_PERMISSION_MODES[activeIndex].id);
     }
   };
+
+  const activePermissionItemId = activeIndex === rulesItemIndex
+    ? "composer-permission-rules-entry"
+    : `composer-permission-option-${COMPOSER_PERMISSION_MODES[activeIndex].id}`;
 
   return (
     <div
@@ -207,9 +258,11 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
               <div
                 className={"composer-model-list"}
                 id={"composer-permission-listbox"}
+                ref={listboxRef}
                 role={"listbox"}
+                tabIndex={0}
                 aria-label={"选择权限模式"}
-                aria-activedescendant={`composer-permission-option-${COMPOSER_PERMISSION_MODES[activeIndex].id}`}
+                aria-activedescendant={activePermissionItemId}
               >
                 {COMPOSER_PERMISSION_MODES.map((item, index) => {
                   const selected = item.id === mode;
@@ -228,6 +281,8 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
                       type={"button"}
                       role={"option"}
                       aria-selected={selected}
+                      tabIndex={-1}
+                      onFocus={() => setActiveIndex(index)}
                       onMouseEnter={() => setActiveIndex(index)}
                       onClick={() => chooseMode(item.id)}
                     >
@@ -241,18 +296,27 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
                     </button>
                   );
                 })}
+                <button
+                  className={[
+                    "composer-permission-rules-entry",
+                    activeIndex === rulesItemIndex ? "active" : "",
+                  ].filter(Boolean).join(" ")}
+                  id={"composer-permission-rules-entry"}
+                  type={"button"}
+                  role={"option"}
+                  aria-selected={false}
+                  tabIndex={-1}
+                  onFocus={() => setActiveIndex(rulesItemIndex)}
+                  onMouseEnter={() => setActiveIndex(rulesItemIndex)}
+                  onClick={openRules}
+                >
+                  <span>
+                    <strong>{"工具规则"}</strong>
+                    <small>{"Allow / Ask / Deny"}</small>
+                  </span>
+                  <span aria-hidden={"true"}>{`${permissionRuleCount(rules)}条  ›`}</span>
+                </button>
               </div>
-              <button
-                className={"composer-permission-rules-entry"}
-                type={"button"}
-                onClick={openRules}
-              >
-                <span>
-                  <strong>{"工具规则"}</strong>
-                  <small>{"Allow / Ask / Deny"}</small>
-                </span>
-                <span aria-hidden={"true"}>{`${permissionRuleCount(rules)}条  ›`}</span>
-              </button>
             </>
           ) : (
             <div className={"composer-permission-rules"} id={"composer-permission-rules"}>
@@ -269,18 +333,19 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
                 <span>{`${permissionRuleCount(rules)}条`}</span>
               </div>
               <div className={"composer-permission-rule-tabs"} role={"tablist"} aria-label={"规则行为"}>
-                {COMPOSER_PERMISSION_BEHAVIORS.map((item) => (
+                {COMPOSER_PERMISSION_BEHAVIORS.map((item, index) => (
                   <button
                     className={ruleBehavior === item.id ? "active" : ""}
                     key={item.id}
                     type={"button"}
                     role={"tab"}
-                    aria-selected={ruleBehavior === item.id}
-                    onClick={() => {
-                      setRuleBehavior(item.id);
-                      setRuleError("");
-                      ruleInputRef.current?.focus();
+                    ref={(node) => {
+                      ruleTabRefs.current[index] = node;
                     }}
+                    aria-selected={ruleBehavior === item.id}
+                    tabIndex={ruleBehavior === item.id ? 0 : -1}
+                    onKeyDown={(event) => handleRuleTabKeyDown(event, index)}
+                    onClick={() => selectRuleBehavior(item.id)}
                   >
                     {item.label}
                     <span>{rules[item.id].length}</span>

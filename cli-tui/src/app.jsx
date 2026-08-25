@@ -1527,7 +1527,7 @@ function PermissionPicker({
         </Text>
         <Text color={MUTED}>  Allow / Ask / Deny · {permissionRuleCount(rules)}条</Text>
       </Box>
-      <Text color={MUTED}>↑↓选择 · Enter确认 · Shift+Tab快速切换 · Esc关闭</Text>
+      <Text color={MUTED}>↑↓选择 · Home/End首尾 · Enter确认 · R工具规则 · Shift+Tab快速切换 · Esc关闭</Text>
     </Box>
   );
 }
@@ -5000,6 +5000,10 @@ export function App({
           const delta = key.leftArrow ? -1 : 1;
           setPermissionRuleTab(value => (value + delta + PERMISSION_BEHAVIORS.length) % PERMISSION_BEHAVIORS.length);
           setPermissionRuleChoice(0);
+        } else if (key.home && values.length) {
+          setPermissionRuleChoice(0);
+        } else if (key.end && values.length) {
+          setPermissionRuleChoice(values.length - 1);
         } else if (key.upArrow && values.length) {
           setPermissionRuleChoice(value => (value + values.length - 1) % values.length);
         } else if (key.downArrow && values.length) {
@@ -5018,8 +5022,14 @@ export function App({
         }
       } else {
         const itemCount = PERMISSION_MODES.length + 1;
-        if (key.upArrow) setPermissionChoice(value => (value + itemCount - 1) % itemCount);
+        if (key.home) setPermissionChoice(0);
+        else if (key.end) setPermissionChoice(itemCount - 1);
+        else if (key.upArrow) setPermissionChoice(value => (value + itemCount - 1) % itemCount);
         else if (key.downArrow) setPermissionChoice(value => (value + 1) % itemCount);
+        else if (character.toLowerCase() === 'r') {
+          setPermissionPage('rules');
+          setPermissionRuleChoice(0);
+        }
         else if (key.return && permissionChoice === PERMISSION_MODES.length) {
           setPermissionPage('rules');
           setPermissionRuleChoice(0);

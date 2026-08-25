@@ -14737,6 +14737,7 @@ select {
 }
 
 .composer-permission-rules-entry:hover,
+.composer-permission-rules-entry.active,
 .composer-permission-rules-entry:focus-visible {
   background: var(--panel-bg-soft);
   outline: none;

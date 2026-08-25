@@ -39,7 +39,11 @@ def main() -> None:
     require(picker, 'role={"listbox"}', "permission listbox semantics")
     require(picker, 'role={"option"}', "permission option semantics")
     require(picker, '["ArrowDown", "ArrowUp"].includes(event.key)', "keyboard option navigation")
-    require(picker, 'event.key === "Enter"', "keyboard permission selection")
+    require(picker, '["Home", "End"].includes(event.key)', "keyboard boundary navigation")
+    require(picker, 'window.requestAnimationFrame(() => listboxRef.current?.focus())', "slash-command focus handoff")
+    require(picker, 'role={"tab"}', "rule tab semantics")
+    require(picker, "handleRuleTabKeyDown", "keyboard rule category navigation")
+    require(picker, '["Enter", " "].includes(event.key)', "keyboard permission selection")
     require(picker, 'event.key === "Escape"', "keyboard close")
     require(picker, "本次浏览器会话", "session scope copy")
     require(picker, "工具规则", "tool rule editor entry")
@@ -72,6 +76,8 @@ def main() -> None:
     require(tui, "权限模式已切换为", "TUI selection feedback")
     require(tui, "Allow / Ask / Deny", "TUI tool rule categories")
     require(tui, "permissionRuleBehavior", "TUI rule enforcement")
+    require(tui, "Home/End首尾", "TUI permission boundary navigation")
+    require(tui, "R工具规则", "TUI direct rule navigation")
 
     script = r'''import {
   allowApprovalForSession,
