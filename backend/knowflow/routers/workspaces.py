@@ -95,6 +95,9 @@ def workspace_status(request: Request) -> dict:
             or Path(SANDBOX_LIMIT_COMMAND).is_file()
         )
     )
+    item_count = 0
+    if WORKSPACE_ENABLED:
+        item_count = len(_runtime(request).list_entries("").get("entries", []))
     return api_success(
         {
             "enabled": WORKSPACE_ENABLED,
@@ -102,6 +105,7 @@ def workspace_status(request: Request) -> dict:
             "sandboxReady": sandbox_ready,
             "platform": "linux" if sys.platform.startswith("linux") else "unsupported",
             "maxFileBytes": WORKSPACE_MAX_FILE_BYTES,
+            "itemCount": item_count,
         }
     )
 

@@ -10,6 +10,7 @@ import {
   activeTaskAnchorMetrics,
   App,
   buildTuiDiagnosticReport,
+  compactWorkspaceStatus,
   compactSessionHeaderLabel,
   expandPastedTextRefs,
   enqueueWaitingInteraction,
@@ -63,6 +64,18 @@ test('session titles are compact and redact credential-shaped text', () => {
   assert.ok(sessionTitleFromPrompt('很长的任务说明'.repeat(20)).length <= 64);
   assert.equal(compactSessionHeaderLabel('检查当前工作区并给出修复建议', 120), '检查当前工作区并给出修复建议');
   assert.match(compactSessionHeaderLabel('检查当前工作区并给出一份非常详细的修复建议', 60), /…$/);
+});
+
+test('workspace status keeps branch and dirty state visible without exposing the full path', () => {
+  assert.equal(compactWorkspaceStatus({branch: 'main', dirty: false}), 'main');
+  assert.equal(
+    compactWorkspaceStatus({branch: 'feature/task-ui', dirty: true, changedFiles: 3}),
+    'feature/task-ui · 3处改动',
+  );
+  assert.equal(
+    compactWorkspaceStatus({cwd: '/srv/agentlens', dirty: true, changedFiles: 1}),
+    'agentlens · 1处改动',
+  );
 });
 
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {

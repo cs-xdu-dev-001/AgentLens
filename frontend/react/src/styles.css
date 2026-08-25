@@ -7727,6 +7727,35 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   min-width: 0;
 }
 
+#page-chat .chat-workspace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(240px, 24vw);
+  color: var(--muted) !important;
+}
+
+#page-chat .chat-workspace-toggle svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#page-chat .chat-workspace-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-chat .chat-workspace-toggle.is-ready {
+  color: var(--text) !important;
+}
+
 #page-chat .chat-run-dot {
   width: 7px;
   height: 7px;
@@ -14850,8 +14879,17 @@ select {
   pointer-events: auto !important;
 }
 
-#page-chat.chat-empty .chat-topbar h1,
+#page-chat.chat-empty .chat-topbar h1 {
+  display: none !important;
+}
+
 #page-chat.chat-empty .chat-topbar-actions {
+  display: flex !important;
+  margin-left: auto !important;
+}
+
+#page-chat.chat-empty .chat-run-toggle,
+#page-chat.chat-empty #refresh-btn {
   display: none !important;
 }
 

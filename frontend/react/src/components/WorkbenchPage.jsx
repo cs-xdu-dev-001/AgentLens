@@ -51,6 +51,7 @@ export function WorkbenchPage({ active = false }) {
       await workspaceApi.upload(target, file, false);
       notifyToast("文件已加入工作区");
       await load(path);
+      window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated"));
     } catch (error) {
       notifyError(error, "上传失败");
     }
@@ -62,6 +63,7 @@ export function WorkbenchPage({ active = false }) {
       await workspaceApi.delete(entry.path);
       notifyToast("文件已删除");
       await load(path);
+      window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated"));
     } catch (error) {
       notifyError(error, "删除失败");
     }

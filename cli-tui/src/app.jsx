@@ -1613,6 +1613,13 @@ function workspaceLabel(workspace) {
   return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
 }
 
+export function compactWorkspaceStatus(workspace) {
+  if (!workspace || workspace.remote) return '工作区';
+  const branch = publicLabel(workspace.branch, workspaceDiagnosticName(workspace), 48);
+  const changed = Math.max(0, Number(workspace.changedFiles) || 0);
+  return workspace.dirty && changed ? `${branch} · ${changed}处改动` : branch;
+}
+
 export function sessionTitleFromPrompt(value, fallback = '') {
   const title = publicLabel(value, fallback, 160)
     .replace(/\s+/g, ' ')
@@ -5926,7 +5933,7 @@ export function App({
                 {!narrow ? (
                   <Text>
                     <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
-                    <Text color={MUTED}> · {model || '连接中'} · {workspace?.branch || '工作区'}</Text>
+                    <Text color={MUTED}> · {model || '连接中'} · {compactWorkspaceStatus(workspace)}</Text>
                   </Text>
                 ) : null}
               </Box>
@@ -5945,7 +5952,7 @@ export function App({
               {!narrow ? (
                 <Text>
                   <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
-                  <Text color={MUTED}> · {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}</Text>
+                  <Text color={MUTED}> · {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, compactWorkspaceStatus(workspace), interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}</Text>
                 </Text>
               ) : null}
             </Box>

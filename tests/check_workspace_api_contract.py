@@ -17,6 +17,9 @@ def main() -> None:
     page = (
         ROOT / "frontend" / "react" / "src" / "components" / "WorkbenchPage.jsx"
     ).read_text(encoding="utf-8")
+    topbar = (
+        ROOT / "frontend" / "react" / "src" / "components" / "ChatTopbar.jsx"
+    ).read_text(encoding="utf-8")
 
     assert "current_user_id(request)" in router
     assert '"/api/workspace/files"' in router
@@ -25,10 +28,14 @@ def main() -> None:
     assert '"/api/workspace/changes/undo"' in router
     assert "operation_id=payload.operationId" in router
     assert "WorkspaceRuntime(" in router
+    assert '"itemCount": item_count' in router
     assert "workspace_router" in registry
     assert "workspaceApi" in client
     assert "undoChange" in client and "workspace/changes" in client
     assert "工作区" in page and "Linux沙箱可用" in page
+    assert "workspaceApi.status()" in topbar
+    assert "chat-workspace-toggle" in topbar
+    assert "knowflow:react-workspace-updated" in topbar
 
     print("workspace API and frontend preserve authenticated user isolation")
 
