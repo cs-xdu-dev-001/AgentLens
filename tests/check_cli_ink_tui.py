@@ -233,12 +233,13 @@ class FakeBackend:
             "workspace": self.workspace_status(),
         }
 
-    def list_sessions(self, limit=20):
+    def list_sessions(self, limit=20, archived=False):
         return [
             {
                 "runId": "run_ink",
                 "title": "测试会话",
                 "pinned": False,
+                "archived": bool(archived),
                 "status": "completed",
                 "updatedAt": 1_700_000_000,
                 "cwd": "/workspace",
@@ -286,8 +287,16 @@ class FakeBackend:
     def rename_session(self, title=""):
         return {"runId": "run_ink", "title": title}
 
-    def set_session_pinned(self, pinned=False, run_id=""):
+    def set_session_pinned(self, pinned=False, run_id="", session_id=""):
         return {"runId": run_id or "run_ink", "pinned": bool(pinned)}
+
+    def set_session_archived(self, archived=False, run_id="", session_id=""):
+        return {
+            "runId": run_id or "run_ink",
+            "sessionId": session_id,
+            "archived": bool(archived),
+            "pinned": False,
+        }
 
     def export_session(self, filename=""):
         return {
@@ -642,8 +651,10 @@ def main() -> None:
     assert session_rows[-1]["sessions"][0]["answer"] == "恢复后的回答预览"
     assert set(session_rows[-1]["sessions"][0]) == {
         "runId",
+        "sessionId",
         "title",
         "pinned",
+        "archived",
         "status",
         "updatedAt",
         "cwd",
@@ -668,6 +679,14 @@ def main() -> None:
     assert pin_rows[-1]["result"] == {
         "runId": "run_ink",
         "pinned": True,
+    }
+    ready_bridge.handle({"type": "session_archive", "runId": "run_ink", "archived": True})
+    archive_rows = wait_for(ready_output, "session_archived")
+    assert archive_rows[-1]["result"] == {
+        "runId": "run_ink",
+        "sessionId": "",
+        "archived": True,
+        "pinned": False,
     }
     ready_bridge.handle({"type": "export_session", "filename": "会话记录.md"})
     export_rows = wait_for(ready_output, "session_exported")

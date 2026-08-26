@@ -99,6 +99,11 @@ class SessionPinUpdate(BaseModel):
     pinned: bool
 
 
+class SessionArchiveUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archived: bool
+
+
 class SessionBranchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, max_length=255)

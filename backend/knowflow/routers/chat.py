@@ -431,16 +431,16 @@ def read_message_memory_activity(
 
 
 @router.get("/api/sessions", tags=SESSION_TAGS, summary="List chat sessions")
-def list_sessions(request: Request) -> dict[str, Any]:
+def list_sessions(request: Request, archived: bool = False) -> dict[str, Any]:
     user_id = current_user_id(request)
     rows = fetch_all(
         """
-        SELECT id, title, is_pinned, knowledge_base_id, chat_model_config_id, created_at, updated_at
+        SELECT id, title, is_pinned, is_archived, knowledge_base_id, chat_model_config_id, created_at, updated_at
         FROM chat_session
-        WHERE user_id=:user_id
+        WHERE user_id=:user_id AND is_archived=:is_archived
         ORDER BY is_pinned DESC, updated_at DESC
         """,
-        {"user_id": user_id},
+        {"user_id": user_id, "is_archived": 1 if archived else 0},
     )
     latest_runs = _latest_session_runs(user_id)
     for row in rows:
@@ -947,7 +947,9 @@ def rename_session(session_id: str, payload: SessionUpdate, request: Request) ->
 @router.put("/api/sessions/{session_id}/pin", tags=SESSION_TAGS, summary="Pin or unpin a session")
 def pin_session(session_id: str, payload: SessionPinUpdate, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
-    get_session_for_user(session_id, user_id)
+    session = get_session_for_user(session_id, user_id)
+    if payload.pinned and bool(session.get("is_archived")):
+        raise HTTPException(status_code=409, detail="Restore the session before pinning it.")
     execute(
         "UPDATE chat_session SET is_pinned=:is_pinned WHERE id=:id AND user_id=:user_id",
         {
@@ -957,6 +959,58 @@ def pin_session(session_id: str, payload: SessionPinUpdate, request: Request) ->
         },
     )
     return api_success({"id": session_id, "pinned": payload.pinned})
+
+
+@router.put("/api/sessions/{session_id}/archive", tags=SESSION_TAGS, summary="Archive or restore a session")
+def archive_session(session_id: str, payload: SessionArchiveUpdate, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    get_session_for_user(session_id, user_id)
+    updated = execute_rowcount(
+        """
+        UPDATE chat_session
+        SET is_archived=:is_archived,
+            is_pinned=CASE WHEN :is_archived=1 THEN 0 ELSE is_pinned END
+        WHERE id=:id AND user_id=:user_id
+          AND (
+            :is_archived=0
+            OR NOT EXISTS (
+              SELECT 1 FROM agent_run
+              WHERE session_id=:id AND user_id=:user_id
+                AND status IN ('planning', 'waiting_start', 'running', 'waiting_approval', 'waiting_input')
+            )
+          )
+        """,
+        {
+            "is_archived": 1 if payload.archived else 0,
+            "id": session_id,
+            "user_id": user_id,
+        },
+    )
+    if payload.archived and updated == 0:
+        active = fetch_one(
+            """
+            SELECT id FROM agent_run
+            WHERE session_id=:session_id AND user_id=:user_id
+              AND status IN ('planning', 'waiting_start', 'running', 'waiting_approval', 'waiting_input')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            {"session_id": session_id, "user_id": user_id},
+        )
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Wait for the active run to finish before archiving this session.",
+            )
+    return api_success(
+        {
+            "id": session_id,
+            "archived": payload.archived,
+            "pinned": False if payload.archived else bool(
+                get_session_for_user(session_id, user_id).get("is_pinned")
+            ),
+        }
+    )
 
 
 @router.delete("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Delete a session")

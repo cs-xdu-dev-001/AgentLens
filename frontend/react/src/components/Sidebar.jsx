@@ -34,12 +34,15 @@ const runStatusLabels = {
   completed: "已完成",
 };
 
-const sessionMenuItems = (pinned) => [
+const sessionMenuItems = (pinned, archived) => [
   { action: "continue", icon: "message", label: "继续" },
-  { action: "pin", icon: "pin", label: pinned ? "取消置顶" : "置顶" },
+  ...(archived
+    ? [{ action: "archive", icon: "archive", label: "恢复到任务" }]
+    : [{ action: "pin", icon: "pin", label: pinned ? "取消置顶" : "置顶" }]),
   { action: "branch", icon: "branch", label: "创建分支" },
   { action: "export", icon: "download", label: "导出对话" },
   { action: "rename", icon: "pencil", label: "重命名" },
+  ...(!archived ? [{ action: "archive", icon: "archive", label: "归档" }] : []),
   { action: "delete", icon: "trash", label: "删除", danger: true, divider: true },
 ];
 
@@ -88,6 +91,15 @@ function SessionMenuIcon({ type }) {
         <path d={"M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"} />
         <path d={"M7 7l.8 12.1A2 2 0 0 0 9.8 21h4.4a2 2 0 0 0 2-1.9L17 7"} />
         <path d={"M10 11v6M14 11v6"} />
+      </svg>
+    );
+  }
+
+  if (type === "archive") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"M4 6h16v3H4V6Z"} />
+        <path d={"M6 9v10h12V9M9 13h6"} />
       </svg>
     );
   }
@@ -172,7 +184,7 @@ function SessionMenuPopover({ anchor, onAction, session }) {
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      {sessionMenuItems(Boolean(session.is_pinned)).map((item) => (
+      {sessionMenuItems(Boolean(session.is_pinned), Boolean(session.is_archived)).map((item) => (
         <div className={item.divider ? "session-menu-group danger-group" : "session-menu-group"} key={item.action}>
           {item.divider ? <div className={"session-menu-divider"} /> : null}
           <button className={item.danger ? "session-menu-item danger" : "session-menu-item"} role={"menuitem"} type={"button"} onClick={() => onAction(item.action, sessionId)}>
@@ -269,6 +281,7 @@ function SessionHistory() {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [switchingSessionId, setSwitchingSessionId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sessionScope, setSessionScope] = useState("active");
   const [openMenuSessionId, setOpenMenuSessionId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
@@ -277,34 +290,43 @@ function SessionHistory() {
   const historyRef = useRef(null);
   const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
+  const sessionScopeRef = useRef("active");
+  const sessionRequestRef = useRef(0);
 
   const loadSessions = useCallback(async () => {
     if (!authenticated) {
+      sessionRequestRef.current += 1;
       setSessions([]);
       setCurrentSessionId(null);
       setLoadingSessions(false);
       setSessionLoadFailed(false);
       return [];
     }
+    const requestId = ++sessionRequestRef.current;
+    const scope = sessionScopeRef.current;
     setLoadingSessions(true);
     try {
-      const nextSessions = await sessionApi.list();
+      const nextSessions = await sessionApi.list({ archived: scope === "archived" });
       const sessionList = Array.isArray(nextSessions) ? nextSessions : [];
+      if (requestId !== sessionRequestRef.current || scope !== sessionScopeRef.current) return [];
       setSessions(sessionList);
       setSessionLoadFailed(false);
       return sessionList;
     } catch (error) {
+      if (requestId !== sessionRequestRef.current || scope !== sessionScopeRef.current) return [];
       setSessionLoadFailed(true);
       notifyError(error, "刷新会话失败");
       return [];
     } finally {
-      setLoadingSessions(false);
+      if (requestId === sessionRequestRef.current && scope === sessionScopeRef.current) {
+        setLoadingSessions(false);
+      }
     }
   }, [authenticated]);
 
   useEffect(() => {
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, sessionScope]);
 
   useEffect(() => {
     const handleSessionReloadRequest = (event) => {
@@ -416,6 +438,17 @@ function SessionHistory() {
     setSearchQuery(query);
   };
 
+  const handleSessionScopeChange = (scope) => {
+    if (scope === sessionScope) return;
+    sessionScopeRef.current = scope;
+    sessionRequestRef.current += 1;
+    setOpenMenuSessionId(null);
+    setMenuAnchor(null);
+    setSessions([]);
+    setLoadingSessions(true);
+    setSessionScope(scope);
+  };
+
   const handleSessionContinue = (sessionId) => {
     if (editingSessionId === sessionId || switchingSessionRef.current === sessionId) return;
     if (sessionId === currentSessionId) {
@@ -510,6 +543,21 @@ function SessionHistory() {
     }
   };
 
+  const handleSessionArchive = async (sessionId) => {
+    const restoring = sessionScope === "archived";
+    try {
+      await sessionApi.setArchived(sessionId, !restoring);
+      if (!restoring && currentSessionId === sessionId) {
+        setCurrentSessionId(null);
+        window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
+      }
+      notifyToast(restoring ? "会话已恢复" : "会话已归档");
+      await loadSessions();
+    } catch (error) {
+      notifyError(error, restoring ? "恢复失败" : "归档失败");
+    }
+  };
+
   const handleSessionBranch = async (sessionId, title = "") => {
     try {
       const branch = await sessionApi.branch(sessionId, { title: String(title || "").trim() || null });
@@ -598,6 +646,10 @@ function SessionHistory() {
       handleSessionExport(sessionId);
       return;
     }
+    if (action === "archive") {
+      handleSessionArchive(sessionId);
+      return;
+    }
     if (action === "delete") {
       handleSessionDelete(sessionId);
     }
@@ -646,7 +698,7 @@ function SessionHistory() {
 
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 214;
-    const menuHeight = 260;
+    const menuHeight = 330;
     const left = Math.max(12, Math.min(rect.right + 8, window.innerWidth - menuWidth - 12));
     const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - menuHeight - 12));
     setOpenMenuSessionId(sessionId);
@@ -675,6 +727,10 @@ function SessionHistory() {
 
   return (
     <section className={"chat-history-shell"} ref={historyRef}>
+      <div className={"session-scope-tabs"} role={"tablist"} aria-label={"任务范围"}>
+        <button type={"button"} role={"tab"} aria-selected={sessionScope === "active"} className={sessionScope === "active" ? "active" : ""} onClick={() => handleSessionScopeChange("active")}>{"任务"}</button>
+        <button type={"button"} role={"tab"} aria-selected={sessionScope === "archived"} className={sessionScope === "archived" ? "active" : ""} onClick={() => handleSessionScopeChange("archived")}>{"已归档"}</button>
+      </div>
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
           <span>{"搜索任务"}</span>
@@ -773,7 +829,7 @@ function SessionHistory() {
               </section>
             ))
         ) : (
-          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : "新任务会显示在这里"}</p>
+          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : sessionScope === "archived" ? "归档的任务会显示在这里" : "新任务会显示在这里"}</p>
         )}
       </div>
       <SessionMenuPopover

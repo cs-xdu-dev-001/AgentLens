@@ -535,6 +535,40 @@ a {
   flex: 1;
 }
 
+.session-scope-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: #e8e8e5;
+}
+
+.session-scope-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #686865;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-scope-tabs button:hover {
+  color: #111111;
+}
+
+.session-scope-tabs button.active {
+  background: #ffffff;
+  color: #111111;
+  box-shadow: 0 1px 3px rgba(17, 17, 17, 0.12);
+}
+
+.session-scope-tabs button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
 .sidebar-search {
   gap: 6px;
 }
@@ -8269,6 +8303,24 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 :root[data-theme="mono-dark"] .session-popover-floating .session-menu-item.danger:hover {
   background: rgba(255, 91, 91, 0.12) !important;
   color: #ffb1b1 !important;
+}
+
+:root[data-theme="mono-dark"] .session-scope-tabs {
+  background: #202020;
+}
+
+:root[data-theme="mono-dark"] .session-scope-tabs button {
+  color: #a8a8a3;
+}
+
+:root[data-theme="mono-dark"] .session-scope-tabs button:hover {
+  color: #f5f5f2;
+}
+
+:root[data-theme="mono-dark"] .session-scope-tabs button.active {
+  background: #30302f;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 
 /* Brand mark and empty-chat composition polish. */

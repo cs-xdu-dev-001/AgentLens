@@ -898,7 +898,7 @@ def ensure_session(session_id: str | None, knowledge_base_id: int | None, chat_m
     if chat_model_config_id is not None:
         get_model_config(chat_model_config_id, "chat", user_id)
     row = fetch_one(
-        "SELECT id, chat_model_config_id FROM chat_session WHERE id=:id AND user_id=:user_id",
+        "SELECT id, chat_model_config_id, is_archived FROM chat_session WHERE id=:id AND user_id=:user_id",
         {"id": final_id, "user_id": user_id},
     )
     if session_id and not row and fetch_one("SELECT id FROM chat_session WHERE id=:id", {"id": final_id}):
@@ -933,6 +933,19 @@ def ensure_session(session_id: str | None, knowledge_base_id: int | None, chat_m
             """,
             {
                 "chat_model_config_id": chat_model_config_id,
+                "updated_at": now_str(),
+                "id": final_id,
+                "user_id": user_id,
+            },
+        )
+    if row and bool(row.get("is_archived")):
+        execute(
+            """
+            UPDATE chat_session
+            SET is_archived=0, updated_at=:updated_at
+            WHERE id=:id AND user_id=:user_id
+            """,
+            {
                 "updated_at": now_str(),
                 "id": final_id,
                 "user_id": user_id,

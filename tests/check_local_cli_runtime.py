@@ -308,6 +308,15 @@ def main() -> None:
         renamed = runtime.rename_session(stored[0]["runId"], "  发布 复盘  ")
         assert renamed["title"] == "发布 复盘"
         assert runtime.load_session(stored[0]["runId"])["title"] == "发布 复盘"
+        runtime.set_session_pinned(stored[0]["runId"], True)
+        archived = runtime.set_session_archived(stored[0]["runId"], True)
+        assert archived["archived"] is True
+        assert archived["pinned"] is False
+        assert not runtime.list_sessions()
+        assert runtime.list_sessions(archived=True)[0]["runId"] == stored[0]["runId"]
+        restored = runtime.set_session_archived(stored[0]["runId"], False)
+        assert restored["archived"] is False
+        assert runtime.list_sessions()[0]["runId"] == stored[0]["runId"]
         runtime.sessions.save(
             "run_rewindsource",
             title="回退来源",

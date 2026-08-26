@@ -1984,7 +1984,10 @@ function contextIndicator(status) {
 }
 
 function formatSessionTime(value, now = Date.now()) {
-  const timestamp = Number(value) * 1000;
+  const numeric = Number(value);
+  const timestamp = Number.isFinite(numeric) && numeric > 0
+    ? numeric * 1000
+    : new Date(String(value ?? '').replace(' ', 'T')).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) return '时间未知';
   const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
   if (seconds < 60) return '刚刚';
@@ -2001,7 +2004,7 @@ function modelProtocolLabel(value) {
   return publicLabel(value, '兼容协议', 30);
 }
 
-const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, maxVisible = 6}) {
+const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, scope = 'active', maxVisible = 6}) {
   const spinner = useSpinner(loading, '连接会话');
   const labels = {
     running: ['执行中', ACCENT],
@@ -2019,13 +2022,13 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
   return (
     <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} paddingY={1} marginTop={1}>
       <Box justifyContent="space-between">
-        <Text bold>恢复会话{sessions.length ? <Text color={MUTED}>  {selected + 1}/{sessions.length}</Text> : null}</Text>
-        <Text color={MUTED}>{query ? `搜索：${query}` : '输入可筛选'}</Text>
+        <Text bold>{scope === 'archived' ? '已归档会话' : '恢复会话'}{sessions.length ? <Text color={MUTED}>  {selected + 1}/{sessions.length}</Text> : null}</Text>
+        <Text color={MUTED}>{query ? `搜索：${query}` : 'Tab切换范围'}</Text>
       </Box>
       {loading ? <Text color={MUTED}>{spinner} 正在读取当前工作区的会话…</Text> : null}
       {!loading && error ? <Text color={ERROR}>读取失败：{error}</Text> : null}
       {!loading && !error && !sessions.length ? (
-        <Text color={MUTED}>{query ? `没有匹配“${query}”的会话` : '当前工作区还没有历史会话'}</Text>
+        <Text color={MUTED}>{query ? `没有匹配“${query}”的会话` : scope === 'archived' ? '当前工作区没有已归档会话' : '当前工作区还没有历史会话'}</Text>
       ) : null}
       {!loading && !error ? visible.map((session, offset) => {
         const index = start + offset;
@@ -2046,7 +2049,7 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
           <Text color={MUTED} wrap="truncate-end">{publicLabel(active.answer || active.cwd, '尚无回答预览', 180)}</Text>
         </Box>
       ) : null}
-      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · P置顶/取消 · 输入搜索 · Esc关闭</Text>
+      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · {scope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · Tab切换 · Esc关闭</Text>
     </Box>
   );
 });
@@ -2511,6 +2514,7 @@ export function App({
   const [sessionPicker, setSessionPicker] = useState(false);
   const [sessionChoice, setSessionChoice] = useState(0);
   const [sessionQuery, setSessionQuery] = useState('');
+  const [sessionScope, setSessionScope] = useState('active');
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [rewindPoints, setRewindPoints] = useState([]);
@@ -3569,6 +3573,21 @@ export function App({
         setPhase(pinned ? '会话已置顶' : '已取消置顶');
         return;
       }
+      if (message.type === 'session_archived') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const archived = Boolean(result.archived);
+        setSessions(current => current.filter(item => !runId || item.runId !== runId));
+        setSessionChoice(0);
+        setSessionError('');
+        setPhase(archived ? '会话已归档' : '会话已恢复');
+        return;
+      }
+      if (message.type === 'session_archive_failed') {
+        setSessionError(message.message ?? '更新会话归档状态失败。');
+        setPhase('更新归档状态失败');
+        return;
+      }
       if (message.type === 'session_pin_failed') {
         setSessionError(message.message ?? '更新会话置顶状态失败。');
         setPhase('更新置顶状态失败');
@@ -4447,7 +4466,7 @@ export function App({
     return true;
   }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating, workspace]);
 
-  const resumeRun = useCallback((runId, title = '') => {
+  const resumeRun = useCallback((runId, title = '', sessionId = '', status = '') => {
     const identifier = String(runId ?? '').trim();
     if (!identifier || running || approval || question) return;
     requestCounter.current += 1;
@@ -4485,6 +4504,8 @@ export function App({
       type: 'resume_session',
       requestId,
       runId: identifier,
+      ...(sessionId ? {sessionId: String(sessionId)} : {}),
+      ...(status ? {status: String(status)} : {}),
     });
   }, [approval, client, question, resetAssistantDraft, running, sessions]);
 
@@ -4498,8 +4519,9 @@ export function App({
       setSessionLoading(true);
       setSessionError('');
       setSessionQuery('');
+      setSessionScope('active');
       setSessionChoice(0);
-      client.send({type: 'sessions', limit: 100});
+      client.send({type: 'sessions', limit: 100, archived: false});
       return;
     }
     const latest = sessions[0];
@@ -4508,7 +4530,7 @@ export function App({
       setPhase('就绪');
       return;
     }
-    resumeRun(latest.runId, latest.title);
+    resumeRun(latest.runId, latest.title, latest.sessionId, latest.status);
   }, [appendItem, client, closeTransientSurfaces, ready, resumeRun, sessions]);
 
   const requestLocalConfiguration = useCallback(() => {
@@ -4725,7 +4747,8 @@ export function App({
       }
     } else if (command.value === '/resume') {
       if (/^run_[A-Za-z0-9]+$/.test(args)) {
-        resumeRun(args, sessions.find(item => item.runId === args)?.title);
+        const session = sessions.find(item => item.runId === args);
+        resumeRun(args, session?.title, session?.sessionId, session?.status);
       }
       else {
         closeTransientSurfaces('sessions');
@@ -4733,8 +4756,9 @@ export function App({
         setSessionLoading(true);
         setSessionError('');
         setSessionQuery(args);
+        setSessionScope('active');
         setSessionChoice(0);
-        client.send({type: 'sessions', limit: 100});
+        client.send({type: 'sessions', limit: 100, archived: false});
       }
     } else if (command.value === '/rename') {
       if (!args.trim()) {
@@ -5544,22 +5568,40 @@ export function App({
       } else if (sessionError && character.toLowerCase() === 'r') {
         setSessionLoading(true);
         setSessionError('');
-        client.send({type: 'sessions', limit: 100});
+        client.send({type: 'sessions', limit: 100, archived: sessionScope === 'archived'});
+      } else if (key.tab) {
+        const nextScope = sessionScope === 'active' ? 'archived' : 'active';
+        setSessionScope(nextScope);
+        setSessionChoice(0);
+        setSessionLoading(true);
+        setSessionError('');
+        client.send({type: 'sessions', limit: 100, archived: nextScope === 'archived'});
       } else if (key.upArrow && filteredSessions.length) {
         setSessionChoice(value => (value + filteredSessions.length - 1) % filteredSessions.length);
       } else if (key.downArrow && filteredSessions.length) {
         setSessionChoice(value => (value + 1) % filteredSessions.length);
       } else if (String(character || '').toLowerCase() === 'p' && filteredSessions.length) {
+        if (sessionScope === 'archived') return;
         const selectedSession = filteredSessions[sessionChoice];
         client.send({
           type: 'session_pin',
           runId: selectedSession?.runId,
+          ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
           pinned: !Boolean(selectedSession?.pinned),
         });
         setPhase(selectedSession?.pinned ? '正在取消置顶' : '正在置顶会话');
+      } else if (String(character || '').toLowerCase() === 'a' && filteredSessions.length) {
+        const selectedSession = filteredSessions[sessionChoice];
+        client.send({
+          type: 'session_archive',
+          runId: selectedSession?.runId,
+          ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
+          archived: sessionScope !== 'archived',
+        });
+        setPhase(sessionScope === 'archived' ? '正在恢复会话' : '正在归档会话');
       } else if (key.return) {
         const selectedSession = filteredSessions[sessionChoice];
-        resumeRun(selectedSession?.runId, selectedSession?.title);
+        resumeRun(selectedSession?.runId, selectedSession?.title, selectedSession?.sessionId, selectedSession?.status);
       } else if (key.backspace || key.delete) {
         setSessionQuery(value => value.slice(0, -1));
         setSessionChoice(0);
@@ -6284,7 +6326,7 @@ export function App({
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
-    sessions: '↑↓选择 · Enter恢复 · P置顶/取消 · Esc关闭',
+    sessions: `↑↓选择 · Enter恢复 · ${sessionScope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · Tab切换 · Esc关闭`,
     localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',
@@ -6472,6 +6514,7 @@ export function App({
               query={sessionQuery}
               loading={sessionLoading}
               error={sessionError}
+              scope={sessionScope}
               maxVisible={Math.max(2, Math.min(6, (stdout.rows ?? 24) - 15))}
             />
           ) : null}

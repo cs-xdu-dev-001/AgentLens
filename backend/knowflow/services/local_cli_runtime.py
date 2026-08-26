@@ -474,7 +474,7 @@ class LocalSessionStore:
         self._chmod(path, 0o600)
         return payload
 
-    def list(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         sessions: list[dict[str, Any]] = []
         for path in self.root.glob("run_*.json"):
             payload = self.load(path.stem)
@@ -487,6 +487,7 @@ class LocalSessionStore:
                         "runId",
                         "title",
                         "pinned",
+                        "archived",
                         "status",
                         "updatedAt",
                         "projectRoot",
@@ -495,6 +496,11 @@ class LocalSessionStore:
                     )
                 }
             )
+        sessions = [
+            session
+            for session in sessions
+            if bool(session.get("archived")) == bool(archived)
+        ]
         sessions.sort(
             key=lambda item: (
                 bool(item.get("pinned")),
@@ -702,11 +708,11 @@ class LocalAgentRuntime:
             ],
         }
 
-    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_sessions(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         project = str(self.workspace.project_root)
         return [
             session
-            for session in self.sessions.list(limit=limit * 3)
+            for session in self.sessions.list(limit=limit * 3, archived=archived)
             if str(session.get("projectRoot") or "") == project
         ][:limit]
 
@@ -803,7 +809,28 @@ class LocalAgentRuntime:
             raise ValueError("Local session was not found.")
         if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
             raise ValueError("This session belongs to a different workspace.")
+        if pinned and bool(session.get("archived")):
+            raise ValueError("Restore the session before pinning it.")
         return self.sessions.save(run_id, pinned=bool(pinned))
+
+    def set_session_archived(self, run_id: str, archived: bool) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        if archived and str(session.get("status") or "") in {
+            "planning",
+            "waiting_start",
+            "running",
+            "waiting_approval",
+            "waiting_input",
+        }:
+            raise ValueError("Wait for the active run to finish before archiving this session.")
+        updates: dict[str, Any] = {"archived": bool(archived)}
+        if archived:
+            updates["pinned"] = False
+        return self.sessions.save(run_id, **updates)
 
     def _registry(
         self,

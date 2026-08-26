@@ -1196,6 +1196,23 @@ def main() -> None:
 
         def request(self, method, path):
             self.calls.append((method, path))
+            if path.endswith("/messages"):
+                return [
+                    {"role": "user", "content": "普通对话"},
+                    {"role": "assistant", "content": "普通回复"},
+                ]
+
+        def list_sessions(self, archived=False):
+            return [
+                {
+                    "id": "session_without_run",
+                    "title": "普通Web对话",
+                    "is_pinned": False,
+                    "is_archived": bool(archived),
+                    "updated_at": "2026-08-27 10:00:00",
+                    "latest_run": None,
+                }
+            ]
 
     remote_client = FakeRemoteClient()
     tui_backend = TuiBackend(
@@ -1205,6 +1222,28 @@ def main() -> None:
         model_id=None,
         skill_id=None,
     )
+    remote_sessions = tui_backend.list_sessions()
+    assert remote_sessions == [
+        {
+            "runId": "session_without_run",
+            "sessionId": "session_without_run",
+            "title": "普通Web对话",
+            "pinned": False,
+            "archived": False,
+            "status": "completed",
+            "updatedAt": "2026-08-27 10:00:00",
+            "answer": "",
+        }
+    ]
+    restored = tui_backend.restore_session(
+        "session_without_run",
+        lambda _event: None,
+        session_id="session_without_run",
+        status="completed",
+    )
+    assert restored.result["restored"] is True
+    assert restored.result["messages"][-1]["content"] == "普通回复"
+    remote_client.calls.clear()
     assert tui_backend.cancel("run_cancel")
     assert remote_client.calls == [
         ("POST", "/api/agent/runs/run_cancel/cancel")

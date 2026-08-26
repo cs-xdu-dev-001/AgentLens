@@ -22,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore, PromptQueueStore
 
 
-PROTOCOL_VERSION = 14
+PROTOCOL_VERSION = 15
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -51,8 +51,10 @@ def _public_session(value: dict[str, Any]) -> dict[str, Any]:
     """Bound session summaries before they cross the terminal protocol."""
     return {
         "runId": str(value.get("runId") or "")[:80],
+        "sessionId": str(value.get("sessionId") or "")[:80],
         "title": str(sanitize_trace_value(value.get("title"), max_chars=160) or ""),
         "pinned": bool(value.get("pinned") or value.get("is_pinned")),
+        "archived": bool(value.get("archived") or value.get("is_archived")),
         "status": str(value.get("status") or "")[:40],
         "updatedAt": value.get("updatedAt"),
         "cwd": str(sanitize_trace_value(value.get("cwd"), max_chars=240) or ""),
@@ -611,7 +613,14 @@ class InkRuntimeBridge:
         self._run_id = run_id
         self._pending = None
         self._queued_decision = None
-        self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
+        self._start(
+            lambda: self.backend.restore_session(
+                run_id,
+                self._agent_event,
+                session_id=str(message.get("sessionId") or ""),
+                status=str(message.get("status") or ""),
+            )
+        )
 
     def _branch_session(self, message: dict[str, Any]) -> None:
         if self._running:
@@ -693,6 +702,7 @@ class InkRuntimeBridge:
             result = self.backend.set_session_pinned(
                 bool(message.get("pinned")),
                 str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
             )
         except Exception as exc:
             self.send(
@@ -705,6 +715,28 @@ class InkRuntimeBridge:
             self.send(
                 {
                     "type": "session_pinned",
+                    "result": _public_value(result, max_chars=4_000),
+                }
+            )
+
+    def _archive_session(self, message: dict[str, Any]) -> None:
+        try:
+            result = self.backend.set_session_archived(
+                bool(message.get("archived")),
+                str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_archive_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_archived",
                     "result": _public_value(result, max_chars=4_000),
                 }
             )
@@ -969,7 +1001,10 @@ class InkRuntimeBridge:
             self._workspace(message)
         elif message_type == "sessions":
             try:
-                sessions = self.backend.list_sessions(limit=int(message.get("limit") or 20))
+                sessions = self.backend.list_sessions(
+                    limit=int(message.get("limit") or 20),
+                    archived=bool(message.get("archived")),
+                )
             except Exception as exc:
                 self.send({"type": "sessions_failed", "message": self._public_error(exc)})
             else:
@@ -984,6 +1019,8 @@ class InkRuntimeBridge:
             self._rename_session(message)
         elif message_type == "session_pin":
             self._pin_session(message)
+        elif message_type == "session_archive":
+            self._archive_session(message)
         elif message_type == "export_session":
             self._export_session(message)
         elif message_type == "context":

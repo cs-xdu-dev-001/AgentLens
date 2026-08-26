@@ -473,10 +473,30 @@ class TuiBackend:
             raise RuntimeError("远程模式暂不支持本地文件撤销。")
         return dict(self.local_agent.workspace_undo(operation_id, run_id))
 
-    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_sessions(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         if self.remote_client is not None:
-            return []
-        return list(self.local_agent.list_sessions(limit=limit))
+            values: list[dict[str, Any]] = []
+            for session in self.remote_client.list_sessions(archived=archived)[:limit]:
+                session_id = str(session.get("id") or "")
+                latest = session.get("latest_run")
+                latest = latest if isinstance(latest, dict) else {}
+                run_id = str(latest.get("id") or session_id)
+                if not run_id:
+                    continue
+                values.append(
+                    {
+                        "runId": run_id,
+                        "sessionId": session_id,
+                        "title": session.get("title"),
+                        "pinned": bool(session.get("is_pinned")),
+                        "archived": bool(session.get("is_archived")),
+                        "status": str(latest.get("status") or "completed"),
+                        "updatedAt": session.get("updated_at"),
+                        "answer": str(latest.get("goalSummary") or ""),
+                    }
+                )
+            return values
+        return list(self.local_agent.list_sessions(limit=limit, archived=archived))
 
     def rename_session(self, title: str) -> dict[str, Any]:
         next_title = " ".join(str(title or "").split())
@@ -500,15 +520,15 @@ class TuiBackend:
             "title": session.get("title") or next_title,
         }
 
-    def set_session_pinned(self, pinned: bool, run_id: str = "") -> dict[str, Any]:
+    def set_session_pinned(self, pinned: bool, run_id: str = "", session_id: str = "") -> dict[str, Any]:
         if self.remote_client is not None:
-            session_id = str(run_id or self.session_id or "")
-            if not session_id:
+            target_session_id = str(session_id or self.session_id or "")
+            if not target_session_id:
                 raise RuntimeError("当前没有可置顶的远程会话。")
-            session = self.remote_client.set_session_pinned(session_id, pinned)
+            session = self.remote_client.set_session_pinned(target_session_id, pinned)
             return {
-                "runId": "",
-                "sessionId": session_id,
+                "runId": str(run_id or ""),
+                "sessionId": target_session_id,
                 "pinned": bool(session.get("pinned", pinned)),
             }
         target_run_id = str(run_id or self.current_run_id or "")
@@ -519,6 +539,31 @@ class TuiBackend:
             "runId": target_run_id,
             "sessionId": "",
             "pinned": bool(session.get("pinned", pinned)),
+        }
+
+    def set_session_archived(self, archived: bool, run_id: str = "", session_id: str = "") -> dict[str, Any]:
+        target_run_id = str(run_id or self.current_run_id or "")
+        target_session_id = str(session_id or self.session_id or "")
+        if not target_run_id and not target_session_id:
+            raise RuntimeError("当前没有可归档的会话。")
+        if self.remote_client is not None:
+            if not target_session_id:
+                raise RuntimeError("当前远程会话缺少会话标识。")
+            session = self.remote_client.set_session_archived(target_session_id, archived)
+            return {
+                "runId": target_run_id,
+                "sessionId": target_session_id,
+                "archived": bool(session.get("archived", archived)),
+                "pinned": bool(session.get("pinned", False)),
+            }
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        session = self.local_agent.set_session_archived(target_run_id, archived)
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "archived": bool(session.get("archived", archived)),
+            "pinned": bool(session.get("pinned", False)),
         }
 
     def rewind_points(self) -> list[dict[str, Any]]:
@@ -755,8 +800,33 @@ class TuiBackend:
         self,
         run_id: str,
         event_sink: AgentEventSink,
+        *,
+        session_id: str = "",
+        status: str = "",
     ) -> AgentExecution:
         if self.remote_client is not None:
+            if session_id:
+                self.session_id = session_id
+            if session_id and status in {"completed", "cancelled"}:
+                source = self.remote_client.request(
+                    "GET",
+                    f"/api/sessions/{session_id}/messages",
+                )
+                messages = source if isinstance(source, list) else []
+                self.conversation = list(messages)
+                self.transcript = list(messages)
+                return AgentExecution(
+                    result={
+                        "paused": False,
+                        "runId": run_id,
+                        "sessionId": session_id,
+                        "answer": "",
+                        "messages": messages,
+                        "restored": True,
+                        "status": status,
+                    },
+                    events=[],
+                )
             execution = self.remote_client.resume(run_id, event_sink)
             self._finish(execution)
             return execution

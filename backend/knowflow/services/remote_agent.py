@@ -225,6 +225,14 @@ class RemoteAgentClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def list_sessions(self, *, archived: bool = False) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET",
+            "/api/sessions",
+            params={"archived": bool(archived)},
+        )
+        return payload if isinstance(payload, list) else []
+
     def rename_session(self, session_id: str, title: str) -> dict[str, Any]:
         payload = self.request(
             "PUT",
@@ -238,6 +246,14 @@ class RemoteAgentClient:
             "PUT",
             f"/api/sessions/{session_id}/pin",
             body={"pinned": bool(pinned)},
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    def set_session_archived(self, session_id: str, archived: bool) -> dict[str, Any]:
+        payload = self.request(
+            "PUT",
+            f"/api/sessions/{session_id}/archive",
+            body={"archived": bool(archived)},
         )
         return payload if isinstance(payload, dict) else {}
 

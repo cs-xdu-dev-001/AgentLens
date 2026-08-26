@@ -795,7 +795,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 14,
+      protocolVersion: 15,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1752,7 +1752,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 14,
+    protocolVersion: 15,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1821,7 +1821,7 @@ test('Ink app restores a durable runtime queue paused and claims it before execu
   };
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 14,
+    protocolVersion: 15,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -2898,7 +2898,7 @@ test('startup resume opens the picker and continue restores the latest workspace
   const continueClient = new FakeClient();
   continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
     type: 'ready',
-    protocolVersion: 14,
+    protocolVersion: 15,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -3099,6 +3099,30 @@ test('resume picker filters sessions, previews context and retries loading in pl
   assert.match(view.lastFrame(), /检查部署/);
   assert.doesNotMatch(view.lastFrame(), /修复登录/);
   assert.match(view.lastFrame(), /部署门禁失败/);
+
+  view.stdin.write('\t');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'sessions', limit: 100, archived: true});
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [
+      {runId: 'run_archived', title: '归档部署', archived: true, status: 'completed', updatedAt: Date.now() / 1000 - 60},
+    ],
+  });
+  await waitForFrame(view, /归档部署/);
+  assert.match(view.lastFrame(), /A恢复/);
+  view.stdin.write('a');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_archive',
+    runId: 'run_archived',
+    archived: false,
+  });
+  client.emit('message', {
+    type: 'session_archived',
+    result: {runId: 'run_archived', archived: false, pinned: false},
+  });
+  await waitForFrame(view, /没有匹配“部署”的会话/);
 
   view.stdin.write('\u001b');
   await tick();
