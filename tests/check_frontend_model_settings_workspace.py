@@ -29,6 +29,8 @@ def main() -> None:
     require(details, 'className={"model-config-connection-result"', "connection result surface")
     require(details, "connectionResultPresentation", "structured connection diagnosis")
     require(details, "查看技术详情", "collapsed technical error details")
+    require(details, "model-config-protocol-switch", "one-click protocol recovery")
+    require(page, "handleProtocolApply", "protocol recommendation application")
     require(details, 'model-config-more-menu', "progressive disclosure menu")
     require(details, 'aria-label={"更多模型操作"}', "accessible action menu")
     forbid(details, 'className={"secondary-button danger"}', "prominent destructive action")
@@ -48,6 +50,7 @@ def main() -> None:
         require(source, ".model-config-connection-result", "connection result styling")
         require(source, ".model-config-connection-action", "actionable recovery styling")
         require(source, ".model-config-connection-technical", "technical detail styling")
+        require(source, ".model-config-protocol-switch", "protocol switch styling")
         require(source, ".model-config-more-menu", "action menu styling")
         require(source, "background: transparent !important;", "unboxed detail text")
 

@@ -67,6 +67,65 @@ def model_connection_diagnostic(status: Any, detail: Any) -> dict[str, Any]:
     }
 
 
+PROTOCOL_FALLBACK_CODES = {
+    "access_denied",
+    "not_found",
+    "protocol_unsupported",
+    "upstream_unavailable",
+    "invalid_request",
+    "incompatible_parameters",
+    "connection_failed",
+}
+
+
+def test_model_protocols(gateway: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """Test the selected chat protocol and probe the alternative when useful.
+
+    The selected protocol remains authoritative. A successful alternative is
+    returned as an explicit recommendation and is never persisted silently.
+    """
+
+    selected_mode = str(config.get("api_mode") or "chat_completions")
+    status, message = gateway.test(config)
+    diagnostic = model_connection_diagnostic(status, message)
+    selected = {
+        "apiMode": selected_mode,
+        "status": status,
+        "message": message,
+        **diagnostic,
+    }
+    result: dict[str, Any] = {
+        **selected,
+        "checkedProtocols": [selected],
+    }
+    if (
+        str(config.get("model_type") or "chat") != "chat"
+        or status == "available"
+        or diagnostic["code"] not in PROTOCOL_FALLBACK_CODES
+    ):
+        return result
+
+    alternate_mode = (
+        "chat_completions" if selected_mode == "responses" else "responses"
+    )
+    alternate_config = {**config, "api_mode": alternate_mode}
+    alternate_status, alternate_message = gateway.test(alternate_config)
+    alternate_diagnostic = model_connection_diagnostic(
+        alternate_status,
+        alternate_message,
+    )
+    alternate = {
+        "apiMode": alternate_mode,
+        "status": alternate_status,
+        "message": alternate_message,
+        **alternate_diagnostic,
+    }
+    result["checkedProtocols"].append(alternate)
+    if alternate_status == "available":
+        result["recommendedApiMode"] = alternate_mode
+    return result
+
+
 class ChatCompletionsStreamAccumulator:
     """Build one assistant message from OpenAI-compatible chat SSE chunks."""
 

@@ -430,8 +430,9 @@ def configure(
     from .services.local_cli_runtime import (
         LocalCliConfigError,
         LocalCliConfigStore,
+        explain_local_connection_error,
         normalize_local_api_mode,
-        test_local_connection,
+        probe_local_connection,
         validate_local_config,
     )
 
@@ -475,7 +476,43 @@ def configure(
         validated = validate_local_config(candidate)
         if not skip_test:
             with console.status("正在检查模型连接..."):
-                detail = test_local_connection(validated)
+                result = probe_local_connection(validated)
+            if result["status"] != "available":
+                recommended = result.get("recommendedApiMode")
+                if not recommended:
+                    suffix = (
+                        "\n已同时检查Responses API与Chat Completions，均不可用。"
+                        if len(result.get("checkedProtocols") or []) > 1
+                        else ""
+                    )
+                    raise LocalCliConfigError(
+                        explain_local_connection_error(result["message"])
+                        + suffix
+                    )
+                label = (
+                    "Chat Completions"
+                    if recommended == "chat_completions"
+                    else "Responses API"
+                )
+                console.print(
+                    f"[yellow]当前协议连接失败，但已检测到{label}可用。[/yellow]"
+                )
+                if not sys.stdin.isatty() or not typer.confirm(
+                    f"改用{label}并保存",
+                    default=True,
+                ):
+                    raise LocalCliConfigError(
+                        explain_local_connection_error(result["message"])
+                        + f"\n已检测到{label}可用，请改用--api-mode {recommended}。"
+                    )
+                validated["api_mode"] = recommended
+                detail = next(
+                    str(item.get("message") or "连接可用")
+                    for item in result["checkedProtocols"]
+                    if item.get("apiMode") == recommended
+                )
+            else:
+                detail = str(result["message"])
             console.print(f"[green]{detail}[/green]")
         store.save(**validated)
     except LocalCliConfigError as exc:

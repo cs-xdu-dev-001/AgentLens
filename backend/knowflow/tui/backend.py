@@ -187,7 +187,11 @@ class TuiBackend:
         """Test and persist a local BYOK model without restarting the TUI."""
         if self.remote_client is not None or self.local_agent is None:
             raise RuntimeError("远程模式请到Web设置页管理模型配置。")
-        from ..services.local_cli_runtime import test_local_connection
+        from ..services.local_cli_runtime import (
+            LocalCliConfigError,
+            explain_local_connection_error,
+            probe_local_connection,
+        )
 
         store = self.local_agent.config_store
         current = store.load()
@@ -202,7 +206,29 @@ class TuiBackend:
                 else None
             ),
         )
-        detail = test_local_connection(candidate)
+        connection = probe_local_connection(candidate)
+        if connection["status"] != "available":
+            recommended = connection.get("recommendedApiMode")
+            if recommended:
+                return {
+                    "saved": False,
+                    "message": explain_local_connection_error(
+                        connection["message"]
+                    ),
+                    "recommendation": {
+                        "apiMode": recommended,
+                        "label": (
+                            "Chat Completions"
+                            if recommended == "chat_completions"
+                            else "Responses API"
+                        ),
+                    },
+                    "checkedProtocols": connection["checkedProtocols"],
+                }
+            detail = explain_local_connection_error(connection["message"])
+            if len(connection.get("checkedProtocols") or []) > 1:
+                detail += "\n已同时检查Responses API与Chat Completions，均不可用。"
+            raise LocalCliConfigError(detail)
         saved = store.save_editable(
             provider=candidate["provider"],
             base_url=candidate["base_url"],
@@ -212,7 +238,8 @@ class TuiBackend:
         )
         self._model_label = saved["model_name"]
         return {
-            "detail": str(detail or "连接可用"),
+            "saved": True,
+            "detail": str(connection["message"] or "连接可用"),
             "model": self._model_label,
             "config": self.local_model_configuration(),
         }

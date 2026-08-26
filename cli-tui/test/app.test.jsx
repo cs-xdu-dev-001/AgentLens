@@ -1207,6 +1207,20 @@ test('Ink app configures the local model in place without exposing the API key',
   assert.match(view.lastFrame(), /配置本地模型/);
 
   client.emit('message', {
+    type: 'local_model_config_recommended',
+    message: 'Responses API连接失败。',
+    recommendation: {apiMode: 'chat_completions', label: 'Chat Completions'},
+  });
+  await tick();
+  assert.match(view.lastFrame(), /检测到Chat Completions可用/);
+  assert.match(view.lastFrame(), /R应用并保存/);
+  view.stdin.write('r');
+  await tick();
+  assert.equal(client.sent.at(-1).action, 'test_and_save');
+  assert.equal(client.sent.at(-1).config.apiMode, 'chat_completions');
+  assert.equal(client.sent.at(-1).config.apiKey, 'sk-test-secret-123456789');
+
+  client.emit('message', {
     type: 'local_model_config_saved',
     model: 'gpt-5.6-sol',
     detail: '连接可用',

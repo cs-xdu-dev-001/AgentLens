@@ -37,6 +37,7 @@ def main() -> None:
 
         original_test = model_configs_router.gateway.test
         try:
+            calls = []
             model_configs_router.gateway.test = lambda _config: (
                 "unavailable",
                 "Responses API connection failed: HTTP 403: upstream_error",
@@ -45,6 +46,30 @@ def main() -> None:
             assert diagnosed["status"] == "unavailable"
             assert diagnosed["code"] == "access_denied"
             assert diagnosed["retryable"] is False
+            assert len(diagnosed["checkedProtocols"]) == 2
+            assert "recommendedApiMode" not in diagnosed
+
+            def protocol_test(config):
+                calls.append(config["api_mode"])
+                if config["api_mode"] == "chat_completions":
+                    return "available", "Chat Completions connection succeeded."
+                return (
+                    "unavailable",
+                    "Responses API connection failed: HTTP 403: upstream_error",
+                )
+
+            model_configs_router.gateway.test = protocol_test
+            recommended = client.post(
+                f"/api/model-configs/{cid}/test"
+            ).json()["data"]
+            assert calls == ["responses", "chat_completions"]
+            assert recommended["status"] == "unavailable"
+            assert recommended["recommendedApiMode"] == "chat_completions"
+            assert recommended["checkedProtocols"][1]["status"] == "available"
+            assert (
+                client.get(f"/api/model-configs/{cid}").json()["data"]["apiMode"]
+                == "responses"
+            )
         finally:
             model_configs_router.gateway.test = original_test
         import knowflow.runtime as runtime

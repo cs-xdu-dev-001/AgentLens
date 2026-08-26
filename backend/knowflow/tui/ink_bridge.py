@@ -754,16 +754,24 @@ class InkRuntimeBridge:
             try:
                 with redirect_stdout(sys.stderr):
                     result = self.backend.configure_local_model(candidate)
-                self.send(
-                    {
-                        "type": "local_model_config_saved",
-                        **_public_value(result, max_chars=8_000),
-                        "models": _public_value(
-                            self.backend.model_catalog(),
-                            max_chars=20_000,
-                        ),
-                    }
-                )
+                if result.get("saved") is False:
+                    self.send(
+                        {
+                            "type": "local_model_config_recommended",
+                            **_public_value(result, max_chars=8_000),
+                        }
+                    )
+                else:
+                    self.send(
+                        {
+                            "type": "local_model_config_saved",
+                            **_public_value(result, max_chars=8_000),
+                            "models": _public_value(
+                                self.backend.model_catalog(),
+                                max_chars=20_000,
+                            ),
+                        }
+                    )
             except Exception as exc:
                 self.send(
                     {

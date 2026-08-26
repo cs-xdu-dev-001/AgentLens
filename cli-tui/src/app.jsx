@@ -2304,6 +2304,7 @@ export function App({
   const [localConfigSaving, setLocalConfigSaving] = useState(false);
   const [localConfigError, setLocalConfigError] = useState('');
   const [localConfigNotice, setLocalConfigNotice] = useState('');
+  const [localConfigRecommendation, setLocalConfigRecommendation] = useState(null);
   const [localConfigChoice, setLocalConfigChoice] = useState(0);
   const [localConfigCursor, setLocalConfigCursor] = useState(0);
   const [localConfigDraft, setLocalConfigDraft] = useState(() => normalizeLocalModelConfig());
@@ -2490,6 +2491,7 @@ export function App({
       setLocalConfigSaving(false);
       setLocalConfigError('');
       setLocalConfigNotice('');
+      setLocalConfigRecommendation(null);
       setLocalConfigChoice(0);
       setLocalConfigCursor(0);
       setLocalConfigDraft(value => ({...value, apiKey: ''}));
@@ -3119,6 +3121,7 @@ export function App({
         setLocalConfigSaving(false);
         setLocalConfigError('');
         setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
         setLocalConfigOpen(true);
         setPhase('配置本地模型');
         return;
@@ -3128,7 +3131,21 @@ export function App({
         setLocalConfigSaving(true);
         setLocalConfigError('');
         setLocalConfigNotice('正在测试模型连接…');
+        setLocalConfigRecommendation(null);
         setPhase('正在测试模型连接');
+        return;
+      }
+      if (message.type === 'local_model_config_recommended') {
+        const recommendation = message.recommendation && typeof message.recommendation === 'object'
+          ? message.recommendation
+          : null;
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigError(message.message || '当前协议连接失败。');
+        setLocalConfigNotice('');
+        setLocalConfigRecommendation(recommendation);
+        setLocalConfigOpen(true);
+        setPhase('检测到可用协议');
         return;
       }
       if (message.type === 'local_model_config_saved') {
@@ -3140,6 +3157,7 @@ export function App({
         setLocalConfigOpen(false);
         setLocalConfigError('');
         setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
         setLocalConfigDraft(value => ({...value, apiKey: ''}));
         appendItem('assistant', `模型连接可用，已保存${label}。从下一轮任务开始生效。`);
         setPhase('就绪');
@@ -3150,6 +3168,7 @@ export function App({
         setLocalConfigLoading(false);
         setLocalConfigSaving(false);
         setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
         setLocalConfigError(message.message || '模型配置失败。');
         setLocalConfigOpen(true);
         setPhase('模型配置失败');
@@ -4157,6 +4176,7 @@ export function App({
     setLocalConfigSaving(false);
     setLocalConfigError('');
     setLocalConfigNotice('');
+    setLocalConfigRecommendation(null);
     setLocalConfigChoice(0);
     setPhase('读取本地模型配置');
     if (!client.send({type: 'local_model_config', action: 'get'})) {
@@ -4980,6 +5000,7 @@ export function App({
     setLocalConfigCursor(Math.min(2_000, cursor + text.length));
     setLocalConfigError('');
     setLocalConfigNotice('');
+    setLocalConfigRecommendation(null);
   }, {isActive: localConfigOpen});
 
   useInput((character, key) => {
@@ -5066,6 +5087,30 @@ export function App({
         if (!localConfigSaving) closeTransientSurfaces();
       } else if (localConfigLoading || localConfigSaving) {
         return;
+      } else if (
+        localConfigRecommendation?.apiMode
+        && character.toLowerCase() === 'r'
+      ) {
+        const nextDraft = {
+          ...localConfigDraft,
+          apiMode: localConfigRecommendation.apiMode,
+        };
+        setLocalConfigDraft(nextDraft);
+        setLocalConfigRecommendation(null);
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice(`正在使用${localConfigRecommendation.label}重新检查…`);
+        setPhase('正在测试模型连接');
+        if (!client.send({
+          type: 'local_model_config',
+          action: 'test_and_save',
+          config: localModelConfigPayload(nextDraft),
+        })) {
+          setLocalConfigSaving(false);
+          setLocalConfigNotice('');
+          setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+          setPhase('模型配置失败');
+        }
       } else if (key.upArrow || (key.tab && key.shift)) {
         selectField(localConfigChoice - 1);
       } else if (key.downArrow || key.tab) {
@@ -5092,6 +5137,7 @@ export function App({
             ...value,
             apiMode: value.apiMode === 'responses' ? 'chat_completions' : 'responses',
           }));
+          setLocalConfigRecommendation(null);
           setLocalConfigError('');
         }
       } else if (key.return) {
@@ -5107,6 +5153,7 @@ export function App({
           );
           if (next.value !== localConfigDraft[field]) {
             setLocalConfigDraft(value => ({...value, [field]: next.value}));
+            setLocalConfigRecommendation(null);
             setLocalConfigError('');
             setLocalConfigNotice('');
           }
@@ -6102,6 +6149,7 @@ export function App({
               saving={localConfigSaving}
               error={localConfigError}
               notice={localConfigNotice}
+              recommendation={localConfigRecommendation}
             />
           ) : null}
           {modelPicker ? (

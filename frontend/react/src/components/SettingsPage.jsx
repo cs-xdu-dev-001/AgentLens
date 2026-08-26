@@ -356,6 +356,25 @@ export function SettingsPage({ active = false }) {
     }
   };
 
+  const handleProtocolApply = async (modelId, apiMode) => {
+    const normalizedMode = normalizeApiMode(apiMode);
+    setBusyModelId(modelId);
+    try {
+      await modelConfigApi.update(modelId, { apiMode: normalizedMode });
+      setConnectionResult(null);
+      await loadModels(modelId);
+      requestModelOptionsRefresh();
+      notifyToast(
+        `已改用${normalizedMode === "responses" ? "Responses API" : "Chat Completions"}，正在重新检查`,
+      );
+      await handleModelTest(modelId);
+    } catch (error) {
+      notifyError(error, "切换接口协议失败");
+    } finally {
+      setBusyModelId(null);
+    }
+  };
+
   const handleSetDefaultModel = async (modelId) => {
     setBusyModelId(modelId);
     try {
@@ -427,6 +446,7 @@ export function SettingsPage({ active = false }) {
                 onDeleteModel={handleDeleteModel}
                 onModelEdit={handleModelEdit}
                 onModelTest={handleModelTest}
+                onProtocolApply={handleProtocolApply}
                 onSetDefaultModel={handleSetDefaultModel}
               />
             )}

@@ -33,7 +33,11 @@ from .langgraph_agent_engine import (
     AgentRunCancelledError,
     LangGraphAgentEngine,
 )
-from .model_gateway import ModelGateway, model_connection_diagnostic
+from .model_gateway import (
+    ModelGateway,
+    model_connection_diagnostic,
+    test_model_protocols,
+)
 from .local_cli_extensions import LocalExtensionStore
 from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
@@ -531,10 +535,27 @@ def gateway_config(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_local_connection(value: dict[str, Any]) -> str:
-    status, detail = _gateway().test(gateway_config(value))
-    if status != "available":
-        raise LocalCliConfigError(explain_local_connection_error(detail))
-    return detail
+    result = probe_local_connection(value)
+    if result["status"] != "available":
+        detail = explain_local_connection_error(result["message"])
+        recommended = result.get("recommendedApiMode")
+        if recommended:
+            label = (
+                "Chat Completions"
+                if recommended == "chat_completions"
+                else "Responses API"
+            )
+            detail = f"{detail}\n已检测到{label}可用，可切换后保存。"
+        elif len(result.get("checkedProtocols") or []) > 1:
+            detail = f"{detail}\n已同时检查Responses API与Chat Completions，均不可用。"
+        raise LocalCliConfigError(detail)
+    return str(result["message"])
+
+
+def probe_local_connection(value: dict[str, Any]) -> dict[str, Any]:
+    """Probe local BYOK protocols without mutating the saved configuration."""
+
+    return test_model_protocols(_gateway(), gateway_config(value))
 
 
 class LocalAgentRuntime:

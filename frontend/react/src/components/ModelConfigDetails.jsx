@@ -37,8 +37,11 @@ function DetailItem({ label, value }) {
   );
 }
 
-function ConnectionResult({ result, status, presentation }) {
+function ConnectionResult({ busy, onApplyProtocol, result, status, presentation }) {
   const [technicalOpen, setTechnicalOpen] = useState(false);
+  const attempts = Array.isArray(result.checkedProtocols)
+    ? result.checkedProtocols.filter((item) => apiModeLabel[item?.apiMode])
+    : [];
   return (
     <div className={"model-config-connection-result"} data-status={status} data-code={presentation.code} role={status === "error" ? "alert" : "status"}>
       <span className={"model-config-connection-dot"} aria-hidden={"true"} />
@@ -50,6 +53,25 @@ function ConnectionResult({ result, status, presentation }) {
         <span className={"model-config-connection-summary"}>{presentation.summary}</span>
         {presentation.action ? (
           <span className={"model-config-connection-action"}>{`建议：${presentation.action}`}</span>
+        ) : null}
+        {attempts.length > 1 ? (
+          <span className={"model-config-protocol-attempts"} aria-label={"已检查的接口协议"}>
+            {attempts.map((item) => (
+              <span key={item.apiMode} data-status={item.status}>
+                {`${apiModeLabel[item.apiMode]} ${item.status === "available" ? "可用" : "不可用"}`}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        {result.recommendedApiMode ? (
+          <button
+            className={"model-config-protocol-switch"}
+            type={"button"}
+            disabled={busy}
+            onClick={() => onApplyProtocol?.(result.recommendedApiMode)}
+          >
+            {`改用${apiModeLabel[result.recommendedApiMode]}并重试`}
+          </button>
         ) : null}
         {status === "error" && result.message ? (
           <div className={"model-config-connection-technical"}>
@@ -76,6 +98,7 @@ export function ModelConfigDetails({
   onDeleteModel,
   onModelEdit,
   onModelTest,
+  onProtocolApply,
   onSetDefaultModel,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -135,6 +158,8 @@ export function ModelConfigDetails({
       {connectionResult ? (
         <ConnectionResult
           key={`${model.id}:${connectionResult.message || ""}:${connectionResult.latencyMs || ""}`}
+          busy={busy}
+          onApplyProtocol={(apiMode) => onProtocolApply?.(model.id, apiMode)}
           result={connectionResult}
           status={connectionStatus}
           presentation={connectionPresentation}

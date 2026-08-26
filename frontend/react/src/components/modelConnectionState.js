@@ -92,6 +92,21 @@ export function connectionResultPresentation(result) {
   if (status === "success") {
     return {status, code: "available", title: "连接可用", summary: "模型已返回有效响应。", action: ""};
   }
+  if (["responses", "chat_completions"].includes(result?.recommendedApiMode)) {
+    const current = result?.apiMode === "responses"
+      ? "Responses API"
+      : "Chat Completions";
+    const recommended = result.recommendedApiMode === "responses"
+      ? "Responses API"
+      : "Chat Completions";
+    return {
+      status,
+      code: "protocol_fallback_available",
+      title: "检测到可用协议",
+      summary: `${current}连接失败，但${recommended}已返回有效响应。`,
+      action: `改用${recommended}并重新检查。`,
+    };
+  }
   const code = presentations[result?.code] ? result.code : inferredCode(result);
   return {status, code, ...presentations[code]};
 }

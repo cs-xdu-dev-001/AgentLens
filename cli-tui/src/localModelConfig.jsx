@@ -100,6 +100,7 @@ export const LocalModelConfigPanel = React.memo(function LocalModelConfigPanel({
   saving,
   error,
   notice,
+  recommendation,
 }) {
   const activeField = LOCAL_MODEL_CONFIG_FIELDS[selected]?.id || 'baseUrl';
   const locked = draft?.overriddenFields || {};
@@ -154,8 +155,16 @@ export const LocalModelConfigPanel = React.memo(function LocalModelConfigPanel({
         </>
       )}
       {error ? <Text color={ERROR} wrap="wrap">{error}</Text> : null}
-      {notice ? <Text color={SUCCESS}>{notice}</Text> : null}
-      <Text color={MUTED}>↑↓选择 · ←→编辑/切换协议 · Enter下一项/保存 · Esc取消</Text>
+      {recommendation ? (
+        <Text color={SUCCESS} bold>
+          {`检测到${recommendation.label}可用 · R应用并保存`}
+        </Text>
+      ) : notice ? <Text color={SUCCESS}>{notice}</Text> : null}
+      <Text color={MUTED}>
+        {recommendation
+          ? 'R应用推荐 · ↑↓继续编辑 · Esc取消'
+          : '↑↓选择 · ←→编辑/切换协议 · Enter下一项/保存 · Esc取消'}
+      </Text>
     </Box>
   );
 });

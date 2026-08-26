@@ -2638,6 +2638,38 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   text-underline-offset: 3px;
 }
 
+.model-config-protocol-switch {
+  width: fit-content;
+  min-height: 34px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--inverse-bg);
+  border-radius: 10px;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.model-config-protocol-switch:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.model-config-protocol-attempts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.model-config-protocol-attempts [data-status="available"] {
+  color: var(--success);
+}
+
 .model-config-connection-technical code {
   display: block;
   margin-top: 6px;
