@@ -81,6 +81,14 @@ test('workspace status keeps branch and dirty state visible without exposing the
     compactWorkspaceStatus({cwd: '/srv/agentlens', dirty: true, changedFiles: 1}),
     'agentlens · 1处改动',
   );
+  assert.equal(
+    compactWorkspaceStatus({
+      branch: 'main',
+      dirty: false,
+      projectInstructions: {sources: [{path: 'AGENTS.md'}]},
+    }),
+    'main · 1份项目指令',
+  );
 });
 
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {
@@ -360,6 +368,7 @@ test('diagnostic report exposes support metadata without prompts, paths, or secr
     },
     now: 0,
   });
+  assert.match(report, /项目指令:/);
   assert.match(report, /AgentLens脱敏诊断/);
   assert.match(report, /工作区: private-project · main · 2个文件已修改/);
   assert.match(report, /进度: 2\/3/);

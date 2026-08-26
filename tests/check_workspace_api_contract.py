@@ -32,6 +32,7 @@ def main() -> None:
     assert '"isolation": "user"' in router
     assert '"protectedPatterns"' in router
     assert '"symlinkWriteProtected": True' in router
+    assert '"projectInstructions": project_instructions' in router
     assert "workspace_router" in registry
     assert "workspaceApi" in client
     assert "undoChange" in client and "workspace/changes" in client
@@ -41,6 +42,8 @@ def main() -> None:
     assert "chat-workspace-toggle" in topbar
     assert "隔离工作区" in topbar
     assert "knowflow:react-workspace-updated" in topbar
+    assert "projectInstructions" in topbar and "份项目指令" in topbar
+    assert "项目指令：" in page and "未发现项目指令" in page
 
     print("workspace API and frontend preserve authenticated user isolation")
 

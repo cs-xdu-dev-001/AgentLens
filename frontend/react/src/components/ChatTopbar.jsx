@@ -33,9 +33,23 @@ export function workspaceHeaderState(status, loading = false) {
   if (loading) return { label: "工作区", state: "loading" };
   if (!status?.enabled) return { label: "工作区关闭", state: "disabled" };
   const itemCount = Math.max(0, Number(status.itemCount) || 0);
+  const instructionSources = Array.isArray(status.projectInstructions?.sources)
+    ? status.projectInstructions.sources
+      .map((item) => safeAgentText(item?.path, 120))
+      .filter(Boolean)
+    : [];
+  const instructionCount = instructionSources.length;
+  const parts = [
+    "隔离工作区",
+    itemCount ? `${itemCount}项` : "",
+    instructionCount ? `${instructionCount}份项目指令` : "",
+  ].filter(Boolean);
   return {
-    label: itemCount ? `隔离工作区 · ${itemCount}项` : "隔离工作区",
+    label: parts.join(" · "),
     state: status.sandboxReady ? "ready" : "available",
+    title: instructionSources.length
+      ? `项目指令：${instructionSources.join("、")}`
+      : "尚未发现AGENTS.md或CLAUDE.md",
   };
 }
 
@@ -136,7 +150,7 @@ export function ChatTopbar({ drawerCollapsed = true }) {
           className={`chat-workspace-toggle is-${workspaceHeader.state}`}
           type={"button"}
           aria-label={`${workspaceHeader.label}，打开工作区`}
-          title={`${workspaceHeader.label}，仅当前用户可见（打开工作区）`}
+          title={`${workspaceHeader.label}。${workspaceHeader.title || ""}。仅当前用户可见（打开工作区）`}
           onClick={handleWorkspaceOpen}
         >
           <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>

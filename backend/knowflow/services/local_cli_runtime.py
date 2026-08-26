@@ -38,6 +38,11 @@ from .model_gateway import (
     model_connection_diagnostic,
     test_model_protocols,
 )
+from .project_instructions import (
+    active_project_instruction_root,
+    load_project_instructions,
+    project_instruction_system_message,
+)
 from .local_cli_extensions import LocalExtensionStore
 from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
@@ -1150,7 +1155,7 @@ class LocalAgentRuntime:
             cwd = project_root
             allowed_roots = [project_root]
         allowed = ", ".join(str(path) for path in allowed_roots)
-        return {
+        base = {
             "role": "system",
             "content": (
                 "You are AgentLens, a local Linux coding agent. Work only "
@@ -1164,6 +1169,13 @@ class LocalAgentRuntime:
                 "ask_user_question with 2 to 4 concise options instead of guessing."
             ),
         }
+        instruction_root = active_project_instruction_root(cwd, allowed_roots)
+        project_message = project_instruction_system_message(
+            load_project_instructions(instruction_root, cwd)
+        )
+        if project_message is not None:
+            base["content"] = f"{base['content']}\n\n{project_message['content']}"
+        return base
 
     def run(
         self,

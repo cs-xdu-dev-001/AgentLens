@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
+import { safeAgentText } from "../controller/agentEvents.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 
 
@@ -70,6 +71,11 @@ export function WorkbenchPage({ active = false }) {
   };
 
   const crumbs = path.split("/").filter(Boolean);
+  const projectInstructionPaths = Array.isArray(status?.projectInstructions?.sources)
+    ? status.projectInstructions.sources
+      .map((item) => safeAgentText(item?.path, 120))
+      .filter(Boolean)
+    : [];
 
   return (
     <section className={active ? "page active" : "page"} id="page-workspace">
@@ -88,6 +94,7 @@ export function WorkbenchPage({ active = false }) {
           <span className={status?.isolation === "user" ? "ready" : ""}>{status?.isolation === "user" ? "仅当前用户可见" : "隔离状态未知"}</span>
           <span className={status?.protectedPatterns?.length ? "ready" : ""}>{status?.protectedPatterns?.length ? "敏感路径受保护" : "敏感路径保护未知"}</span>
           <span className={status?.sandboxReady ? "ready" : ""}>{status?.sandboxReady ? "Linux沙箱可用" : "命令执行未启用"}</span>
+          <span className={projectInstructionPaths.length ? "ready" : ""} title={projectInstructionPaths.join("、")}>{projectInstructionPaths.length ? `项目指令：${projectInstructionPaths.join("、")}` : "未发现项目指令"}</span>
         </div>
 
         <nav className="workspace-breadcrumb" aria-label="工作区路径">

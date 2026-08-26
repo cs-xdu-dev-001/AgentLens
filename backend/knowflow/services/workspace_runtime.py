@@ -20,6 +20,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .agent_loop import ToolHandlerResult, ToolRegistry
+from .project_instructions import (
+    active_project_instruction_root,
+    load_project_instructions,
+    public_project_instruction_status,
+)
 
 
 _WINDOWS_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL"}
@@ -221,6 +226,10 @@ class WorkspaceContext:
             warnings.append(
                 "当前目录缺少常见项目标记。若这是测试目录可忽略；否则请用/workspace确认边界或用--workspace指定项目根目录。"
             )
+        instruction_root = active_project_instruction_root(
+            self.cwd,
+            self.allowed_roots,
+        )
         payload: dict[str, Any] = {
             "projectRoot": str(self.project_root),
             "cwd": str(self.cwd),
@@ -232,6 +241,9 @@ class WorkspaceContext:
             "runId": self.current_run_id,
             "workspaceKind": "home" if is_home else ("project" if has_project_marker else "directory"),
             "warnings": warnings,
+            "projectInstructions": public_project_instruction_status(
+                load_project_instructions(instruction_root, self.cwd)
+            ),
         }
         if message:
             payload["message"] = message

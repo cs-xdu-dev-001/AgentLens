@@ -23,6 +23,10 @@ from ..runtime import (
 )
 from ..services.agent_event_protocol import normalize_agent_event
 from ..services.agent_trace import sanitize_trace_value
+from ..services.project_instructions import (
+    load_project_instructions,
+    public_project_instruction_status,
+)
 from ..services.workspace_runtime import (
     WorkspaceRuntime,
     WorkspaceRuntimeError,
@@ -84,7 +88,7 @@ def _raise_workspace_error(exc: WorkspaceRuntimeError) -> None:
 
 @router.get("/api/workspace", tags=WORKSPACE_TAGS)
 def workspace_status(request: Request) -> dict:
-    current_user_id(request)
+    user_id = current_user_id(request)
     sandbox_ready = bool(
         SANDBOX_ENABLED
         and sys.platform.startswith("linux")
@@ -96,8 +100,17 @@ def workspace_status(request: Request) -> dict:
         )
     )
     item_count = 0
+    project_instructions = {"count": 0, "sources": [], "truncated": False}
     if WORKSPACE_ENABLED:
-        item_count = len(_runtime(request).list_entries("").get("entries", []))
+        runtime = WorkspaceRuntime(
+            WORKSPACE_DIR,
+            user_id=user_id,
+            max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+        )
+        item_count = len(runtime.list_entries("").get("entries", []))
+        project_instructions = public_project_instruction_status(
+            load_project_instructions(runtime.root)
+        )
     return api_success(
         {
             "enabled": WORKSPACE_ENABLED,
@@ -109,6 +122,7 @@ def workspace_status(request: Request) -> dict:
             "isolation": "user",
             "protectedPatterns": [".git", ".env*", ".ssh", ".tmp"],
             "symlinkWriteProtected": True,
+            "projectInstructions": project_instructions,
         }
     )
 

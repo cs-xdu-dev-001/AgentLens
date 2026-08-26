@@ -1647,11 +1647,29 @@ function workspaceLabel(workspace) {
   return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
 }
 
+function projectInstructionSummary(workspace) {
+  const sources = Array.isArray(workspace?.projectInstructions?.sources)
+    ? workspace.projectInstructions.sources
+    : [];
+  const paths = sources
+    .map(item => publicLabel(item?.path, '', 120))
+    .filter(Boolean);
+  return {
+    count: paths.length,
+    paths,
+    label: paths.length ? `${paths.length}份项目指令` : '',
+  };
+}
+
 export function compactWorkspaceStatus(workspace) {
   if (!workspace || workspace.remote) return '工作区';
   const branch = publicLabel(workspace.branch, workspaceDiagnosticName(workspace), 48);
   const changed = Math.max(0, Number(workspace.changedFiles) || 0);
-  return workspace.dirty && changed ? `${branch} · ${changed}处改动` : branch;
+  const instruction = projectInstructionSummary(workspace).label;
+  return [
+    workspace.dirty && changed ? `${branch} · ${changed}处改动` : branch,
+    instruction,
+  ].filter(Boolean).join(' · ');
 }
 
 export function sessionTitleFromPrompt(value, fallback = '') {
@@ -1704,6 +1722,7 @@ export function buildTuiDiagnosticReport({
     40,
   );
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode)?.label || permissionMode;
+  const projectInstructions = projectInstructionSummary(workspace);
   return [
     'AgentLens脱敏诊断',
     `客户端: CLI ${publicLabel(version, 'development', 40)}`,
@@ -1711,6 +1730,7 @@ export function buildTuiDiagnosticReport({
     `时间: ${new Date(now).toISOString()}`,
     `模型: ${publicLabel(model, '未配置', 100)}${apiMode ? ` · ${publicLabel(apiMode, '', 40)}` : ''}`,
     `工作区: ${workspaceDiagnosticName(workspace)}${workspace?.branch ? ` · ${publicLabel(workspace.branch, '', 80)}` : ''}${workspace?.dirty ? ` · ${Math.max(0, Number(workspace.changedFiles) || 0)}个文件已修改` : ''}`,
+    `项目指令: ${projectInstructions.paths.length ? projectInstructions.paths.join('、') : '未发现'}`,
     `权限: ${publicLabel(permission, '询问', 40)}`,
     `状态: ${status}`,
     `运行ID: ${publicIdentifier(summary.runId || runId, '无', 160)}`,
@@ -1725,11 +1745,13 @@ export function buildTuiDiagnosticReport({
 function workspaceText(workspace) {
   if (!workspace || workspace.remote) return workspace?.message || '工作区信息不可用。';
   const warnings = Array.isArray(workspace.warnings) ? workspace.warnings.filter(Boolean) : [];
+  const projectInstructions = projectInstructionSummary(workspace);
   return [
     `项目根目录  ${workspace.projectRoot}`,
     `当前目录    ${workspace.cwd}`,
     `Git         ${workspace.branch || '非Git仓库'}${workspace.dirty ? ` · ${workspace.changedFiles}个文件已修改` : ' · 干净'}`,
     `类型        ${workspace.workspaceKind || 'directory'}`,
+    `项目指令    ${projectInstructions.paths.length ? projectInstructions.paths.join('  ') : '未发现AGENTS.md或CLAUDE.md'}`,
     ...(warnings.length ? ['警告', ...warnings.map(item => `  ${item}`)] : []),
     '允许目录',
     ...(workspace.allowedDirectories ?? []).map(path => `  ${path}`),
