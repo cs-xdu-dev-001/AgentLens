@@ -78,7 +78,7 @@ PowerShell：
 ```powershell
 py -3 -m venv .venv-docs
 .\.venv-docs\Scripts\python -m pip install -r requirements-docs.txt
-.\.venv-docs\Scripts\python -m mkdocs serve
+.\.venv-docs\Scripts\python -m mkdocs serve --dev-addr 127.0.0.1:8008
 ```
 
 Linux：
@@ -86,10 +86,10 @@ Linux：
 ```bash
 python3 -m venv .venv-docs
 .venv-docs/bin/python -m pip install -r requirements-docs.txt
-.venv-docs/bin/python -m mkdocs serve
+.venv-docs/bin/python -m mkdocs serve --dev-addr 127.0.0.1:8008
 ```
 
-打开<http://127.0.0.1:8000/>。提交前执行严格构建：
+打开<http://127.0.0.1:8008/>。提交前执行严格构建：
 
 ```bash
 .venv-docs/bin/python -m mkdocs build --strict

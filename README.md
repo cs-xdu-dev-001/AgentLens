@@ -344,10 +344,10 @@ npm run build
 ```powershell
 py -3 -m venv .venv-docs
 .\.venv-docs\Scripts\python -m pip install -r requirements-docs.txt
-.\.venv-docs\Scripts\python -m mkdocs serve
+.\.venv-docs\Scripts\python -m mkdocs serve --dev-addr 127.0.0.1:8008
 ```
 
-打开<http://127.0.0.1:8000/>。提交前使用`mkdocs build --strict`检查导航、链接和配置。
+打开<http://127.0.0.1:8008/>。提交前使用`mkdocs build --strict`检查导航、链接和配置。
 
 ### 首次发布GitHub Pages
 
