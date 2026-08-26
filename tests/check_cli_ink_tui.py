@@ -750,7 +750,8 @@ def main() -> None:
     assert "fullscreenEnabled && frozen.running" in app_source
     assert "<ActiveTaskAnchor" in app_source
     assert "goal={lastQuestion}" in app_source
-    assert "metrics={activeTaskMetrics}" in app_source
+    assert "startedAt={runStartedAtRef.current}" in app_source
+    assert "runProjection={runProjection}" in app_source
     assert "state={runHeader}" in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source

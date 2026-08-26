@@ -72,6 +72,8 @@ const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u00
 const PASTE_THRESHOLD = 800;
 const PASTE_REFERENCE_PATTERN = /\[粘贴内容 #(\d+) \+(\d+)行\]/g;
 const DOUBLE_PRESS_TIMEOUT_MS = 800;
+const RUN_QUIET_AFTER_MS = 15_000;
+const RUN_STALLED_AFTER_MS = 45_000;
 
 function useDoublePress(setPending, onDoublePress, onFirstPress) {
   const lastPressRef = useRef(0);
@@ -728,6 +730,44 @@ function formatTaskElapsed(milliseconds) {
   return `${minutes}m ${seconds}s`;
 }
 
+function useTaskClock(active, refreshKey = '') {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    if (!active) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active, refreshKey]);
+  return now;
+}
+
+export function runActivityPresentation({
+  running = false,
+  lastActivityAt = '',
+  now = Date.now(),
+  protectedState = false,
+} = {}) {
+  if (!running || protectedState) return null;
+  const timestamp = Date.parse(String(lastActivityAt || ''));
+  if (!Number.isFinite(timestamp)) return null;
+  const quietForMs = Math.max(0, now - timestamp);
+  if (quietForMs >= RUN_STALLED_AFTER_MS) {
+    return {
+      color: WARNING,
+      detail: '暂未收到新进展，任务仍在运行',
+      label: '等待响应',
+    };
+  }
+  if (quietForMs >= RUN_QUIET_AFTER_MS) {
+    return {
+      color: ACCENT,
+      detail: '仍在运行，等待下一条进展',
+      label: '仍在运行',
+    };
+  }
+  return null;
+}
+
 function statusSymbol(status, spinner) {
   if (['success', 'succeeded', 'completed'].includes(status)) return {symbol: '✓', color: SUCCESS};
   if (['failed', 'error', 'interrupted'].includes(status)) return {symbol: '✕', color: ERROR};
@@ -1028,10 +1068,12 @@ const TaskSummary = React.memo(function TaskSummary({
   recoveryActions = [],
   runSummary = null,
   modelRetry = null,
-  now = Date.now(),
+  startedAt = 0,
+  liveClock = running,
   navigationActive = false,
   selectedNavigationKey = '',
 }) {
+  const now = useTaskClock(Boolean(liveClock), modelRetry?.retryAt);
   const stablePhase = useStableActivityLabel(phase, running);
   const spinner = useSpinner(running && !streaming, stablePhase);
   const {tracedRows, operations, planRows, rows} = taskSummaryModel(
@@ -1063,7 +1105,10 @@ const TaskSummary = React.memo(function TaskSummary({
   const summaryElapsedMs = Number.isFinite(summaryStartedAt) && Number.isFinite(summaryFinishedAt)
     ? Math.max(0, summaryFinishedAt - summaryStartedAt)
     : null;
-  const visibleElapsedMs = !running && summaryElapsedMs !== null ? summaryElapsedMs : elapsedMs;
+  const liveElapsedMs = liveClock && Number(startedAt) > 0
+    ? Math.max(0, now - Number(startedAt))
+    : elapsedMs;
+  const visibleElapsedMs = !running && summaryElapsedMs !== null ? summaryElapsedMs : liveElapsedMs;
   const metrics = [
     formatTaskElapsed(visibleElapsedMs),
     formatTaskTokens(tokens),
@@ -1081,25 +1126,35 @@ const TaskSummary = React.memo(function TaskSummary({
       ? `${modelRetry.reason || '模型请求失败'}，${retryRemainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
       : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`
     : '';
+  const activityState = runActivityPresentation({
+    running,
+    lastActivityAt: runSummary?.lastActivityAt || runSummary?.startedAt,
+    now,
+    protectedState: Boolean(modelRetry || waiting),
+  });
   const stateLabel = modelRetry
     ? '等待重试'
     : waiting
       ? '等待确认'
       : running
-        ? '执行中'
+        ? activityState?.label || '执行中'
         : failed
           ? '失败'
           : completedWithWarnings
             ? '完成，有警告'
             : '已完成';
-  const stateColor = failed ? ERROR : modelRetry || waiting || completedWithWarnings ? WARNING : running ? ACCENT : SUCCESS;
+  const stateColor = failed
+    ? ERROR
+    : modelRetry || waiting || completedWithWarnings
+      ? WARNING
+      : activityState?.color || (running ? ACCENT : SUCCESS);
   const failureMessage = failed && failure?.message
     ? userFacingErrorMessage(failure.message)
     : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
   const processLabel = running
-    ? retryLabel || publicLabel(stablePhase || currentRow?.title, '正在执行')
+    ? retryLabel || activityState?.detail || publicLabel(stablePhase || currentRow?.title, '正在执行')
     : failed
       ? failureMessage || '执行失败，可选择恢复操作'
       : completedWithWarnings
@@ -2081,17 +2136,36 @@ export function activeTaskAnchorMetrics({elapsedMs = 0, runProjection = null} = 
   ].filter(Boolean).join(' · ');
 }
 
-const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({goal, metrics = '', state = null}) {
+const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({
+  elapsedMs = 0,
+  goal,
+  liveClock = true,
+  runProjection = null,
+  startedAt = 0,
+  state = null,
+}) {
+  const now = useTaskClock(liveClock);
   const label = publicLabel(goal, "", 180);
   if (!label) return null;
+  const visibleElapsedMs = liveClock && Number(startedAt) > 0
+    ? Math.max(0, now - Number(startedAt))
+    : elapsedMs;
+  const activityState = runActivityPresentation({
+    running: liveClock,
+    lastActivityAt: runProjection?.runSummary?.lastActivityAt || runProjection?.runSummary?.startedAt,
+    now,
+    protectedState: Boolean(runProjection?.modelRetry),
+  });
+  const visibleState = activityState || state;
+  const metrics = activeTaskAnchorMetrics({elapsedMs: visibleElapsedMs, runProjection});
   return (
     <Box flexShrink={0} justifyContent="space-between" borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1}>
       <Box flexShrink={1}>
         <Text color={MUTED}>任务  </Text>
         <Text color={PRIMARY} bold wrap="truncate-end">{label}</Text>
       </Box>
-      <Text color={state?.color ?? ACCENT} bold={state?.label === '失败'}>
-        {metrics ? `${metrics}  ` : ''}{state?.label ?? '运行中'}
+      <Text color={visibleState?.color ?? ACCENT} bold={visibleState?.label === '失败'}>
+        {metrics ? `${metrics}  ` : ''}{visibleState?.label ?? '运行中'}
       </Text>
     </Box>
   );
@@ -2456,7 +2530,6 @@ export function App({
   const [taskStepDetailKey, setTaskStepDetailKey] = useState('');
   const runStartedAtRef = useRef(0);
   const [runElapsedMs, setRunElapsedMs] = useState(0);
-  const [runClock, setRunClock] = useState(() => Date.now());
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
   const [recoveryChoice, setRecoveryChoice] = useState(0);
@@ -2658,13 +2731,6 @@ export function App({
     client.send({type: 'workspace', action: 'diff', path: selected.path, requestId});
     return true;
   }, [client, closeTransientSurfaces, markChangeReviewed]);
-
-  useEffect(() => {
-    if (!running) return undefined;
-    setRunClock(Date.now());
-    const timer = setInterval(() => setRunClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [running, runProjection.modelRetry?.retryAt]);
 
   useEffect(() => {
     pastedContentsRef.current = pastedContents;
@@ -3005,7 +3071,6 @@ export function App({
         if (eventName === 'run.started' || event.type === 'run_started') {
           const startedAt = Date.now();
           runStartedAtRef.current = startedAt;
-          setRunClock(startedAt);
           setRunElapsedMs(0);
           setTaskExpanded(true);
         } else if (eventName === 'usage.updated') {
@@ -3112,7 +3177,6 @@ export function App({
           setWaitingInteractions(items => removeWaitingInteraction(items, 'question', event));
           setPhase(waitingInteractionsRef.current.length > 1 ? '还有待处理请求' : '继续执行');
         } else if (eventName === 'model.retrying' || event.type === 'model_retry') {
-          setRunClock(Date.now());
           const retryAttempt = Math.max(1, Number(event.retryAttempt || 1));
           const maxRetries = Math.max(retryAttempt, Number(event.maxRetries || retryAttempt));
           const retryReason = Number(event.statusCode || 0) === 429
@@ -3816,7 +3880,6 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
@@ -4227,7 +4290,6 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
@@ -4277,7 +4339,6 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setChangeDetailOpen(false);
@@ -6057,12 +6118,8 @@ export function App({
           : {label: '就绪', color: MUTED};
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   const taskElapsedMs = runStartedAtRef.current
-    ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
+    ? (running ? Date.now() - runStartedAtRef.current : runElapsedMs)
     : 0;
-  const activeTaskMetrics = activeTaskAnchorMetrics({
-    elapsedMs: taskElapsedMs,
-    runProjection,
-  });
   const interactionHint = {
     question: `↑↓选择 · Enter确认${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     approval: `←→选择 · Enter确认 · Esc拒绝${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
@@ -6117,7 +6174,7 @@ export function App({
           runSummary={runProjection.runSummary}
           failure={runProjection.error}
           modelRetry={runProjection.modelRetry}
-          now={runClock}
+          startedAt={runStartedAtRef.current}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -6174,7 +6231,8 @@ export function App({
           runSummary={frozen.runProjection?.runSummary ?? null}
           failure={frozen.runProjection?.error ?? null}
           modelRetry={frozen.runProjection?.modelRetry ?? null}
-          now={runClock}
+          startedAt={runStartedAtRef.current}
+          liveClock={false}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -6411,10 +6469,9 @@ export function App({
           {fullscreenEnabled && frozen.running ? (
             <ActiveTaskAnchor
               goal={frozen.goal ?? lastQuestion}
-              metrics={activeTaskAnchorMetrics({
-                elapsedMs: frozen.elapsedMs ?? taskElapsedMs,
-                runProjection: frozen.runProjection ?? runProjection,
-              })}
+              elapsedMs={frozen.elapsedMs ?? taskElapsedMs}
+              liveClock={false}
+              runProjection={frozen.runProjection ?? runProjection}
               state={runHeader}
             />
           ) : null}
@@ -6459,8 +6516,10 @@ export function App({
     <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
       {running ? (
         <ActiveTaskAnchor
+          elapsedMs={taskElapsedMs}
           goal={lastQuestion}
-          metrics={activeTaskMetrics}
+          runProjection={runProjection}
+          startedAt={runStartedAtRef.current}
           state={runHeader}
         />
       ) : null}

@@ -170,6 +170,7 @@ function runSummaryProjection(event) {
     headline: redact(source.headline ?? '', 300),
     startedAt: sanitizeTerminalText(source.startedAt ?? '').slice(0, 80),
     finishedAt: sanitizeTerminalText(source.finishedAt ?? '').slice(0, 80),
+    lastActivityAt: sanitizeTerminalText(source.lastActivityAt ?? event?.occurredAt ?? '').slice(0, 80),
     completedSteps,
     totalSteps,
     progressPercent: totalSteps ? Math.min(100, Math.round((completedSteps / totalSteps) * 100)) : 0,

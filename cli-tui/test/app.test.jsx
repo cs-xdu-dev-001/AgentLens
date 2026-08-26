@@ -24,6 +24,7 @@ import {
   resolveInteractionFocus,
   removeWaitingInteraction,
   resolveTerminalMode,
+  runActivityPresentation,
   retryTurnRequest,
   runtimeStatusFromEvent,
   sanitizeComposerInput,
@@ -208,6 +209,33 @@ test('active task anchor reports live duration, token usage, and protocol progre
     },
   }), '4s · ~637 tokens · 1/3');
   assert.equal(activeTaskAnchorMetrics({elapsedMs: 0}), '0ms');
+});
+
+test('quiet runs distinguish slow progress from an actual failure', () => {
+  const base = Date.parse('2026-08-26T00:00:00Z');
+  assert.equal(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 10_000,
+  }), null);
+  assert.deepEqual(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 20_000,
+  }), {
+    color: '#d97757',
+    detail: '仍在运行，等待下一条进展',
+    label: '仍在运行',
+  });
+  assert.deepEqual(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 50_000,
+  }), {
+    color: '#d9a441',
+    detail: '暂未收到新进展，任务仍在运行',
+    label: '等待响应',
+  });
 });
 
 test('home workspaces block execution while preserving remote and project workspaces', () => {

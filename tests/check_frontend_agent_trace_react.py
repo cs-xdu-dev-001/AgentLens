@@ -602,6 +602,25 @@ const retrying = buildAgentRunPresentation({{
     status: "running",
   }}],
 }});
+const quiet = buildAgentRunPresentation({{
+  now: Date.parse("2026-08-12T00:01:00Z"),
+  run: {{
+    id: "run-quiet",
+    status: "running",
+    runSummary: {{
+      runId: "run-quiet",
+      status: "running",
+      startedAt: "2026-08-12T00:00:00Z",
+      lastActivityAt: "2026-08-12T00:00:10Z",
+    }},
+  }},
+  trace: [{{
+    stepId: "model-quiet",
+    kind: "model",
+    name: "model_completion",
+    status: "running",
+  }}],
+}});
 const compacted = buildAgentRunPresentation({{
   run: {{
     id: "run_compacted",
@@ -722,6 +741,10 @@ console.log(JSON.stringify({{
     processSummary: retrying.processSummary,
     status: retrying.status,
   }},
+  quiet: {{
+    processSummary: quiet.processSummary,
+    status: quiet.status,
+  }},
   compacted: {{
     headline: compacted.headline,
     processSummary: compacted.processSummary,
@@ -795,6 +818,15 @@ console.log(JSON.stringify({{
             "className": "waiting",
             "freshness": "自动恢复中",
             "label": "等待重试",
+        },
+    }
+    assert result["quiet"] == {
+        "processSummary": "暂未收到新进展，任务仍在运行",
+        "status": {
+            "className": "waiting",
+            "detail": "暂未收到新进展，任务仍在运行",
+            "freshness": "等待上游",
+            "label": "等待响应",
         },
     }
     assert result["compacted"] == {

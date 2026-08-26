@@ -159,8 +159,13 @@ def public_run_summary_projection(event: dict[str, Any]) -> dict[str, Any] | Non
     for source_key, target_key in (
         ("startedAt", "startedAt"),
         ("finishedAt", "finishedAt"),
+        ("lastActivityAt", "lastActivityAt"),
     ):
-        value = _public_text(source.get(source_key), max_chars=80)
+        value = _public_text(
+            source.get(source_key)
+            or (event.get("occurredAt") if source_key == "lastActivityAt" else None),
+            max_chars=80,
+        )
         if value:
             summary[target_key] = value
     steps = source.get("steps")
@@ -643,6 +648,7 @@ class AgentEventNormalizer:
         if not run_id:
             return None
         self.run_summary.setdefault("runId", run_id)
+        self.run_summary["lastActivityAt"] = str(event.get("occurredAt") or "")
         headline = _public_text(
             event.get("headline")
             or event.get("goalSummary")
@@ -761,10 +767,7 @@ class AgentEventNormalizer:
             sequence=self.sequence,
         )
         summary = self._update_run_summary(event)
-        if summary is not None and (
-            event["eventName"].startswith(("run.", "step.", "tool.", "artifact."))
-            or event["eventName"] == "usage.updated"
-        ):
+        if summary is not None:
             event["runSummary"] = summary
         if not self.run_id and event.get("runId"):
             self.run_id = str(event["runId"])

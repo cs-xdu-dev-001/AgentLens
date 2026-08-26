@@ -71,6 +71,7 @@ def main() -> None:
         "status": "running",
         "headline": "检查 [REDACTED]",
         "startedAt": "2026-08-13T10:00:00+00:00",
+        "lastActivityAt": snapshot["occurredAt"],
         "totalSteps": 2,
         "completedSteps": 1,
         "progressPercent": 50,
@@ -304,6 +305,9 @@ def main() -> None:
         "usage": {"input_tokens": 20, "output_tokens": 30},
     })
     assert usage_updated["runSummary"]["totalTokens"] == 50
+    message_updated = stream({"type": "answer", "content": "正在继续分析"})
+    assert message_updated["eventName"] == "message.delta"
+    assert message_updated["runSummary"]["lastActivityAt"] == message_updated["occurredAt"]
     artifact_updated = stream({
         "type": "reference",
         "url": "https://example.com/news?token=SECRET_VALUE",

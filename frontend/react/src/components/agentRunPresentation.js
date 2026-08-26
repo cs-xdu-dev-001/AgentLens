@@ -65,6 +65,9 @@ const operationVerbs = {
   write_workspace_file: "更新",
 };
 
+const RUN_QUIET_AFTER_MS = 15_000;
+const RUN_STALLED_AFTER_MS = 45_000;
+
 export function pendingAgentInteractions({ approvals = [], questions = [] } = {}) {
   const safeApprovals = Array.isArray(approvals) ? approvals : [];
   const safeQuestions = Array.isArray(questions) ? questions : [];
@@ -557,6 +560,42 @@ function statusPresentation(run, step, waitState, backgroundPending) {
   return { className: "waiting", freshness: "等待", label: "等待开始" };
 }
 
+function latestActivityAt(run, trace, startedAt) {
+  const candidates = [
+    run?.runSummary?.lastActivityAt,
+    run?.lastActivityAt,
+    run?.updatedAt,
+    ...trace.flatMap((item) => [
+      item?.occurredAt,
+      item?.updatedAt,
+      item?.finishedAt,
+      item?.startedAt,
+    ]),
+  ].map((value) => Date.parse(value || "")).filter(Number.isFinite);
+  return candidates.length ? Math.max(...candidates) : startedAt;
+}
+
+function quietRunStatus(status, { active, lastActivityAt, now, protectedState }) {
+  if (!active || protectedState || !Number.isFinite(lastActivityAt)) return status;
+  const quietForMs = Math.max(0, now - lastActivityAt);
+  if (quietForMs >= RUN_STALLED_AFTER_MS) {
+    return {
+      className: "waiting",
+      detail: "暂未收到新进展，任务仍在运行",
+      freshness: "等待上游",
+      label: "等待响应",
+    };
+  }
+  if (quietForMs >= RUN_QUIET_AFTER_MS) {
+    return {
+      ...status,
+      detail: "仍在运行，等待下一条进展",
+      freshness: "暂未更新",
+    };
+  }
+  return status;
+}
+
 function modelRetrySummary(modelRetry, now) {
   if (!modelRetry) return "";
   const remainingSeconds = Math.max(
@@ -614,6 +653,19 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
   const rootStep = safeTrace.find((item) => item.name === "agent_run") || safeTrace[0];
   const startedAt = Date.parse(protocolSummary?.startedAt || run?.startedAt || rootStep?.startedAt || "");
   const finishedAt = Date.parse(protocolSummary?.finishedAt || run?.finishedAt || run?.updatedAt || "");
+  const lastActivityAt = latestActivityAt(run, safeTrace, startedAt);
+  status = quietRunStatus(status, {
+    active,
+    lastActivityAt,
+    now,
+    protectedState: Boolean(
+      run?.modelRetry
+      || waitState.approval
+      || waitState.background
+      || backgroundPending
+      || status.className === "waiting"
+    ),
+  });
   const elapsedMs = rootStep?.durationMs != null
     ? rootStep.durationMs
     : Number.isFinite(startedAt)
@@ -681,6 +733,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     elapsedMs,
     failedOperationCount,
     headline,
+    lastActivityAt: Number.isFinite(lastActivityAt) ? new Date(lastActivityAt).toISOString() : "",
     hasPlan: Boolean(Array.isArray(run?.steps) && run.steps.length),
     metrics: [
       formatElapsed(elapsedMs),
