@@ -245,6 +245,7 @@ export const sessionApi = {
   branch: (id, payload = {}) => apiRequest(`/api/sessions/${id}/branch`, { method: "POST", body: payload }),
   export: (id) => apiRequest(`/api/sessions/${id}/export`),
   update: (id, payload) => apiRequest(`/api/sessions/${id}`, { method: "PUT", body: payload }),
+  setPinned: (id, pinned) => apiRequest(`/api/sessions/${id}/pin`, { method: "PUT", body: { pinned } }),
   delete: (id) => apiRequest(`/api/sessions/${id}`, { method: "DELETE" }),
 };
 

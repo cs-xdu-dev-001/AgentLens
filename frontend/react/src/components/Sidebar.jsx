@@ -8,6 +8,7 @@ import { safeAgentText } from "../controller/agentEvents.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
 
 const sessionGroupLabels = [
+  ["pinned", "已置顶"],
   ["active", "进行中"],
   ["failed", "需要处理"],
   ["today", "今天"],
@@ -33,8 +34,9 @@ const runStatusLabels = {
   completed: "已完成",
 };
 
-const sessionMenuItems = [
+const sessionMenuItems = (pinned) => [
   { action: "continue", icon: "message", label: "继续" },
+  { action: "pin", icon: "pin", label: pinned ? "取消置顶" : "置顶" },
   { action: "branch", icon: "branch", label: "创建分支" },
   { action: "export", icon: "download", label: "导出对话" },
   { action: "rename", icon: "pencil", label: "重命名" },
@@ -42,6 +44,14 @@ const sessionMenuItems = [
 ];
 
 function SessionMenuIcon({ type }) {
+  if (type === "pin") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"m14 4 6 6-3 1-4 4-1 5-2-2-4 4-1-1 4-4-2-2 5-1 4-4 1-3Z"} />
+      </svg>
+    );
+  }
+
   if (type === "branch") {
     return (
       <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
@@ -150,7 +160,8 @@ function SidebarToolIcon({ type }) {
   );
 }
 
-function SessionMenuPopover({ anchor, onAction, sessionId }) {
+function SessionMenuPopover({ anchor, onAction, session }) {
+  const sessionId = session?.id;
   if (!anchor || !sessionId || typeof document === "undefined") return null;
 
   return createPortal(
@@ -161,7 +172,7 @@ function SessionMenuPopover({ anchor, onAction, sessionId }) {
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      {sessionMenuItems.map((item) => (
+      {sessionMenuItems(Boolean(session.is_pinned)).map((item) => (
         <div className={item.divider ? "session-menu-group danger-group" : "session-menu-group"} key={item.action}>
           {item.divider ? <div className={"session-menu-divider"} /> : null}
           <button className={item.danger ? "session-menu-item danger" : "session-menu-item"} role={"menuitem"} type={"button"} onClick={() => onAction(item.action, sessionId)}>
@@ -178,9 +189,13 @@ function SessionMenuPopover({ anchor, onAction, sessionId }) {
 }
 
 function groupSessions(sessions) {
-  const groups = { active: [], failed: [], today: [], recent: [], earlier: [] };
+  const groups = { pinned: [], active: [], failed: [], today: [], recent: [], earlier: [] };
   const now = new Date();
   sessions.forEach((session) => {
+    if (Boolean(session.is_pinned)) {
+      groups.pinned.push(session);
+      return;
+    }
     const runStatus = String(session.latest_run?.status || "");
     if (activeRunStatuses.has(runStatus)) {
       groups.active.push(session);
@@ -483,6 +498,18 @@ function SessionHistory() {
     }
   };
 
+  const handleSessionPin = async (sessionId) => {
+    const session = sessions.find((item) => item.id === sessionId);
+    const pinned = !Boolean(session?.is_pinned);
+    try {
+      await sessionApi.setPinned(sessionId, pinned);
+      notifyToast(pinned ? "会话已置顶" : "已取消置顶");
+      await loadSessions();
+    } catch (error) {
+      notifyError(error, pinned ? "置顶失败" : "取消置顶失败");
+    }
+  };
+
   const handleSessionBranch = async (sessionId, title = "") => {
     try {
       const branch = await sessionApi.branch(sessionId, { title: String(title || "").trim() || null });
@@ -559,6 +586,10 @@ function SessionHistory() {
       startSessionRename(sessionId);
       return;
     }
+    if (action === "pin") {
+      handleSessionPin(sessionId);
+      return;
+    }
     if (action === "branch") {
       handleSessionBranch(sessionId);
       return;
@@ -615,7 +646,7 @@ function SessionHistory() {
 
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 214;
-    const menuHeight = 218;
+    const menuHeight = 260;
     const left = Math.max(12, Math.min(rect.right + 8, window.innerWidth - menuWidth - 12));
     const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - menuHeight - 12));
     setOpenMenuSessionId(sessionId);
@@ -703,7 +734,10 @@ function SessionHistory() {
                             onClick={() => handleSessionAction("continue", session.id)}
                           >
                             <span className={"session-title-row"}>
-                              <span className={"session-title"}>{sessionTitle(session)}</span>
+                              <span className={"session-title"}>
+                                {session.is_pinned ? <span className={"session-pin-mark"} aria-label={"已置顶"}>◆</span> : null}
+                                {sessionTitle(session)}
+                              </span>
                               {age ? <time>{age}</time> : null}
                             </span>
                             {run ? (
@@ -742,7 +776,11 @@ function SessionHistory() {
           <p className={"empty-state"}>{keyword ? "没有匹配的任务" : "新任务会显示在这里"}</p>
         )}
       </div>
-      <SessionMenuPopover anchor={menuAnchor} sessionId={openMenuSessionId} onAction={handleSessionAction} />
+      <SessionMenuPopover
+        anchor={menuAnchor}
+        session={sessions.find((item) => item.id === openMenuSessionId)}
+        onAction={handleSessionAction}
+      />
     </section>
   );
 }

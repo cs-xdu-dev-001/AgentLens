@@ -2034,7 +2034,7 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
         return (
           <Box key={session.runId} justifyContent="space-between">
             <Text color={selectedRow ? PRIMARY : MUTED} bold={selectedRow} wrap="truncate-end">
-              {selectedRow ? '❯ ' : '  '}{publicLabel(session.title, session.runId, 72)}
+              {selectedRow ? '❯ ' : '  '}{session.pinned ? '◆ ' : ''}{publicLabel(session.title, session.runId, 72)}
             </Text>
             <Text color={status[1]}>  {formatSessionTime(session.updatedAt)} · {status[0]}</Text>
           </Box>
@@ -2046,7 +2046,7 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
           <Text color={MUTED} wrap="truncate-end">{publicLabel(active.answer || active.cwd, '尚无回答预览', 180)}</Text>
         </Box>
       ) : null}
-      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · 输入搜索 · Esc关闭</Text>
+      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · P置顶/取消 · 输入搜索 · Esc关闭</Text>
     </Box>
   );
 });
@@ -3553,6 +3553,25 @@ export function App({
       if (message.type === 'session_rename_failed') {
         appendItem('error', message.message ?? '重命名会话失败。');
         setPhase('就绪');
+        return;
+      }
+      if (message.type === 'session_pinned') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const pinned = Boolean(result.pinned);
+        setSessions(current => current
+          .map(item => runId && item.runId === runId ? {...item, pinned} : item)
+          .sort((left, right) => (
+            Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
+            || Number(right.updatedAt || 0) - Number(left.updatedAt || 0)
+          )));
+        setSessionChoice(0);
+        setPhase(pinned ? '会话已置顶' : '已取消置顶');
+        return;
+      }
+      if (message.type === 'session_pin_failed') {
+        setSessionError(message.message ?? '更新会话置顶状态失败。');
+        setPhase('更新置顶状态失败');
         return;
       }
       if (message.type === 'session_exported') {
@@ -5530,6 +5549,14 @@ export function App({
         setSessionChoice(value => (value + filteredSessions.length - 1) % filteredSessions.length);
       } else if (key.downArrow && filteredSessions.length) {
         setSessionChoice(value => (value + 1) % filteredSessions.length);
+      } else if (String(character || '').toLowerCase() === 'p' && filteredSessions.length) {
+        const selectedSession = filteredSessions[sessionChoice];
+        client.send({
+          type: 'session_pin',
+          runId: selectedSession?.runId,
+          pinned: !Boolean(selectedSession?.pinned),
+        });
+        setPhase(selectedSession?.pinned ? '正在取消置顶' : '正在置顶会话');
       } else if (key.return) {
         const selectedSession = filteredSessions[sessionChoice];
         resumeRun(selectedSession?.runId, selectedSession?.title);
@@ -6257,7 +6284,7 @@ export function App({
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
-    sessions: '↑↓选择 · Enter恢复 · Esc关闭',
+    sessions: '↑↓选择 · Enter恢复 · P置顶/取消 · Esc关闭',
     localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',

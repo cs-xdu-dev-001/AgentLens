@@ -500,6 +500,27 @@ class TuiBackend:
             "title": session.get("title") or next_title,
         }
 
+    def set_session_pinned(self, pinned: bool, run_id: str = "") -> dict[str, Any]:
+        if self.remote_client is not None:
+            session_id = str(run_id or self.session_id or "")
+            if not session_id:
+                raise RuntimeError("当前没有可置顶的远程会话。")
+            session = self.remote_client.set_session_pinned(session_id, pinned)
+            return {
+                "runId": "",
+                "sessionId": session_id,
+                "pinned": bool(session.get("pinned", pinned)),
+            }
+        target_run_id = str(run_id or self.current_run_id or "")
+        if self.local_agent is None or not target_run_id:
+            raise RuntimeError("当前没有可置顶的本地会话。")
+        session = self.local_agent.set_session_pinned(target_run_id, pinned)
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "pinned": bool(session.get("pinned", pinned)),
+        }
+
     def rewind_points(self) -> list[dict[str, Any]]:
         if self.remote_client is not None:
             if not self.session_id:

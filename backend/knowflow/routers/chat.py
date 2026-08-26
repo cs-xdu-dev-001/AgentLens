@@ -435,10 +435,10 @@ def list_sessions(request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
     rows = fetch_all(
         """
-        SELECT id, title, knowledge_base_id, chat_model_config_id, created_at, updated_at
+        SELECT id, title, is_pinned, knowledge_base_id, chat_model_config_id, created_at, updated_at
         FROM chat_session
         WHERE user_id=:user_id
-        ORDER BY updated_at DESC
+        ORDER BY is_pinned DESC, updated_at DESC
         """,
         {"user_id": user_id},
     )
@@ -942,6 +942,21 @@ def rename_session(session_id: str, payload: SessionUpdate, request: Request) ->
     get_session_for_user(session_id, user_id)
     execute("UPDATE chat_session SET title=:title, updated_at=:updated_at WHERE id=:id AND user_id=:user_id", {"title": payload.title, "updated_at": now_str(), "id": session_id, "user_id": user_id})
     return api_success(True)
+
+
+@router.put("/api/sessions/{session_id}/pin", tags=SESSION_TAGS, summary="Pin or unpin a session")
+def pin_session(session_id: str, payload: SessionPinUpdate, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    get_session_for_user(session_id, user_id)
+    execute(
+        "UPDATE chat_session SET is_pinned=:is_pinned WHERE id=:id AND user_id=:user_id",
+        {
+            "is_pinned": 1 if payload.pinned else 0,
+            "id": session_id,
+            "user_id": user_id,
+        },
+    )
+    return api_success({"id": session_id, "pinned": payload.pinned})
 
 
 @router.delete("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Delete a session")

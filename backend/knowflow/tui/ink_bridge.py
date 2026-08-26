@@ -22,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore, PromptQueueStore
 
 
-PROTOCOL_VERSION = 13
+PROTOCOL_VERSION = 14
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -52,6 +52,7 @@ def _public_session(value: dict[str, Any]) -> dict[str, Any]:
     return {
         "runId": str(value.get("runId") or "")[:80],
         "title": str(sanitize_trace_value(value.get("title"), max_chars=160) or ""),
+        "pinned": bool(value.get("pinned") or value.get("is_pinned")),
         "status": str(value.get("status") or "")[:40],
         "updatedAt": value.get("updatedAt"),
         "cwd": str(sanitize_trace_value(value.get("cwd"), max_chars=240) or ""),
@@ -687,6 +688,27 @@ class InkRuntimeBridge:
                 }
             )
 
+    def _pin_session(self, message: dict[str, Any]) -> None:
+        try:
+            result = self.backend.set_session_pinned(
+                bool(message.get("pinned")),
+                str(message.get("runId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_pin_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_pinned",
+                    "result": _public_value(result, max_chars=4_000),
+                }
+            )
+
     def _export_session(self, message: dict[str, Any]) -> None:
         if self._running:
             self.send({"type": "busy", "message": "请等待当前任务结束后再导出会话。"})
@@ -960,6 +982,8 @@ class InkRuntimeBridge:
             self._rewind_points()
         elif message_type == "rename_session":
             self._rename_session(message)
+        elif message_type == "session_pin":
+            self._pin_session(message)
         elif message_type == "export_session":
             self._export_session(message)
         elif message_type == "context":

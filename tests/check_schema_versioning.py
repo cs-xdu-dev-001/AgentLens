@@ -25,8 +25,8 @@ def main() -> None:
     row = fetch_one("SELECT version, description FROM schema_version ORDER BY version DESC LIMIT 1")
     assert row, "schema_version should contain at least one applied version"
     assert row["version"] == CURRENT_SCHEMA_VERSION, row
-    assert CURRENT_SCHEMA_VERSION == 13, CURRENT_SCHEMA_VERSION
-    assert "context compaction boundaries" in row["description"].lower(), row
+    assert CURRENT_SCHEMA_VERSION == 14, CURRENT_SCHEMA_VERSION
+    assert "pinned chat sessions" in row["description"].lower(), row
     model_columns = {item["name"] for item in fetch_all("PRAGMA table_info(model_config)")}
     assert "api_mode" in model_columns, model_columns
     columns = {item["name"] for item in fetch_all("PRAGMA table_info(tool_config)")}
@@ -50,6 +50,7 @@ def main() -> None:
         for item in fetch_all("PRAGMA table_info(chat_session)")
     }
     assert {
+        "is_pinned",
         "context_summary",
         "context_summary_metadata_json",
         "context_summary_up_to_message_id",

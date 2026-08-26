@@ -233,6 +233,14 @@ class RemoteAgentClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def set_session_pinned(self, session_id: str, pinned: bool) -> dict[str, Any]:
+        payload = self.request(
+            "PUT",
+            f"/api/sessions/{session_id}/pin",
+            body={"pinned": bool(pinned)},
+        )
+        return payload if isinstance(payload, dict) else {}
+
     def export_session(self, session_id: str) -> dict[str, Any]:
         payload = self.request("GET", f"/api/sessions/{session_id}/export")
         return payload if isinstance(payload, dict) else {}

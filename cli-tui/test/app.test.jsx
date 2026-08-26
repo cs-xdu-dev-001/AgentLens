@@ -795,7 +795,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 13,
+      protocolVersion: 14,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1752,7 +1752,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 13,
+    protocolVersion: 14,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1821,7 +1821,7 @@ test('Ink app restores a durable runtime queue paused and claims it before execu
   };
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 13,
+    protocolVersion: 14,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -2864,6 +2864,19 @@ test('workspace commands and resume picker use the runtime as source of truth', 
     sessions: [{runId: 'run_restore', title: '恢复测试', status: 'failed'}],
   });
   await waitForFrame(view, /恢复测试[\s\S]*失败，可继续/);
+  assert.match(view.lastFrame(), /P置顶\/取消/);
+  view.stdin.write('p');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_pin',
+    runId: 'run_restore',
+    pinned: true,
+  });
+  client.emit('message', {
+    type: 'session_pinned',
+    result: {runId: 'run_restore', pinned: true},
+  });
+  await waitForFrame(view, /◆ 恢复测试/);
   view.stdin.write('\r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
@@ -2885,7 +2898,7 @@ test('startup resume opens the picker and continue restores the latest workspace
   const continueClient = new FakeClient();
   continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
     type: 'ready',
-    protocolVersion: 13,
+    protocolVersion: 14,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],

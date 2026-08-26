@@ -486,6 +486,7 @@ class LocalSessionStore:
                     for key in (
                         "runId",
                         "title",
+                        "pinned",
                         "status",
                         "updatedAt",
                         "projectRoot",
@@ -494,7 +495,13 @@ class LocalSessionStore:
                     )
                 }
             )
-        sessions.sort(key=lambda item: float(item.get("updatedAt") or 0), reverse=True)
+        sessions.sort(
+            key=lambda item: (
+                bool(item.get("pinned")),
+                float(item.get("updatedAt") or 0),
+            ),
+            reverse=True,
+        )
         return sessions[: max(1, min(100, int(limit)))]
 
 
@@ -789,6 +796,14 @@ class LocalAgentRuntime:
         if not next_title:
             raise ValueError("请输入新的会话名称。")
         return self.sessions.save(run_id, title=next_title[:160])
+
+    def set_session_pinned(self, run_id: str, pinned: bool) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        return self.sessions.save(run_id, pinned=bool(pinned))
 
     def _registry(
         self,

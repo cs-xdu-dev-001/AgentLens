@@ -7279,6 +7279,13 @@ body.sidebar-collapsed .app-shell {
   min-width: 0 !important;
 }
 
+.session-pin-mark {
+  margin-right: 6px !important;
+  color: #777772 !important;
+  font-size: 9px !important;
+  vertical-align: 2px !important;
+}
+
 .session-title-row time {
   flex: 0 0 auto !important;
   color: #8a8a85 !important;
