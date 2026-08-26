@@ -10168,6 +10168,59 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-block: 0;
 }
 
+.agent-artifact-review-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.agent-artifact-review-summary,
+.agent-artifact-review-head > div:first-child {
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-artifact-review-summary strong,
+.agent-artifact-review-head strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.agent-artifact-review-summary span,
+.agent-artifact-review-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-artifact-review-toolbar > button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-artifact-review-toolbar > button:hover {
+  background: var(--surface-hover);
+}
+
+.agent-artifact-review-toolbar > button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
 .agent-artifact-row {
   min-width: 0;
   display: grid;
@@ -10236,6 +10289,31 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   display: grid;
   grid-column: 2 / -1;
   gap: 8px;
+}
+
+.agent-artifact-detail:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.agent-artifact-review-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-artifact-review-nav {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.agent-artifact-review-nav button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 .agent-artifact-detail pre {
@@ -10600,6 +10678,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   .agent-artifact-detail {
     grid-column: 1 / -1;
+  }
+
+  .agent-artifact-review-toolbar,
+  .agent-artifact-review-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .agent-delivery-verification-row {

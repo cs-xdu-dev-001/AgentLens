@@ -449,6 +449,7 @@ class InkRuntimeBridge:
 
     def _workspace(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
+        request_id = str(message.get("requestId") or "").strip()
         if action == "switch":
             with self._state_lock:
                 blocked = self._running or self._pending is not None
@@ -457,6 +458,7 @@ class InkRuntimeBridge:
                     {
                         "type": "workspace_failed",
                         "action": action,
+                        "requestId": request_id,
                         "message": "当前任务尚未结束，请先完成、拒绝或取消后再切换工作区。",
                     }
                 )
@@ -486,6 +488,7 @@ class InkRuntimeBridge:
                 {
                     "type": "workspace_failed",
                     "action": action,
+                    "requestId": request_id,
                     "message": self._public_error(exc),
                 }
             )
@@ -493,6 +496,7 @@ class InkRuntimeBridge:
             payload = {
                 "type": "workspace_result",
                 "action": action,
+                "requestId": request_id,
                 "result": _public_value(result, max_chars=100_000),
             }
             if action == "switch":

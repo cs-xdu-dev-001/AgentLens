@@ -1430,7 +1430,20 @@ function ReferenceDetailPanel({rows, selected, hasTools}) {
 
 const CHANGE_DIFF_PAGE_SIZE = 14;
 
-function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, offset = 0}) {
+export function changeReviewArtifacts(artifacts = []) {
+  return (Array.isArray(artifacts) ? artifacts : []).filter(artifact => (
+    artifact?.path && (artifact.diffAvailable || artifact.operationId)
+  ));
+}
+
+export function changeReviewKey(artifact, index = 0) {
+  return artifact?.artifactId
+    || artifact?.operationId
+    || artifact?.path
+    || `change-${index}`;
+}
+
+function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, reviewed = [], offset = 0}) {
   const artifact = artifacts[selected];
   if (!artifact) return null;
   const target = artifact.path || artifact.title || '文件变更';
@@ -1443,16 +1456,21 @@ function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, off
   const safeOffset = Math.max(0, Math.min(Number(offset) || 0, maxOffset));
   const diffRows = allDiffRows.slice(safeOffset, safeOffset + CHANGE_DIFF_PAGE_SIZE);
   const visibleEnd = Math.min(allDiffRows.length, safeOffset + diffRows.length);
+  const reviewedCount = artifacts.filter((item, index) => (
+    reviewed.includes(changeReviewKey(item, index))
+  )).length;
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-      <Text bold>文件变更 <Text color={MUTED}>{selected + 1}/{artifacts.length}</Text></Text>
+      <Text bold>
+        文件变更 <Text color={MUTED}>{selected + 1}/{artifacts.length} · 已查看 {reviewedCount}/{artifacts.length}</Text>
+      </Text>
       <Box>
         <Text color={artifact.reverted ? MUTED : PRIMARY} bold>{target}</Text>
         {changes ? <Text color={MUTED}>  {changes}</Text> : null}
         {artifact.reverted ? <Text color={SUCCESS}>  已撤销</Text> : null}
       </Box>
       {loading ? <Text color={MUTED}>正在读取差异…</Text> : null}
-      {!loading && !diffRows.length ? <Text color={MUTED}>按Enter查看diff</Text> : null}
+      {!loading && !diffRows.length ? <Text color={MUTED}>没有可显示的文本差异</Text> : null}
       {!loading ? diffRows.map((row, index) => {
         const color = row.kind === 'add' ? SUCCESS : row.kind === 'remove' ? ERROR : row.kind === 'hunk' ? ACCENT : MUTED;
         const lineNumber = row.kind === 'add' ? row.newLine : row.oldLine;
@@ -1470,7 +1488,7 @@ function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, off
           {confirming ? '再次按D确认安全撤销，Esc取消' : 'D撤销此文件'}
         </Text>
       ) : null}
-      <Text color={MUTED}>PgUp/PgDn滚动差异  Home/End首尾  ↑↓切换文件  Enter刷新diff  Ctrl+G或Esc关闭</Text>
+      <Text color={MUTED}>PgUp/PgDn滚动差异  Home/End首尾  ↑↓切换并加载  Enter刷新diff  Ctrl+G或Esc关闭</Text>
     </Box>
   );
 }
@@ -2459,6 +2477,11 @@ export function App({
   const [changeDetailOpen, setChangeDetailOpen] = useState(false);
   const changeDetailOpenRef = useRef(false);
   const [changeDetailIndex, setChangeDetailIndex] = useState(0);
+  const changeDetailIndexRef = useRef(0);
+  const changeRequestPathRef = useRef('');
+  const changeRequestIdRef = useRef(0);
+  const activeChangeRequestIdRef = useRef('');
+  const [reviewedChangeIds, setReviewedChangeIds] = useState([]);
   const [changePatch, setChangePatch] = useState('');
   const [changePatchOffset, setChangePatchOffset] = useState(0);
   const [changeLoading, setChangeLoading] = useState(false);
@@ -2600,10 +2623,41 @@ export function App({
     if (keep !== 'queue') setQueueManagerOpen(false);
     if (keep !== 'tools') setToolDetailOpen(false);
     if (keep !== 'changes') {
+      changeDetailOpenRef.current = false;
       setChangeDetailOpen(false);
       setChangeConfirming(false);
     }
   }, []);
+
+  const markChangeReviewed = useCallback((artifact, index = 0) => {
+    const identifier = changeReviewKey(artifact, index);
+    setReviewedChangeIds(current => (
+      current.includes(identifier) ? current : [...current, identifier]
+    ));
+  }, []);
+
+  const openChangeReview = useCallback((artifacts, requestedIndex = 0) => {
+    const reviewArtifacts = changeReviewArtifacts(artifacts);
+    if (!reviewArtifacts.length) return false;
+    const nextIndex = Math.max(0, Math.min(reviewArtifacts.length - 1, requestedIndex));
+    const selected = reviewArtifacts[nextIndex];
+    closeTransientSurfaces('changes');
+    changeDetailOpenRef.current = true;
+    changeDetailIndexRef.current = nextIndex;
+    changeRequestPathRef.current = selected.path;
+    const requestId = `change-diff-${changeRequestIdRef.current + 1}`;
+    changeRequestIdRef.current += 1;
+    activeChangeRequestIdRef.current = requestId;
+    setChangeDetailIndex(nextIndex);
+    setChangePatch('');
+    setChangePatchOffset(0);
+    setChangeConfirming(false);
+    setChangeDetailOpen(true);
+    setChangeLoading(true);
+    markChangeReviewed(selected, nextIndex);
+    client.send({type: 'workspace', action: 'diff', path: selected.path, requestId});
+    return true;
+  }, [client, closeTransientSurfaces, markChangeReviewed]);
 
   useEffect(() => {
     if (!running) return undefined;
@@ -2626,6 +2680,9 @@ export function App({
   useEffect(() => {
     changeDetailOpenRef.current = changeDetailOpen;
   }, [changeDetailOpen]);
+  useEffect(() => {
+    changeDetailIndexRef.current = changeDetailIndex;
+  }, [changeDetailIndex]);
   useEffect(() => {
     permissionRef.current = permissionMode;
   }, [permissionMode]);
@@ -3534,6 +3591,8 @@ export function App({
         setTaskStepDetailKey('');
         setToolDetailOpen(false);
         setToolDetailIndex(0);
+        setReviewedChangeIds([]);
+        changeRequestPathRef.current = '';
         sessionApprovals.current.clear();
         const clearedPermissionRules = emptyPermissionRules();
         permissionRef.current = 'ask';
@@ -3564,6 +3623,9 @@ export function App({
         const result = message.result ?? {};
         if (message.action === 'diff') {
           if (changeDetailOpenRef.current) {
+            if (message.requestId && message.requestId !== activeChangeRequestIdRef.current) return;
+            const responsePath = result.files?.[0]?.path || '';
+            if (responsePath && responsePath !== changeRequestPathRef.current) return;
             setChangePatch(result.patch || '没有可显示的文本差异。');
             setChangePatchOffset(0);
             setChangeLoading(false);
@@ -3609,6 +3671,8 @@ export function App({
             setChangeDetailOpen(false);
             setChangeLoading(false);
             setChangeConfirming(false);
+            setReviewedChangeIds([]);
+            changeRequestPathRef.current = '';
             setChangePatch('');
             setChangePatchOffset(0);
             setPhase('工作区已切换');
@@ -3619,6 +3683,7 @@ export function App({
       }
       if (message.type === 'workspace_failed') {
         if (changeDetailOpenRef.current) {
+          if (message.requestId && message.requestId !== activeChangeRequestIdRef.current) return;
           setChangeLoading(false);
           setChangePatch(`操作失败：${message.message ?? '工作区操作失败。'}`);
           setChangePatchOffset(0);
@@ -3757,6 +3822,8 @@ export function App({
     setToolDetailIndex(0);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     const historyText = queuedPromptHistory(next);
     lastTurnRequestRef.current = turnRequestSnapshot(
@@ -4166,6 +4233,8 @@ export function App({
     setToolDetailIndex(0);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     lastTurnRequestRef.current = turnRequestSnapshot(text, displayText, {
       mode,
@@ -4213,6 +4282,8 @@ export function App({
     setToolDetailOpen(false);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     setPhase('恢复会话');
     client.send({
@@ -4435,7 +4506,7 @@ export function App({
     } else if (command.value === '/cd') {
       client.send({type: 'workspace', action: 'cd', path: args});
     } else if (command.value === '/diff') {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       const requestedPath = args.trim();
       const index = requestedPath
         ? artifacts.findIndex(artifact => artifact.path === requestedPath)
@@ -4447,28 +4518,15 @@ export function App({
           ? `本次运行中找不到文件变更：${requestedPath}`
           : '本次运行没有可查看的文本差异。');
       } else {
-        const selected = artifacts[index];
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(index);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
-        setChangeLoading(true);
-        client.send({type: 'workspace', action: 'diff', path: selected.path});
+        openChangeReview(artifacts, index);
       }
     } else if (command.value === '/undo') {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       const index = artifacts.findLastIndex(artifact => artifact?.operationId && !artifact.reverted);
       if (index < 0) {
         appendItem('error', '本次运行没有可安全撤销的文件修改。');
       } else {
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(index);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
+        openChangeReview(artifacts, index);
       }
     } else if (command.value === '/resume') {
       if (/^run_[A-Za-z0-9]+$/.test(args)) {
@@ -4779,7 +4837,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -4882,17 +4940,13 @@ export function App({
     const item = taskNavigationItems[taskNavigationIndex];
     if (!item) return;
     if (item.type === 'artifact') {
-      const index = (runProjectionRef.current.artifacts || []).findIndex(artifact => (
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+      const index = artifacts.findIndex(artifact => (
         artifact.artifactId === item.row.artifactId
         || (artifact.path && artifact.path === item.row.path)
       ));
       if (index >= 0) {
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(index);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
+        openChangeReview(artifacts, index);
         return;
       }
     }
@@ -4926,7 +4980,7 @@ export function App({
     }
     closeTransientSurfaces('tasks');
     setTaskStepDetailKey(item.key);
-  }, [closeTransientSurfaces, taskNavigationIndex, taskNavigationItems, toolRows]);
+  }, [closeTransientSurfaces, openChangeReview, taskNavigationIndex, taskNavigationItems, toolRows]);
   const openToolDetails = useCallback(() => {
     const references = runProjectionRef.current.references || [];
     if (!detailRows.length && !references.length) {
@@ -5456,21 +5510,16 @@ export function App({
       return;
     }
     if (interactionFocus === 'changes' && changeDetailOpen) {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       const selected = artifacts[changeDetailIndex];
       if (key.escape || (key.ctrl && character === 'g')) {
+        changeDetailOpenRef.current = false;
         setChangeDetailOpen(false);
         setChangeConfirming(false);
       } else if (key.upArrow && artifacts.length) {
-        setChangeDetailIndex(value => (value + artifacts.length - 1) % artifacts.length);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
+        openChangeReview(artifacts, (changeDetailIndex + artifacts.length - 1) % artifacts.length);
       } else if (key.downArrow && artifacts.length) {
-        setChangeDetailIndex(value => (value + 1) % artifacts.length);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
+        openChangeReview(artifacts, (changeDetailIndex + 1) % artifacts.length);
       } else if (key.pageUp) {
         setChangePatchOffset(value => Math.max(0, value - CHANGE_DIFF_PAGE_SIZE));
       } else if (key.pageDown) {
@@ -5481,9 +5530,7 @@ export function App({
       } else if (key.end) {
         setChangePatchOffset(Math.max(0, buildDiffPresentation(changePatch).length - CHANGE_DIFF_PAGE_SIZE));
       } else if (key.return && selected?.path) {
-        setChangeLoading(true);
-        setChangePatchOffset(0);
-        client.send({type: 'workspace', action: 'diff', path: selected.path});
+        openChangeReview(artifacts, changeDetailIndex);
       } else if (character.toLowerCase() === 'd' && selected?.operationId && !selected.reverted && !running) {
         if (!changeConfirming) setChangeConfirming(true);
         else {
@@ -5608,6 +5655,11 @@ export function App({
     }
     if (interactionFocus === 'taskNavigation' && taskNavigationOpen) {
       if (key.ctrl && character === 'c' && running) requestCancel();
+      else if (key.ctrl && character === 'g') {
+        const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+        if (!artifacts.length) appendItem('error', '本次运行没有文件变更。');
+        else openChangeReview(artifacts, changeDetailIndexRef.current);
+      }
       else if (key.escape) setTaskNavigationOpen(false);
       else if (key.ctrl && character === 't') {
         setTaskNavigationOpen(false);
@@ -5679,16 +5731,9 @@ export function App({
       return;
     }
     if (key.ctrl && character === 'g') {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       if (!artifacts.length) appendItem('error', '本次运行没有文件变更。');
-      else {
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(0);
-        setChangePatch('');
-        setChangePatchOffset(0);
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
-      }
+      else openChangeReview(artifacts, changeDetailIndexRef.current);
       return;
     }
     if (interactionFocus === 'transcript' && transcriptModeRef.current) {
@@ -5989,6 +6034,7 @@ export function App({
   });
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
+  const changeArtifacts = changeReviewArtifacts(runProjection.artifacts);
   const permissionColor = permissionMode === 'full_access'
     ? ERROR
     : permissionMode === 'auto_edit'
@@ -6021,7 +6067,7 @@ export function App({
     question: `↑↓选择 · Enter确认${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     approval: `←→选择 · Enter确认 · Esc拒绝${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     recovery: '←→选择 · Enter执行 · Esc返回输入',
-    changes: '↑↓选择 · Enter查看 · D撤销 · Esc返回',
+    changes: '↑↓切换并加载 · Enter刷新 · D撤销 · Esc返回',
     toolDetail: '↑↓选择 · Tab切换 · Esc返回',
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
@@ -6172,12 +6218,13 @@ export function App({
         />
       ) : changeDetailOpen ? (
         <ChangeDetailPanel
-          artifacts={runProjection.artifacts || []}
+          artifacts={changeArtifacts}
           selected={changeDetailIndex}
           patch={changePatch}
           offset={changePatchOffset}
           loading={changeLoading}
           confirming={changeConfirming}
+          reviewed={reviewedChangeIds}
         />
       ) : toolDetailOpen ? (
         detailTab === 'references' ? (

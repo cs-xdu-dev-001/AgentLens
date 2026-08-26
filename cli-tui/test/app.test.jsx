@@ -10,6 +10,8 @@ import {
   activeTaskAnchorMetrics,
   App,
   buildTuiDiagnosticReport,
+  changeReviewArtifacts,
+  changeReviewKey,
   compactWorkspaceStatus,
   compactSessionHeaderLabel,
   expandPastedTextRefs,
@@ -123,6 +125,20 @@ test('workspace status keeps branch and dirty state visible without exposing the
     workspaceGitSummary({branch: 'main', dirty: true, changedFiles: 2}).detail,
     'main · 未设置上游分支 · 2个文件已修改',
   );
+});
+
+test('change review only includes reversible workspace files and keeps stable identities', () => {
+  const changes = changeReviewArtifacts([
+    {artifactId: 'file:a', path: 'src/a.py', diffAvailable: true},
+    {operationId: 'edit-b', path: 'src/b.py'},
+    {artifactId: 'reference:web', url: 'https://example.com'},
+    {artifactId: 'file:no-diff', path: 'README.md'},
+  ]);
+
+  assert.deepEqual(changes.map(change => change.path), ['src/a.py', 'src/b.py']);
+  assert.equal(changeReviewKey(changes[0], 0), 'file:a');
+  assert.equal(changeReviewKey(changes[1], 1), 'edit-b');
+  assert.equal(changeReviewKey({path: 'src/c.py'}, 2), 'src/c.py');
 });
 
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {
@@ -2105,21 +2121,13 @@ test('Ink app renders a live task summary and collapses it after completion', as
   view.stdin.write('\u001b');
   await tick();
   view.stdin.write('\u0007');
-  await tick();
-  assert.match(view.lastFrame(), /文件变更/);
-  view.stdin.write('\u001b[B');
-  await tick();
-  view.stdin.write('\u001b[B');
-  await tick();
-  view.stdin.write('\r');
-  await tick();
-  assert.match(view.lastFrame(), /按Enter查看diff/);
-  view.stdin.write('\r');
-  await tick();
+  await waitForFrame(view, /文件变更[\s\S]*已查看 1\/1/);
+  assert.match(view.lastFrame(), /正在读取差异/);
   assert.deepEqual(client.sent.at(-1), {
     type: 'workspace',
     action: 'diff',
     path: 'reports/report.md',
+    requestId: 'change-diff-1',
   });
   client.emit('message', {
     type: 'workspace_result',
@@ -2281,6 +2289,7 @@ test('/diff and /undo reuse the interactive change panel before mutating files',
     type: 'workspace',
     action: 'diff',
     path: 'reports/final.md',
+    requestId: 'change-diff-1',
   });
   client.emit('message', {
     type: 'workspace_result',

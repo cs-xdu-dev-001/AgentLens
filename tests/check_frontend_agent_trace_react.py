@@ -1351,6 +1351,51 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentArtifactList.jsx",
+        'strong>{"变更审阅"}</strong>',
+        "sequential change review entry",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "reviewedIds",
+        "change review progress state",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'event.key === "ArrowLeft"',
+        "previous change keyboard navigation",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'event.key === "ArrowRight"',
+        "next change keyboard navigation",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'aria-keyshortcuts={"ArrowLeft ArrowRight Escape"}',
+        "change review keyboard contract",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "if (diffRequestRef.current !== requestId) return;",
+        "stale diff responses cannot replace the active review",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "disabled={loadingId === identifier}",
+        "undo requests cannot be submitted twice",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-artifact-review-toolbar",
+        "change review styles live in the authoritative stylesheet",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-artifact-review-nav button:disabled",
+        "change review navigation exposes disabled controls",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
         "publishReactAgentArtifactsUpdated",
         "artifact undo broadcasts its final state",
     )

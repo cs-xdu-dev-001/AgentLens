@@ -528,6 +528,16 @@ def main() -> None:
     ready_bridge.handle({"type": "workspace", "action": "status"})
     workspace_rows = wait_for(ready_output, "workspace_result")
     assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace"
+    ready_bridge.handle(
+        {
+            "type": "workspace",
+            "action": "diff",
+            "path": "reports/report.md",
+            "requestId": "change-diff-1",
+        }
+    )
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert workspace_rows[-1]["requestId"] == "change-diff-1"
     initial_history_path = ready_bridge.history_store.path
     ready_bridge._running = True
     ready_bridge.handle(
