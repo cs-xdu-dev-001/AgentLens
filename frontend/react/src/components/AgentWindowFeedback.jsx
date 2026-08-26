@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AGENT_NOTIFICATION_PREFERENCE_EVENT,
+  agentNotificationPreference,
   buildAgentDiagnosticReport,
   agentWindowFaviconDataUrl,
   agentWindowFeedback,
@@ -21,10 +23,12 @@ export function AgentWindowFeedback() {
     const originalTitle = document.title || "AgentLens";
     const favicon = findFavicon();
     const originalFavicon = favicon?.getAttribute("href") || "/favicon.svg";
+    let notificationEnabled = agentNotificationPreference().enabled;
 
     const publishNotification = (feedback) => {
       if (
         !feedback.notification
+        || !notificationEnabled
         || typeof window.Notification !== "function"
         || window.Notification.permission !== "granted"
       ) return;
@@ -65,6 +69,9 @@ export function AgentWindowFeedback() {
           : next,
       );
     };
+    const handleNotificationPreference = (event) => {
+      notificationEnabled = Boolean(event.detail?.enabled);
+    };
     const handleDiagnosticCopy = async () => {
       const report = buildAgentDiagnosticReport(runRef.current);
       try {
@@ -87,11 +94,13 @@ export function AgentWindowFeedback() {
     };
 
     window.addEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+    window.addEventListener(AGENT_NOTIFICATION_PREFERENCE_EVENT, handleNotificationPreference);
     window.addEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
     window.addEventListener("focus", acknowledgeTerminalState);
     document.addEventListener("visibilitychange", acknowledgeTerminalState);
     return () => {
       window.removeEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+      window.removeEventListener(AGENT_NOTIFICATION_PREFERENCE_EVENT, handleNotificationPreference);
       window.removeEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
       window.removeEventListener("focus", acknowledgeTerminalState);
       document.removeEventListener("visibilitychange", acknowledgeTerminalState);

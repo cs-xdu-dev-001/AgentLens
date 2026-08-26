@@ -11,6 +11,13 @@ function envDisabled(value) {
   return ['0', 'false', 'no', 'off'].includes(String(value ?? '').trim().toLowerCase());
 }
 
+export function terminalNotificationsEnabled(environment = process.env) {
+  if (Object.hasOwn(environment, 'AGENTLENS_CLI_TERMINAL_NOTIFICATIONS')) {
+    return !envDisabled(environment.AGENTLENS_CLI_TERMINAL_NOTIFICATIONS);
+  }
+  return !envDisabled(environment.KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS);
+}
+
 export function sanitizeTerminalTitle(value) {
   return stripAnsi(String(value ?? ''))
     .replace(/[\u0000-\u001f\u007f-\u009f]/gu, '')
@@ -190,6 +197,7 @@ export function useTerminalFeedback({
   runStatus,
   lastInteractionAtRef,
   contextLabel,
+  notificationsEnabled,
 }) {
   const {stdout} = useStdout();
   const previousRef = useRef('');
@@ -214,7 +222,7 @@ export function useTerminalFeedback({
 
     if (
       process.env.NODE_ENV !== 'test'
-      && !envDisabled(process.env.KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS)
+      && (notificationsEnabled ?? terminalNotificationsEnabled(process.env))
       && shouldNotifyTerminalTransition({
         previousKind: previousKindRef.current,
         nextKind: feedback.kind,
@@ -229,7 +237,7 @@ export function useTerminalFeedback({
     previousKindRef.current = feedback.kind;
 
     return undefined;
-  }, [connecting, contextLabel, failed, lastInteractionAtRef, progressPercent, ready, runStatus, running, stdout, waiting]);
+  }, [connecting, contextLabel, failed, lastInteractionAtRef, notificationsEnabled, progressPercent, ready, runStatus, running, stdout, waiting]);
 
   useEffect(() => () => {
     if (!stdout?.isTTY || String(process.env.TERM || '').toLowerCase() === 'dumb') return;

@@ -42,6 +42,7 @@ import {
 import {
   terminalClipboardSequence,
   terminalCopySelection,
+  terminalNotificationsEnabled,
   useTerminalFeedback,
 } from './terminalFeedback.js';
 import {
@@ -2612,6 +2613,7 @@ export function App({
   const transcriptModeRef = useRef(false);
   const [transcriptSnapshot, setTranscriptSnapshot] = useState(null);
   const [running, setRunning] = useState(false);
+  const [terminalNotifications, setTerminalNotifications] = useState(() => terminalNotificationsEnabled());
   const [updating, setUpdating] = useState(false);
   const [restartRequired, setRestartRequired] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
@@ -2688,6 +2690,7 @@ export function App({
     runStatus: runProjection.runSummary?.status,
     lastInteractionAtRef: lastTerminalInteractionAtRef,
     contextLabel: workspace ? workspaceDiagnosticName(workspace) : '',
+    notificationsEnabled: terminalNotifications,
   });
   useEffect(() => {
     waitingInteractionsRef.current = waitingInteractions;
@@ -4867,6 +4870,19 @@ export function App({
         'assistant',
         `${report}\n\n${stdout?.isTTY ? '已发送终端剪贴板请求；若未生效，请选择上方内容复制。' : '当前终端不支持自动复制，请选择上方内容复制。'}`,
       );
+    } else if (command.value === '/notifications') {
+      const action = args.trim().toLowerCase() || 'status';
+      if (action === 'on') {
+        setTerminalNotifications(true);
+        appendItem('assistant', '终端任务提醒已开启（仅本次会话）。');
+      } else if (action === 'off') {
+        setTerminalNotifications(false);
+        appendItem('assistant', '终端任务提醒已关闭（仅本次会话）。');
+      } else if (action === 'status') {
+        appendItem('assistant', `终端任务提醒：${terminalNotifications ? '已开启' : '已关闭'}。用/notifications on或/notifications off切换。`);
+      } else {
+        appendItem('error', '用法：/notifications [on|off|status]');
+      }
     } else if (command.value === '/update') {
       if (running || approval || question) {
         appendItem('error', '请等待当前任务和确认操作结束后再更新CLI。');
@@ -5010,7 +5026,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, terminalNotifications, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];

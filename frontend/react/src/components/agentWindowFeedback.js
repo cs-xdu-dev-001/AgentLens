@@ -7,6 +7,8 @@ const RUNNING_STATUSES = new Set(["planning", "running"]);
 const WAITING_STATUSES = new Set(["waiting", "waiting_approval", "waiting_input", "paused"]);
 const COMPLETED_STATUSES = new Set(["completed", "success", "succeeded"]);
 const FAILED_STATUSES = new Set(["failed", "error"]);
+export const AGENT_NOTIFICATION_PREFERENCE_EVENT = "agentlens:notification-preference-updated";
+export const AGENT_NOTIFICATION_STORAGE_KEY = "agentlens.notifications";
 
 const FEEDBACK = {
   idle: {
@@ -133,6 +135,45 @@ export function shouldNotifyAgentWindow(previous, next, {
   if (!["waiting", "completed", "failed"].includes(next?.state)) return false;
   if (previous?.state === next.state && previous?.runId === next.runId) return false;
   return visibilityState === "hidden" || !hasFocus;
+}
+
+export function agentNotificationPreference({
+  notificationApi,
+  storage,
+} = {}) {
+  let resolvedNotificationApi = notificationApi;
+  let resolvedStorage = storage;
+  try {
+    if (resolvedNotificationApi === undefined) resolvedNotificationApi = globalThis.Notification;
+    if (resolvedStorage === undefined) resolvedStorage = globalThis.localStorage;
+  } catch {
+    // Browser privacy modes can throw while reading global storage properties.
+  }
+  if (!resolvedNotificationApi || typeof resolvedNotificationApi.requestPermission !== "function") {
+    return { enabled: false, state: "unsupported" };
+  }
+  const permission = String(resolvedNotificationApi.permission || "default");
+  if (permission === "denied") return { enabled: false, state: "blocked" };
+  let stored = "";
+  try {
+    stored = String(resolvedStorage?.getItem?.(AGENT_NOTIFICATION_STORAGE_KEY) || "");
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+  if (stored === "disabled") return { enabled: false, state: "disabled" };
+  if (permission === "granted") return { enabled: true, state: "enabled" };
+  return { enabled: false, state: "disabled" };
+}
+
+export function saveAgentNotificationPreference(enabled, storage) {
+  let resolvedStorage = storage;
+  try {
+    if (resolvedStorage === undefined) resolvedStorage = globalThis.localStorage;
+    resolvedStorage?.setItem?.(AGENT_NOTIFICATION_STORAGE_KEY, enabled ? "enabled" : "disabled");
+  } catch {
+    // The in-memory preference still applies to the current page.
+  }
+  return Boolean(enabled);
 }
 
 export function agentWindowFaviconDataUrl(state) {

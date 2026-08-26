@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
+import { AgentNotificationToggle } from "./AgentNotificationToggle.jsx";
 import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 
 
@@ -153,6 +154,7 @@ export function ChatTopbar({ drawerCollapsed = true }) {
         {switching ? <span className={"chat-session-switching"} role={"status"}>{"打开中"}</span> : null}
       </div>
       <div className={"chat-topbar-actions"}>
+        <AgentNotificationToggle />
         <button
           className={`chat-workspace-toggle is-${workspaceHeader.state}`}
           type={"button"}

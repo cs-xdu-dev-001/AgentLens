@@ -143,6 +143,8 @@ test('aliases resolve to canonical commands', () => {
   assert.equal(resolveCommand('/attach README.md', commands).command.category, '工作区');
   assert.equal(resolveCommand('/detach all', commands).command.value, '/detach');
   assert.equal(resolveCommand('/version', commands).command.category, '帮助');
+  assert.equal(resolveCommand('/notifications on', commands).command.value, '/notifications');
+  assert.equal(commandArgumentHint('/notifications ', commands), '[on | off | status]');
 });
 
 test('commands expose argument guidance only after selecting the command', () => {

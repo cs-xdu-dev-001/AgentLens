@@ -40,6 +40,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/memory:configure', description: '查看Mem0配置方法', source: 'builtin', category: '扩展'},
   {value: '/doctor', description: '检查SRT沙箱依赖', source: 'builtin', category: '安全'},
   {value: '/feedback', description: '复制不含对话和凭据的诊断摘要', source: 'builtin', category: '帮助', aliases: ['/bug']},
+  {value: '/notifications', description: '查看或切换终端任务提醒', source: 'builtin', category: '帮助', argumentHint: '[on | off | status]'},
   {value: '/update', description: '在TUI内更新AgentLens CLI', source: 'builtin', category: '帮助'},
   {value: '/version', description: '查看CLI与运行协议版本', source: 'builtin', category: '帮助'},
   {value: '/tasks', description: '查看和调整排队任务', source: 'builtin', category: '运行', argumentHint: '[list | add <now|next|later> <任务> | remove <序号> | priority <序号> <级别> | clear]'},

@@ -59,6 +59,7 @@ import {
   terminalClipboardSequence,
   terminalCopySelection,
   terminalNotificationSequence,
+  terminalNotificationsEnabled,
   terminalProgressSequence,
   terminalTitleSequence,
 } from '../src/terminalFeedback.js';
@@ -366,6 +367,9 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'ghostty', TERM_PROGRAM_VERSION: '1.2.0'}), true);
   assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.6.5'}), false);
   assert.equal(terminalNotificationSequence({}, {}).charCodeAt(0), 7);
+  assert.equal(terminalNotificationsEnabled({}), true);
+  assert.equal(terminalNotificationsEnabled({KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS: '0'}), false);
+  assert.equal(terminalNotificationsEnabled({KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS: '0', AGENTLENS_CLI_TERMINAL_NOTIFICATIONS: '1'}), true);
   assert.equal(shouldNotifyTerminalTransition({
     previousKind: 'running', nextKind: 'idle', runStatus: 'completed', lastInteractionAt: 1000, now: 8000,
   }), true);
@@ -2671,6 +2675,23 @@ test('/bug copies a redacted local diagnostic without sending a model request', 
   assert.match(frame, /客户端: CLI 0.22.0/);
   assert.match(frame, /隐私: 已排除对话正文、工具输入输出、完整路径和凭据/);
   assert.match(frame, /已发送终端剪贴板请求|当前终端不支持自动复制/);
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  view.unmount();
+});
+
+test('/notifications controls terminal attention feedback without sending a model request', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.5" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('/notifications off');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒已关闭（仅本次会话）/);
+  view.stdin.write('/notifications status');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒：已关闭/);
+  view.stdin.write('/notifications on');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒已开启（仅本次会话）/);
   assert.equal(client.sent.some(message => message.type === 'submit'), false);
   view.unmount();
 });

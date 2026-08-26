@@ -1,6 +1,6 @@
 {
   "name": "@knowflow-ai/tui",
-  "version": "0.64.4",
+  "version": "0.64.5",
   "private": true,
   "type": "module",
   "engines": {
