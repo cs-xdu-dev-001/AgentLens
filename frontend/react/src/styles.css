@@ -13573,6 +13573,95 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   outline-offset: 2px;
 }
 
+.composer-follow-up {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 4px;
+  margin: 0 5px 5px;
+  color: var(--muted);
+}
+
+.composer-follow-up-accept,
+.composer-follow-up-dismiss {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-follow-up-accept {
+  min-width: 0;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 7px;
+  border-radius: 9px;
+  text-align: start;
+}
+
+.composer-follow-up-accept:hover,
+.composer-follow-up-accept:focus-visible,
+.composer-follow-up-dismiss:hover,
+.composer-follow-up-dismiss:focus-visible {
+  background: var(--control-bg-hover);
+  color: var(--text);
+}
+
+.composer-follow-up-accept:focus-visible,
+.composer-follow-up-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer-follow-up-label {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.composer-follow-up-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary, var(--text));
+  font-size: 14px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-follow-up kbd {
+  min-width: 30px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--control-bg);
+  color: var(--muted);
+  font: 600 11px/1.5 var(--font-ui);
+  text-align: center;
+}
+
+.composer-follow-up-dismiss {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.composer-follow-up-dismiss svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+}
+
 @keyframes composer-agent-pulse {
   0%, 100% {
     opacity: 0.45;
@@ -13710,6 +13799,18 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .composer-agent-state > button {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .composer-follow-up {
+    margin-inline: 2px;
+  }
+
+  .composer-follow-up-accept {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .composer-follow-up kbd {
+    display: none;
   }
 
   #chat-form.composer .composer-queue {

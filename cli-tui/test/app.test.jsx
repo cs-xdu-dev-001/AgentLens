@@ -317,7 +317,8 @@ test('Tab accepts the next prompt suggestion without submitting it immediately',
     },
   });
   client.emit('message', {type: 'turn_completed', runId: 'run-follow-up', answer: '修改完成'});
-  await waitForFrame(view, /检查本次改动并运行相关验证 · Tab采纳/);
+  await waitForFrame(view, /下一步\s+检查本次改动并运行相关验证/);
+  assert.match(view.lastFrame(), /Tab采纳 · Esc忽略/);
 
   view.stdin.write('\t');
   await waitForFrame(view, /已采纳建议，可继续编辑后发送/);

@@ -44,11 +44,16 @@ for needle in (
     'lastEmptyEscapeAtRef',
     'handleQuickRewindEscape',
     'notifyCommandUnavailable("再按一次Esc，从最近问题创建新分支")',
+    'className={"composer-follow-up"}',
+    'acceptFollowUpSuggestion',
+    'dismissFollowUpSuggestion',
+    'aria-label={"忽略下一步建议"}',
 ):
     assert needle in composer, f"missing composer recovery bridge: {needle}"
 
 assert 'data-message-action="${action}"' in messages
 assert 'knowflow:react-message-command' in messages
+assert '["copy", "edit", "retry", "rewind"]' in messages
 assert 'knowflow:react-agent-artifacts-open' in drawer
 
 for needle in (

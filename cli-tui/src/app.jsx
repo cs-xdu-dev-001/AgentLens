@@ -6453,6 +6453,15 @@ export function App({
             </Box>
           ) : null}
           {!question ? <WorkspaceGuard workspace={workspace} /> : null}
+          {!question && followUpSuggestion ? (
+            <Box paddingX={1} justifyContent="space-between" flexShrink={0}>
+              <Text>
+                <Text color={MUTED}>下一步  </Text>
+                <Text color={PRIMARY}>{followUpSuggestion}</Text>
+              </Text>
+              {!narrow ? <Text color={MUTED}>Tab采纳 · Esc忽略</Text> : null}
+            </Box>
+          ) : null}
           {!question && !localConfigOpen ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || rewindPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
@@ -6466,9 +6475,7 @@ export function App({
                       ? '先指定项目目录，/仍可用'
                       : (running
                         ? '继续输入可加入队列'
-                        : (followUpSuggestion
-                          ? `${followUpSuggestion} · Tab采纳`
-                          : '输入任务，/查看命令'))))
+                        : '输入任务，/查看命令')))
                   : `${INTERACTION_FOCUS_LABELS[interactionFocus]}正在接收按键`}
               />
             </Box>

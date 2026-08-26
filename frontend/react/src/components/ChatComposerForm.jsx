@@ -434,6 +434,35 @@ export function ChatComposerForm() {
     return () => window.removeEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
   }, []);
 
+  const followUpSuggestionKey = `${agentState.runId}:${agentState.suggestedPrompt}`;
+  const followUpSuggestion = !sending
+    && !switchingSession
+    && !question
+    && agentState.suggestedPrompt
+    && dismissedFollowUpKey !== followUpSuggestionKey
+      ? agentState.suggestedPrompt
+      : "";
+
+  const dismissFollowUpSuggestion = () => {
+    if (!followUpSuggestion) return;
+    setDismissedFollowUpKey(followUpSuggestionKey);
+  };
+
+  const acceptFollowUpSuggestion = () => {
+    if (!followUpSuggestion) return;
+    setDismissedFollowUpKey(followUpSuggestionKey);
+    setQuestion(followUpSuggestion);
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(followUpSuggestion.length, followUpSuggestion.length);
+      resizeTextarea(textarea);
+    });
+  };
+
   const handleComposerMenuToggle = (event) => {
     event.stopPropagation();
     setMenuOpen((current) => !current);
@@ -741,15 +770,18 @@ export function ChatComposerForm() {
       && followUpSuggestion
     ) {
       event.preventDefault();
-      setDismissedFollowUpKey(followUpSuggestionKey);
-      setQuestion(followUpSuggestion);
-      window.requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        textarea.setSelectionRange(followUpSuggestion.length, followUpSuggestion.length);
-        resizeTextarea(textarea);
-      });
+      acceptFollowUpSuggestion();
+      return;
+    }
+    if (
+      event.key === "Escape"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && followUpSuggestion
+    ) {
+      event.preventDefault();
+      dismissFollowUpSuggestion();
       return;
     }
     if (
@@ -1092,15 +1124,6 @@ export function ChatComposerForm() {
             actionable: false,
           }
         : idleAgentState;
-  const followUpSuggestionKey = `${agentState.runId}:${agentState.suggestedPrompt}`;
-  const followUpSuggestion = !sending
-    && !switchingSession
-    && !question
-    && agentState.suggestedPrompt
-    && dismissedFollowUpKey !== followUpSuggestionKey
-      ? agentState.suggestedPrompt
-      : "";
-
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
       {commandHelpOpen ? (
@@ -1247,6 +1270,31 @@ export function ChatComposerForm() {
               {visibleAgentState.mode === "failed" ? "查看恢复操作" : "查看并处理"}
             </button>
           ) : null}
+        </div>
+      ) : null}
+      {followUpSuggestion ? (
+        <div className={"composer-follow-up"} role={"status"} aria-live={"polite"}>
+          <button
+            className={"composer-follow-up-accept"}
+            type={"button"}
+            title={"放入输入框继续编辑"}
+            onClick={acceptFollowUpSuggestion}
+          >
+            <span className={"composer-follow-up-label"}>{"下一步"}</span>
+            <span className={"composer-follow-up-text"}>{followUpSuggestion}</span>
+            <kbd>{"Tab"}</kbd>
+          </button>
+          <button
+            className={"composer-follow-up-dismiss"}
+            type={"button"}
+            aria-label={"忽略下一步建议"}
+            title={"忽略建议（Esc）"}
+            onClick={dismissFollowUpSuggestion}
+          >
+            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M5 5l10 10M15 5 5 15"}></path>
+            </svg>
+          </button>
         </div>
       ) : null}
       <div className={"composer-shell"}>

@@ -725,7 +725,7 @@ export function ChatMessages() {
     const handleMessageCommand = (event) => {
       const detail = event.detail || {};
       const action = String(detail.action || "");
-      if (!["copy", "edit", "rewind"].includes(action)) return;
+      if (!["copy", "edit", "retry", "rewind"].includes(action)) return;
       const buttons = Array.from(
         messagesNode.querySelectorAll(`[data-message-action="${action}"]`),
       ).filter((button) => !button.disabled);
