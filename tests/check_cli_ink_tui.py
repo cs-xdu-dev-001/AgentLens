@@ -17,7 +17,11 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.services.agent_execution import AgentExecution  # noqa: E402
 from knowflow.services.agent_event_protocol import AGENT_EVENT_SCHEMA_VERSION  # noqa: E402
 from knowflow.tui.backend import question_with_workspace_attachments  # noqa: E402
-from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: E402
+from knowflow.tui.ink_bridge import (  # noqa: E402
+    PROTOCOL_VERSION,
+    InkRuntimeBridge,
+    _history_scope,
+)
 from knowflow.tui import ink_launcher  # noqa: E402
 
 
@@ -386,6 +390,14 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 def main() -> None:
     check_launcher_single_run()
+    remote_a = SimpleNamespace(
+        remote_client=SimpleNamespace(server="https://agent.example", token="session-a")
+    )
+    remote_b = SimpleNamespace(
+        remote_client=SimpleNamespace(server="https://agent.example", token="session-b")
+    )
+    assert _history_scope(remote_a) != _history_scope(remote_b)
+    assert "session-a" not in _history_scope(remote_a)
     history_root = ROOT / ".tmp-check-cli-ink-history"
     os.environ["XDG_DATA_HOME"] = str(history_root)
     if history_root.exists():
@@ -478,6 +490,60 @@ def main() -> None:
     assert ready["sessions"][0]["runId"] == "run_ink"
     assert ready["history"] == ["你好", "!echo sandbox-ok"]
     assert ready["models"][0]["selected"] is True
+    assert ready["queueDurable"] is True
+
+    queued_item = {
+        "id": "queue-bridge",
+        "text": "检查队列恢复",
+        "displayText": "检查队列恢复",
+        "priority": "next",
+        "sequence": 1,
+        "mode": "prompt",
+        "reasoningEffort": "high",
+        "permissionMode": "ask",
+        "attachmentPaths": [],
+    }
+    ready_bridge.handle(
+        {"type": "queue", "action": "sync", "items": [queued_item], "paused": True}
+    )
+    queue_rows = wait_for(ready_output, "queue_saved")
+    assert queue_rows[-1]["count"] == 1
+    ready_bridge.handle(
+        {
+            "type": "queue",
+            "action": "claim",
+            "itemId": "queue-bridge",
+            "requestId": "turn-queue",
+            "item": queued_item,
+        }
+    )
+    queue_rows = wait_for(ready_output, "queue_claimed")
+    assert queue_rows[-1]["requestId"] == "turn-queue"
+    assert ready_bridge.queue_store.load()["items"][0]["lifecycle"] == "started"
+    restart_output = StringIO()
+    restart_bridge = InkRuntimeBridge(
+        backend,
+        input_stream=StringIO(""),
+        output_stream=restart_output,
+    )
+    restart_bridge.run()
+    restart_ready = json.loads(restart_output.getvalue().splitlines()[1])
+    assert restart_ready["queueRecovered"] == 1
+    assert restart_ready["queuePaused"] is True
+    assert restart_ready["queueDurable"] is True
+    assert restart_ready["queue"][0]["lifecycle"] == "queued"
+    assert ready_bridge.queue_store.sync([], paused=False)
+    original_queue_sync = ready_bridge.queue_store.sync
+    try:
+        ready_bridge.queue_store.sync = lambda _items, paused: False
+        ready_bridge.handle(
+            {"type": "queue", "action": "sync", "items": [queued_item], "paused": False}
+        )
+        queue_rows = wait_for(ready_output, "queue_failed")
+    finally:
+        ready_bridge.queue_store.sync = original_queue_sync
+    assert queue_rows[-1]["action"] == "sync"
+    assert "仅在本次运行" in queue_rows[-1]["message"]
 
     ready_bridge.handle({"type": "models", "action": "list"})
     model_rows = wait_for(ready_output, "model_list")

@@ -4,7 +4,7 @@ import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 import parseDiff from 'parse-diff';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 export const AGENT_EVENT_SCHEMA_VERSION = 1;
 
 export function buildDiffPresentation(value) {

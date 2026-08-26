@@ -788,13 +788,14 @@ function formatTaskElapsed(milliseconds) {
 
 function useTaskClock(active, refreshKey = '') {
   const [now, setNow] = useState(() => Date.now());
+  const refreshedAt = useMemo(() => Date.now(), [refreshKey]);
   useEffect(() => {
     setNow(Date.now());
     if (!active) return undefined;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [active, refreshKey]);
-  return now;
+  return Math.max(now, refreshedAt);
 }
 
 export function runActivityPresentation({
@@ -1013,7 +1014,7 @@ function ActivityDetails({row, compact = false}) {
   );
 }
 
-function QueuePreview({items, paused, hidden = false}) {
+function QueuePreview({items, paused, durable, hidden = false}) {
   if (hidden) return null;
   if (!items.length) return null;
   const ordered = orderedQueue(items);
@@ -1021,7 +1022,7 @@ function QueuePreview({items, paused, hidden = false}) {
     <Box flexDirection="column" marginTop={1} paddingLeft={1} borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} borderColor={paused ? WARNING : ACCENT}>
       <Box justifyContent="space-between">
         <Text color={paused ? WARNING : PRIMARY}>{paused ? '待发送已暂停' : `接下来 ${items.length}`}</Text>
-        <Text color={MUTED}>Ctrl+T编辑队列</Text>
+        <Text color={durable ? MUTED : WARNING}>{durable ? '已保存 · Ctrl+T编辑' : '仅本次运行 · Ctrl+T编辑'}</Text>
       </Box>
       {ordered.slice(0, 3).map((item, index) => (
         <Text key={`${index}-${queuedPromptText(item)}`} color={MUTED} wrap="truncate-end">
@@ -1036,7 +1037,7 @@ function QueuePreview({items, paused, hidden = false}) {
   );
 }
 
-function QueueManager({items, selected, paused}) {
+function QueueManager({items, selected, paused, durable}) {
   const ordered = orderedQueue(items);
   const visibleCount = Math.min(7, ordered.length || 1);
   const start = Math.max(0, Math.min(selected - 3, Math.max(0, ordered.length - visibleCount)));
@@ -1044,7 +1045,7 @@ function QueueManager({items, selected, paused}) {
     <Box flexDirection="column" marginY={1} paddingLeft={1}>
       <Box justifyContent="space-between">
         <Text color={PRIMARY} bold>任务队列</Text>
-        <Text color={paused ? WARNING : MUTED}>{ordered.length}项 · {paused ? '已暂停' : '自动继续'}</Text>
+        <Text color={paused || !durable ? WARNING : MUTED}>{ordered.length}项 · {paused ? '已暂停' : '自动继续'} · {durable ? '已保存' : '仅本次运行'}</Text>
       </Box>
       {!ordered.length ? <Text color={MUTED}>队列为空，Esc返回输入</Text> : ordered.slice(start, start + visibleCount).map((item, offset) => {
         const index = start + offset;
@@ -2641,6 +2642,10 @@ export function App({
   const [queue, setQueue] = useState([]);
   const queueSequenceRef = useRef(0);
   const [queuePaused, setQueuePaused] = useState(false);
+  const [queueDurable, setQueueDurable] = useState(false);
+  const queueHydratedRef = useRef(false);
+  const queueSyncTimerRef = useRef(null);
+  const queuePersistedKeyRef = useRef('');
   const [queueManagerOpen, setQueueManagerOpen] = useState(false);
   const [queueManagerIndex, setQueueManagerIndex] = useState(0);
   const [lastQuestion, setLastQuestion] = useState('');
@@ -3102,6 +3107,19 @@ export function App({
           setRecentModelIds(current => [String(readyModelId), ...current.filter(id => id !== String(readyModelId))].slice(0, 5));
         }
         setHistory(Array.isArray(message.history) ? message.history : []);
+        const restoredQueue = orderedQueue(Array.isArray(message.queue) ? message.queue : []);
+        setQueue(restoredQueue);
+        setQueuePaused(Boolean(message.queuePaused));
+        setQueueDurable(message.queueDurable !== false);
+        queueSequenceRef.current = restoredQueue.reduce(
+          (maximum, item) => Math.max(maximum, Number(item?.sequence) || 0),
+          0,
+        );
+        queueHydratedRef.current = true;
+        queuePersistedKeyRef.current = JSON.stringify({items: restoredQueue, paused: Boolean(message.queuePaused)});
+        if (Number(message.queueRecovered) > 0) {
+          appendItem('warning', `已恢复${Number(message.queueRecovered)}个异常中断的任务，队列保持暂停，请确认后输入/continue。`);
+        }
         const recoverable = (message.sessions ?? []).some(session => !['completed', 'cancelled'].includes(session.status));
         const warnings = Array.isArray(message.workspace?.warnings) ? message.workspace.warnings.filter(Boolean) : [];
         setPhase(warnings.length ? '请确认工作区' : (recoverable ? '发现未完成会话 · /resume' : '就绪'));
@@ -3256,6 +3274,17 @@ export function App({
           });
           activitiesRef.current = nextActivities;
           setActivities(nextActivities);
+        }
+        return;
+      }
+      if (message.type === 'queue_saved' || message.type === 'queue_claimed') {
+        setQueueDurable(true);
+        return;
+      }
+      if (message.type === 'queue_failed') {
+        setQueueDurable(false);
+        if (message.action !== 'claim') {
+          appendItem('warning', message.message || '待发送任务无法持久保存，仅在本次运行中可用。');
         }
         return;
       }
@@ -3770,13 +3799,25 @@ export function App({
         } else {
           setWorkspace(result);
           if (message.action === 'switch') {
+            if (queueSyncTimerRef.current) {
+              clearTimeout(queueSyncTimerRef.current);
+              queueSyncTimerRef.current = null;
+            }
             lastAssistantAnswerRef.current = '';
             setAttachedPaths([]);
             setSessions(Array.isArray(message.sessions) ? message.sessions : []);
             setHistory(Array.isArray(message.history) ? message.history : []);
             setHistoryIndex(-1);
-            setQueue([]);
-            setQueuePaused(false);
+            const switchedQueue = orderedQueue(Array.isArray(message.queue) ? message.queue : []);
+            setQueue(switchedQueue);
+            setQueuePaused(Boolean(message.queuePaused));
+            setQueueDurable(message.queueDurable !== false);
+            queueSequenceRef.current = switchedQueue.reduce(
+              (maximum, item) => Math.max(maximum, Number(item?.sequence) || 0),
+              0,
+            );
+            queueHydratedRef.current = true;
+            queuePersistedKeyRef.current = JSON.stringify({items: switchedQueue, paused: Boolean(message.queuePaused)});
             setPromptStash(null);
             killBufferRef.current = '';
             composerUndoRef.current = [];
@@ -3880,6 +3921,26 @@ export function App({
   }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, localMode, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
 
   useEffect(() => {
+    if (!ready || !queueHydratedRef.current) return undefined;
+    const snapshotKey = JSON.stringify({items: orderedQueue(queue), paused: queuePaused});
+    if (snapshotKey === queuePersistedKeyRef.current) return undefined;
+    if (queueSyncTimerRef.current) clearTimeout(queueSyncTimerRef.current);
+    queueSyncTimerRef.current = setTimeout(() => {
+      const sent = client.send({
+        type: 'queue',
+        action: 'sync',
+        items: orderedQueue(queue),
+        paused: queuePaused,
+      });
+      if (sent) queuePersistedKeyRef.current = snapshotKey;
+      else setQueueDurable(false);
+    }, 80);
+    return () => {
+      if (queueSyncTimerRef.current) clearTimeout(queueSyncTimerRef.current);
+    };
+  }, [client, queue, queuePaused, ready]);
+
+  useEffect(() => {
     if (running || approval || question || queueManagerOpen || queuePaused || !ready || queue.length === 0) return;
     const [next, ...remaining] = orderedQueue(queue);
     const text = queuedPromptText(next);
@@ -3902,6 +3963,7 @@ export function App({
     if (mode === 'prompt' && turnAttachmentPaths.length) {
       message.attachmentPaths = turnAttachmentPaths;
     }
+    client.send({type: 'queue', action: 'claim', itemId: next.id, requestId, item: next});
     if (!client.send(message)) {
       setQueue(orderedQueue(queue));
       setQueuePaused(true);
@@ -4194,6 +4256,7 @@ export function App({
     const normalizedPriority = Object.hasOwn(QUEUE_PRIORITIES, priority) ? priority : 'next';
     queueSequenceRef.current += 1;
     const item = {
+      id: `queue-${Date.now()}-${queueSequenceRef.current}`,
       text,
       displayText,
       priority: normalizedPriority,
@@ -6302,8 +6365,8 @@ export function App({
     <>
       {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} position={1} total={waitingInteractions.length} /> : null}
       {question ? <QuestionPrompt question={question} selected={questionChoice} custom={questionCustom} position={1} total={waitingInteractions.length} /> : null}
-      {queueManagerOpen ? <QueueManager items={queue} selected={queueManagerIndex} paused={queuePaused} /> : null}
-      <QueuePreview items={queue} paused={queuePaused} hidden={queueManagerOpen} />
+      {queueManagerOpen ? <QueueManager items={queue} selected={queueManagerIndex} paused={queuePaused} durable={queueDurable} /> : null}
+      <QueuePreview items={queue} paused={queuePaused} durable={queueDurable} hidden={queueManagerOpen} />
       <RuntimeStatusLine
         approval={approval}
         cancelPending={cancelPending}

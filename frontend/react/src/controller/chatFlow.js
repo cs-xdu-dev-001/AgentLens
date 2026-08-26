@@ -145,6 +145,64 @@ export function reprioritizeQueuedChatRequest(queue, requestId, priority) {
   )));
 }
 
+const CHAT_QUEUE_STORAGE_PREFIX = "agentlens.chatQueue.v1";
+
+function browserSessionStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+export function chatQueueStorageKey(user) {
+  const identity = user?.id ?? user?.username ?? user?.email;
+  if (identity === undefined || identity === null || String(identity).trim() === "") {
+    return "";
+  }
+  return `${CHAT_QUEUE_STORAGE_PREFIX}:${encodeURIComponent(String(identity).slice(0, 240))}`;
+}
+
+export function normalizeStoredChatQueue(snapshot) {
+  const rawItems = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const items = [];
+  const seen = new Set();
+  for (const raw of rawItems) {
+    const id = String(raw?.id || "").slice(0, 100);
+    const question = String(raw?.question || "").replace(/\0/g, "").trim().slice(0, 10_000);
+    if (!id || !question || seen.has(id) || raw?.attachments?.length) continue;
+    seen.add(id);
+    items.push({
+      id,
+      question,
+      priority: queuedChatPriority(raw),
+      sequence: Math.max(0, Number(raw?.sequence) || 0),
+      skillId: raw?.skillId ?? null,
+      knowledgeBaseId: raw?.knowledgeBaseId ?? null,
+      chatModelConfigId: raw?.chatModelConfigId ?? null,
+      reasoningEffort: String(raw?.reasoningEffort || "default").slice(0, 40),
+      permissionMode: String(raw?.permissionMode || "ask").slice(0, 40),
+      attachments: [],
+    });
+    if (items.length >= 20) break;
+  }
+  return {
+    version: 1,
+    items: orderQueuedChatRequests(items),
+    paused: Boolean(snapshot?.paused),
+    blockedReason: String(snapshot?.blockedReason || "").slice(0, 40),
+  };
+}
+
+export function durableChatQueueItems(queue) {
+  return normalizeStoredChatQueue({
+    items: (Array.isArray(queue) ? queue : []).filter(
+      (item) => !item?.attachments?.length,
+    ),
+  }).items;
+}
+
 function queueBlockReasonFromProjection(projection) {
   const waitingQuestion = (projection?.questions || []).some(
     (item) => !item?.answered && (
@@ -433,7 +491,35 @@ export function createChatFlow({
     ));
   }
 
-  function notifyChatQueue() {
+  function persistChatQueue() {
+    const key = chatQueueStorageKey(state.currentUser);
+    const storage = browserSessionStorage();
+    if (!key || !storage) {
+      state.chatQueueDurable = false;
+      return false;
+    }
+    try {
+      const durableItems = durableChatQueueItems(state.chatQueue);
+      if (!durableItems.length) {
+        storage.removeItem(key);
+      } else {
+        storage.setItem(key, JSON.stringify({
+          version: 1,
+          items: durableItems,
+          paused: state.chatQueuePaused,
+          blockedReason: state.chatQueueBlockReason,
+        }));
+      }
+      state.chatQueueDurable = durableItems.length === state.chatQueue.length;
+      return state.chatQueueDurable;
+    } catch {
+      state.chatQueueDurable = false;
+      return false;
+    }
+  }
+
+  function notifyChatQueue({ persist = true } = {}) {
+    if (persist) persistChatQueue();
     window.dispatchEvent(new CustomEvent("knowflow:react-chat-queue-updated", {
       detail: {
         items: orderQueuedChatRequests(state.chatQueue).map(
@@ -446,8 +532,49 @@ export function createChatFlow({
         ),
         paused: Boolean(state.chatQueuePaused),
         blockedReason: state.chatQueueBlockReason || "",
+        durable: Boolean(state.chatQueueDurable),
       },
     }));
+  }
+
+  function restoreQueuedChats() {
+    const key = chatQueueStorageKey(state.currentUser);
+    const storage = browserSessionStorage();
+    if (!key || !storage) {
+      state.chatQueueDurable = false;
+      notifyChatQueue({ persist: false });
+      return 0;
+    }
+    let snapshot;
+    try {
+      const raw = storage.getItem(key);
+      snapshot = raw ? normalizeStoredChatQueue(JSON.parse(raw)) : normalizeStoredChatQueue({});
+      if (raw) {
+        if (snapshot.items.length) storage.setItem(key, JSON.stringify(snapshot));
+        else storage.removeItem(key);
+      }
+      state.chatQueueDurable = true;
+    } catch {
+      try {
+        storage.removeItem(key);
+      } catch {
+        // Storage can become unavailable between reads (for example, privacy mode).
+      }
+      snapshot = normalizeStoredChatQueue({});
+      state.chatQueueDurable = false;
+    }
+    state.chatQueue = snapshot.items;
+    state.chatQueueSequence = snapshot.items.reduce(
+      (maximum, item) => Math.max(maximum, Number(item.sequence) || 0),
+      0,
+    );
+    state.chatQueuePaused = Boolean(snapshot.items.length);
+    state.chatQueueBlockReason = snapshot.items.length ? "restored" : "";
+    notifyChatQueue({ persist: false });
+    if (snapshot.items.length) {
+      toast(`已恢复${snapshot.items.length}条待发送任务，确认后继续发送`);
+    }
+    return snapshot.items.length;
   }
 
   function clearComposerDraft() {
@@ -586,11 +713,11 @@ export function createChatFlow({
     return true;
   }
 
-  function clearQueuedChats() {
+  function clearQueuedChats({ preserveStored = false } = {}) {
     state.chatQueue = [];
     state.chatQueuePaused = false;
     state.chatQueueBlockReason = "";
-    notifyChatQueue();
+    notifyChatQueue({ persist: !preserveStored });
   }
 
   function resumeQueuedChats() {
@@ -1567,6 +1694,7 @@ export function createChatFlow({
     retrieveQueuedChat,
     reprioritizeQueuedChat,
     resumeQueuedChats,
+    restoreQueuedChats,
     retryAnswer,
     startNewChat,
     stopChatGeneration,

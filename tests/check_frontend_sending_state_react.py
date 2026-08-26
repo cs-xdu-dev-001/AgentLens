@@ -39,6 +39,9 @@ def main() -> None:
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-chat-queue-action", "chat queue action bridge")
     require("frontend/react/src/controller/chatFlow.js", "retrieveQueuedChat", "queue draft retrieval")
     require("frontend/react/src/controller/chatFlow.js", "已取回待发送任务", "queue retrieval feedback")
+    require("frontend/react/src/controller/chatFlow.js", "sessionStorage", "tab-scoped persistent queue")
+    require("frontend/react/src/controller/chatFlow.js", "restoreQueuedChats", "queue recovery")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "queueStorageLabel", "queue durability status")
     require("frontend/react/src/controller/chatFlow.js", "composerAgentStateFromProjection", "composer Agent state projection")
     require("frontend/react/src/controller/chatFlow.js", "knowflow:react-agent-composer-state", "composer Agent state event")
     require("frontend/react/src/components/ChatComposerForm.jsx", "composer-agent-state", "composer Agent state UI")
@@ -54,12 +57,37 @@ def main() -> None:
 
     script = r'''import {
   appendQueuedChatRequest,
+  chatQueueStorageKey,
   composerAgentStateFromProjection,
   composerFollowUpSuggestion,
+  durableChatQueueItems,
+  normalizeStoredChatQueue,
   orderQueuedChatRequests,
   reprioritizeQueuedChatRequest,
   takeQueuedChatRequest,
 } from "./frontend/react/src/controller/chatFlow.js";
+
+if (chatQueueStorageKey({id: 7}) !== "agentlens.chatQueue.v1:7") {
+  throw new Error("queue storage is not user scoped");
+}
+const restored = normalizeStoredChatQueue({
+  items: [
+    {id: "valid", question: "恢复", priority: "now", sequence: 8},
+    {id: "invalid", question: ""},
+    {id: "attachment", question: "不得静默丢附件", attachments: [{content: "secret"}]},
+    {id: "valid", question: "重复"},
+  ],
+});
+if (restored.items.length !== 1 || restored.items[0].priority !== "now") {
+  throw new Error("stored queue normalization failed");
+}
+const durable = durableChatQueueItems([
+  {id: "plain", question: "纯文本", attachments: []},
+  {id: "secret", question: "含附件", attachments: [{filename: "secret.txt", content: "token"}]},
+]);
+if (durable.length !== 1 || durable[0].id !== "plain" || durable[0].attachments.length) {
+  throw new Error("attachment content entered durable browser storage");
+}
 
 const queue = [
   {id: "later", question: "稍后", priority: "later", sequence: 1},

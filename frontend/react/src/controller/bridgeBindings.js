@@ -17,6 +17,7 @@ export function bindReactControllerEvents({
   removeQueuedChat,
   retrieveQueuedChat,
   reprioritizeQueuedChat,
+  restoreQueuedChats,
   renderActiveSession,
   renderCurrentUser,
   requestComposerReset,
@@ -42,6 +43,7 @@ export function bindReactControllerEvents({
     if (detail.user) {
       state.currentUser = detail.user;
       renderCurrentUser();
+      restoreQueuedChats();
     }
     showAppScreen();
     if (detail.message) toast(detail.message);
@@ -50,10 +52,10 @@ export function bindReactControllerEvents({
 
   window.addEventListener("knowflow:react-auth-logout", (event) => {
     const detail = event.detail || {};
+    clearQueuedChats({ preserveStored: true });
     state.currentUser = null;
     state.currentSessionId = null;
     state.currentSessionTitle = "";
-    clearQueuedChats();
     renderActiveSession();
     clearChatMessages();
     showAuthScreen(state.oauthProviders);

@@ -31,6 +31,7 @@ const queueBlockLabels = Object.freeze({
   run: "等待当前任务继续",
   failed: "发送失败，队列已暂停",
   cancelled: "已停止，待发送已暂停",
+  restored: "已恢复，确认后继续",
 });
 const idleAgentState = Object.freeze({
   mode: "idle",
@@ -80,6 +81,7 @@ export function ChatComposerForm() {
   const [queuedChats, setQueuedChats] = useState([]);
   const [queuePaused, setQueuePaused] = useState(false);
   const [queueBlockReason, setQueueBlockReason] = useState("");
+  const [queueDurable, setQueueDurable] = useState(false);
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
   const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState("");
@@ -429,6 +431,7 @@ export function ChatComposerForm() {
       setQueuedChats(Array.isArray(event.detail?.items) ? event.detail.items : []);
       setQueuePaused(Boolean(event.detail?.paused));
       setQueueBlockReason(String(event.detail?.blockedReason || ""));
+      setQueueDurable(Boolean(event.detail?.durable));
     };
     window.addEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
     return () => window.removeEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
@@ -1100,6 +1103,7 @@ export function ChatComposerForm() {
   const queueHeading = queuePaused
     ? `${queueBlockLabels[queueBlockReason] || "待发送已暂停"} · ${queuedChats.length}`
     : `接下来 ${queuedChats.length}`;
+  const queueStorageLabel = queueDurable ? "已保存" : "仅本页";
   const canResumeQueue = queuePaused
     && !["approval", "question", "run"].includes(queueBlockReason);
   const queueInteractionBlocked = ["approval", "question", "run"].includes(
@@ -1162,6 +1166,7 @@ export function ChatComposerForm() {
           <div className={"composer-queue-heading"}>
             <strong>{queueHeading}</strong>
             <span>
+              <span className={"composer-queue-storage"}>{queueStorageLabel}</span>
               {canResumeQueue ? (
                 <button type={"button"} onClick={() => handleQueueAction("resume")}>{"继续发送"}</button>
               ) : null}

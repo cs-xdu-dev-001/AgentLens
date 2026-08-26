@@ -24,6 +24,7 @@ export const state = {
   chatQueuePaused: false,
   chatQueueBlockReason: "",
   chatQueueSequence: 0,
+  chatQueueDurable: false,
 };
 
 export const messageRetryRequests = new Map();

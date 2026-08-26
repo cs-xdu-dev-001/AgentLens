@@ -19,17 +19,20 @@ from ..services.agent_trace import sanitize_trace_value
 from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
 from ..services.local_cli_runtime import local_data_dir
 from .backend import TuiBackend
-from .state import PromptHistoryStore
+from .state import PromptHistoryStore, PromptQueueStore
 
 
-PROTOCOL_VERSION = 12
+PROTOCOL_VERSION = 13
 
 
 def _history_scope(backend: TuiBackend) -> str:
     """Keep prompt history local and isolated to the active workspace/server."""
     remote_client = getattr(backend, "remote_client", None)
     if remote_client is not None:
-        source = f"remote:{remote_client.server}"
+        token_fingerprint = sha256(
+            str(getattr(remote_client, "token", "") or "anonymous").encode("utf-8")
+        ).hexdigest()[:24]
+        source = f"remote:{remote_client.server}:{token_fingerprint}"
     else:
         status = backend.workspace_status()
         root = str(status.get("projectRoot") or status.get("cwd") or Path.cwd())
@@ -78,6 +81,7 @@ class InkRuntimeBridge:
         self.output_stream = output_stream
         self._write_lock = Lock()
         self._state_lock = Lock()
+        self._queue_lock = Lock()
         self._running = False
         self._stopping = False
         self._pending: AgentExecution | None = None
@@ -88,6 +92,9 @@ class InkRuntimeBridge:
         self._updating_cli = False
         self.history_store = PromptHistoryStore(
             local_data_dir() / "history" / f"{_history_scope(backend)}.jsonl"
+        )
+        self.queue_store = PromptQueueStore(
+            local_data_dir() / "queues" / f"{_history_scope(backend)}.json"
         )
 
     def send(self, payload: dict[str, Any]) -> None:
@@ -190,11 +197,15 @@ class InkRuntimeBridge:
     def _execute(self, callback: Any) -> None:
         queued_decision = None
         queued_answer = None
+        terminal = False
+        request_id = self._request_id
         try:
             with redirect_stdout(sys.stderr):
                 execution = callback()
             self._complete(execution)
+            terminal = not execution.paused
         except Exception as exc:
+            terminal = True
             message = self._public_error(exc)
             error_code = str(type(exc).__name__ or "turn_failed")[:80]
             recovery_actions = (
@@ -221,6 +232,17 @@ class InkRuntimeBridge:
                 }
             )
         finally:
+            if terminal:
+                with self._queue_lock:
+                    persisted = self.queue_store.resolve(request_id)
+                if not persisted:
+                    self.send(
+                        {
+                            "type": "queue_failed",
+                            "action": "resolve",
+                            "message": "任务已结束，但本地队列回执无法保存。",
+                        }
+                    )
             self._set_running(False)
             with self._state_lock:
                 if self._pending is not None and self._queued_decision is not None:
@@ -340,6 +362,60 @@ class InkRuntimeBridge:
                 "type": "history_failed",
                 "action": action,
                 "message": "未知历史操作。",
+            }
+        )
+
+    def _queue(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "sync")
+        if action == "sync":
+            with self._queue_lock:
+                saved = self.queue_store.sync(
+                    message.get("items"),
+                    paused=bool(message.get("paused")),
+                )
+                snapshot = self.queue_store.load() if saved else None
+            self.send(
+                {
+                    "type": "queue_saved" if saved else "queue_failed",
+                    "action": action,
+                    "count": len(snapshot["items"]) if snapshot else 0,
+                    "paused": bool(snapshot["paused"]) if snapshot else False,
+                    "message": (
+                        "待发送任务已保存。"
+                        if saved
+                        else "待发送任务无法保存，仅在本次运行中可用。"
+                    ),
+                }
+            )
+            return
+        if action == "claim":
+            item_id = str(message.get("itemId") or "")[:100]
+            request_id = str(message.get("requestId") or "")[:100]
+            with self._queue_lock:
+                saved = self.queue_store.claim(
+                    item_id,
+                    request_id,
+                    fallback_item=message.get("item"),
+                )
+            self.send(
+                {
+                    "type": "queue_claimed" if saved else "queue_failed",
+                    "action": action,
+                    "itemId": item_id,
+                    "requestId": request_id,
+                    "message": (
+                        "任务已由运行时领取。"
+                        if saved
+                        else "任务领取状态无法保存，本次执行仍会继续。"
+                    ),
+                }
+            )
+            return
+        self.send(
+            {
+                "type": "queue_failed",
+                "action": action,
+                "message": "未知队列操作。",
             }
         )
 
@@ -507,7 +583,18 @@ class InkRuntimeBridge:
                     / "history"
                     / f"{_history_scope(self.backend)}.jsonl"
                 )
+                self.queue_store = PromptQueueStore(
+                    local_data_dir()
+                    / "queues"
+                    / f"{_history_scope(self.backend)}.json"
+                )
+                with self._queue_lock:
+                    queue_snapshot = self.queue_store.restore()
                 payload["history"] = _public_history(self.history_store.load())
+                payload["queue"] = queue_snapshot["items"]
+                payload["queuePaused"] = bool(queue_snapshot["paused"])
+                payload["queueRecovered"] = int(queue_snapshot["recovered"])
+                payload["queueDurable"] = bool(queue_snapshot["durable"])
                 payload["sessions"] = _public_sessions(
                     self.backend.list_sessions(limit=8)
                 )
@@ -879,6 +966,8 @@ class InkRuntimeBridge:
             self._context(message)
         elif message_type == "history":
             self._history(message)
+        elif message_type == "queue":
+            self._queue(message)
         elif message_type == "models":
             self._models(message)
         elif message_type == "local_model_config":
@@ -892,6 +981,8 @@ class InkRuntimeBridge:
 
     def run(self) -> None:
         workspace = _public_value(self.backend.workspace_status(), max_chars=20_000)
+        with self._queue_lock:
+            queue_snapshot = self.queue_store.restore()
         try:
             models = _public_value(self.backend.model_catalog(), max_chars=20_000)
         except Exception:
@@ -916,6 +1007,10 @@ class InkRuntimeBridge:
                 "workspace": workspace,
                 "sessions": _public_sessions(self.backend.list_sessions(limit=8)),
                 "history": _public_history(self.history_store.load()),
+                "queue": queue_snapshot["items"],
+                "queuePaused": bool(queue_snapshot["paused"]),
+                "queueRecovered": int(queue_snapshot["recovered"]),
+                "queueDurable": bool(queue_snapshot["durable"]),
                 "models": models,
             }
         )

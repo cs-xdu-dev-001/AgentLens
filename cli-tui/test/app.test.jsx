@@ -791,7 +791,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 12,
+      protocolVersion: 13,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1748,7 +1748,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 12,
+    protocolVersion: 13,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1800,6 +1800,51 @@ test('Ink app exposes queued follow-ups and lets users clear them', async () => 
   assert.doesNotMatch(view.lastFrame(), /接下来 1/);
   assert.match(view.lastFrame(), /待发送任务已清空/);
   view.unmount();
+});
+
+test('Ink app restores a durable runtime queue paused and claims it before execution', async t => {
+  const client = new FakeClient();
+  const restored = {
+    id: 'queue-restored',
+    text: '恢复后继续检查',
+    displayText: '恢复后继续检查',
+    priority: 'next',
+    sequence: 4,
+    mode: 'prompt',
+    reasoningEffort: 'high',
+    permissionMode: 'ask',
+    attachmentPaths: [],
+  };
+  client.start = () => queueMicrotask(() => client.emit('message', {
+    type: 'ready',
+    protocolVersion: 13,
+    agentEventSchemaVersion: 1,
+    model: 'deepseek-chat',
+    commands: [],
+    workspace: {projectRoot: '/workspace', cwd: '/workspace'},
+    sessions: [],
+    history: [],
+    queue: [restored],
+    queuePaused: true,
+    queueRecovered: 1,
+    models: [],
+  }));
+  const view = render(<App client={client} version="0.64.4" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /已恢复1个异常中断的任务/);
+  assert.match(view.lastFrame(), /恢复后继续检查/);
+  assert.match(view.lastFrame(), /已保存/);
+
+  view.stdin.write('/continue');
+  view.stdin.write('\r');
+  await waitForCondition(
+    () => client.sent.some(message => message.type === 'submit' && message.text === restored.text),
+    'restored prompt was not submitted',
+  );
+  const claim = client.sent.find(message => message.type === 'queue' && message.action === 'claim');
+  assert.equal(claim.itemId, restored.id);
+  assert.equal(claim.item.id, restored.id);
+  assert.ok(client.sent.indexOf(claim) < client.sent.findIndex(message => message.type === 'submit'));
 });
 
 test('queued follow-ups honor now, next and later priorities', async t => {
@@ -2819,7 +2864,7 @@ test('startup resume opens the picker and continue restores the latest workspace
   const continueClient = new FakeClient();
   continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
     type: 'ready',
-    protocolVersion: 12,
+    protocolVersion: 13,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],

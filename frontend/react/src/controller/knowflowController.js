@@ -217,6 +217,7 @@ function bindEvents() {
     removeQueuedChat: chatFlow.removeQueuedChat,
     retrieveQueuedChat: chatFlow.retrieveQueuedChat,
     reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
+    restoreQueuedChats: chatFlow.restoreQueuedChats,
     renderActiveSession,
     renderCurrentUser: authFlow.renderCurrentUser,
     requestComposerReset,
@@ -245,6 +246,7 @@ async function bootstrap() {
   renderAttachmentTray();
   const authenticated = await authFlow.checkAuth();
   if (authenticated) {
+    chatFlow.restoreQueuedChats();
     await catalogSync.refresh();
   }
 }
