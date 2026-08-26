@@ -15,6 +15,7 @@ import tempfile
 from threading import Thread
 import time
 from typing import Any, Callable
+import unicodedata
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -184,25 +185,154 @@ class WorkspaceContext:
     def begin_turn(self, run_id: str) -> None:
         self.current_run_id = str(run_id)
 
-    def _git(self, *arguments: str) -> str:
+    def _run_git(
+        self,
+        directory: Path,
+        *arguments: str,
+    ) -> subprocess.CompletedProcess[str] | None:
         try:
-            completed = subprocess.run(
-                ["git", "-C", str(self.project_root), *arguments],
+            return subprocess.run(
+                ["git", "-C", str(directory), *arguments],
                 check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
                 timeout=5,
             )
         except (OSError, subprocess.TimeoutExpired):
-            return ""
-        return completed.stdout.strip() if completed.returncode == 0 else ""
+            return None
+
+    @staticmethod
+    def _safe_git_label(value: object, *, max_chars: int = 160) -> str:
+        cleaned = "".join(
+            character
+            for character in str(value or "")
+            if unicodedata.category(character) not in {"Cc", "Cf"}
+        ).strip()
+        return cleaned[:max_chars]
+
+    def _git_status(self) -> dict[str, Any]:
+        empty: dict[str, Any] = {
+            "repository": False,
+            "rootName": None,
+            "branch": None,
+            "detached": False,
+            "head": None,
+            "upstream": None,
+            "ahead": 0,
+            "behind": 0,
+            "changedFiles": 0,
+            "stagedFiles": 0,
+            "modifiedFiles": 0,
+            "untrackedFiles": 0,
+            "conflictedFiles": 0,
+            "clean": True,
+        }
+        root_result = self._run_git(self.cwd, "rev-parse", "--show-toplevel")
+        if root_result is None or root_result.returncode != 0:
+            return empty
+        root_value = root_result.stdout.strip()
+        if not root_value:
+            return empty
+        repository_root = Path(root_value).resolve(strict=False)
+        allowed_root = active_project_instruction_root(self.cwd, self.allowed_roots)
+        if not self._inside(repository_root, allowed_root):
+            return empty
+        status_result = self._run_git(
+            self.cwd,
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=normal",
+        )
+        if status_result is None or status_result.returncode != 0:
+            return empty
+
+        branch = ""
+        head = ""
+        upstream = ""
+        ahead = 0
+        behind = 0
+        staged = 0
+        modified = 0
+        untracked = 0
+        conflicted = 0
+        changed = 0
+        detached = False
+        for line in status_result.stdout.splitlines():
+            if line.startswith("# branch.oid "):
+                value = line.removeprefix("# branch.oid ").strip()
+                if value != "(initial)":
+                    head = self._safe_git_label(value, max_chars=40)
+                continue
+            if line.startswith("# branch.head "):
+                value = line.removeprefix("# branch.head ").strip()
+                detached = value == "(detached)"
+                if not detached:
+                    branch = self._safe_git_label(value)
+                continue
+            if line.startswith("# branch.upstream "):
+                upstream = self._safe_git_label(
+                    line.removeprefix("# branch.upstream ")
+                )
+                continue
+            if line.startswith("# branch.ab "):
+                values = line.removeprefix("# branch.ab ").split()
+                for value in values:
+                    if value.startswith("+"):
+                        try:
+                            ahead = max(0, int(value[1:]))
+                        except ValueError:
+                            pass
+                    elif value.startswith("-"):
+                        try:
+                            behind = max(0, int(value[1:]))
+                        except ValueError:
+                            pass
+                continue
+            if line.startswith("? "):
+                changed += 1
+                untracked += 1
+                continue
+            if line.startswith("u "):
+                changed += 1
+                conflicted += 1
+                continue
+            if line.startswith(("1 ", "2 ")):
+                fields = line.split(" ", 2)
+                xy = fields[1] if len(fields) > 1 else ".."
+                changed += 1
+                if len(xy) > 0 and xy[0] not in {".", " "}:
+                    staged += 1
+                if len(xy) > 1 and xy[1] not in {".", " "}:
+                    modified += 1
+
+        short_head = head[:8] or None
+        if detached:
+            branch = f"detached@{short_head}" if short_head else "detached"
+        return {
+            "repository": True,
+            "rootName": self._safe_git_label(repository_root.name, max_chars=100),
+            "branch": branch or None,
+            "detached": detached,
+            "head": short_head,
+            "upstream": upstream or None,
+            "ahead": ahead,
+            "behind": behind,
+            "changedFiles": changed,
+            "stagedFiles": staged,
+            "modifiedFiles": modified,
+            "untrackedFiles": untracked,
+            "conflictedFiles": conflicted,
+            "clean": changed == 0,
+        }
 
     def status(self, *, message: str | None = None) -> dict[str, Any]:
-        branch = self._git("branch", "--show-current")
-        porcelain = self._git("status", "--porcelain=v1")
-        changed = len([line for line in porcelain.splitlines() if line.strip()])
+        git_status = self._git_status()
+        branch = str(git_status.get("branch") or "")
+        changed = max(0, int(git_status.get("changedFiles") or 0))
         home = Path.home().resolve()
         is_home = self.project_root == home
         project_markers = (
@@ -238,6 +368,7 @@ class WorkspaceContext:
             "branch": branch or None,
             "dirty": changed > 0,
             "changedFiles": changed,
+            "git": git_status,
             "runId": self.current_run_id,
             "workspaceKind": "home" if is_home else ("project" if has_project_marker else "directory"),
             "warnings": warnings,

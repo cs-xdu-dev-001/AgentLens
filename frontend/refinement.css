@@ -2286,6 +2286,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 600;
 }
 .workspace-runtime-strip span.ready { color: var(--success); }
+.workspace-runtime-strip span.warning { color: var(--warning); }
+.workspace-runtime-strip span.danger { color: var(--danger); }
 
 .workspace-breadcrumb {
   min-height: 44px;

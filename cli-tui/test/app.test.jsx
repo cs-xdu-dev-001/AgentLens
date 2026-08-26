@@ -38,6 +38,7 @@ import {
   turnRequestSnapshot,
   updatePermissionRules,
   workspaceExecutionBlock,
+  workspaceGitSummary,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {createRunProjection, projectRunEvent} from '../src/protocol.js';
@@ -88,6 +89,39 @@ test('workspace status keeps branch and dirty state visible without exposing the
       projectInstructions: {sources: [{path: 'AGENTS.md'}]},
     }),
     'main · 1份项目指令',
+  );
+  assert.deepEqual(
+    workspaceGitSummary({
+      git: {
+        repository: true,
+        branch: 'feature/git-awareness',
+        upstream: 'origin/feature/git-awareness',
+        changedFiles: 4,
+        stagedFiles: 1,
+        modifiedFiles: 2,
+        untrackedFiles: 1,
+        conflictedFiles: 0,
+        ahead: 2,
+        behind: 1,
+      },
+    }),
+    {
+      repository: true,
+      branch: 'feature/git-awareness',
+      changed: 4,
+      staged: 1,
+      modified: 2,
+      untracked: 1,
+      conflicted: 0,
+      ahead: 2,
+      behind: 1,
+      label: 'feature/git-awareness · 4处改动 · ↑2 ↓1',
+      detail: 'feature/git-awareness · ↑2 ↓1 · 跟踪origin/feature/git-awareness · 1个已暂存 · 2个未暂存 · 1个未跟踪',
+    },
+  );
+  assert.equal(
+    workspaceGitSummary({branch: 'main', dirty: true, changedFiles: 2}).detail,
+    'main · 未设置上游分支 · 2个文件已修改',
   );
 });
 
@@ -370,7 +404,7 @@ test('diagnostic report exposes support metadata without prompts, paths, or secr
   });
   assert.match(report, /项目指令:/);
   assert.match(report, /AgentLens脱敏诊断/);
-  assert.match(report, /工作区: private-project · main · 2个文件已修改/);
+  assert.match(report, /工作区: private-project · main · 未设置上游分支 · 2个文件已修改/);
   assert.match(report, /进度: 2\/3/);
   assert.match(report, /错误码: upstream_error/);
   assert.doesNotMatch(report, /\/home\/alice|sk-do-not-copy|api_key/);

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
+import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 
 
 const RUN_LABELS = {
@@ -39,17 +40,23 @@ export function workspaceHeaderState(status, loading = false) {
       .filter(Boolean)
     : [];
   const instructionCount = instructionSources.length;
+  const git = workspaceGitPresentation(status);
   const parts = [
-    "隔离工作区",
-    itemCount ? `${itemCount}项` : "",
+    git.repository ? git.label : "隔离工作区",
+    !git.repository && itemCount ? `${itemCount}项` : "",
     instructionCount ? `${instructionCount}份项目指令` : "",
   ].filter(Boolean);
-  return {
-    label: parts.join(" · "),
-    state: status.sandboxReady ? "ready" : "available",
-    title: instructionSources.length
+  const title = [
+    git.title,
+    `工作区内${itemCount}项`,
+    instructionSources.length
       ? `项目指令：${instructionSources.join("、")}`
       : "尚未发现AGENTS.md或CLAUDE.md",
+  ].filter(Boolean).join("。 ");
+  return {
+    label: parts.join(" · "),
+    state: git.repository ? git.state : status.sandboxReady ? "ready" : "available",
+    title,
   };
 }
 

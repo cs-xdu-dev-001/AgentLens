@@ -1002,7 +1002,12 @@ export function ChatMessages() {
             onClick={revealCurrentTask}
             aria-label={`回到当前任务：${currentTask.text}；${currentTask.presentation?.status?.label || "执行中"}`}
             title={currentTask.text}
-            style={{ "--task-progress": `${currentTask.presentation?.progressPercent || 0}%` }}
+            style={{
+              "--task-progress-scale": Math.max(
+                0,
+                Math.min(100, Number(currentTask.presentation?.progressPercent) || 0),
+              ) / 100,
+            }}
           >
             <strong>{"任务"}</strong>
             <span className={"active-task-anchor-copy"}>{currentTask.text}</span>

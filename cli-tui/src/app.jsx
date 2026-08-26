@@ -1642,9 +1642,14 @@ function QuestionPrompt({question, selected, custom, position = 1, total = 1}) {
 
 function workspaceLabel(workspace) {
   if (!workspace || workspace.remote) return '';
-  const branch = workspace.branch ? ` · ${workspace.branch}` : '';
-  const dirty = workspace.dirty ? ` · ${workspace.changedFiles ?? 0}个文件已修改` : '';
-  return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
+  const git = workspaceGitSummary(workspace);
+  const legacyChanged = Math.max(0, Number(workspace.changedFiles) || 0);
+  const suffix = git.repository
+    ? git.label
+    : workspace.dirty && legacyChanged
+      ? `${legacyChanged}处改动`
+      : '';
+  return `${workspace.cwd || workspace.projectRoot || ''}${suffix ? ` · ${suffix}` : ''}`;
 }
 
 function projectInstructionSummary(workspace) {
@@ -1663,13 +1668,68 @@ function projectInstructionSummary(workspace) {
 
 export function compactWorkspaceStatus(workspace) {
   if (!workspace || workspace.remote) return '工作区';
-  const branch = publicLabel(workspace.branch, workspaceDiagnosticName(workspace), 48);
-  const changed = Math.max(0, Number(workspace.changedFiles) || 0);
+  const git = workspaceGitSummary(workspace);
+  const legacyChanged = Math.max(0, Number(workspace.changedFiles) || 0);
+  const workspaceState = git.repository
+    ? git.label
+    : [
+        workspaceDiagnosticName(workspace),
+        workspace.dirty && legacyChanged ? `${legacyChanged}处改动` : '',
+      ].filter(Boolean).join(' · ');
   const instruction = projectInstructionSummary(workspace).label;
   return [
-    workspace.dirty && changed ? `${branch} · ${changed}处改动` : branch,
+    workspaceState,
     instruction,
   ].filter(Boolean).join(' · ');
+}
+
+export function workspaceGitSummary(workspace) {
+  const source = workspace?.git && typeof workspace.git === 'object'
+    ? workspace.git
+    : {};
+  const repository = source.repository === true || Boolean(workspace?.branch);
+  if (!repository) {
+    return {repository: false, label: '非Git仓库', detail: '非Git仓库'};
+  }
+  const branch = publicLabel(source.branch || workspace?.branch, 'detached', 80);
+  const changed = Math.max(0, Number(source.changedFiles ?? workspace?.changedFiles) || 0);
+  const staged = Math.max(0, Number(source.stagedFiles) || 0);
+  const modified = Math.max(0, Number(source.modifiedFiles) || 0);
+  const untracked = Math.max(0, Number(source.untrackedFiles) || 0);
+  const conflicted = Math.max(0, Number(source.conflictedFiles) || 0);
+  const ahead = Math.max(0, Number(source.ahead) || 0);
+  const behind = Math.max(0, Number(source.behind) || 0);
+  const sync = [ahead ? `↑${ahead}` : '', behind ? `↓${behind}` : ''].filter(Boolean).join(' ');
+  const label = [
+    branch,
+    conflicted ? `${conflicted}个冲突` : changed ? `${changed}处改动` : '',
+    sync,
+  ].filter(Boolean).join(' · ');
+  const changes = [
+    staged ? `${staged}个已暂存` : '',
+    modified ? `${modified}个未暂存` : '',
+    untracked ? `${untracked}个未跟踪` : '',
+    conflicted ? `${conflicted}个冲突` : '',
+  ].filter(Boolean);
+  const upstream = publicLabel(source.upstream, '', 100);
+  const categorySummary = changes.join(' · ') || (changed ? `${changed}个文件已修改` : '工作树干净');
+  return {
+    repository: true,
+    branch,
+    changed,
+    staged,
+    modified,
+    untracked,
+    conflicted,
+    ahead,
+    behind,
+    label,
+    detail: [
+      [branch, sync].filter(Boolean).join(' · '),
+      upstream ? `跟踪${upstream}` : '未设置上游分支',
+      categorySummary,
+    ].join(' · '),
+  };
 }
 
 export function sessionTitleFromPrompt(value, fallback = '') {
@@ -1723,13 +1783,14 @@ export function buildTuiDiagnosticReport({
   );
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode)?.label || permissionMode;
   const projectInstructions = projectInstructionSummary(workspace);
+  const git = workspaceGitSummary(workspace);
   return [
     'AgentLens脱敏诊断',
     `客户端: CLI ${publicLabel(version, 'development', 40)}`,
     `平台: ${process.platform} · Node ${process.versions.node}`,
     `时间: ${new Date(now).toISOString()}`,
     `模型: ${publicLabel(model, '未配置', 100)}${apiMode ? ` · ${publicLabel(apiMode, '', 40)}` : ''}`,
-    `工作区: ${workspaceDiagnosticName(workspace)}${workspace?.branch ? ` · ${publicLabel(workspace.branch, '', 80)}` : ''}${workspace?.dirty ? ` · ${Math.max(0, Number(workspace.changedFiles) || 0)}个文件已修改` : ''}`,
+    `工作区: ${workspaceDiagnosticName(workspace)} · ${git.detail}`,
     `项目指令: ${projectInstructions.paths.length ? projectInstructions.paths.join('、') : '未发现'}`,
     `权限: ${publicLabel(permission, '询问', 40)}`,
     `状态: ${status}`,
@@ -1746,10 +1807,11 @@ function workspaceText(workspace) {
   if (!workspace || workspace.remote) return workspace?.message || '工作区信息不可用。';
   const warnings = Array.isArray(workspace.warnings) ? workspace.warnings.filter(Boolean) : [];
   const projectInstructions = projectInstructionSummary(workspace);
+  const git = workspaceGitSummary(workspace);
   return [
     `项目根目录  ${workspace.projectRoot}`,
     `当前目录    ${workspace.cwd}`,
-    `Git         ${workspace.branch || '非Git仓库'}${workspace.dirty ? ` · ${workspace.changedFiles}个文件已修改` : ' · 干净'}`,
+    `Git         ${git.detail}`,
     `类型        ${workspace.workspaceKind || 'directory'}`,
     `项目指令    ${projectInstructions.paths.length ? projectInstructions.paths.join('  ') : '未发现AGENTS.md或CLAUDE.md'}`,
     ...(warnings.length ? ['警告', ...warnings.map(item => `  ${item}`)] : []),

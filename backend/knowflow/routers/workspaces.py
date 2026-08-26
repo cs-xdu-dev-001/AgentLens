@@ -23,11 +23,8 @@ from ..runtime import (
 )
 from ..services.agent_event_protocol import normalize_agent_event
 from ..services.agent_trace import sanitize_trace_value
-from ..services.project_instructions import (
-    load_project_instructions,
-    public_project_instruction_status,
-)
 from ..services.workspace_runtime import (
+    WorkspaceContext,
     WorkspaceRuntime,
     WorkspaceRuntimeError,
     tracked_workspace_runtime,
@@ -101,6 +98,7 @@ def workspace_status(request: Request) -> dict:
     )
     item_count = 0
     project_instructions = {"count": 0, "sources": [], "truncated": False}
+    git_status: dict = {"repository": False, "clean": True}
     if WORKSPACE_ENABLED:
         runtime = WorkspaceRuntime(
             WORKSPACE_DIR,
@@ -108,9 +106,9 @@ def workspace_status(request: Request) -> dict:
             max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
         )
         item_count = len(runtime.list_entries("").get("entries", []))
-        project_instructions = public_project_instruction_status(
-            load_project_instructions(runtime.root)
-        )
+        context_status = WorkspaceContext(runtime.root).status()
+        project_instructions = context_status["projectInstructions"]
+        git_status = context_status["git"]
     return api_success(
         {
             "enabled": WORKSPACE_ENABLED,
@@ -123,6 +121,7 @@ def workspace_status(request: Request) -> dict:
             "protectedPatterns": [".git", ".env*", ".ssh", ".tmp"],
             "symlinkWriteProtected": True,
             "projectInstructions": project_instructions,
+            "git": git_status,
         }
     )
 

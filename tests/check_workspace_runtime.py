@@ -27,7 +27,91 @@ def expect_error(code: str, callback) -> None:
         assert exc.code == code
 
 
+def run_git(root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(root), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return completed.stdout.strip()
+
+
 def main() -> None:
+    assert WorkspaceContext._safe_git_label("main\u202eevil\x1b") == "mainevil"
+    assert len(WorkspaceContext._safe_git_label("x" * 500)) == 160
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repository = Path(temp_dir) / "repo"
+        repository.mkdir()
+        run_git(repository, "init", "--initial-branch=main")
+        (repository / "staged.txt").write_text("base\n", encoding="utf-8")
+        (repository / "modified.txt").write_text("base\n", encoding="utf-8")
+        run_git(repository, "add", "staged.txt", "modified.txt")
+        run_git(
+            repository,
+            "-c",
+            "user.name=AgentLens Tests",
+            "-c",
+            "user.email=agentlens@example.invalid",
+            "commit",
+            "-m",
+            "baseline",
+        )
+        run_git(repository, "remote", "add", "origin", ".")
+        run_git(repository, "fetch", "origin", "main")
+        run_git(repository, "branch", "--set-upstream-to=origin/main", "main")
+        (repository / "ahead.txt").write_text("ahead\n", encoding="utf-8")
+        run_git(repository, "add", "ahead.txt")
+        run_git(
+            repository,
+            "-c",
+            "user.name=AgentLens Tests",
+            "-c",
+            "user.email=agentlens@example.invalid",
+            "commit",
+            "-m",
+            "ahead",
+        )
+        (repository / "staged.txt").write_text("staged\n", encoding="utf-8")
+        run_git(repository, "add", "staged.txt")
+        (repository / "modified.txt").write_text("modified\n", encoding="utf-8")
+        (repository / "untracked.txt").write_text("new\n", encoding="utf-8")
+
+        status = WorkspaceContext(repository).status()
+        assert status["branch"] == "main"
+        assert status["dirty"] is True
+        assert status["changedFiles"] == 3
+        assert status["git"] == {
+            "repository": True,
+            "rootName": "repo",
+            "branch": "main",
+            "detached": False,
+            "head": run_git(repository, "rev-parse", "--short=8", "HEAD"),
+            "upstream": "origin/main",
+            "ahead": 1,
+            "behind": 0,
+            "changedFiles": 3,
+            "stagedFiles": 1,
+            "modifiedFiles": 1,
+            "untrackedFiles": 1,
+            "conflictedFiles": 0,
+            "clean": False,
+        }
+
+        nested = repository / "nested"
+        nested.mkdir()
+        nested_status = WorkspaceContext(nested).status()
+        assert nested_status["git"]["repository"] is False
+        assert nested_status["branch"] is None
+
+        run_git(repository, "checkout", "--detach")
+        detached = WorkspaceContext(repository).status()["git"]
+        assert detached["detached"] is True
+        assert detached["branch"].startswith("detached@")
+
     with tempfile.TemporaryDirectory() as temp_dir:
         base = Path(temp_dir) / "workspaces"
         workspace = WorkspaceRuntime(base, user_id=7, max_file_bytes=10_000)

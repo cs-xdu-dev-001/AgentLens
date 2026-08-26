@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 
 
 function parentPath(path) {
@@ -76,6 +77,14 @@ export function WorkbenchPage({ active = false }) {
       .map((item) => safeAgentText(item?.path, 120))
       .filter(Boolean)
     : [];
+  const git = workspaceGitPresentation(status);
+  const gitStateClass = git.state === "conflict"
+    ? "danger"
+    : git.state === "behind"
+      ? "warning"
+      : git.state === "ready"
+        ? "ready"
+        : "";
 
   return (
     <section className={active ? "page active" : "page"} id="page-workspace">
@@ -90,8 +99,8 @@ export function WorkbenchPage({ active = false }) {
         </header>
 
         <div className="workspace-runtime-strip" role="status">
-          <span className={status?.enabled ? "ready" : ""}>{status?.enabled ? "工作区已启用" : "工作区未启用"}</span>
-          <span className={status?.isolation === "user" ? "ready" : ""}>{status?.isolation === "user" ? "仅当前用户可见" : "隔离状态未知"}</span>
+          <span className={status?.enabled && status?.isolation === "user" ? "ready" : ""}>{status?.enabled && status?.isolation === "user" ? "隔离工作区已启用" : "工作区隔离状态未知"}</span>
+          <span className={gitStateClass} title={git.title}>{git.repository ? `Git：${git.label}` : "未检测到Git仓库"}</span>
           <span className={status?.protectedPatterns?.length ? "ready" : ""}>{status?.protectedPatterns?.length ? "敏感路径受保护" : "敏感路径保护未知"}</span>
           <span className={status?.sandboxReady ? "ready" : ""}>{status?.sandboxReady ? "Linux沙箱可用" : "命令执行未启用"}</span>
           <span className={projectInstructionPaths.length ? "ready" : ""} title={projectInstructionPaths.join("、")}>{projectInstructionPaths.length ? `项目指令：${projectInstructionPaths.join("、")}` : "未发现项目指令"}</span>
