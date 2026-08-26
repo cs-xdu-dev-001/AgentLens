@@ -26,7 +26,7 @@ AgentLens是一个可自行部署、过程可见的AI Agent与知识库。它把
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 agentlens configure
 agentlens doctor --cli
 agentlens chat --workspace /path/to/project
@@ -44,7 +44,7 @@ agentlens chat --workspace /path/to/project
 
 ## 项目入口
 
-- [GitHub仓库](https://github.com/cs-xdu-dev-001/KnowFlow-AI)
+- [GitHub仓库](https://github.com/cs-xdu-dev-001/AgentLens)
 - [使用指南](usage.md)
 - [系统架构](architecture.md)
-- [问题反馈](https://github.com/cs-xdu-dev-001/KnowFlow-AI/issues)
+- [问题反馈](https://github.com/cs-xdu-dev-001/AgentLens/issues)

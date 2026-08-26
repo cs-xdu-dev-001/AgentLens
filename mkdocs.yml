@@ -1,8 +1,8 @@
 site_name: AgentLens
 site_description: 可自行部署、过程可见的AI Agent与知识库
-site_url: https://cs-xdu-dev-001.github.io/KnowFlow-AI/
-repo_url: https://github.com/cs-xdu-dev-001/KnowFlow-AI
-repo_name: cs-xdu-dev-001/KnowFlow-AI
+site_url: https://cs-xdu-dev-001.github.io/AgentLens/
+repo_url: https://github.com/cs-xdu-dev-001/AgentLens
+repo_name: cs-xdu-dev-001/AgentLens
 edit_uri: edit/main/docs/
 
 theme:
@@ -78,7 +78,7 @@ exclude_docs: |
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/cs-xdu-dev-001/KnowFlow-AI
+      link: https://github.com/cs-xdu-dev-001/AgentLens
       name: AgentLens GitHub仓库
 
 copyright: Copyright &copy; AgentLens contributors

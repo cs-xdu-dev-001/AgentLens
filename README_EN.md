@@ -19,7 +19,7 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 </p>
 
 <p>
-  <a href="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml/badge.svg"></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square"></a>
 </p>
 
@@ -62,7 +62,7 @@ The model context is stored separately from the full transcript. `/context` show
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # The Ink interface requires v22+
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 agentlens configure
 agentlens doctor --cli
 agentlens chat
@@ -131,8 +131,8 @@ agentlens run "Summarize the knowledge base" --remote
 ### 1. Clone the repository
 
 ```powershell
-git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
-Set-Location "KnowFlow-AI"
+git clone https://github.com/cs-xdu-dev-001/AgentLens.git
+Set-Location "AgentLens"
 ```
 
 ### 2. Install dependencies

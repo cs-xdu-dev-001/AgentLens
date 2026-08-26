@@ -18,7 +18,7 @@ pipx install "knowflow-ai[agent]"
 Until the first PyPI release is available, install the current GitHub version:
 
 ```bash
-pipx install "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+pipx install "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/AgentLens.git#subdirectory=backend"
 ```
 
 Configure a model and start the local TUI:
@@ -58,4 +58,4 @@ pipx upgrade knowflow-ai
 pipx uninstall knowflow-ai
 ```
 
-Project documentation: <https://github.com/cs-xdu-dev-001/KnowFlow-AI>
+Project documentation: <https://github.com/cs-xdu-dev-001/AgentLens>

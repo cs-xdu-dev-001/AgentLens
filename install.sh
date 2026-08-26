@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-PACKAGE_SPEC="${KNOWFLOW_CLI_SPEC:-knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend}"
+PACKAGE_SPEC="${KNOWFLOW_CLI_SPEC:-knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/AgentLens.git#subdirectory=backend}"
 
 fail() {
   printf 'AgentLens CLI安装失败：%s\n' "$1" >&2

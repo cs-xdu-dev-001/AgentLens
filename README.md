@@ -15,11 +15,11 @@
   <a href="#选择你的使用方式">快速开始</a> ·
   <a href="#linux-cli">Linux CLI</a> ·
   <a href="#linux部署">部署</a> ·
-  <a href="https://cs-xdu-dev-001.github.io/KnowFlow-AI/">在线文档</a>
+  <a href="https://cs-xdu-dev-001.github.io/AgentLens/">在线文档</a>
 </p>
 
 <p>
-  <a href="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml/badge.svg"></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square"></a>
 </p>
 
@@ -62,7 +62,7 @@ Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任�
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # 新版Ink界面需要v22+
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 agentlens configure
 agentlens doctor --cli
 agentlens chat
@@ -131,8 +131,8 @@ agentlens run "总结知识库" --remote
 ### 1. 获取代码
 
 ```powershell
-git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
-Set-Location "KnowFlow-AI"
+git clone https://github.com/cs-xdu-dev-001/AgentLens.git
+Set-Location "AgentLens"
 ```
 
 ### 2. 安装依赖
@@ -331,9 +331,9 @@ npm run build
 
 ## 进一步阅读
 
-- [在线文档](https://cs-xdu-dev-001.github.io/KnowFlow-AI/)
-- [系统架构](https://cs-xdu-dev-001.github.io/KnowFlow-AI/architecture/)
-- [使用指南](https://cs-xdu-dev-001.github.io/KnowFlow-AI/usage/)
+- [在线文档](https://cs-xdu-dev-001.github.io/AgentLens/)
+- [系统架构](https://cs-xdu-dev-001.github.io/AgentLens/architecture/)
+- [使用指南](https://cs-xdu-dev-001.github.io/AgentLens/usage/)
 - [Web搜索Agent循环](docs/langgraph-web-search-loop.md)
 - [MCP写操作审批](docs/langgraph-mcp-write-approval.md)
 - [Skills与任务计划](docs/langgraph-skills-and-planning.md)

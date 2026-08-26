@@ -14,7 +14,7 @@
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-venv git
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 hash -r
 agentlens --version
 ```
@@ -50,8 +50,8 @@ agentlens doctor --cli
 ## Windows本地运行Web
 
 ```powershell
-git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
-Set-Location "KnowFlow-AI"
+git clone https://github.com/cs-xdu-dev-001/AgentLens.git
+Set-Location "AgentLens"
 
 py -3 -m pip install -r backend\requirements.txt
 py -3 -m pip install --no-deps -e backend

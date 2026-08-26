@@ -55,7 +55,7 @@ error_console = Console(stderr=True)
 profile_store = RemoteProfileStore()
 
 DEFAULT_CLI_PACKAGE_SPEC = (
-    "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+    "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/AgentLens.git#subdirectory=backend"
 )
 
 

@@ -67,10 +67,10 @@ local = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cs-xdu-dev-001/KnowFlow-AI"
-Documentation = "https://github.com/cs-xdu-dev-001/KnowFlow-AI#readme"
-Issues = "https://github.com/cs-xdu-dev-001/KnowFlow-AI/issues"
-Source = "https://github.com/cs-xdu-dev-001/KnowFlow-AI"
+Homepage = "https://github.com/cs-xdu-dev-001/AgentLens"
+Documentation = "https://github.com/cs-xdu-dev-001/AgentLens#readme"
+Issues = "https://github.com/cs-xdu-dev-001/AgentLens/issues"
+Source = "https://github.com/cs-xdu-dev-001/AgentLens"
 
 [project.scripts]
 agentlens = "knowflow.cli:main"
