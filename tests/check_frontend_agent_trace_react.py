@@ -1637,7 +1637,7 @@ def main() -> None:
         "workbench focus event scope",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "本轮交付",
         "post-answer delivery summary",
     )
@@ -1687,22 +1687,27 @@ def main() -> None:
         "failed verification is disclosed automatically",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         'label: "验证通过"',
         "delivery summary exposes verification success",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
-        'label: "未验证"',
+        "frontend/react/src/components/agentRunPresentation.js",
+        'label: "待验证"',
         "delivery summary distinguishes missing verification",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
+        'title: partial ? "本轮结果"',
+        "delivery summary distinguishes partial runs from delivered work",
+    )
+    require(
+        "frontend/react/src/components/agentRunPresentation.js",
         "查看失败步骤与恢复操作",
         "failed delivery deep links to recovery context",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "项已撤销",
         "delivery summary reports reverted changes",
     )

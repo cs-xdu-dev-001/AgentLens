@@ -75,6 +75,62 @@ const DOUBLE_PRESS_TIMEOUT_MS = 800;
 const RUN_QUIET_AFTER_MS = 15_000;
 const RUN_STALLED_AFTER_MS = 45_000;
 
+export function buildTuiDeliveryPresentation({
+  artifacts = [],
+  verifications = [],
+  status = '',
+} = {}) {
+  const safeArtifacts = Array.isArray(artifacts) ? artifacts : [];
+  const safeVerifications = Array.isArray(verifications) ? verifications : [];
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  const cancelled = ['cancelled', 'canceled', '已取消'].includes(normalizedStatus);
+  const failedRun = ['error', 'failed', 'interrupted', '执行失败', '失败'].includes(normalizedStatus);
+  const failedCount = safeVerifications.filter(row => row?.status === 'failed').length;
+  const passedCount = safeVerifications.filter(row => row?.status === 'passed').length;
+  const externalCount = safeArtifacts.filter(artifact => /^https?:\/\//i.test(String(
+    artifact?.url || artifact?.href || artifact?.path || '',
+  ))).length;
+  const fileCount = Math.max(0, safeArtifacts.length - externalCount);
+  const revertedCount = safeArtifacts.filter(artifact => artifact?.reverted).length;
+  const metrics = safeArtifacts.reduce((total, artifact) => ({
+    added: total.added + Math.max(0, Number(artifact?.addedLines) || 0),
+    removed: total.removed + Math.max(0, Number(artifact?.removedLines) || 0),
+  }), {added: 0, removed: 0});
+  const summary = [
+    fileCount ? `${fileCount}个文件已更改` : '',
+    externalCount ? `${externalCount}个链接已生成` : '',
+    revertedCount ? `${revertedCount}项已撤销` : '',
+    safeVerifications.length ? `${passedCount}/${safeVerifications.length}项验证通过` : '',
+  ].filter(Boolean).join(' · ');
+  const failedVerification = failedCount > 0;
+  let state = {tone: 'muted', label: '待验证'};
+  if (cancelled) state = {tone: 'warning', label: '已取消'};
+  else if (failedRun) state = {tone: 'error', label: '运行失败'};
+  else if (failedVerification) state = {tone: 'error', label: `${failedCount}项未通过`};
+  else if (safeVerifications.length) state = {tone: 'success', label: '验证通过'};
+  const partial = cancelled || failedRun;
+  return {
+    ...metrics,
+    cancelled,
+    externalCount,
+    failedRun,
+    failedVerification,
+    fileCount,
+    passedCount,
+    revertedCount,
+    summary,
+    title: partial ? '本轮结果' : safeArtifacts.length ? '本轮交付' : '本轮验收',
+    state,
+    actionHint: failedVerification
+      ? 'Ctrl+E查看失败步骤与恢复操作'
+      : partial
+        ? 'Ctrl+T查看未完成步骤'
+        : safeArtifacts.length
+          ? 'Ctrl+G审阅文件变更'
+          : 'Ctrl+T查看验证过程',
+  };
+}
+
 function useDoublePress(setPending, onDoublePress, onFirstPress) {
   const lastPressRef = useRef(0);
   const timeoutRef = useRef(null);
@@ -2214,34 +2270,27 @@ const TranscriptRow = React.memo(function TranscriptRow({
   if (item.role === 'delivery_summary') {
     const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
     const verifications = Array.isArray(item.verifications) ? item.verifications : [];
-    const added = artifacts.reduce((total, artifact) => total + Math.max(0, Number(artifact.addedLines) || 0), 0);
-    const removed = artifacts.reduce((total, artifact) => total + Math.max(0, Number(artifact.removedLines) || 0), 0);
-    const externalCount = artifacts.filter(artifact => /^https?:\/\//i.test(String(artifact.url || artifact.href || ''))).length;
-    const fileCount = artifacts.length - externalCount;
-    const revertedCount = artifacts.filter(artifact => artifact.reverted).length;
-    const failedVerification = verifications.some(row => row.status === 'failed');
-    const deliveryStateLabel = verifications.length
-      ? failedVerification ? '验证失败' : '验证通过'
-      : '未验证';
-    const deliveryStateColor = failedVerification
-      ? ERROR
-      : verifications.length ? SUCCESS : MUTED;
-    const summary = [
-      fileCount ? `${fileCount}个文件已更改` : '',
-      externalCount ? `${externalCount}个链接已生成` : '',
-      revertedCount ? `${revertedCount}项已撤销` : '',
-    ].filter(Boolean).join(' · ');
+    const delivery = buildTuiDeliveryPresentation({
+      artifacts,
+      verifications,
+      status: item.status,
+    });
+    const deliveryStateColor = {
+      error: ERROR,
+      success: SUCCESS,
+      warning: WARNING,
+    }[delivery.state.tone] || MUTED;
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1} marginLeft={1} borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingY={1}>
         <Box justifyContent="space-between">
           <Box>
             <Text color={ACCENT}>⌁ </Text>
-            <Text color={PRIMARY} bold>{artifacts.length ? '本轮交付' : '本轮验收'}</Text>
-            {summary ? <Text color={MUTED}>  {summary}</Text> : null}
-            {added ? <Text color={SUCCESS}>  +{added}</Text> : null}
-            {removed ? <Text color={ERROR}>  -{removed}</Text> : null}
+            <Text color={PRIMARY} bold>{delivery.title}</Text>
+            {delivery.summary ? <Text color={MUTED}>  {delivery.summary}</Text> : null}
+            {delivery.added ? <Text color={SUCCESS}>  +{delivery.added}</Text> : null}
+            {delivery.removed ? <Text color={ERROR}>  -{delivery.removed}</Text> : null}
           </Box>
-          <Text color={deliveryStateColor} bold={failedVerification}>{deliveryStateLabel}</Text>
+          <Text color={deliveryStateColor} bold={delivery.state.tone === 'error'}>{delivery.state.label}</Text>
         </Box>
         {artifacts.slice(0, 4).map((artifact, index) => {
           const operation = artifact.reverted
@@ -2276,8 +2325,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
             ))}
           </Box>
         ) : null}
-        {failedVerification ? <Text color={ERROR}>  Ctrl+E查看失败步骤与恢复操作</Text> : null}
-        {artifacts.length ? <Text color={MUTED}>  Ctrl+G查看diff与安全撤销</Text> : null}
+        <Text color={delivery.state.tone === 'error' ? ERROR : MUTED}>  {delivery.actionHint}</Text>
       </Box>
     );
   }
@@ -2884,6 +2932,7 @@ export function App({
         role: 'delivery_summary',
         artifacts: runProjectionRef.current.artifacts,
         verifications,
+        status: finalPhase,
       });
     }
     if (additions.length) setTranscript(items => [...items, ...additions]);

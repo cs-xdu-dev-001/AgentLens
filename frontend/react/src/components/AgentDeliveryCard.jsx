@@ -1,26 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { AgentArtifactList, artifactTarget } from "./AgentArtifactList.jsx";
+import { AgentArtifactList } from "./AgentArtifactList.jsx";
 import {
+  buildAgentDeliveryPresentation,
   buildAgentVerificationPresentation,
   verificationTraceStepId,
 } from "./agentRunPresentation.js";
-
-function changeMetrics(artifacts) {
-  return artifacts.reduce((total, artifact) => ({
-    added: total.added + Math.max(0, Number(artifact?.addedLines) || 0),
-    removed: total.removed + Math.max(0, Number(artifact?.removedLines) || 0),
-  }), { added: 0, removed: 0 });
-}
-
-function deliveryState(verifications) {
-  if (!verifications.length) {
-    return { className: "unverified", label: "未验证" };
-  }
-  if (verifications.some((item) => item.status === "failed")) {
-    return { className: "failed", label: "验证失败" };
-  }
-  return { className: "passed", label: "验证通过" };
-}
 
 export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals = [] }) {
   const sourceArtifacts = useMemo(() => (
@@ -33,26 +17,29 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
     () => buildAgentVerificationPresentation(trace, run?.verifications),
     [run?.verifications, trace],
   );
-  const failedVerification = verifications.some((item) => item.status === "failed");
-  const delivery = deliveryState(verifications);
-  const [expanded, setExpanded] = useState(failedVerification);
+  const runStatus = run?.runSummary?.status || run?.status || "";
+  const delivery = useMemo(() => buildAgentDeliveryPresentation({
+    artifacts,
+    verifications,
+    runStatus,
+  }), [artifacts, runStatus, verifications]);
+  const [expanded, setExpanded] = useState(delivery.expandByDefault);
 
   useEffect(() => setArtifacts(sourceArtifacts), [sourceArtifacts]);
   useEffect(() => {
-    if (failedVerification) setExpanded(true);
-  }, [failedVerification, run?.id, run?.runId]);
+    if (delivery.expandByDefault) setExpanded(true);
+  }, [delivery.expandByDefault, run?.id, run?.runId]);
 
-  if ((!artifacts.length && !verifications.length) || !["cancelled", "completed", "failed", "success"].includes(run?.status)) return null;
-  const metrics = changeMetrics(artifacts);
-  const externalCount = artifacts.filter((artifact) => /^https?:\/\//i.test(artifactTarget(artifact))).length;
-  const fileCount = artifacts.length - externalCount;
-  const revertedCount = artifacts.filter((artifact) => artifact?.reverted).length;
-  const summary = [
-    fileCount ? `${fileCount}个文件已更改` : "",
-    externalCount ? `${externalCount}个链接已生成` : "",
-    revertedCount ? `${revertedCount}项已撤销` : "",
-  ].filter(Boolean).join(" · ");
-  const title = artifacts.length ? "本轮交付" : "本轮验收";
+  if ((!artifacts.length && !verifications.length) || ![
+    "canceled",
+    "cancelled",
+    "completed",
+    "error",
+    "failed",
+    "interrupted",
+    "succeeded",
+    "success",
+  ].includes(String(runStatus).toLowerCase())) return null;
 
   const openRunPanel = (activeTab, focusStepId = "") => {
     const currentRun = { ...run, artifacts };
@@ -77,7 +64,7 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
   );
 
   return (
-    <section className={`agent-delivery-card${expanded ? " is-expanded" : ""}`} aria-label={title}>
+    <section className={`agent-delivery-card${expanded ? " is-expanded" : ""}`} aria-label={delivery.title}>
       <button
         type={"button"}
         onClick={() => setExpanded((value) => !value)}
@@ -88,17 +75,16 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
           <path d={"M7 4l6 6-6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"1.8"} strokeLinecap={"round"} strokeLinejoin={"round"} />
         </svg>
         <span className={"agent-delivery-card-copy"}>
-          <strong>{title}</strong>
-          {summary ? <span>{summary}</span> : null}
+          <strong>{delivery.title}</strong>
+          {delivery.summary ? <span>{delivery.summary}</span> : null}
         </span>
         <span className={"agent-delivery-card-diff"} aria-label={"代码行变更"}>
-          {metrics.added ? <b>{`+${metrics.added}`}</b> : null}
-          {metrics.removed ? <i>{`−${metrics.removed}`}</i> : null}
+          {delivery.added ? <b>{`+${delivery.added}`}</b> : null}
+          {delivery.removed ? <i>{`−${delivery.removed}`}</i> : null}
         </span>
-        <span className={`agent-delivery-card-status is-${delivery.className}`}>
-          {delivery.label}
+        <span className={`agent-delivery-card-status is-${delivery.state.className}`} aria-live={"polite"}>
+          {delivery.state.label}
         </span>
-        <span className={"agent-delivery-card-state"}>{expanded ? "收起" : "查看"}</span>
       </button>
       {expanded ? (
         <div className={"agent-delivery-card-body"} id={`agent-delivery-${messageId}`}>
@@ -148,17 +134,13 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
             <button
               className={"agent-delivery-card-open"}
               type={"button"}
-              onClick={failedVerification
+              onClick={delivery.failedVerification
                 ? () => openVerification(verifications.find((item) => item.status === "failed"))
-                : artifacts.length
+                : delivery.actionTarget === "artifacts"
                   ? openArtifacts
                   : () => openRunPanel("trace")}
             >
-              {failedVerification
-                ? "查看失败步骤与恢复操作"
-                : artifacts.length
-                  ? "在运行面板查看全部"
-                  : "查看完整运行过程"}
+              {delivery.actionLabel}
             </button>
           ) : null}
         </div>

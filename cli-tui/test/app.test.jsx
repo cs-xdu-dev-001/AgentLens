@@ -9,6 +9,7 @@ import {render} from 'ink-testing-library';
 import {
   activeTaskAnchorMetrics,
   App,
+  buildTuiDeliveryPresentation,
   buildTuiDiagnosticReport,
   changeReviewArtifacts,
   changeReviewKey,
@@ -63,6 +64,25 @@ import {
 } from '../src/terminalFeedback.js';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('delivery presentation distinguishes complete, partial, and unverified outcomes', () => {
+  assert.deepEqual(
+    buildTuiDeliveryPresentation({
+      artifacts: [{path: 'report.md', addedLines: 4}],
+      verifications: [{status: 'passed'}],
+      status: '已完成',
+    }).state,
+    {tone: 'success', label: '验证通过'},
+  );
+  const failed = buildTuiDeliveryPresentation({
+    artifacts: [{path: 'report.md'}],
+    status: '执行失败',
+  });
+  assert.equal(failed.title, '本轮结果');
+  assert.equal(failed.state.label, '运行失败');
+  assert.equal(failed.actionHint, 'Ctrl+T查看未完成步骤');
+  assert.equal(buildTuiDeliveryPresentation({artifacts: [{path: 'report.md'}]}).state.label, '待验证');
+});
 
 test('session titles are compact and redact credential-shaped text', () => {
   assert.equal(sessionTitleFromPrompt('  修复\n登录按钮  '), '修复 登录按钮');
