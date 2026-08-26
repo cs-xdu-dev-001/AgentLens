@@ -28,6 +28,11 @@ __pycache__/
 .pytest_cache/
 tmp/
 
+# Documentation build environments and caches
+.venv-docs/
+.mkdocs_cache/
+site/
+
 # Runtime data and logs
 data/*.db
 data/*.db-*

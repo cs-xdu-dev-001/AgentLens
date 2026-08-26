@@ -15,7 +15,7 @@
   <a href="#选择你的使用方式">快速开始</a> ·
   <a href="#linux-cli">Linux CLI</a> ·
   <a href="#linux部署">部署</a> ·
-  <a href="#进一步阅读">文档</a>
+  <a href="https://cs-xdu-dev-001.github.io/KnowFlow-AI/">在线文档</a>
 </p>
 
 <p>
@@ -331,11 +331,27 @@ npm run build
 
 ## 进一步阅读
 
+- [在线文档](https://cs-xdu-dev-001.github.io/KnowFlow-AI/)
+- [系统架构](https://cs-xdu-dev-001.github.io/KnowFlow-AI/architecture/)
+- [使用指南](https://cs-xdu-dev-001.github.io/KnowFlow-AI/usage/)
 - [Web搜索Agent循环](docs/langgraph-web-search-loop.md)
 - [MCP写操作审批](docs/langgraph-mcp-write-approval.md)
 - [Skills与任务计划](docs/langgraph-skills-and-planning.md)
 - [长期记忆生命周期](docs/langgraph-memory-lifecycle.md)
-- [API调试](docs/api-debug.md)
+
+### 本地预览文档
+
+```powershell
+py -3 -m venv .venv-docs
+.\.venv-docs\Scripts\python -m pip install -r requirements-docs.txt
+.\.venv-docs\Scripts\python -m mkdocs serve
+```
+
+打开<http://127.0.0.1:8000/>。提交前使用`mkdocs build --strict`检查导航、链接和配置。
+
+### 首次发布GitHub Pages
+
+仓库的`Docs`工作流会在`main`分支文档变更后构建并部署。首次发布前，在GitHub仓库进入`Settings → Pages → Build and deployment`，将`Source`设为`GitHub Actions`；之后无需维护`gh-pages`分支。
 
 ## 技术栈
 
