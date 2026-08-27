@@ -6409,7 +6409,7 @@ export function App({
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
-    sessions: `↑↓选择 · Enter恢复 · ${sessionScope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · Tab切换 · Esc关闭`,
+    sessions: `↑↓选择 · Enter恢复 · ${sessionScope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · D永久删除 · Tab切换 · Esc关闭`,
     localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',

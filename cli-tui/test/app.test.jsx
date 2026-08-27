@@ -3154,6 +3154,7 @@ test('resume picker requires a second D press before permanently deleting a sess
     ],
   });
   await waitForFrame(view, /删除前确认/);
+  assert.match(view.lastFrame(), /D永久删除/);
   const sentBeforeDelete = client.sent.length;
 
   view.stdin.write('d');
