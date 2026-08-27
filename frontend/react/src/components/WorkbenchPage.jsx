@@ -106,6 +106,33 @@ export function WorkbenchPage({ active = false }) {
           <span className={projectInstructionPaths.length ? "ready" : ""} title={projectInstructionPaths.join("、")}>{projectInstructionPaths.length ? `项目指令：${projectInstructionPaths.join("、")}` : "未发现项目指令"}</span>
         </div>
 
+        <section className="workspace-boundary-card" aria-label="Agent可见范围">
+          <div className="workspace-boundary-head">
+            <strong>Agent可见范围</strong>
+            <span className={status?.enabled ? "ready" : "warning"}>
+              {status?.scopeLabel || (status?.enabled ? "当前用户隔离工作区" : "工作区已关闭")}
+            </span>
+          </div>
+          <div className="workspace-boundary-grid">
+            <div>
+              <span>工作目录</span>
+              <strong>{status?.cwdLabel || "工作区根目录"}</strong>
+            </div>
+            <div>
+              <span>工作区类型</span>
+              <strong>{({ project: "项目", directory: "目录", home: "HOME" }[status?.workspaceKind] || "受控目录")}</strong>
+            </div>
+            <div>
+              <span>允许目录</span>
+              <strong>{`${Math.max(0, Number(status?.allowedDirectoryCount) || 0)}个`}</strong>
+            </div>
+            <div>
+              <span>保护规则</span>
+              <strong>{status?.protectedPatterns?.length ? status.protectedPatterns.join(" · ") : "未知"}</strong>
+            </div>
+          </div>
+        </section>
+
         <nav className="workspace-breadcrumb" aria-label="工作区路径">
           <button type="button" onClick={() => load("")}>工作区</button>
           {crumbs.map((part, index) => {

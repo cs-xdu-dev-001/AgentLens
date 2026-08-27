@@ -38,6 +38,12 @@ def main() -> None:
     assert "WorkspaceRuntime(" in router
     assert '"itemCount": item_count' in router
     assert '"isolation": "user"' in router
+    assert '"scopeLabel"' in router
+    assert '"workspaceKind": workspace_kind' in router
+    assert '"allowedDirectoryCount": allowed_directory_count' in router
+    assert '"cwdLabel": "工作区根目录"' in router
+    assert '"projectRoot"' not in router
+    assert '"allowedDirectories":' not in router
     assert '"protectedPatterns"' in router
     assert '"symlinkWriteProtected": True' in router
     assert '"projectInstructions": project_instructions' in router
@@ -55,6 +61,8 @@ def main() -> None:
     assert "knowflow:react-workspace-updated" in topbar
     assert "projectInstructions" in topbar and "份项目指令" in topbar
     assert "项目指令：" in page and "未发现项目指令" in page
+    assert "workspace-boundary-card" in page and "Agent可见范围" in page
+    assert "allowedDirectoryCount" in page and "cwdLabel" in page
     assert "workspaceGitPresentation(status)" in topbar
     assert "conflictedFiles" in git_presentation
     assert "stagedFiles" in git_presentation

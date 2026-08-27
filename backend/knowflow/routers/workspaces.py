@@ -99,6 +99,8 @@ def workspace_status(request: Request) -> dict:
     item_count = 0
     project_instructions = {"count": 0, "sources": [], "truncated": False}
     git_status: dict = {"repository": False, "clean": True}
+    workspace_kind = "disabled"
+    allowed_directory_count = 0
     if WORKSPACE_ENABLED:
         runtime = WorkspaceRuntime(
             WORKSPACE_DIR,
@@ -109,6 +111,13 @@ def workspace_status(request: Request) -> dict:
         context_status = WorkspaceContext(runtime.root).status()
         project_instructions = context_status["projectInstructions"]
         git_status = context_status["git"]
+        workspace_kind = str(context_status.get("workspaceKind") or "directory")
+        # Keep absolute deployment paths inside the runtime. The web client
+        # only needs to know how many roots are allowed by the boundary.
+        allowed_directory_count = max(
+            1,
+            len(context_status.get("allowedDirectories") or []),
+        )
     return api_success(
         {
             "enabled": WORKSPACE_ENABLED,
@@ -118,6 +127,10 @@ def workspace_status(request: Request) -> dict:
             "maxFileBytes": WORKSPACE_MAX_FILE_BYTES,
             "itemCount": item_count,
             "isolation": "user",
+            "scopeLabel": "当前用户隔离工作区" if WORKSPACE_ENABLED else "工作区已关闭",
+            "workspaceKind": workspace_kind,
+            "allowedDirectoryCount": allowed_directory_count,
+            "cwdLabel": "工作区根目录",
             "protectedPatterns": [".git", ".env*", ".ssh", ".tmp"],
             "symlinkWriteProtected": True,
             "projectInstructions": project_instructions,
