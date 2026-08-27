@@ -1,8 +1,10 @@
 import { copySelection } from "./copyPresentation.js";
 
+const ANSWER_COPY_SUCCESS_TOAST = "答案已复制";
+
 async function copyAssistantMessageContent(content, toast, label = "答案") {
   await navigator.clipboard.writeText(content || "");
-  toast(`${label}已复制`);
+  toast(label === "答案" ? ANSWER_COPY_SUCCESS_TOAST : `${label}已复制`);
 }
 
 export function bindReactControllerEvents({
