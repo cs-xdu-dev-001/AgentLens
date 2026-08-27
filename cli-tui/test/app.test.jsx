@@ -433,6 +433,20 @@ test('copy selection can export redacted tool output and the visible transcript'
   assert.match(tool.text, /run_sandbox_command/);
   assert.doesNotMatch(tool.text, /sk-secret-value/);
   assert.match(terminalCopySelection('', 'tool all', {toolRows: tools}).text, /read_workspace_file/);
+  const traceOnly = terminalCopySelection('', 'tool 1', {
+    traceRows: [{
+      kind: 'sandbox',
+      name: 'run_sandbox_command',
+      status: 'completed',
+      inputSummary: {command: 'echo token=sk-trace-secret'},
+      outputSummary: {stdout: 'ready'},
+      durationMs: 1200,
+    }],
+  });
+  assert.equal(traceOnly.ok, true);
+  assert.match(traceOnly.text, /run_sandbox_command/);
+  assert.match(traceOnly.text, /ready/);
+  assert.doesNotMatch(traceOnly.text, /sk-trace-secret/);
   const transcript = terminalCopySelection('', 'transcript', {
     transcript: [
       {role: 'user', content: '检查工作区'},

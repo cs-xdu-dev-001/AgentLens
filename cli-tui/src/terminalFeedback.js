@@ -53,24 +53,91 @@ function copyValue(value, limit = 12_000) {
 }
 
 function copyToolRow(row, index = 0) {
-  const name = copyValue(row?.name || row?.toolName || '工具调用', 160) || '工具调用';
+  const name = copyValue(row?.name || row?.toolName || row?.details?.toolName || '工具调用', 160) || '工具调用';
   const status = copyValue(row?.status || 'running', 80) || 'running';
   const lines = [`[${status}] ${name}`];
   const fields = [
-    ['输入', row?.arguments],
-    ['输出', row?.output],
-    ['stdout', row?.stdout],
-    ['stderr', row?.stderr],
+    ['输入', row?.arguments || row?.inputSummary || row?.inputJson || row?.input_json],
+    ['输出', row?.output || row?.outputSummary || row?.details?.output],
+    ['stdout', row?.stdout || row?.details?.stdout],
+    ['stderr', row?.stderr || row?.details?.stderr],
     ['错误', row?.errorMessage || row?.errorCode],
   ];
   for (const [label, value] of fields) {
     const text = copyValue(value);
     if (text) lines.push(`${label}:\n${text}`);
   }
-  if (row?.elapsedSeconds !== undefined && row?.elapsedSeconds !== null) {
-    lines.push(`耗时: ${copyValue(row.elapsedSeconds, 40)}s`);
+  const elapsedSeconds = row?.elapsedSeconds ?? (
+    row?.durationMs !== undefined && row?.durationMs !== null
+      ? Number(row.durationMs) / 1000
+      : undefined
+  );
+  if (elapsedSeconds !== undefined && elapsedSeconds !== null && Number.isFinite(Number(elapsedSeconds))) {
+    lines.push(`耗时: ${copyValue(elapsedSeconds, 40)}s`);
   }
   return `${index + 1}. ${lines.join('\n')}`;
+}
+
+const TOOL_TRACE_KINDS = new Set(['tool', 'mcp', 'sandbox', 'workspace']);
+const TOOL_TRACE_NAMES = new Set([
+  'web_search',
+  'web_fetch',
+  'run_sandbox_command',
+  'list_workspace',
+  'read_workspace_file',
+  'write_workspace_file',
+]);
+
+function isToolTraceRow(row) {
+  const kind = String(row?.kind || '').trim().toLowerCase();
+  const name = String(row?.name || row?.toolName || '').trim().toLowerCase();
+  return TOOL_TRACE_KINDS.has(kind) || TOOL_TRACE_NAMES.has(name);
+}
+
+function rowIdentityKeys(row) {
+  return [row?.toolCallId, row?.id]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean);
+}
+
+function rowNameKey(row) {
+  return String(row?.name || row?.toolName || '').trim().toLowerCase();
+}
+
+function toolRowsForContext(context = {}) {
+  const activityRows = Array.isArray(context?.toolRows) ? context.toolRows.filter(Boolean) : [];
+  const traceRows = Array.isArray(context?.traceRows)
+    ? context.traceRows.filter(isToolTraceRow)
+    : [];
+  if (!traceRows.length) return activityRows;
+  const activityByKey = new Map();
+  const activitiesByName = new Map();
+  activityRows.forEach(row => rowIdentityKeys(row).forEach(key => {
+    if (!activityByKey.has(key)) activityByKey.set(key, row);
+  }));
+  activityRows.forEach(row => {
+    const name = rowNameKey(row);
+    if (!name) return;
+    const rows = activitiesByName.get(name) || [];
+    rows.push(row);
+    activitiesByName.set(name, rows);
+  });
+  const usedActivities = new Set();
+  const merged = traceRows.map(row => {
+    const activity = rowIdentityKeys(row).map(key => activityByKey.get(key)).find(value => value && !usedActivities.has(value))
+      || (() => {
+        const candidates = activitiesByName.get(rowNameKey(row)) || [];
+        return candidates.length === 1 && !usedActivities.has(candidates[0]) ? candidates[0] : null;
+      })();
+    if (activity) usedActivities.add(activity);
+    return activity ? {...activity, ...row} : row;
+  });
+  activityRows.forEach(row => {
+    if (!usedActivities.has(row)) {
+      merged.push(row);
+    }
+  });
+  return merged;
 }
 
 function boundedCopyJoin(items, format, separator = '\n\n', limit = COPY_TEXT_LIMIT) {
@@ -108,7 +175,11 @@ function copyTranscriptItem(item, index) {
   if (content) return `${index + 1}. ${role}:\n${content}`;
   if (item?.role === 'task_summary') {
     const entries = Array.isArray(item.activities) ? item.activities : [];
-    const rows = entries.map(entry => Array.isArray(entry) ? entry[1] : entry);
+    const activityRows = entries.map(entry => Array.isArray(entry) ? entry[1] : entry);
+    const traceRows = Array.isArray(item.traceSteps)
+      ? item.traceSteps.map(entry => Array.isArray(entry) ? entry[1] : entry).filter(isToolTraceRow)
+      : [];
+    const rows = toolRowsForContext({toolRows: activityRows, traceRows});
     const process = rows.length
       ? boundedCopyJoin(rows, copyToolRow, '\n', 20_000).text
       : '暂无工具调用记录';
@@ -133,7 +204,7 @@ export function terminalCopySelection(answer, args = '', context = {}) {
     if (parts.length > 2 || (parts[1] && parts[1] !== 'all' && !/^\d+$/u.test(parts[1]))) {
       return {ok: false, message: '用法：/copy tool [序号|all]'};
     }
-    const rows = Array.isArray(context.toolRows) ? context.toolRows.filter(Boolean) : [];
+    const rows = toolRowsForContext(context);
     if (!rows.length) return {ok: false, message: '当前运行还没有可复制的工具输出。'};
     const requested = parts[1] && parts[1] !== 'all' ? Number(parts[1]) : rows.length;
     if (!Number.isInteger(requested) || requested < 1 || requested > rows.length) {

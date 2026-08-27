@@ -4903,6 +4903,7 @@ export function App({
         {
           assistant: lastAssistantAnswerRef.current || assistantDraftRef.current,
           toolRows: [...activitiesRef.current.values()],
+          traceRows: [...traceStepsRef.current.values()],
           transcript: [
             ...transcript,
             ...(assistantDraftRef.current
