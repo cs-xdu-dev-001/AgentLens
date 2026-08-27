@@ -43,6 +43,7 @@ import {
   terminalClipboardSequence,
   terminalCopySelection,
   terminalNotificationsEnabled,
+  toolRowsForContext,
   useTerminalFeedback,
 } from './terminalFeedback.js';
 import {
@@ -999,13 +1000,15 @@ function taskSummaryModel(activities, traceSteps, artifacts = [], references = [
 }
 
 function ActivityDetails({row, compact = false}) {
-  const output = safeJson(row.output, compact ? 1200 : 10000);
-  const stdout = safeJson(row.stdout, compact ? 1200 : 10000);
-  const stderr = safeJson(row.stderr, compact ? 1200 : 10000);
+  const argumentsValue = row.arguments ?? row.inputSummary ?? row.inputJson ?? row.input_json;
+  const outputValue = row.output ?? row.outputSummary ?? row.details?.output;
+  const output = safeJson(outputValue, compact ? 1200 : 10000);
+  const stdout = safeJson(row.stdout ?? row.details?.stdout, compact ? 1200 : 10000);
+  const stderr = safeJson(row.stderr ?? row.details?.stderr, compact ? 1200 : 10000);
   const errorMessage = safeJson(row.errorMessage, 1200);
   return (
     <Box flexDirection="column" marginLeft={2}>
-      {row.arguments ? <Text color={MUTED}>输入 {safeJson(row.arguments, compact ? 600 : 2400)}</Text> : null}
+      {argumentsValue ? <Text color={MUTED}>输入 {safeJson(argumentsValue, compact ? 600 : 2400)}</Text> : null}
       {stdout ? <Text color={MUTED}>stdout {stdout}</Text> : null}
       {stderr ? <Text color={ERROR}>stderr {stderr}</Text> : null}
       {output ? <Text color={row.status === 'failed' ? ERROR : MUTED}>输出 {output}</Text> : null}
@@ -5221,7 +5224,10 @@ export function App({
     }
   }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, promptStash, replacePastedContents, restorePromptStash, selectedSuggestion, showComposerNotice, startTurn, suggestions, updateComposer, workspace]);
 
-  const toolRows = useMemo(() => [...activities.values()], [activities]);
+  const toolRows = useMemo(() => toolRowsForContext({
+    toolRows: [...activities.values()],
+    traceRows: [...traceSteps.values()],
+  }), [activities, traceSteps]);
   const detailRows = useMemo(() => {
     const hasFailedTool = toolRows.some(row => FAILURE_RUNTIME_STATUSES.has(row.status));
     if (!runProjection.error || hasFailedTool) return toolRows;

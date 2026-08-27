@@ -2283,6 +2283,8 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(view.lastFrame(), /example\.com\/report/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u0005');
+  await waitForFrame(view, /工具详情[\s\S]*web_fetch/);
+  view.stdin.write('\t');
   await waitForFrame(view, /引用来源[\s\S]*匹配度 91%/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u001b');
@@ -2617,6 +2619,41 @@ test('Ctrl+T turns the task summary into a navigable view and opens the selected
   await tick();
   assert.doesNotMatch(view.lastFrame(), /任务步骤\s+1\/1/);
   view.unmount();
+});
+
+test('Ctrl+E opens trace-only tool details without legacy activity events', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查统一事件详情');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      stepId: 'step-trace-only',
+      kind: 'sandbox',
+      name: 'run_sandbox_command',
+      title: '运行项目检查',
+      status: 'completed',
+      inputSummary: {command: 'npm test -- --token sk-trace-secret'},
+      outputSummary: {stdout: '128项测试通过'},
+      durationMs: 1200,
+    },
+  });
+  await tick();
+
+  view.stdin.write('\u0005');
+  await tick();
+  const frame = view.lastFrame();
+  assert.match(frame, /工具详情/);
+  assert.match(frame, /run_sandbox_command/);
+  assert.match(frame, /128项测试通过/);
+  assert.doesNotMatch(frame, /sk-trace-secret/);
+  assert.doesNotMatch(frame, /本轮还没有工具调用/);
 });
 
 test('Ctrl+T exposes failed verification and opens its matching tool details', async t => {

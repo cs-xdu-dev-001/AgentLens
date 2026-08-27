@@ -104,7 +104,7 @@ function rowNameKey(row) {
   return String(row?.name || row?.toolName || '').trim().toLowerCase();
 }
 
-function toolRowsForContext(context = {}) {
+export function toolRowsForContext(context = {}) {
   const activityRows = Array.isArray(context?.toolRows) ? context.toolRows.filter(Boolean) : [];
   const traceRows = Array.isArray(context?.traceRows)
     ? context.traceRows.filter(isToolTraceRow)
