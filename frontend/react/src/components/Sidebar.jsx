@@ -987,6 +987,11 @@ function UserMenu() {
     }
   };
 
+  const handleDiagnosticCopy = () => {
+    setMenuOpen(false);
+    window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
+  };
+
   return (
     <div className={menuOpen ? "user-menu open" : "user-menu"} id={"user-menu"} ref={menuRef}>
       <button className={"user-menu-button"} id={"user-menu-btn"} type={"button"} onClick={handleUserMenuToggle}>
@@ -999,7 +1004,10 @@ function UserMenu() {
         </span>
       </button>
       <div className={"user-popover"} id={"user-popover"}>
-        <button id={"logout-btn"} type={"button"} onClick={handleLogout} disabled={loggingOut}>
+        <button id={"diagnostic-copy-btn"} type={"button"} onClick={handleDiagnosticCopy}>
+          {"复制脱敏诊断"}
+        </button>
+        <button className={"danger"} id={"logout-btn"} type={"button"} onClick={handleLogout} disabled={loggingOut}>
           {loggingOut ? "正在退出..." : "退出登录"}
         </button>
       </div>

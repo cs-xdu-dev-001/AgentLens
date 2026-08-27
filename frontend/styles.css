@@ -858,13 +858,16 @@ a {
   padding: 9px 10px;
   border-radius: 9px;
   background: transparent;
-  color: var(--danger);
+  color: var(--text);
   text-align: left;
 }
 
 .user-popover button:hover {
-  background: #fef2f2;
+  background: var(--surface-hover);
 }
+
+.user-popover button.danger { color: var(--danger); }
+.user-popover button.danger:hover { background: #fef2f2; }
 
 .sidebar.collapsed .brand-copy,
 .sidebar.collapsed .new-chat-button strong,
@@ -5280,6 +5283,8 @@ body.sidebar-collapsed .sidebar-tool.active .nav-icon {
 .sidebar .user-popover button {
   color: var(--console-text);
 }
+
+.sidebar .user-popover button.danger { color: #ff9b98; }
 
 .chat-layout {
   padding: 12px 14px 12px 12px;

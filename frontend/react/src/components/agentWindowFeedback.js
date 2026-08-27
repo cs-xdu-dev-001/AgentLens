@@ -75,6 +75,7 @@ function publicIdentifier(value, limit = 120) {
 }
 
 export function buildAgentDiagnosticReport(run, {
+  platform = "",
   surface = "Web",
   version = "",
   now = Date.now(),
@@ -116,6 +117,7 @@ export function buildAgentDiagnosticReport(run, {
     "AgentLens脱敏诊断",
     `客户端: ${publicScalar(surface, 40) || "Web"}`,
     version ? `版本: ${publicScalar(version, 40)}` : "",
+    platform ? `平台: ${publicScalar(platform, 80)}` : "",
     `时间: ${new Date(now).toISOString()}`,
     `状态: ${status}`,
     runId ? `运行ID: ${runId}` : "运行ID: 无",

@@ -50,8 +50,10 @@ const report = buildAgentDiagnosticReport({{
   runSummary: {{completedSteps: 2, totalSteps: 3, toolCalls: 4}},
   prompt: 'private user prompt',
   trace: [{{kind: 'tool', name: 'web_search', status: 'failed', inputSummary: '{{"token":"hidden"}}'}}],
-}}, {{now: 0}});
+}}, {{now: 0, platform: 'Windows', version: '0.64.8'}});
 assert.match(report, /AgentLens脱敏诊断/);
+assert.match(report, /版本: 0[.]64[.]8/);
+assert.match(report, /平台: Windows/);
 assert.match(report, /进度: 2\/3/);
 assert.match(report, /工具调用: 4/);
 assert.doesNotMatch(report, /sk-do-not-copy|private user prompt|hidden/);
@@ -72,10 +74,15 @@ completed = subprocess.run(
 assert completed.returncode == 0, completed.stderr
 component_source = COMPONENT.read_text(encoding="utf-8")
 assert "knowflow:react-diagnostic-copy-request" in component_source
+assert "versionRef" in component_source and "runtimeApi.get()" in component_source
 assert "脱敏诊断已复制" in component_source
 assert "自动复制失败，已打开脱敏诊断" in component_source
 assert 'role={"dialog"}' in component_source
 assert "全选诊断" in component_source
+sidebar_source = (ROOT / "frontend" / "react" / "src" / "components" / "Sidebar.jsx").read_text(encoding="utf-8")
+assert "复制脱敏诊断" in sidebar_source
+assert 'id={"diagnostic-copy-btn"}' in sidebar_source
+assert "knowflow:react-diagnostic-copy-request" in sidebar_source
 toggle_source = (ROOT / "frontend" / "react" / "src" / "components" / "AgentNotificationToggle.jsx").read_text(encoding="utf-8")
 assert "Notification.requestPermission" in toggle_source
 assert "浏览器已阻止桌面提醒" in toggle_source

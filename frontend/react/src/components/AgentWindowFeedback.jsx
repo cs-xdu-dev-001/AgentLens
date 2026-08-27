@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { runtimeApi } from "../api/client.js";
 import {
   AGENT_NOTIFICATION_PREFERENCE_EVENT,
   agentNotificationPreference,
@@ -17,6 +18,7 @@ export function AgentWindowFeedback() {
   const feedbackRef = useRef(agentWindowFeedback(null));
   const diagnosticRef = useRef(null);
   const runRef = useRef(null);
+  const versionRef = useRef("");
   const [fallbackReport, setFallbackReport] = useState("");
 
   useEffect(() => {
@@ -24,6 +26,13 @@ export function AgentWindowFeedback() {
     const favicon = findFavicon();
     const originalFavicon = favicon?.getAttribute("href") || "/favicon.svg";
     let notificationEnabled = agentNotificationPreference().enabled;
+    void runtimeApi.get()
+      .then((runtime) => {
+        versionRef.current = String(runtime?.version || "");
+      })
+      .catch(() => {
+        // Offline diagnostics remain useful without a server version.
+      });
 
     const publishNotification = (feedback) => {
       if (
@@ -73,7 +82,10 @@ export function AgentWindowFeedback() {
       notificationEnabled = Boolean(event.detail?.enabled);
     };
     const handleDiagnosticCopy = async () => {
-      const report = buildAgentDiagnosticReport(runRef.current);
+      const report = buildAgentDiagnosticReport(runRef.current, {
+        platform: navigator.userAgentData?.platform || navigator.platform || "浏览器",
+        version: versionRef.current,
+      });
       try {
         if (!navigator.clipboard?.writeText) {
           throw new Error("Clipboard API unavailable");
