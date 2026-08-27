@@ -42,6 +42,24 @@ def main() -> None:
     assert normalize_local_api_mode("2") == "chat_completions"
     assert normalize_local_api_mode("chat-completions") == "chat_completions"
     assert normalize_local_api_mode("respinses") is None
+
+    if os.name == "nt":
+        original_replace = Path.replace
+        replace_attempts = 0
+
+        def flaky_replace(source: Path, target: Path) -> Path:
+            nonlocal replace_attempts
+            replace_attempts += 1
+            if replace_attempts < 3:
+                raise PermissionError("synthetic scanner lock")
+            return original_replace(source, target)
+
+        with TemporaryDirectory() as retry_directory:
+            retry_store = LocalCliConfigStore(Path(retry_directory))
+            with patch.object(Path, "replace", new=flaky_replace):
+                retry_store.update_public(lambda value: value.update({"model_name": "test"}))
+            assert retry_store.load_public()["model_name"] == "test"
+            assert replace_attempts == 3
     forbidden = explain_local_connection_error(
         "Responses API connection failed: HTTP 403: upstream_error"
     )
@@ -317,6 +335,24 @@ def main() -> None:
         restored = runtime.set_session_archived(stored[0]["runId"], False)
         assert restored["archived"] is False
         assert runtime.list_sessions()[0]["runId"] == stored[0]["runId"]
+        deleted = runtime.delete_session(stored[0]["runId"])
+        assert deleted == {"runId": stored[0]["runId"], "deleted": True}
+        assert runtime.sessions.load(stored[0]["runId"]) is None
+        assert not runtime.list_sessions()
+        runtime.sessions.save(
+            "run_activedelete",
+            title="仍在执行",
+            status="running",
+            messages=[],
+            **runtime._session_workspace_fields(),
+        )
+        try:
+            runtime.delete_session("run_activedelete")
+        except ValueError as exc:
+            assert "结束后" in str(exc)
+        else:
+            raise AssertionError("active local sessions must not be deleted")
+        assert runtime.sessions.load("run_activedelete") is not None
         runtime.sessions.save(
             "run_rewindsource",
             title="回退来源",

@@ -795,7 +795,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 15,
+      protocolVersion: 16,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -1752,7 +1752,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 15,
+    protocolVersion: 16,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1821,7 +1821,7 @@ test('Ink app restores a durable runtime queue paused and claims it before execu
   };
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 15,
+    protocolVersion: 16,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -2898,7 +2898,7 @@ test('startup resume opens the picker and continue restores the latest workspace
   const continueClient = new FakeClient();
   continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
     type: 'ready',
-    protocolVersion: 15,
+    protocolVersion: 16,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -3135,6 +3135,58 @@ test('resume picker filters sessions, previews context and retries loading in pl
   view.stdin.write('r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'sessions');
+  view.unmount();
+});
+
+test('resume picker requires a second D press before permanently deleting a session', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/resume');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [
+      {runId: 'run_delete', title: '删除前确认', status: 'completed', updatedAt: Date.now() / 1000},
+    ],
+  });
+  await waitForFrame(view, /删除前确认/);
+  const sentBeforeDelete = client.sent.length;
+
+  view.stdin.write('d');
+  await waitForFrame(view, /再次按D确认/);
+  assert.equal(client.sent.length, sentBeforeDelete);
+  view.stdin.write('\u001b');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /永久删除“删除前确认”/);
+
+  view.stdin.write('d');
+  await tick();
+  view.stdin.write('d');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_delete',
+    runId: 'run_delete',
+  });
+  client.emit('message', {
+    type: 'session_delete_failed',
+    message: 'checkpoint暂不可用',
+  });
+  await waitForFrame(view, /checkpoint暂不可用/);
+
+  view.stdin.write('d');
+  await tick();
+  view.stdin.write('d');
+  await tick();
+  client.emit('message', {
+    type: 'session_deleted',
+    result: {runId: 'run_delete', sessionId: '', deleted: true, current: false},
+  });
+  await waitForFrame(view, /当前工作区还没有历史会话/);
+  assert.doesNotMatch(view.lastFrame(), /删除前确认/);
   view.unmount();
 });
 

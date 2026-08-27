@@ -286,6 +286,11 @@ def main() -> None:
     assert fake.calls[-1][1].endswith("/api/sessions/s1")
     assert fake.calls[-1][2]["json"] == {"title": "发布复盘"}
 
+    fake.responses.append(FakeResponse({"code": 0, "data": True}))
+    assert client.delete_session("s1") is True
+    assert fake.calls[-1][0] == "DELETE"
+    assert fake.calls[-1][1].endswith("/api/sessions/s1")
+
     cancelled_execution = RemoteAgentClient._collect(
         iter(
             [

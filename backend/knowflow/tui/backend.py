@@ -566,6 +566,47 @@ class TuiBackend:
             "pinned": bool(session.get("pinned", False)),
         }
 
+    def delete_session(self, run_id: str = "", session_id: str = "") -> dict[str, Any]:
+        target_run_id = str(run_id or "")
+        target_session_id = str(session_id or "")
+        if not target_run_id and not target_session_id:
+            target_run_id = str(self.current_run_id or "")
+            target_session_id = str(self.session_id or "")
+        deleting_current = bool(
+            (target_run_id and target_run_id == str(self.current_run_id or ""))
+            or (
+                target_session_id
+                and target_session_id == str(self.session_id or "")
+            )
+        )
+        if not target_run_id and not target_session_id:
+            raise RuntimeError("当前没有可删除的会话。")
+        if self.remote_client is not None:
+            if not target_session_id:
+                raise RuntimeError("当前远程会话缺少会话标识。")
+            deleted = self.remote_client.delete_session(target_session_id)
+            if not deleted:
+                raise RuntimeError("服务器未确认会话删除结果。")
+            if deleting_current:
+                self.reset()
+            return {
+                "runId": target_run_id,
+                "sessionId": target_session_id,
+                "deleted": True,
+                "current": deleting_current,
+            }
+        if self.local_agent is None or not target_run_id:
+            raise RuntimeError("当前没有可删除的本地会话。")
+        result = self.local_agent.delete_session(target_run_id)
+        if deleting_current:
+            self.reset()
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "deleted": bool(result.get("deleted")),
+            "current": deleting_current,
+        }
+
     def rewind_points(self) -> list[dict[str, Any]]:
         if self.remote_client is not None:
             if not self.session_id:

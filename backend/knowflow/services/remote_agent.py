@@ -257,6 +257,10 @@ class RemoteAgentClient:
         )
         return payload if isinstance(payload, dict) else {}
 
+    def delete_session(self, session_id: str) -> bool:
+        payload = self.request("DELETE", f"/api/sessions/{session_id}")
+        return bool(payload)
+
     def export_session(self, session_id: str) -> dict[str, Any]:
         payload = self.request("GET", f"/api/sessions/{session_id}/export")
         return payload if isinstance(payload, dict) else {}

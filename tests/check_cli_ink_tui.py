@@ -298,6 +298,14 @@ class FakeBackend:
             "pinned": False,
         }
 
+    def delete_session(self, run_id="", session_id=""):
+        return {
+            "runId": run_id or "run_ink",
+            "sessionId": session_id,
+            "deleted": True,
+            "current": False,
+        }
+
     def export_session(self, filename=""):
         return {
             "path": f"/workspace/{filename or '测试会话.md'}",
@@ -687,6 +695,20 @@ def main() -> None:
         "sessionId": "",
         "archived": True,
         "pinned": False,
+    }
+    ready_bridge._running = True
+    ready_bridge.handle({"type": "session_delete", "runId": "run_ink"})
+    assert wait_for(ready_output, "busy")[-1]["message"] == (
+        "请先取消当前任务，再永久删除会话。"
+    )
+    ready_bridge._running = False
+    ready_bridge.handle({"type": "session_delete", "runId": "run_ink"})
+    delete_rows = wait_for(ready_output, "session_deleted")
+    assert delete_rows[-1]["result"] == {
+        "runId": "run_ink",
+        "sessionId": "",
+        "deleted": True,
+        "current": False,
     }
     ready_bridge.handle({"type": "export_session", "filename": "会话记录.md"})
     export_rows = wait_for(ready_output, "session_exported")

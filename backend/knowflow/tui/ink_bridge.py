@@ -22,7 +22,7 @@ from .backend import TuiBackend
 from .state import PromptHistoryStore, PromptQueueStore
 
 
-PROTOCOL_VERSION = 15
+PROTOCOL_VERSION = 16
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -741,6 +741,40 @@ class InkRuntimeBridge:
                 }
             )
 
+    def _delete_session(self, message: dict[str, Any]) -> None:
+        if self._running:
+            self.send(
+                {
+                    "type": "busy",
+                    "message": "请先取消当前任务，再永久删除会话。",
+                }
+            )
+            return
+        try:
+            result = self.backend.delete_session(
+                str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_delete_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            public_result = _public_value(result, max_chars=4_000)
+            self.send(
+                {
+                    "type": "session_deleted",
+                    "result": public_result,
+                }
+            )
+            if bool(result.get("current")):
+                self._request_id = ""
+                self._run_id = ""
+                self.send({"type": "session_reset"})
+
     def _export_session(self, message: dict[str, Any]) -> None:
         if self._running:
             self.send({"type": "busy", "message": "请等待当前任务结束后再导出会话。"})
@@ -1021,6 +1055,8 @@ class InkRuntimeBridge:
             self._pin_session(message)
         elif message_type == "session_archive":
             self._archive_session(message)
+        elif message_type == "session_delete":
+            self._delete_session(message)
         elif message_type == "export_session":
             self._export_session(message)
         elif message_type == "context":

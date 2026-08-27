@@ -26,6 +26,10 @@ def main() -> None:
     require("frontend/react/src/components/Sidebar.jsx", "loadSessions", "React session loader")
     require("frontend/react/src/components/Sidebar.jsx", "handleSessionRename", "React session rename handler")
     require("frontend/react/src/components/Sidebar.jsx", "handleSessionDelete", "React session delete handler")
+    require("frontend/react/src/components/Sidebar.jsx", "SessionDeleteDialog", "focused permanent-delete confirmation")
+    require("frontend/react/src/components/Sidebar.jsx", 'role={"alertdialog"}', "accessible destructive confirmation role")
+    require("frontend/react/src/components/Sidebar.jsx", "deleteTargetSessionId", "explicit delete target state")
+    require("frontend/react/src/components/Sidebar.jsx", "只想隐藏时，请改用归档", "archive-safe alternative copy")
     require("frontend/react/src/components/Sidebar.jsx", "handleSessionPin", "React session pin handler")
     require("frontend/react/src/components/Sidebar.jsx", "handleSessionArchive", "React session archive handler")
     require("frontend/react/src/components/Sidebar.jsx", "sessionApi.update", "React rename uses session API")
@@ -67,6 +71,7 @@ def main() -> None:
     forbid("frontend/react/src/controller/knowflowController.js", "window.toggleSessionMenu", "legacy global session menu export")
     forbid("frontend/react/src/controller/knowflowController.js", "window.renameSession", "legacy global rename session export")
     forbid("frontend/react/src/components/Sidebar.jsx", "window.prompt", "browser prompt session rename")
+    forbid("frontend/react/src/components/Sidebar.jsx", "window.confirm", "native browser delete confirmation")
 
     print("session history refresh, search, rename, and delete are owned by React")
 

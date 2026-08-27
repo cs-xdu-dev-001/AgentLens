@@ -1214,6 +1214,10 @@ def main() -> None:
                 }
             ]
 
+        def delete_session(self, session_id):
+            self.calls.append(("DELETE", f"/api/sessions/{session_id}"))
+            return True
+
     remote_client = FakeRemoteClient()
     tui_backend = TuiBackend(
         local_agent=None,
@@ -1243,6 +1247,27 @@ def main() -> None:
     )
     assert restored.result["restored"] is True
     assert restored.result["messages"][-1]["content"] == "普通回复"
+    deleted = tui_backend.delete_session(
+        "session_without_run",
+        "session_without_run",
+    )
+    assert deleted == {
+        "runId": "session_without_run",
+        "sessionId": "session_without_run",
+        "deleted": True,
+        "current": True,
+    }
+    assert remote_client.calls[-1] == (
+        "DELETE",
+        "/api/sessions/session_without_run",
+    )
+    tui_backend.current_run_id = "unrelated_run"
+    tui_backend.session_id = "current_session"
+    assert tui_backend.delete_session(session_id="other_session")["current"] is False
+    assert remote_client.calls[-1] == (
+        "DELETE",
+        "/api/sessions/other_session",
+    )
     remote_client.calls.clear()
     assert tui_backend.cancel("run_cancel")
     assert remote_client.calls == [
@@ -1258,6 +1283,9 @@ def main() -> None:
             self.cancelled.append(run_id)
             return True
 
+        def delete_session(self, run_id):
+            return {"runId": run_id, "deleted": True}
+
     local_agent = FakeLocalAgent()
     local_backend = TuiBackend(
         local_agent=local_agent,
@@ -1268,6 +1296,13 @@ def main() -> None:
     )
     assert local_backend.cancel(None)
     assert local_agent.cancelled == [None]
+    local_backend.current_run_id = "run_local"
+    assert local_backend.delete_session("run_local") == {
+        "runId": "run_local",
+        "sessionId": "",
+        "deleted": True,
+        "current": True,
+    }
     original_data_home = os.environ.get("XDG_DATA_HOME")
     with TemporaryDirectory() as data_home:
         os.environ["XDG_DATA_HOME"] = data_home

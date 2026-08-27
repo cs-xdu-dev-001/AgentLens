@@ -2004,7 +2004,21 @@ function modelProtocolLabel(value) {
   return publicLabel(value, '兼容协议', 30);
 }
 
-const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, scope = 'active', maxVisible = 6}) {
+function sessionIdentity(session) {
+  return String(session?.sessionId || session?.runId || '');
+}
+
+const SessionPicker = React.memo(function SessionPicker({
+  sessions,
+  selected,
+  query,
+  loading,
+  error,
+  scope = 'active',
+  deleteConfirmId = '',
+  deletingId = '',
+  maxVisible = 6,
+}) {
   const spinner = useSpinner(loading, '连接会话');
   const labels = {
     running: ['执行中', ACCENT],
@@ -2018,7 +2032,10 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
   const start = Math.max(0, Math.min(selected - 2, Math.max(0, sessions.length - visibleCount)));
   const visible = sessions.slice(start, start + visibleCount);
   const active = sessions[selected];
+  const activeId = sessionIdentity(active);
   const activeStatus = labels[active?.status] ?? ['状态未知', MUTED];
+  const confirmingDelete = Boolean(activeId && activeId === deleteConfirmId);
+  const deleting = Boolean(activeId && activeId === deletingId);
   return (
     <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} paddingY={1} marginTop={1}>
       <Box justifyContent="space-between">
@@ -2037,7 +2054,7 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
         return (
           <Box key={session.runId} justifyContent="space-between">
             <Text color={selectedRow ? PRIMARY : MUTED} bold={selectedRow} wrap="truncate-end">
-              {selectedRow ? '❯ ' : '  '}{session.pinned ? '◆ ' : ''}{publicLabel(session.title, session.runId, 72)}
+              {selectedRow ? confirmingDelete ? '! ' : '❯ ' : '  '}{session.pinned ? '◆ ' : ''}{publicLabel(session.title, session.runId, 72)}
             </Text>
             <Text color={status[1]}>  {formatSessionTime(session.updatedAt)} · {status[0]}</Text>
           </Box>
@@ -2047,9 +2064,16 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
           <Text color={activeStatus[1]}>{activeStatus[0]}  <Text color={MUTED}>{active.runId}</Text></Text>
           <Text color={MUTED} wrap="truncate-end">{publicLabel(active.answer || active.cwd, '尚无回答预览', 180)}</Text>
+          {confirmingDelete ? (
+            <Text color={ERROR} bold wrap="truncate-end">永久删除“{publicLabel(active.title, active.runId, 72)}”？再次按D确认，Esc取消</Text>
+          ) : deleting ? <Text color={WARNING}>正在永久删除会话…</Text> : null}
         </Box>
       ) : null}
-      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · {scope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · Tab切换 · Esc关闭</Text>
+      <Text color={confirmingDelete ? ERROR : MUTED}>
+        {confirmingDelete
+          ? '再次按D永久删除 · Esc取消'
+          : `${error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · ${scope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · D永久删除 · Tab切换 · Esc关闭`}
+      </Text>
     </Box>
   );
 });
@@ -2517,6 +2541,8 @@ export function App({
   const [sessionScope, setSessionScope] = useState('active');
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
+  const [sessionDeleteConfirmId, setSessionDeleteConfirmId] = useState('');
+  const [sessionDeletingId, setSessionDeletingId] = useState('');
   const [rewindPoints, setRewindPoints] = useState([]);
   const [rewindPicker, setRewindPicker] = useState(false);
   const [rewindChoice, setRewindChoice] = useState(0);
@@ -2712,6 +2738,8 @@ export function App({
       setSessionPicker(false);
       setSessionQuery('');
       setSessionError('');
+      setSessionDeleteConfirmId('');
+      setSessionDeletingId('');
     }
     if (keep !== 'rewind') {
       setRewindPicker(false);
@@ -3583,6 +3611,28 @@ export function App({
         setPhase(archived ? '会话已归档' : '会话已恢复');
         return;
       }
+      if (message.type === 'session_deleted') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const sessionId = String(result.sessionId || '');
+        setSessions(current => current.filter(item => (
+          (!runId || String(item.runId || '') !== runId)
+          && (!sessionId || String(item.sessionId || '') !== sessionId)
+        )));
+        setSessionChoice(0);
+        setSessionDeleteConfirmId('');
+        setSessionDeletingId('');
+        setSessionError('');
+        setPhase('会话已永久删除');
+        return;
+      }
+      if (message.type === 'session_delete_failed') {
+        setSessionDeletingId('');
+        setSessionDeleteConfirmId('');
+        setSessionError(message.message ?? '永久删除会话失败。');
+        setPhase('删除会话失败');
+        return;
+      }
       if (message.type === 'session_archive_failed') {
         setSessionError(message.message ?? '更新会话归档状态失败。');
         setPhase('更新归档状态失败');
@@ -3893,6 +3943,8 @@ export function App({
         closeTransientSurfaces('sessions');
         setSessionLoading(false);
         setSessionError('');
+        setSessionDeleteConfirmId('');
+        setSessionDeletingId('');
         setSessionPicker(true);
         return;
       }
@@ -5562,12 +5614,18 @@ export function App({
     }
     if (interactionFocus === 'sessions' && sessionPicker) {
       if (key.escape) {
-        setSessionPicker(false);
-        setSessionQuery('');
-        setSessionError('');
+        if (sessionDeleteConfirmId) {
+          setSessionDeleteConfirmId('');
+          setPhase('选择会话');
+        } else if (!sessionDeletingId) {
+          setSessionPicker(false);
+          setSessionQuery('');
+          setSessionError('');
+        }
       } else if (sessionError && character.toLowerCase() === 'r') {
         setSessionLoading(true);
         setSessionError('');
+        setSessionDeleteConfirmId('');
         client.send({type: 'sessions', limit: 100, archived: sessionScope === 'archived'});
       } else if (key.tab) {
         const nextScope = sessionScope === 'active' ? 'archived' : 'active';
@@ -5575,13 +5633,17 @@ export function App({
         setSessionChoice(0);
         setSessionLoading(true);
         setSessionError('');
+        setSessionDeleteConfirmId('');
         client.send({type: 'sessions', limit: 100, archived: nextScope === 'archived'});
       } else if (key.upArrow && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
         setSessionChoice(value => (value + filteredSessions.length - 1) % filteredSessions.length);
       } else if (key.downArrow && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
         setSessionChoice(value => (value + 1) % filteredSessions.length);
       } else if (String(character || '').toLowerCase() === 'p' && filteredSessions.length) {
         if (sessionScope === 'archived') return;
+        setSessionDeleteConfirmId('');
         const selectedSession = filteredSessions[sessionChoice];
         client.send({
           type: 'session_pin',
@@ -5591,6 +5653,7 @@ export function App({
         });
         setPhase(selectedSession?.pinned ? '正在取消置顶' : '正在置顶会话');
       } else if (String(character || '').toLowerCase() === 'a' && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
         const selectedSession = filteredSessions[sessionChoice];
         client.send({
           type: 'session_archive',
@@ -5599,15 +5662,35 @@ export function App({
           archived: sessionScope !== 'archived',
         });
         setPhase(sessionScope === 'archived' ? '正在恢复会话' : '正在归档会话');
+      } else if (String(character || '').toLowerCase() === 'd' && filteredSessions.length && !sessionDeletingId) {
+        const selectedSession = filteredSessions[sessionChoice];
+        const identity = sessionIdentity(selectedSession);
+        if (identity && sessionDeleteConfirmId === identity) {
+          setSessionDeletingId(identity);
+          setSessionDeleteConfirmId('');
+          setSessionError('');
+          client.send({
+            type: 'session_delete',
+            runId: selectedSession?.runId,
+            ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
+          });
+          setPhase('正在永久删除会话');
+        } else if (identity) {
+          setSessionDeleteConfirmId(identity);
+          setPhase('再次按D确认永久删除');
+        }
       } else if (key.return) {
+        setSessionDeleteConfirmId('');
         const selectedSession = filteredSessions[sessionChoice];
         resumeRun(selectedSession?.runId, selectedSession?.title, selectedSession?.sessionId, selectedSession?.status);
       } else if (key.backspace || key.delete) {
+        setSessionDeleteConfirmId('');
         setSessionQuery(value => value.slice(0, -1));
         setSessionChoice(0);
       } else if (!key.ctrl && !key.meta && !key.tab) {
         const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
         if (text) {
+          setSessionDeleteConfirmId('');
           setSessionQuery(value => value + text);
           setSessionChoice(0);
         }
@@ -6515,6 +6598,8 @@ export function App({
               loading={sessionLoading}
               error={sessionError}
               scope={sessionScope}
+              deleteConfirmId={sessionDeleteConfirmId}
+              deletingId={sessionDeletingId}
               maxVisible={Math.max(2, Math.min(6, (stdout.rows ?? 24) - 15))}
             />
           ) : null}

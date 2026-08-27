@@ -200,6 +200,100 @@ function SessionMenuPopover({ anchor, onAction, session }) {
   );
 }
 
+function SessionDeleteDialog({ session, deleting, onCancel, onConfirm }) {
+  const dialogRef = useRef(null);
+  const cancelRef = useRef(null);
+  const returnFocusRef = useRef(null);
+  const sessionId = session?.id;
+  const title = sessionTitle(session || {});
+  const runStatus = String(session?.latest_run?.status || "");
+  const active = activeRunStatuses.has(runStatus);
+
+  useEffect(() => {
+    if (!sessionId || typeof document === "undefined") return undefined;
+    returnFocusRef.current = document.activeElement;
+    const frame = window.requestAnimationFrame(() => cancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const previous = returnFocusRef.current;
+      window.requestAnimationFrame(() => {
+        const trigger = [...document.querySelectorAll(".session-menu-button")]
+          .find((button) => button.dataset.sessionId === sessionId);
+        const previousIsUsable = previous instanceof HTMLElement
+          && previous !== document.body
+          && previous !== document.documentElement
+          && previous.offsetParent !== null
+          && document.contains(previous);
+        if (previousIsUsable) previous.focus();
+        else if (trigger instanceof HTMLElement && trigger.offsetParent !== null) trigger.focus();
+        else if (document.getElementById("new-chat-btn") instanceof HTMLElement) {
+          document.getElementById("new-chat-btn").focus();
+        } else document.getElementById("sidebar-session-search")?.focus();
+      });
+    };
+  }, [sessionId]);
+
+  if (!sessionId || typeof document === "undefined") return null;
+
+  const handleDialogKeyDown = (event) => {
+    if (event.key === "Escape" && !deleting) {
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...(dialogRef.current?.querySelectorAll("button:not([disabled])") || [])];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  return createPortal(
+    <div
+      className={"modal-backdrop session-delete-backdrop"}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !deleting) onCancel();
+      }}
+    >
+      <section
+        className={"modal-panel session-delete-dialog"}
+        role={"alertdialog"}
+        aria-modal={"true"}
+        aria-labelledby={"session-delete-title"}
+        aria-describedby={"session-delete-description"}
+        ref={dialogRef}
+        onKeyDown={handleDialogKeyDown}
+      >
+        <div className={"session-delete-body"}>
+          <span className={"session-delete-mark"} aria-hidden={"true"}>×</span>
+          <div>
+            <h2 id={"session-delete-title"}>{"永久删除会话？"}</h2>
+            <p id={"session-delete-description"}>
+              {`“${title}”的消息、运行记录和检查点都会被删除，且无法恢复。只想隐藏时，请改用归档。`}
+            </p>
+            {active ? <p className={"session-delete-active"}>{"当前任务会先停止，再执行删除。"}</p> : null}
+          </div>
+        </div>
+        <div className={"modal-actions session-delete-actions"}>
+          <button ref={cancelRef} type={"button"} disabled={deleting} onClick={onCancel}>{"取消"}</button>
+          <button className={"session-delete-confirm"} type={"button"} disabled={deleting} onClick={onConfirm}>
+            {deleting ? "正在删除" : active ? "停止并永久删除" : "永久删除"}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function groupSessions(sessions) {
   const groups = { pinned: [], active: [], failed: [], today: [], recent: [], earlier: [] };
   const now = new Date();
@@ -287,6 +381,8 @@ function SessionHistory() {
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [deleteTargetSessionId, setDeleteTargetSessionId] = useState(null);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
   const historyRef = useRef(null);
   const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
@@ -518,16 +614,21 @@ function SessionHistory() {
   };
 
   const handleSessionDelete = async (sessionId) => {
+    if (!sessionId || deletingSessionId) return;
     try {
+      setDeletingSessionId(sessionId);
       await sessionApi.delete(sessionId);
       if (currentSessionId === sessionId) {
         setCurrentSessionId(null);
         window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
       }
+      setDeleteTargetSessionId(null);
       notifyToast("会话已删除");
       await loadSessions();
     } catch (error) {
       notifyError(error, "删除失败");
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -651,7 +752,7 @@ function SessionHistory() {
       return;
     }
     if (action === "delete") {
-      handleSessionDelete(sessionId);
+      setDeleteTargetSessionId(sessionId);
     }
   };
 
@@ -814,7 +915,7 @@ function SessionHistory() {
                               </span>
                             ) : null}
                           </button>
-                          <button className={"session-menu-button"} type={"button"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
+                          <button className={"session-menu-button"} type={"button"} data-session-id={session.id} aria-label={"会话操作"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
                             <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
                               <circle cx={"6"} cy={"12"} r={"1.7"} />
                               <circle cx={"12"} cy={"12"} r={"1.7"} />
@@ -836,6 +937,14 @@ function SessionHistory() {
         anchor={menuAnchor}
         session={sessions.find((item) => item.id === openMenuSessionId)}
         onAction={handleSessionAction}
+      />
+      <SessionDeleteDialog
+        session={sessions.find((item) => item.id === deleteTargetSessionId)}
+        deleting={Boolean(deletingSessionId)}
+        onCancel={() => {
+          if (!deletingSessionId) setDeleteTargetSessionId(null);
+        }}
+        onConfirm={() => handleSessionDelete(deleteTargetSessionId)}
       />
     </section>
   );

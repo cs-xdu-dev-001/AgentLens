@@ -67,6 +67,20 @@ from .workspace_references import (
 from .session_portability import unique_branch_title
 
 
+def _replace_with_retry(temporary: Path, destination: Path) -> None:
+    """Atomically replace a file, tolerating brief Windows scanner locks."""
+
+    attempts = 4 if os.name == "nt" else 1
+    for attempt in range(attempts):
+        try:
+            temporary.replace(destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.025 * (attempt + 1))
+
+
 LOCAL_USER_ID = 1
 DEFAULT_MAX_FILE_BYTES = 2_000_000
 DEFAULT_LOCAL_MAX_TOOL_ROUNDS = 50
@@ -173,7 +187,7 @@ class LocalCliConfigStore:
             encoding="utf-8",
         )
         self._chmod(temporary, 0o600)
-        temporary.replace(path)
+        _replace_with_retry(temporary, path)
         self._chmod(path, 0o600)
 
     def load_public(self) -> dict[str, Any]:
@@ -470,9 +484,17 @@ class LocalSessionStore:
             encoding="utf-8",
         )
         self._chmod(temporary, 0o600)
-        temporary.replace(path)
+        _replace_with_retry(temporary, path)
         self._chmod(path, 0o600)
         return payload
+
+    def delete(self, run_id: str) -> bool:
+        path = self._path(run_id)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
 
     def list(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         sessions: list[dict[str, Any]] = []
@@ -831,6 +853,28 @@ class LocalAgentRuntime:
         if archived:
             updates["pinned"] = False
         return self.sessions.save(run_id, **updates)
+
+    def delete_session(self, run_id: str) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        active_statuses = {
+            "planning",
+            "waiting_start",
+            "running",
+            "waiting_approval",
+            "waiting_input",
+        }
+        with self._cancel_lock:
+            managed = run_id in self._cancel_events
+        if managed or str(session.get("status") or "") in active_statuses:
+            raise ValueError("请等待当前运行结束后再永久删除会话。")
+        self.engine.delete_checkpoints(LOCAL_USER_ID, [run_id])
+        if not self.sessions.delete(run_id):
+            raise ValueError("Local session was not found.")
+        return {"runId": run_id, "deleted": True}
 
     def _registry(
         self,

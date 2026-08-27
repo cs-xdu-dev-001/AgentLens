@@ -1068,7 +1068,8 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
                 "data": None,
             },
         ) from exc
-    execute(
+    params = {"session_id": session_id, "user_id": user_id}
+    statements = (
         """
         DELETE FROM agent_tool_operation
         WHERE run_id IN (
@@ -1076,9 +1077,6 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run_event
         WHERE run_id IN (
@@ -1086,9 +1084,6 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run_step
         WHERE run_id IN (
@@ -1096,24 +1091,31 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run
         WHERE session_id=:session_id AND user_id=:user_id
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute("DELETE FROM agent_tool_call WHERE session_id=:session_id", {"session_id": session_id})
-    execute(
+        "DELETE FROM agent_tool_call WHERE session_id=:session_id",
         """
         DELETE FROM memory_operation
         WHERE session_id=:session_id AND user_id=:user_id
         """,
-        {"session_id": session_id, "user_id": user_id},
+        """
+        DELETE FROM retrieval_run
+        WHERE user_id=:user_id AND message_id IN (
+          SELECT id FROM chat_message WHERE session_id=:session_id
+        )
+        """,
+        """
+        DELETE FROM message_reference
+        WHERE message_id IN (
+          SELECT id FROM chat_message WHERE session_id=:session_id
+        )
+        """,
+        "DELETE FROM chat_message WHERE session_id=:session_id",
+        "DELETE FROM chat_session WHERE id=:session_id AND user_id=:user_id",
     )
-    execute("DELETE FROM message_reference WHERE message_id IN (SELECT id FROM chat_message WHERE session_id=:session_id)", {"session_id": session_id})
-    execute("DELETE FROM chat_message WHERE session_id=:session_id", {"session_id": session_id})
-    execute("DELETE FROM chat_session WHERE id=:session_id", {"session_id": session_id})
+    with db.engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement), params)
     return api_success(True)
