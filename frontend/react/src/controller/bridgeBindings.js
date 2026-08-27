@@ -1,6 +1,8 @@
-async function copyAssistantMessageContent(content, toast) {
+import { copySelection } from "./copyPresentation.js";
+
+async function copyAssistantMessageContent(content, toast, label = "答案") {
   await navigator.clipboard.writeText(content || "");
-  toast("答案已复制");
+  toast(`${label}已复制`);
 }
 
 export function bindReactControllerEvents({
@@ -71,8 +73,19 @@ export function bindReactControllerEvents({
   });
 
   window.addEventListener("knowflow:react-message-copy", (event) => {
-    const content = event.detail?.rawContent || "";
-    copyAssistantMessageContent(content, toast).catch(() => toast("复制失败，请重试", 4200, "error"));
+    const detail = event.detail || {};
+    const result = copySelection({
+      assistant: detail.rawContent || "",
+      assistantMessage: detail.assistantMessage,
+      messages: detail.messages,
+      args: detail.args,
+    });
+    if (!result.ok) {
+      toast(result.message, 3200, "neutral");
+      return;
+    }
+    copyAssistantMessageContent(result.text, toast, result.label)
+      .catch(() => toast("复制失败，请重试", 4200, "error"));
   });
 
   window.addEventListener("knowflow:react-message-edit", (event) => {

@@ -55,10 +55,11 @@ export const WEB_COMPOSER_COMMANDS = Object.freeze([
   },
   {
     value: "/copy",
-    label: "复制最近回答",
-    description: "复制最近一条完整回答",
+    label: "复制运行内容",
+    description: "复制回答、代码块、工具输出或当前会话记录",
     category: "会话",
     action: "message-copy",
+    argumentHint: "[answer | code [序号] | tool [序号|all] | transcript]",
   },
   {
     value: "/edit",

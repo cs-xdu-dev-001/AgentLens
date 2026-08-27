@@ -25,6 +25,7 @@ for needle in (
     'when: "retry"',
     'when: "fix"',
     'value: "/copy"',
+    'argumentHint: "[answer | code [序号] | tool [序号|all] | transcript]"',
     'value: "/edit"',
     'value: "/rewind"',
     'value: "/diff"',
@@ -53,6 +54,8 @@ for needle in (
 
 assert 'data-message-action="${action}"' in messages
 assert 'knowflow:react-message-command' in messages
+assert 'messageStateRef' in messages
+assert 'args: String(detail.args || "").trim()' in messages
 assert '["copy", "edit", "retry", "rewind"]' in messages
 assert 'knowflow:react-agent-artifacts-open' in drawer
 
@@ -65,6 +68,7 @@ for needle in (
 
 script = r'''
 import { composerCommandSuggestions, parseComposerCommand, resolveComposerCommand } from "./frontend/react/src/components/composerCommands.js";
+import { COPY_TEXT_LIMIT, copySelection, redactCopyText } from "./frontend/react/src/controller/copyPresentation.js";
 
 const values = (options = {}) => composerCommandSuggestions("", options).map((item) => item.value);
 const idle = values();
@@ -125,6 +129,37 @@ const compact = parseComposerCommand("/compact 优先保留工作区边界");
 if (compact?.command?.action !== "session-compact" || compact?.args !== "优先保留工作区边界") {
   throw new Error("context compaction command did not preserve instructions");
 }
+const assistantMessage = {
+  role: "assistant",
+  rawContent: "说明\n```bash\necho hello\n```\ntoken=SECRET_VALUE",
+  trace: [{ kind: "sandbox", name: "run_sandbox_command", status: "success", durationMs: 1200, inputSummary: { command: "echo token=SECRET_VALUE" }, outputSummary: { stdout: "ok" } }],
+  toolCalls: [{ toolName: "run_sandbox_command", status: "completed", arguments: { command: "echo token=SECRET_VALUE" }, output: "api_key=sk-do-not-copy" }],
+};
+const code = copySelection({ assistant: assistantMessage.rawContent, assistantMessage, args: "code" });
+if (!code.ok || code.text !== "echo hello") throw new Error("Web code copy did not extract the first Markdown block");
+const tool = copySelection({ assistant: assistantMessage.rawContent, assistantMessage, args: "tool all" });
+if (!tool.ok || !tool.text.includes("run_sandbox_command") || /SECRET_VALUE|sk-do-not-copy/.test(tool.text)) {
+  throw new Error("Web tool copy did not preserve output while redacting secrets");
+}
+const transcript = copySelection({
+  assistantMessage,
+  messages: [{ role: "user", rawContent: "检查状态" }, assistantMessage],
+  args: "transcript",
+});
+if (!transcript.ok || !transcript.text.includes("用户:") || !transcript.text.includes("任务过程:") || !transcript.text.includes("工具输出:")) {
+  throw new Error("Web transcript copy omitted visible conversation sections");
+}
+const bounded = redactCopyText("x".repeat(100_100));
+if (bounded.length > COPY_TEXT_LIMIT || !bounded.endsWith("…")) throw new Error("Web copy output is not bounded");
+const hugeCalls = Array.from({ length: 20 }, (_, index) => ({ toolName: `tool-${index}`, output: "y".repeat(20_000) }));
+const hugeToolCopy = copySelection({ assistantMessage: { toolCalls: hugeCalls }, args: "tool all" });
+if (!hugeToolCopy.ok || hugeToolCopy.text.length > COPY_TEXT_LIMIT || !hugeToolCopy.text.includes("内容已截断")) {
+  throw new Error("Web aggregate tool copy exceeded its safety budget");
+}
+const circular = {};
+circular.self = circular;
+const circularToolCopy = copySelection({ assistantMessage: { toolCalls: [{ toolName: "inspect", output: circular }] }, args: "tool" });
+if (!circularToolCopy.ok || !circularToolCopy.text.includes("inspect")) throw new Error("Web tool copy did not tolerate circular output");
 '''
 
 result = subprocess.run(

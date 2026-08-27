@@ -526,8 +526,8 @@ export function ChatComposerForm() {
     }));
   };
 
-  const runMessageCommand = (action, unavailableMessage) => {
-    const detail = { action, handled: false };
+  const runMessageCommand = (action, unavailableMessage, args = "") => {
+    const detail = { action, args: String(args || "").trim(), handled: false };
     window.dispatchEvent(new CustomEvent("knowflow:react-message-command", { detail }));
     if (!detail.handled) notifyCommandUnavailable(unavailableMessage);
   };
@@ -621,7 +621,7 @@ export function ChatComposerForm() {
         edit: "当前会话还没有可编辑的问题",
         rewind: "当前会话还没有可回到的历史问题",
       };
-      runMessageCommand(action, unavailableMessages[action]);
+      runMessageCommand(action, unavailableMessages[action], args);
       return;
     }
     if (command.action.startsWith("artifacts-")) {

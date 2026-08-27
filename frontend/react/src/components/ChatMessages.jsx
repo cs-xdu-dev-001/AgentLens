@@ -501,6 +501,7 @@ function MessageRow({
 
 export function ChatMessages() {
   const messagesRef = useRef(null);
+  const messageStateRef = useRef([]);
   const searchInputRef = useRef(null);
   const nextMessageIdRef = useRef(1);
   const followOutputRef = useRef(true);
@@ -514,6 +515,7 @@ export function ChatMessages() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCursor, setSearchCursor] = useState(0);
   const [taskClock, setTaskClock] = useState(() => Date.now());
+  messageStateRef.current = messages;
   const searchMatches = useMemo(
     () => transcriptSearchMatches(messages, searchQuery),
     [messages, searchQuery],
@@ -726,6 +728,26 @@ export function ChatMessages() {
       const detail = event.detail || {};
       const action = String(detail.action || "");
       if (!["copy", "edit", "retry", "rewind"].includes(action)) return;
+      if (action === "copy") {
+        const assistantMessage = [...messageStateRef.current].reverse().find((message) => (
+          message?.role === "assistant" && !message.thinking && !message.streaming
+        ));
+        if (!assistantMessage) {
+          detail.handled = false;
+          return;
+        }
+        const copyDetail = {
+          action,
+          args: String(detail.args || "").trim(),
+          assistantMessage,
+          messages: messageStateRef.current,
+          messageId: assistantMessage.id,
+          rawContent: assistantMessage.rawContent,
+        };
+        window.dispatchEvent(new CustomEvent(actionEvents.copy, { detail: copyDetail }));
+        detail.handled = true;
+        return;
+      }
       const buttons = Array.from(
         messagesNode.querySelectorAll(`[data-message-action="${action}"]`),
       ).filter((button) => !button.disabled);

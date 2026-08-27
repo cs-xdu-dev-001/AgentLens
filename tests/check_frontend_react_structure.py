@@ -257,6 +257,8 @@ def main() -> None:
     require("frontend/react/src/controller/knowflowController.js", "clearChatMessages", "controller delegates message reset to React")
     require("frontend/react/src/controller/bridgeBindings.js", "bindReactControllerEvents", "consolidated React controller bridge binder")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-message-copy", "legacy message copy bridge event")
+    require("frontend/react/src/controller/bridgeBindings.js", "copySelection", "shared Web copy selection bridge")
+    require("frontend/react/src/controller/copyPresentation.js", "redactCopyText", "Web copy redaction")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-message-retry", "legacy message retry bridge event")
     require("frontend/react/src/components/ChatEvidenceDrawer.jsx", "evidence-drawer", "evidence drawer markup")
     require("frontend/react/src/components/ChatEvidenceDrawer.jsx", "reference-list", "reference list id retained")
@@ -512,4 +514,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
