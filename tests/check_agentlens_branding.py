@@ -20,6 +20,8 @@ def main() -> None:
         "backend/knowflow/tui/app.py": 'TITLE = "AgentLens"',
         "README.md": "# AgentLens",
         "README_EN.md": "# AgentLens",
+        "frontend/package.json": '"name": "agentlens-frontend"',
+        "cli-tui/package.json": '"name": "@agentlens/tui"',
     }
     for relative_path, required in visible_surfaces.items():
         source = read(relative_path)
@@ -37,6 +39,7 @@ def main() -> None:
         ],
         "README.md": ["`agentlens`", "knowflow update", "`KNOWFLOW_*`"],
         "install.sh": ["knowflow-ai", "agentlens configure", "旧版knowflow命令"],
+        ".github/workflows/ci.yml": ["agentlens --help", "knowflow --help", "agentlens-linux-${GITHUB_SHA}.tar.gz"],
     }
     for relative_path, required_values in compatibility_surfaces.items():
         source = read(relative_path)

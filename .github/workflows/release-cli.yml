@@ -55,10 +55,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m venv "${RUNNER_TEMP}/knowflow-cli-release"
-          "${RUNNER_TEMP}/knowflow-cli-release/bin/python" -m pip install backend/dist/*.whl
-          "${RUNNER_TEMP}/knowflow-cli-release/bin/knowflow" --help >/dev/null
-          test "$("${RUNNER_TEMP}/knowflow-cli-release/bin/knowflow" --version)" = "${GITHUB_REF_NAME#v}"
+          python -m venv "${RUNNER_TEMP}/agentlens-cli-release"
+          "${RUNNER_TEMP}/agentlens-cli-release/bin/python" -m pip install backend/dist/*.whl
+          "${RUNNER_TEMP}/agentlens-cli-release/bin/agentlens" --help >/dev/null
+          "${RUNNER_TEMP}/agentlens-cli-release/bin/knowflow" --help >/dev/null
+          test "$("${RUNNER_TEMP}/agentlens-cli-release/bin/agentlens" --version)" = "${GITHUB_REF_NAME#v}"
+          test "$("${RUNNER_TEMP}/agentlens-cli-release/bin/knowflow" --version)" = "${GITHUB_REF_NAME#v}"
 
       - name: Create GitHub release
         env:

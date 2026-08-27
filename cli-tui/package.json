@@ -1,5 +1,5 @@
 {
-  "name": "@knowflow-ai/tui",
+  "name": "@agentlens/tui",
   "version": "0.64.8",
   "private": true,
   "type": "module",
