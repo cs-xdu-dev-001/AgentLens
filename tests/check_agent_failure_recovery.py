@@ -44,6 +44,29 @@ def main() -> None:
     assert embedded_rate_limit["code"] == "rate_limited"
     assert embedded_rate_limit["retryable"] is True
 
+    parameter_error = classify_agent_failure(
+        RuntimeError(
+            "Responses API connection failed: HTTP 400: "
+            "invalid temperature: only 1 is allowed for this model"
+        )
+    )
+    assert parameter_error["code"] == "incompatible_parameters"
+    assert parameter_error["retryable"] is False
+    assert parameter_error["target"] == "settings"
+
+    protocol_error = classify_agent_failure(
+        RuntimeError("Responses API protocol not supported by this channel")
+    )
+    assert protocol_error["code"] == "protocol_unsupported"
+
+    tool_not_found = classify_agent_failure(
+        RuntimeError("file not found"),
+        source="tool",
+    )
+    assert tool_not_found["code"] == "agent_run_failed"
+    runtime_not_found = classify_agent_failure(RuntimeError("file not found"))
+    assert runtime_not_found["code"] == "agent_run_failed"
+
     unknown = classify_agent_failure(code="private_vendor_problem")
     assert unknown == {
         "code": "private_vendor_problem",

@@ -446,10 +446,12 @@ export function projectRunEvent(current, event) {
     };
   }
   if (name === 'error.raised' || name === 'run.failed' || name === 'step.failed' || name === 'tool.failed') {
+    const target = sanitizeTerminalText(event?.error?.target ?? event?.failureTarget ?? '').slice(0, 40);
     next.error = {
       code: sanitizeTerminalText(event?.error?.code ?? event?.errorCode ?? event?.code ?? 'agent_error'),
       message: redact(event?.error?.message ?? event?.errorMessage ?? event?.message ?? 'Agent运行失败。', 1200),
       retryable: event?.error?.retryable !== false,
+      ...(target ? {target} : {}),
     };
   }
   if (name === 'run.completed' || name === 'run.cancelled') {
@@ -522,9 +524,21 @@ export function redact(value, limit = 500) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
-export function userFacingErrorMessage(value, fallback = '执行失败。') {
+export function userFacingErrorMessage(value, fallback = '执行失败。', code = '') {
   const text = redact(value, 1200).trim();
   if (!text) return fallback;
+  const normalizedCode = String(code || '').trim().toLowerCase();
+  const codeMessages = {
+    model_authentication_failed: '模型认证失败，请检查API地址和API Key。',
+    access_denied: '模型服务拒绝访问，请检查Key分组、模型权限和接口协议。',
+    not_found: '接口或模型不存在，请确认API地址和模型名称。',
+    protocol_unsupported: '当前渠道不支持所选接口协议，请切换Responses API或Chat Completions。',
+    incompatible_parameters: '当前模型不接受采样参数，请清理temperature、top_p和max_tokens后重试。',
+    upstream_unavailable: '当前模型没有可用上游渠道，请检查模型名称和渠道权限。',
+    network_error: '模型服务连接失败，请检查网络、代理和API地址。',
+    invalid_request: '模型请求参数不兼容，请检查模型名、协议和渠道配置。',
+  };
+  if (codeMessages[normalizedCode]) return codeMessages[normalizedCode];
   if (/\b(?:http\s*)?429\b|rate[_ -]?limit|max\s+rpm/i.test(text)) {
     return '上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复。';
   }

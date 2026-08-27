@@ -16,6 +16,7 @@ from .agent_event_protocol import (
     AgentEventNormalizer,
     artifact_event_from_tool_execution,
 )
+from .agent_failure import classify_agent_failure
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
 from .agent_tooling import (
@@ -1631,10 +1632,15 @@ class LocalAgentRuntime:
                 events=events,
             )
         except Exception as exc:
+            failure = classify_agent_failure(exc)
             self.sessions.save(
                 identifier,
                 status="failed",
-                errorCode=type(exc).__name__,
+                errorCode=str(
+                    failure["code"]
+                    if failure["code"] != "agent_run_failed"
+                    else type(exc).__name__
+                ),
                 **self._session_workspace_fields(),
                 messages=transcript_messages,
                 contextMessages=messages,

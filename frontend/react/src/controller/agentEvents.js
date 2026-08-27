@@ -81,6 +81,7 @@ export function agentEventError(event, fallback = "Agent运行失败。") {
   );
   const isRateLimited = rawCode === "rate_limited"
     || /(?:http\s*429|rate[_ -]?limit|max\s+rpm|too many requests)/i.test(rawMessage);
+  const target = safeAgentText(event?.error?.target || event?.failureTarget || "", 40);
   return {
     code: isRateLimited ? "rate_limited" : rawCode,
     message: isRateLimited
@@ -88,6 +89,7 @@ export function agentEventError(event, fallback = "Agent运行失败。") {
       : rawMessage,
     retryable: event?.error?.retryable !== false,
     recoveryActions: Array.isArray(event?.recoveryActions) ? event.recoveryActions : [],
+    ...(target ? { target } : {}),
   };
 }
 
@@ -535,6 +537,7 @@ function projectRunMetadata(projection, runId = "") {
     context: projection.context,
     modelRetry: projection.modelRetry,
     phase: projection.phase,
+    failure: projection.error,
     recoveryActions: projection.recoveryActions,
     runSummary: projection.runSummary,
     usage: projection.usage,

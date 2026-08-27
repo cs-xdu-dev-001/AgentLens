@@ -53,6 +53,15 @@ def main() -> None:
     assert "org-" not in json.dumps(rate_limited)
     assert "ak-" not in json.dumps(rate_limited)
 
+    parameter_error = normalize_agent_event({
+        "type": "error",
+        "errorCode": "ResponsesProtocolError",
+        "message": "HTTP 400: invalid temperature: only 1 is allowed for this model",
+    })
+    assert parameter_error["error"]["code"] == "incompatible_parameters"
+    assert parameter_error["error"]["target"] == "settings"
+    assert parameter_error["recoveryActions"] == ["fix"]
+
     snapshot = normalize_agent_event({
         "type": "run_snapshot",
         "run": {
@@ -277,6 +286,7 @@ def main() -> None:
     )
     assert structured_failure["normalizedStatus"] == "failed"
     assert structured_failure["error"]["retryable"] is False
+    assert structured_failure["recoveryActions"] == ["fix"]
 
     stream = AgentEventNormalizer("run_stream")
     first = stream({
@@ -343,6 +353,7 @@ def main() -> None:
         agentEventName as tuiAgentEventName,
         createRunProjection,
         projectRunEvent,
+        userFacingErrorMessage,
       } from './cli-tui/src/protocol.js';
       import {mergeToolCall} from './frontend/react/src/controller/chatFlow.js';
       import {buildAgentRunPresentation} from './frontend/react/src/components/agentRunPresentation.js';
@@ -358,6 +369,12 @@ def main() -> None:
       if (rateLimitError.code !== 'rate_limited') process.exit(67);
       if (!rateLimitError.message.includes('请求过于频繁')) process.exit(68);
       if (/org-|ak-/.test(JSON.stringify(rateLimitError))) process.exit(69);
+      const parameterMessage = userFacingErrorMessage(
+        'ResponsesProtocolError',
+        '执行失败。',
+        'incompatible_parameters',
+      );
+      if (!parameterMessage.includes('清理temperature')) process.exit(70);
       const calls = mergeToolCall(
         [{toolCallId: 'call_1', status: 'running'}],
         {toolCallId: 'call_1', normalizedStatus: 'completed', output: 'ok'},

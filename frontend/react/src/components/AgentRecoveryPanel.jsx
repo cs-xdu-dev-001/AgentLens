@@ -25,6 +25,34 @@ const failureLabels = {
     title: "模型认证失败",
     summary: "检查模型配置中的接口地址和密钥后继续。",
   },
+  access_denied: {
+    title: "模型访问被拒绝",
+    summary: "当前Key分组没有权限调用这个模型或接口协议。",
+  },
+  not_found: {
+    title: "接口或模型不存在",
+    summary: "检查API地址、模型名称和当前渠道映射。",
+  },
+  protocol_unsupported: {
+    title: "接口协议不兼容",
+    summary: "当前渠道不支持所选协议，请到模型设置切换。",
+  },
+  incompatible_parameters: {
+    title: "模型参数不兼容",
+    summary: "当前模型拒绝旧采样参数，请清理配置后继续。",
+  },
+  upstream_unavailable: {
+    title: "当前模型渠道不可用",
+    summary: "中转站没有为这个模型提供可用上游。",
+  },
+  network_error: {
+    title: "模型服务连接失败",
+    summary: "检查网络、代理和API地址后重试。",
+  },
+  invalid_request: {
+    title: "模型请求配置不兼容",
+    summary: "检查模型名称、接口协议和渠道参数映射。",
+  },
   rate_limited: {
     title: "请求过于频繁",
     summary: "上游服务正在限流，稍后可继续执行。",

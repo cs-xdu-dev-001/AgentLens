@@ -14,6 +14,7 @@ from ..services.agent_event_protocol import (
     AGENT_EVENT_SCHEMA_VERSION,
     normalize_agent_event,
 )
+from ..services.agent_failure import classify_agent_failure
 from ..services.agent_execution import AgentExecution
 from ..services.agent_trace import sanitize_trace_value
 from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
@@ -210,8 +211,14 @@ class InkRuntimeBridge:
         except Exception as exc:
             terminal = True
             message = self._public_error(exc)
-            error_code = str(type(exc).__name__ or "turn_failed")[:80]
-            recovery_actions = (
+            failure = classify_agent_failure(exc)
+            error_code = str(
+                failure["code"]
+                if failure["code"] != "agent_run_failed"
+                else type(exc).__name__
+                or "turn_failed"
+            )[:80]
+            recovery_actions = ["fix"] if not failure["retryable"] else (
                 ["continue", "retry", "fix"]
                 if self._run_id
                 else ["retry", "fix"]
@@ -221,6 +228,7 @@ class InkRuntimeBridge:
                     "type": "error",
                     "errorCode": error_code,
                     "message": message,
+                    "target": failure.get("target"),
                     "recoveryActions": recovery_actions,
                 }
             )
@@ -231,6 +239,7 @@ class InkRuntimeBridge:
                     "runId": self._run_id,
                     "message": message,
                     "errorCode": error_code,
+                    "failureTarget": failure.get("target"),
                     "recoveryActions": recovery_actions,
                 }
             )

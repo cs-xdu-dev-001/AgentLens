@@ -1207,7 +1207,7 @@ const TaskSummary = React.memo(function TaskSummary({
       ? WARNING
       : activityState?.color || (running ? ACCENT : SUCCESS);
   const failureMessage = failed && failure?.message
-    ? userFacingErrorMessage(failure.message)
+    ? userFacingErrorMessage(failure.message, '执行失败。', failure.code)
     : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
@@ -1446,7 +1446,11 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
 
 function RunRecoveryPanel({failure, failedStep, recoveryActions, selected = 0}) {
   const options = recoveryOptions({recoveryActions});
-  const reason = userFacingErrorMessage(failure?.message, 'Agent运行失败。');
+  const reason = userFacingErrorMessage(
+    failure?.message,
+    'Agent运行失败。',
+    failure?.code,
+  );
   const metadata = [
     failure?.code ? `错误码 ${publicIdentifier(failure.code, 'agent_run_failed', 100)}` : '',
     failedStep?.title ? `步骤 ${publicLabel(failedStep.title, '失败步骤', 120)}` : '',
@@ -3000,6 +3004,7 @@ export function App({
           code: currentProjection.error?.code || 'turn_failed',
           message: message || currentProjection.error?.message || 'Agent运行失败。',
           retryable: currentProjection.error?.retryable !== false,
+          ...(currentProjection.error?.target ? {target: currentProjection.error.target} : {}),
         },
       } : {}),
       ...(currentSummary ? {
@@ -3737,7 +3742,11 @@ export function App({
           setPhase('正在切换到立即任务');
           return;
         }
-        const publicFailure = userFacingErrorMessage(message.message);
+        const publicFailure = userFacingErrorMessage(
+          message.message,
+          '执行失败。',
+          message.errorCode,
+        );
         if (assistantDraftRef.current.trim()) {
           lastAssistantAnswerRef.current = redact(
             assistantDraftRef.current,
@@ -3746,8 +3755,13 @@ export function App({
         }
         const failureProjection = projectRunEvent(runProjectionRef.current, {
           eventName: 'error.raised',
-          errorCode: message.errorCode || runProjectionRef.current.error?.code || 'turn_failed',
-          message: publicFailure,
+          error: {
+            code: message.errorCode || runProjectionRef.current.error?.code || 'turn_failed',
+            message: publicFailure,
+            retryable: !Array.isArray(message.recoveryActions)
+              || message.recoveryActions.includes('retry'),
+            ...(message.failureTarget ? {target: message.failureTarget} : {}),
+          },
           recoveryActions: Array.isArray(message.recoveryActions)
             ? message.recoveryActions
             : runProjectionRef.current.recoveryActions,

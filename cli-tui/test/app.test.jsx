@@ -452,6 +452,21 @@ test('run projection preserves the failed step and advertised recovery actions',
   assert.equal(projection.error.code, 'workspace_read_failed');
 });
 
+test('run projection preserves model recovery targets', () => {
+  const projection = projectRunEvent(createRunProjection(), {
+    eventName: 'error.raised',
+    error: {
+      code: 'incompatible_parameters',
+      message: '参数不兼容',
+      retryable: false,
+      target: 'settings',
+    },
+    recoveryActions: ['fix'],
+  });
+  assert.equal(projection.error.target, 'settings');
+  assert.deepEqual(projection.recoveryActions, ['fix']);
+});
+
 test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
   const report = buildTuiDiagnosticReport({
     version: '0.22.0',

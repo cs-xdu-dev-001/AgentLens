@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .model_gateway import model_connection_diagnostic
+
 
 FAILURE_POLICIES: dict[str, dict[str, Any]] = {
     "agent_run_cancelled": {
@@ -37,6 +39,41 @@ FAILURE_POLICIES: dict[str, dict[str, Any]] = {
     },
     "model_authentication_failed": {
         "summary": "The model credentials were rejected.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "access_denied": {
+        "summary": "The model provider denied access to this model or protocol.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "not_found": {
+        "summary": "The configured model or API endpoint was not found.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "protocol_unsupported": {
+        "summary": "The selected model API protocol is not supported by this channel.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "incompatible_parameters": {
+        "summary": "The selected model rejected one or more request parameters.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "upstream_unavailable": {
+        "summary": "No upstream channel is available for the selected model.",
+        "retryable": False,
+        "target": "settings",
+    },
+    "network_error": {
+        "summary": "The model service could not be reached because of a network error.",
+        "retryable": True,
+        "target": "settings",
+    },
+    "invalid_request": {
+        "summary": "The model service rejected the request configuration.",
         "retryable": False,
         "target": "settings",
     },
@@ -78,6 +115,38 @@ def _status_code(error: Exception | None) -> int | None:
         return int(status) if status is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _looks_like_model_gateway_failure(
+    source: str,
+    raw_code: str,
+    type_name: str,
+    error_text: str,
+) -> bool:
+    if source in {"model", "model_gateway", "provider"}:
+        return True
+    diagnostic_text = " ".join(
+        item.replace("_", " ")
+        for item in (raw_code, type_name, error_text)
+        if item
+    )
+    return any(
+        marker in diagnostic_text
+        for marker in (
+            "chat completion",
+            "invalid temperature",
+            "model gateway",
+            "model not found",
+            "model provider",
+            "model service",
+            "no available channel",
+            "responses api",
+            "responses protocol error",
+            "responsesprotocolerror",
+            "unavailable channel",
+            "unsupported parameter",
+        )
+    )
 
 
 def normalize_failure_code(
@@ -132,6 +201,38 @@ def normalize_failure_code(
         return "upstream_timeout"
     if raw_code == "mcp_tool_configuration_invalid":
         return raw_code
+
+    # Model gateway diagnostics are shared by connection checks and run
+    # failures.  Do not reinterpret ordinary tool/file errors as model errors.
+    source_name = _safe_code(source)
+    if _looks_like_model_gateway_failure(
+        source_name,
+        raw_code,
+        type_name,
+        error_text,
+    ):
+        connection_detail = " ".join(
+            item
+            for item in (
+                error_text,
+                raw_code.replace("_", " "),
+            )
+            if item
+        )
+        connection_code = model_connection_diagnostic(
+            "unavailable",
+            connection_detail,
+        )["code"]
+        if connection_code in {
+            "access_denied",
+            "not_found",
+            "protocol_unsupported",
+            "incompatible_parameters",
+            "upstream_unavailable",
+            "network_error",
+            "invalid_request",
+        }:
+            return connection_code
     return raw_code or "agent_run_failed"
 
 
