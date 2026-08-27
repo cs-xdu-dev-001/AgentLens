@@ -1,11 +1,13 @@
 import {useEffect, useRef} from 'react';
 import stripAnsi from 'strip-ansi';
 import {useStdout} from 'ink';
+import {redact} from './protocol.js';
 
 const OSC = '\u001b]';
 const ST = '\u001b\\';
 const BEL = '\u0007';
 const DEFAULT_NOTIFICATION_DELAY_MS = 6000;
+const COPY_TEXT_LIMIT = 100_000;
 
 function envDisabled(value) {
   return ['0', 'false', 'no', 'off'].includes(String(value ?? '').trim().toLowerCase());
@@ -30,7 +32,7 @@ export function terminalTitleSequence(title) {
 }
 
 export function terminalClipboardSequence(value) {
-  const safeValue = stripAnsi(String(value ?? ''))
+  const safeValue = redact(String(value ?? ''), 100_000)
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu, '')
     .trim()
     .slice(0, 100_000);
@@ -38,18 +40,137 @@ export function terminalClipboardSequence(value) {
   return `${OSC}52;c;${Buffer.from(safeValue, 'utf8').toString('base64')}${ST}`;
 }
 
-export function terminalCopySelection(answer, args = '') {
-  const source = stripAnsi(String(answer ?? '')).trim();
-  if (!source) {
-    return {ok: false, message: '还没有可复制的Agent回答。'};
+function copyValue(value, limit = 12_000) {
+  if (value === undefined || value === null || value === '') return '';
+  const source = typeof value === 'string' ? value : (() => {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  })();
+  return redact(source, limit).trim();
+}
+
+function copyToolRow(row, index = 0) {
+  const name = copyValue(row?.name || row?.toolName || '工具调用', 160) || '工具调用';
+  const status = copyValue(row?.status || 'running', 80) || 'running';
+  const lines = [`[${status}] ${name}`];
+  const fields = [
+    ['输入', row?.arguments],
+    ['输出', row?.output],
+    ['stdout', row?.stdout],
+    ['stderr', row?.stderr],
+    ['错误', row?.errorMessage || row?.errorCode],
+  ];
+  for (const [label, value] of fields) {
+    const text = copyValue(value);
+    if (text) lines.push(`${label}:\n${text}`);
   }
+  if (row?.elapsedSeconds !== undefined && row?.elapsedSeconds !== null) {
+    lines.push(`耗时: ${copyValue(row.elapsedSeconds, 40)}s`);
+  }
+  return `${index + 1}. ${lines.join('\n')}`;
+}
+
+function boundedCopyJoin(items, format, separator = '\n\n', limit = COPY_TEXT_LIMIT) {
+  const chunks = [];
+  let used = 0;
+  let truncated = false;
+  for (let index = 0; index < items.length; index += 1) {
+    const value = String(format(items[index], index) ?? '').trim();
+    if (!value) continue;
+    const prefix = chunks.length ? separator : '';
+    const available = Math.max(0, limit - used - prefix.length);
+    if (value.length > available) {
+      const marker = '\n[内容已截断]';
+      const visible = value.slice(0, Math.max(0, available - marker.length));
+      chunks.push(`${prefix}${visible}${marker}`.slice(0, Math.max(0, limit - used)));
+      truncated = true;
+      break;
+    }
+    chunks.push(`${prefix}${value}`);
+    used += prefix.length + value.length;
+  }
+  return {text: chunks.join(''), truncated};
+}
+
+function copyTranscriptItem(item, index) {
+  const role = {
+    user: '用户',
+    assistant: 'Agent',
+    assistant_chunk: 'Agent（流式）',
+    error: '错误',
+    task_summary: '任务过程',
+    delivery_summary: '交付摘要',
+  }[item?.role] || copyValue(item?.role || '消息', 80);
+  const content = copyValue(item?.content, 20_000);
+  if (content) return `${index + 1}. ${role}:\n${content}`;
+  if (item?.role === 'task_summary') {
+    const entries = Array.isArray(item.activities) ? item.activities : [];
+    const rows = entries.map(entry => Array.isArray(entry) ? entry[1] : entry);
+    const process = rows.length
+      ? boundedCopyJoin(rows, copyToolRow, '\n', 20_000).text
+      : '暂无工具调用记录';
+    return `${index + 1}. ${role}:\n${process}`;
+  }
+  if (item?.role === 'delivery_summary') {
+    const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
+    const verifications = Array.isArray(item.verifications) ? item.verifications : [];
+    const details = [
+      artifacts.length ? `产物: ${copyValue(artifacts, 12_000)}` : '',
+      verifications.length ? `验证: ${copyValue(verifications, 12_000)}` : '',
+    ].filter(Boolean).join('\n');
+    return details ? `${index + 1}. ${role}:\n${details}` : '';
+  }
+  return '';
+}
+
+export function terminalCopySelection(answer, args = '', context = {}) {
   const parts = String(args ?? '').trim().toLowerCase().split(/\s+/u).filter(Boolean);
   const mode = parts[0] || 'answer';
+  if (mode === 'tool') {
+    if (parts.length > 2 || (parts[1] && parts[1] !== 'all' && !/^\d+$/u.test(parts[1]))) {
+      return {ok: false, message: '用法：/copy tool [序号|all]'};
+    }
+    const rows = Array.isArray(context.toolRows) ? context.toolRows.filter(Boolean) : [];
+    if (!rows.length) return {ok: false, message: '当前运行还没有可复制的工具输出。'};
+    const requested = parts[1] && parts[1] !== 'all' ? Number(parts[1]) : rows.length;
+    if (!Number.isInteger(requested) || requested < 1 || requested > rows.length) {
+      return {ok: false, message: `当前共有${rows.length}条工具记录，请输入1-${rows.length}或all。`};
+    }
+    const selected = parts[1] === 'all'
+      ? rows
+      : [rows[requested - 1]];
+    const output = boundedCopyJoin(
+      selected,
+      (row, index) => copyToolRow(row, parts[1] === 'all' ? index : requested - 1),
+    );
+    return {
+      ok: true,
+      label: `${parts[1] === 'all' ? `全部工具输出（${rows.length}项）` : `工具输出${requested}/${rows.length}`}${output.truncated ? '，已截断' : ''}`,
+      text: output.text,
+    };
+  }
+  if (mode === 'transcript') {
+    if (parts.length > 1) return {ok: false, message: '用法：/copy transcript'};
+    const items = Array.isArray(context.transcript) ? context.transcript : [];
+    const assistant = copyValue(context.assistant, 20_000);
+    const copyItems = [...items];
+    if (assistant && !items.some(item => item?.role === 'assistant' && copyValue(item?.content, 20_000) === assistant)) {
+      copyItems.push({role: 'assistant', content: assistant});
+    }
+    const output = boundedCopyJoin(copyItems, copyTranscriptItem);
+    if (!output.text) return {ok: false, message: '当前会话还没有可复制的记录。'};
+    return {ok: true, label: `当前会话记录${output.truncated ? '（已截断）' : ''}`, text: output.text};
+  }
+  const source = redact(stripAnsi(String(answer ?? '')).trim(), 100_000);
+  if (!source) return {ok: false, message: '还没有可复制的Agent回答。'};
   if (mode === 'answer' && parts.length <= 1) {
     return {ok: true, label: '最近回答', text: source};
   }
   if (mode !== 'code' || parts.length > 2) {
-    return {ok: false, message: '用法：/copy、/copy answer或/copy code [序号]'};
+    return {ok: false, message: '用法：/copy、/copy answer、/copy code [序号]、/copy tool [序号|all]或/copy transcript'};
   }
   const blocks = [];
   const pattern = /(?:^|\n)(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1(?=\n|$)/gu;

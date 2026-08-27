@@ -25,7 +25,7 @@ export const BUILTIN_COMMANDS = [
   {value: '/search', description: '搜索当前对话中实际显示的内容', source: 'builtin', category: '会话', aliases: ['/find'], argumentHint: '[关键词]'},
   {value: '/history', description: '搜索或清空本工作区的输入历史', source: 'builtin', category: '会话', argumentHint: '[关键词 | clear]'},
   {value: '/edit', description: '取回上一条任务继续修改', source: 'builtin', category: '会话'},
-  {value: '/copy', description: '复制最近回答或其中的代码块', source: 'builtin', category: '会话', argumentHint: '[answer | code [序号]]'},
+  {value: '/copy', description: '复制回答、工具输出或当前会话记录', source: 'builtin', category: '会话', argumentHint: '[answer | code [序号] | tool [序号|all] | transcript]'},
   {value: '/continue', description: '从最近失败点继续', source: 'builtin', category: '恢复'},
   {value: '/plan', description: '切换计划模式，或只为指定任务制定计划', source: 'builtin', category: '安全', argumentHint: '[任务]'},
   {value: '/permissions', description: '切换权限模式或管理工具规则', source: 'builtin', category: '安全', aliases: ['/allowed-tools'], argumentHint: '[rules | allow|ask|deny <工具名>]'},

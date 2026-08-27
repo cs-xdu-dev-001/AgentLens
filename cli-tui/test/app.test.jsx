@@ -417,6 +417,46 @@ test('copy selection returns the latest answer or a requested Markdown code bloc
   assert.match(terminalCopySelection(answer, 'code 3').message, /共有2个代码块/);
 });
 
+test('copy selection can export redacted tool output and the visible transcript', () => {
+  const tools = [
+    {
+      name: 'run_sandbox_command',
+      status: 'completed',
+      arguments: {command: 'printf token=sk-secret-value'},
+      stdout: 'token=sk-secret-value\nready',
+      elapsedSeconds: 0.4,
+    },
+    {name: 'read_workspace_file', status: 'failed', errorMessage: '读取失败'},
+  ];
+  const tool = terminalCopySelection('', 'tool 1', {toolRows: tools});
+  assert.equal(tool.ok, true);
+  assert.match(tool.text, /run_sandbox_command/);
+  assert.doesNotMatch(tool.text, /sk-secret-value/);
+  assert.match(terminalCopySelection('', 'tool all', {toolRows: tools}).text, /read_workspace_file/);
+  const transcript = terminalCopySelection('', 'transcript', {
+    transcript: [
+      {role: 'user', content: '检查工作区'},
+      {role: 'assistant', content: '已完成 token=sk-secret-value'},
+    ],
+  });
+  assert.equal(transcript.ok, true);
+  assert.match(transcript.text, /检查工作区/);
+  assert.doesNotMatch(transcript.text, /sk-secret-value/);
+  const circular = {};
+  circular.self = circular;
+  const bounded = terminalCopySelection('', 'tool all', {
+    toolRows: Array.from({length: 20}, (_, index) => ({
+      name: `tool-${index}`,
+      status: 'completed',
+      output: index === 0 ? circular : 'x'.repeat(20_000),
+    })),
+  });
+  assert.equal(bounded.ok, true);
+  assert.ok(bounded.text.length <= 100_000);
+  assert.match(bounded.text, /内容已截断/);
+  assert.match(bounded.label, /已截断/);
+});
+
 test('retry request snapshots preserve mode, display text, and reasoning effort', () => {
   const snapshot = turnRequestSnapshot(
     '检查完整工作区',
@@ -2234,7 +2274,7 @@ test('Ink app renders a live task summary and collapses it after completion', as
   view.stdin.write('\u001b');
   await tick();
   view.stdin.write('\u0007');
-  await waitForFrame(view, /文件变更[\s\S]*已查看 1\/1/);
+  await waitForFrame(view, /文件变更[\s\S]*已查看 0\/1/);
   assert.match(view.lastFrame(), /正在读取差异/);
   assert.deepEqual(client.sent.at(-1), {
     type: 'workspace',
@@ -2247,8 +2287,9 @@ test('Ink app renders a live task summary and collapses it after completion', as
     action: 'diff',
     result: {patch: '+new line', files: [{path: 'reports/report.md', added: 1, removed: 0}]},
   });
-  await tick();
+  await waitForFrame(view, /\+new line/);
   assert.match(view.lastFrame(), /\+new line/);
+  assert.match(view.lastFrame(), /已查看 1\/1/);
   view.stdin.write('\u0007');
   await tick();
 
@@ -2404,12 +2445,14 @@ test('/diff and /undo reuse the interactive change panel before mutating files',
     path: 'reports/final.md',
     requestId: 'change-diff-1',
   });
+  assert.match(view.lastFrame(), /已查看 0\/1/);
   client.emit('message', {
     type: 'workspace_result',
     action: 'diff',
     result: {patch: Array.from({length: 30}, (_, index) => `+updated report ${index + 1}`).join('\n')},
   });
   await waitForFrame(view, /\+updated report 1/);
+  assert.match(view.lastFrame(), /已查看 1\/1/);
   assert.match(view.lastFrame(), /差异行 1-14\/30/);
   assert.doesNotMatch(view.lastFrame(), /\+updated report 20/);
   view.stdin.write('\u001b[6~');

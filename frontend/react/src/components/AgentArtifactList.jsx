@@ -56,6 +56,7 @@ export function AgentArtifactList({
 }) {
   const [selectedId, setSelectedId] = useState("");
   const [diffs, setDiffs] = useState({});
+  const [diffErrors, setDiffErrors] = useState({});
   const [loadingId, setLoadingId] = useState("");
   const [confirmId, setConfirmId] = useState("");
   const [reviewedIds, setReviewedIds] = useState([]);
@@ -114,21 +115,24 @@ export function AgentArtifactList({
     setSelectedId(identifier);
     setLastReviewId(identifier);
     setConfirmId("");
-    markReviewed(identifier);
     focusReviewDetail();
     if (diffs[identifier]) {
+      markReviewed(identifier);
       setLoadingId("");
       return;
     }
     if (!artifact.diffAvailable || !runId || !artifact.path) {
       setLoadingId("");
+      setDiffErrors((current) => ({ ...current, [identifier]: "" }));
       setDiffs((current) => ({
         ...current,
         [identifier]: "该变更没有可显示的文本差异。",
       }));
+      markReviewed(identifier);
       return;
     }
     setLoadingId(identifier);
+    setDiffErrors((current) => ({ ...current, [identifier]: "" }));
     try {
       const result = await workspaceApi.diff({ runId, path: artifact.path });
       if (diffRequestRef.current !== requestId) return;
@@ -136,10 +140,11 @@ export function AgentArtifactList({
         ...current,
         [identifier]: result?.patch || "没有可显示的文本差异。",
       }));
+      markReviewed(identifier);
     } catch (error) {
       if (diffRequestRef.current !== requestId) return;
       notifyError(error, "读取文件差异失败");
-      setDiffs((current) => ({ ...current, [identifier]: "文件差异暂不可用。" }));
+      setDiffErrors((current) => ({ ...current, [identifier]: "文件差异暂不可用。" }));
     } finally {
       if (diffRequestRef.current === requestId) setLoadingId("");
     }
@@ -341,7 +346,10 @@ export function AgentArtifactList({
                     </div>
                   </div>
                 ) : null}
-                <AgentDiffView patch={diffs[identifier]} loading={loadingId === identifier} />
+                <AgentDiffView
+                  patch={diffs[identifier] || diffErrors[identifier]}
+                  loading={loadingId === identifier}
+                />
                 {!artifact.reverted && artifact.operationId && ["completed", "failed", "cancelled"].includes(runStatus) ? (
                   <div className={"agent-artifact-undo"}>
                     <button

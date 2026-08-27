@@ -1391,6 +1391,41 @@ def main() -> None:
         "reviewedIds",
         "change review progress state",
     )
+    artifact_source = read(
+        "frontend/react/src/components/AgentArtifactList.jsx"
+    )
+    open_diff_start = artifact_source.index("const openDiff = async")
+    cached_diff_start = artifact_source.index(
+        "if (diffs[identifier])",
+        open_diff_start,
+    )
+    request_start = artifact_source.index(
+        "await workspaceApi.diff",
+        cached_diff_start,
+    )
+    request_failure_start = artifact_source.index(
+        "} catch (error) {",
+        request_start,
+    )
+    request_finally_start = artifact_source.index(
+        "} finally {",
+        request_failure_start,
+    )
+    assert "markReviewed(identifier)" not in artifact_source[
+        open_diff_start:cached_diff_start
+    ], "opening a diff must not mark it reviewed before content is available"
+    assert "markReviewed(identifier)" in artifact_source[
+        request_start:request_failure_start
+    ], "a successful diff response must mark the artifact reviewed"
+    assert "markReviewed(identifier)" not in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must remain unreviewed"
+    assert "setDiffs" not in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must not enter the successful diff cache"
+    assert "setDiffErrors" in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must remain visible without becoming reviewed"
     require(
         "frontend/react/src/components/AgentArtifactList.jsx",
         'event.key === "ArrowLeft"',

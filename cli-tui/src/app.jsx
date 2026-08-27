@@ -2819,10 +2819,9 @@ export function App({
     setChangeConfirming(false);
     setChangeDetailOpen(true);
     setChangeLoading(true);
-    markChangeReviewed(selected, nextIndex);
     client.send({type: 'workspace', action: 'diff', path: selected.path, requestId});
     return true;
-  }, [client, closeTransientSurfaces, markChangeReviewed]);
+  }, [client, closeTransientSurfaces]);
 
   useEffect(() => {
     pastedContentsRef.current = pastedContents;
@@ -3876,6 +3875,11 @@ export function App({
             setChangePatch(result.patch || '没有可显示的文本差异。');
             setChangePatchOffset(0);
             setChangeLoading(false);
+            const reviewArtifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+            const reviewedIndex = reviewArtifacts.findIndex(artifact => (
+              artifact.path === changeRequestPathRef.current
+            ));
+            if (reviewedIndex >= 0) markChangeReviewed(reviewArtifacts[reviewedIndex], reviewedIndex);
           } else {
             const files = Array.isArray(result.files) ? result.files : [];
             appendItem('assistant', result.patch
@@ -4025,7 +4029,7 @@ export function App({
       client.off('exit', onExit);
       client.close();
     };
-  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, localMode, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
+  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, localMode, markChangeReviewed, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
 
   useEffect(() => {
     if (!ready || !queueHydratedRef.current) return undefined;
@@ -4896,6 +4900,16 @@ export function App({
       const selection = terminalCopySelection(
         lastAssistantAnswerRef.current || assistantDraftRef.current,
         args,
+        {
+          assistant: lastAssistantAnswerRef.current || assistantDraftRef.current,
+          toolRows: [...activitiesRef.current.values()],
+          transcript: [
+            ...transcript,
+            ...(assistantDraftRef.current
+              ? [{role: 'assistant_chunk', content: assistantDraftRef.current}]
+              : []),
+          ],
+        },
       );
       if (!selection.ok) {
         appendItem('error', selection.message);
@@ -5135,7 +5149,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, terminalNotifications, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, terminalNotifications, transcript, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
