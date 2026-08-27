@@ -64,10 +64,10 @@ function copyToolCall(call, index = 0) {
   const status = copyValue(call?.status || call?.normalizedStatus || "running", 80) || "running";
   const lines = [`[${status}] ${name}`];
   const fields = [
-    ["输入", call?.arguments || call?.inputJson || call?.input_json || call?.input],
-    ["输出", call?.output || call?.outputText || call?.output_text || call?.content],
-    ["标准输出", call?.stdout],
-    ["错误输出", call?.stderr],
+    ["输入", call?.arguments || call?.inputJson || call?.input_json || call?.input || call?.inputSummary],
+    ["输出", call?.output || call?.outputText || call?.output_text || call?.content || call?.outputSummary],
+    ["标准输出", call?.stdout || call?.details?.stdout],
+    ["错误输出", call?.stderr || call?.details?.stderr],
     ["错误", call?.errorMessage || call?.error_message || call?.error?.message || call?.errorCode],
   ];
   for (const [label, value] of fields) {
@@ -79,6 +79,23 @@ function copyToolCall(call, index = 0) {
     lines.push(`耗时: ${copyValue(duration, 40)}ms`);
   }
   return `${index + 1}. ${lines.join("\n")}`;
+}
+
+function isToolTraceStep(step) {
+  const kind = String(step?.kind || "").toLowerCase();
+  const name = String(step?.name || "").toLowerCase();
+  return ["tool", "mcp", "sandbox", "workspace"].includes(kind)
+    || ["web_search", "run_sandbox_command", "list_workspace", "read_workspace_file", "write_workspace_file"].includes(name);
+}
+
+function toolRowsForMessage(message) {
+  const calls = Array.isArray(message?.toolCalls)
+    ? message.toolCalls.filter(Boolean)
+    : [];
+  if (calls.length) return calls;
+  return Array.isArray(message?.trace)
+    ? message.trace.filter(isToolTraceStep)
+    : [];
 }
 
 function copyTrace(trace) {
@@ -95,7 +112,7 @@ function copyTranscriptItem(message, index) {
   if (message?.role !== "user") {
     const trace = copyTrace(message?.trace);
     if (trace) sections.push(`任务过程:\n${trace}`);
-    const tools = Array.isArray(message?.toolCalls) ? message.toolCalls.filter(Boolean) : [];
+    const tools = toolRowsForMessage(message);
     if (tools.length) {
       sections.push(`工具输出:\n${boundedCopyJoin(tools, copyToolCall, "\n", 30_000).text}`);
     }
@@ -135,9 +152,7 @@ export function copySelection({ assistant = "", assistantMessage = null, message
     if (parts.length > 2 || (parts[1] && parts[1] !== "all" && !/^\d+$/u.test(parts[1]))) {
       return { ok: false, message: "用法：/copy tool [序号|all]" };
     }
-    const rows = Array.isArray(assistantMessage?.toolCalls)
-      ? assistantMessage.toolCalls.filter(Boolean)
-      : [];
+    const rows = toolRowsForMessage(assistantMessage);
     if (!rows.length) return { ok: false, message: "当前运行还没有可复制的工具输出。" };
     const requested = parts[1] && parts[1] !== "all" ? Number(parts[1]) : rows.length;
     if (!Number.isInteger(requested) || requested < 1 || requested > rows.length) {

@@ -141,6 +141,13 @@ const tool = copySelection({ assistant: assistantMessage.rawContent, assistantMe
 if (!tool.ok || !tool.text.includes("run_sandbox_command") || /SECRET_VALUE|sk-do-not-copy/.test(tool.text)) {
   throw new Error("Web tool copy did not preserve output while redacting secrets");
 }
+const traceOnlyTool = copySelection({
+  assistantMessage: { trace: assistantMessage.trace },
+  args: "tool 1",
+});
+if (!traceOnlyTool.ok || !traceOnlyTool.text.includes("run_sandbox_command")) {
+  throw new Error("Web tool copy did not fall back to trace-only tool records");
+}
 const transcript = copySelection({
   assistantMessage,
   messages: [{ role: "user", rawContent: "检查状态" }, assistantMessage],
