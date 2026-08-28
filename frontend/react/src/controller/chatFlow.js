@@ -408,6 +408,25 @@ export function shouldOpenRestoredRun(run) {
   return Boolean(run?.id && restoredRunOpenStatuses.has(run.status));
 }
 
+export function agentRunActionKey(detail = {}) {
+  return `${String(detail.messageId || "")}\u001f${String(detail.runId || "")}\u001f${String(detail.action || "")}`;
+}
+
+export function createAgentRunActionGuard() {
+  const inFlight = new Set();
+  return {
+    acquire(detail = {}) {
+      const key = agentRunActionKey(detail);
+      if (inFlight.has(key)) return null;
+      inFlight.add(key);
+      return key;
+    },
+    release(key) {
+      if (key) inFlight.delete(key);
+    },
+  };
+}
+
 export function createChatFlow({
   state,
   messageRetryRequests,
@@ -437,6 +456,7 @@ export function createChatFlow({
 }) {
   let sessionSwitchController = null;
   let composerStateKey = "";
+  const agentRunActionsInFlight = createAgentRunActionGuard();
 
   function publishAgentComposerState(detail = {}) {
     const next = {
@@ -1565,6 +1585,8 @@ export function createChatFlow({
       || !messageId
       || !["start", "replan", "resume", "restart", "cancel", "fix"].includes(action)
     ) return;
+    const actionKey = agentRunActionsInFlight.acquire({ action, messageId, runId });
+    if (!actionKey) return;
     publishAgentRunActionState(detail, "pending");
     try {
       setSending(true);
@@ -1608,6 +1630,7 @@ export function createChatFlow({
       publishAgentRunActionState(detail, "failed", message);
       toast(message, 4200, "error");
     } finally {
+      agentRunActionsInFlight.release(actionKey);
       setSending(false);
     }
   }

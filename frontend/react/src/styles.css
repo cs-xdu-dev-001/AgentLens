@@ -12503,6 +12503,23 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--inverse-text);
 }
 
+.agent-task-actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.agent-task-action-feedback {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-task-action-feedback.failed {
+  color: var(--danger, #c45a5a);
+}
+
 .agent-recovery-panel {
   display: grid;
   gap: 12px;

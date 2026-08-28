@@ -35,6 +35,10 @@ def check_retry_snapshot_clone() -> None:
         """
         import assert from "node:assert/strict";
         import { cloneChatPayload } from "./frontend/react/src/controller/chatFlow.js";
+        import {
+          agentRunActionKey,
+          createAgentRunActionGuard,
+        } from "./frontend/react/src/controller/chatFlow.js";
 
         const blob = new Blob(["immutable"]);
         const attachment = {
@@ -85,6 +89,14 @@ def check_retry_snapshot_clone() -> None:
         assert.equal(shouldOpenRestoredRun({ id: "failed", status: "failed" }), true);
         assert.equal(shouldOpenRestoredRun({ id: "done", status: "completed" }), false);
         assert.equal(shouldOpenRestoredRun(null), false);
+
+        const guard = createAgentRunActionGuard();
+        const detail = { action: "cancel", messageId: "message-1", runId: "run-1" };
+        const key = guard.acquire(detail);
+        assert.equal(key, agentRunActionKey(detail));
+        assert.equal(guard.acquire(detail), null);
+        guard.release(key);
+        assert.equal(guard.acquire(detail), key);
         """
     )
     result = subprocess.run(
