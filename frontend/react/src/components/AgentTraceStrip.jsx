@@ -5,6 +5,7 @@ import { nextTraceStepId } from "./agentTraceNavigation.js";
 import {
   buildAgentRunPresentation,
   buildAgentVerificationPresentation,
+  shouldAutoExpandAgentTrace,
   verificationTraceStepId,
 } from "./agentRunPresentation.js";
 
@@ -39,7 +40,7 @@ export function AgentTraceStrip({
   const scopedRunId = String(presentation?.runId || run?.id || run?.runId || "");
 
   useEffect(() => {
-    setExpanded(active || status.className === "failed");
+    setExpanded(shouldAutoExpandAgentTrace(active, status.className));
   }, [active, run?.id, status.className]);
 
   useEffect(() => {

@@ -36,6 +36,7 @@ import {
   shouldCollapsePaste,
   streamingPreview,
   taskOutcomeState,
+  taskReviewHint,
   thinkingStateForPhase,
   transcriptSearchMatches,
   transcriptSearchText,
@@ -220,6 +221,9 @@ test('completed runs keep child tool failures as warnings instead of failing the
   });
   assert.equal(failed.failed, true);
   assert.equal(failed.completedWithWarnings, false);
+  assert.equal(taskReviewHint({completedWithWarnings: true}), 'Ctrl+T查看未成功步骤 · Ctrl+E运行详情');
+  assert.equal(taskReviewHint({failed: true}), 'Ctrl+E查看错误与恢复操作');
+  assert.equal(taskReviewHint({completedWithWarnings: true, expanded: true}), '');
 });
 
 test('active task anchor reports live duration, token usage, and protocol progress', () => {

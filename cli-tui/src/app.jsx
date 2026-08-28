@@ -899,6 +899,13 @@ export function taskOutcomeState({
   ));
   return {childFailureCount, completedWithWarnings, failed, runStatus, waiting};
 }
+
+export function taskReviewHint({completedWithWarnings = false, expanded = false, failed = false} = {}) {
+  if (expanded) return '';
+  if (failed) return 'Ctrl+E查看错误与恢复操作';
+  if (completedWithWarnings) return 'Ctrl+T查看未成功步骤 · Ctrl+E运行详情';
+  return '';
+}
 const RECOVERY_ACTION_OPTIONS = Object.freeze([
   {id: 'continue', label: '从checkpoint继续', shortcut: 'C'},
   {id: 'retry', label: '重试本轮', shortcut: 'R'},
@@ -1223,6 +1230,7 @@ const TaskSummary = React.memo(function TaskSummary({
       : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
+  const reviewHint = taskReviewHint({completedWithWarnings, expanded, failed});
   const availableRecoveryActions = new Set(
     recoveryActions.length ? recoveryActions : (failed ? ['retry', 'fix'] : []),
   );
@@ -1263,8 +1271,8 @@ const TaskSummary = React.memo(function TaskSummary({
         <Text color={stateColor} bold={running || failed}>{stateLabel}</Text>
       </Box>
       {!compactSettled ? <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text> : null}
-      {failed && !expanded ? (
-        <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
+      {reviewHint ? (
+        <Text color={failed ? ERROR : WARNING}>  ↳ {reviewHint}</Text>
       ) : null}
       {showShellPreview ? (
         <Box

@@ -548,7 +548,7 @@ def check_agent_run_presentation_fixture() -> None:
         / "agentRunPresentation.js"
     ).as_uri()
     script = f"""
-import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, verificationTraceStepId }} from {json.dumps(module_path)};
+import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, shouldAutoExpandAgentTrace, verificationTraceStepId }} from {json.dumps(module_path)};
 const completed = buildAgentRunPresentation({{
   now: Date.parse("2026-08-12T00:00:03Z"),
   run: {{
@@ -757,6 +757,10 @@ console.log(JSON.stringify({{
   }},
   completedWithWarning: {{
     active: completedWithWarning.active,
+    autoExpanded: shouldAutoExpandAgentTrace(
+      completedWithWarning.active,
+      completedWithWarning.status.className,
+    ),
     failedOperationCount: completedWithWarning.failedOperationCount,
     processSummary: completedWithWarning.processSummary,
     status: completedWithWarning.status,
@@ -843,6 +847,7 @@ console.log(JSON.stringify({{
     }
     assert result["completedWithWarning"] == {
         "active": False,
+        "autoExpanded": True,
         "failedOperationCount": 1,
         "processSummary": "任务已完成，1个工具调用未成功",
         "status": {

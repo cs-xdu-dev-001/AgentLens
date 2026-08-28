@@ -669,6 +669,10 @@ function modelRetrySummary(modelRetry, now) {
     : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`;
 }
 
+export function shouldAutoExpandAgentTrace(active = false, statusClassName = "") {
+  return Boolean(active || ["failed", "warning"].includes(String(statusClassName || "")));
+}
+
 export function buildAgentRunPresentation({ run = null, trace = [], now = Date.now() } = {}) {
   const safeTrace = Array.isArray(trace) ? trace : [];
   const protocolSummary = run?.runSummary && typeof run.runSummary === "object"
