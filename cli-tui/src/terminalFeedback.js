@@ -40,7 +40,7 @@ export function terminalClipboardSequence(value) {
   return `${OSC}52;c;${Buffer.from(safeValue, 'utf8').toString('base64')}${ST}`;
 }
 
-function copyValue(value, limit = 12_000) {
+function copyValue(value, limit = COPY_TEXT_LIMIT) {
   if (value === undefined || value === null || value === '') return '';
   const source = typeof value === 'string' ? value : (() => {
     try {

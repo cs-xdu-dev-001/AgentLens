@@ -1006,7 +1006,83 @@ function taskSummaryModel(activities, traceSteps, artifacts = [], references = [
   return {tracedRows, operations, planRows, rows, navigationItems};
 }
 
-function ActivityDetails({row, compact = false}) {
+export const TOOL_DETAIL_PAGE_SIZE = 14;
+const TOOL_DETAIL_VALUE_LIMIT = 100_000;
+
+function stringifyDetailValue(value) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function activityDetailEntries(row, compact = false) {
+  const argumentsValue = row.arguments ?? row.inputSummary ?? row.inputJson ?? row.input_json;
+  const outputValue = row.output ?? row.outputSummary ?? row.details?.output;
+  const valueLimit = compact ? 1200 : TOOL_DETAIL_VALUE_LIMIT;
+  const inputLimit = compact ? 600 : TOOL_DETAIL_VALUE_LIMIT;
+  const fields = [
+    ['输入', argumentsValue, MUTED, inputLimit],
+    ['stdout', row.stdout ?? row.details?.stdout, MUTED, valueLimit],
+    ['stderr', row.stderr ?? row.details?.stderr, ERROR, valueLimit],
+    ['输出', outputValue, row.status === 'failed' ? ERROR : MUTED, valueLimit],
+    ['原因', row.errorMessage, ERROR, 1200],
+    ['错误码', row.errorCode, ERROR, 240],
+  ];
+  return fields.flatMap(([label, value, color, limit]) => {
+    if (value === undefined || value === null || value === '') return [];
+    const source = stringifyDetailValue(value);
+    const text = redact(source, limit).replace(/\r\n?/g, '\n');
+    if (!text) return [];
+    return [{color, label, limit, sourceLength: source.length, text, truncated: source.length > limit}];
+  });
+}
+
+export function activityDetailLines(row, compact = false) {
+  return activityDetailEntries(row ?? {}, compact).flatMap(entry => {
+    const lines = entry.text.split('\n').map((line, index) => ({
+      color: entry.color,
+      text: `${index === 0 ? `${entry.label} ` : '  '}${line}`,
+    }));
+    if (entry.truncated) {
+      lines.push({
+        color: MUTED,
+        text: `  [内容已截断：原始${entry.sourceLength}字符，仅显示前${entry.limit}字符]`,
+      });
+    }
+    return lines;
+  });
+}
+
+export function activityDetailPage(row, offset = 0, pageSize = TOOL_DETAIL_PAGE_SIZE) {
+  const allLines = activityDetailLines(row, false);
+  const size = Math.max(1, Number(pageSize) || TOOL_DETAIL_PAGE_SIZE);
+  const maxOffset = Math.max(0, allLines.length - size);
+  const safeOffset = Math.max(0, Math.min(Number(offset) || 0, maxOffset));
+  const lines = allLines.slice(safeOffset, safeOffset + size);
+  return {
+    end: Math.min(allLines.length, safeOffset + lines.length),
+    lines,
+    maxOffset,
+    offset: safeOffset,
+    total: allLines.length,
+  };
+}
+
+function ActivityDetails({row, compact = false, paginate = false, offset = 0}) {
+  if (paginate) {
+    const page = activityDetailPage(row, offset);
+    return (
+      <Box flexDirection="column" marginLeft={2}>
+        {page.total ? <Text color={MUTED}>详情内容 {page.offset + 1}-{page.end}/{page.total}</Text> : null}
+        {page.lines.map((line, index) => (
+          <Text key={`${page.offset + index}:${line.text}`} color={line.color}>{line.text}</Text>
+        ))}
+      </Box>
+    );
+  }
   const argumentsValue = row.arguments ?? row.inputSummary ?? row.inputJson ?? row.input_json;
   const outputValue = row.output ?? row.outputSummary ?? row.details?.output;
   const output = safeJson(outputValue, compact ? 1200 : 10000);
@@ -1421,7 +1497,7 @@ const TaskSummary = React.memo(function TaskSummary({
   );
 });
 
-function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice = 0}) {
+function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice = 0, offset = 0}) {
   const row = rows[selected];
   if (!row) return null;
   const state = statusSymbol(row.status, '·');
@@ -1436,7 +1512,7 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
         <Text color={PRIMARY} bold>{row.name}</Text>
         <Text color={MUTED}>  {row.status}</Text>
       </Box>
-      <ActivityDetails row={row} />
+      <ActivityDetails row={row} paginate offset={offset} />
       {failed && !running && recoveryItems.length ? (
         <Box marginTop={1}>
           <Text color={MUTED}>恢复  </Text>
@@ -1449,7 +1525,7 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
       ) : failed ? <Text color={MUTED}>当前任务结束后可恢复</Text> : null}
       <Text color={MUTED}>
         {failed && !running && recoveryItems.length ? '←→选择 · Enter执行  ' : ''}
-        ↑↓切换详情  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭
+        PgUp/PgDn翻页 · Home/End首尾  ↑↓切换详情  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭
       </Text>
     </Box>
   );
@@ -2627,6 +2703,7 @@ export function App({
   const [runElapsedMs, setRunElapsedMs] = useState(0);
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
+  const [toolDetailOffset, setToolDetailOffset] = useState(0);
   const [recoveryChoice, setRecoveryChoice] = useState(0);
   const recoveryChoiceRef = useRef(0);
   const updateRecoveryChoice = useCallback(next => {
@@ -5249,6 +5326,16 @@ export function App({
       recoveryActions: runProjection.recoveryActions,
     }];
   }, [runProjection.error, runProjection.recoveryActions, toolRows]);
+  const toolDetailPage = useMemo(
+    () => activityDetailPage(detailRows[toolDetailIndex]),
+    [detailRows, toolDetailIndex],
+  );
+  useEffect(() => {
+    setToolDetailOffset(value => Math.min(value, toolDetailPage.maxOffset));
+  }, [toolDetailPage.maxOffset]);
+  useEffect(() => {
+    setToolDetailOffset(0);
+  }, [detailTab, toolDetailIndex, toolDetailOpen]);
   const taskNavigationItems = useMemo(() => taskSummaryModel(
     activities,
     traceSteps,
@@ -5933,6 +6020,7 @@ export function App({
       const references = runProjectionRef.current.references || [];
       const row = detailRows[toolDetailIndex];
       const recoveryItems = recoveryOptions(row);
+      const detailPage = activityDetailPage(row, toolDetailOffset);
       if (key.ctrl && character === 'c') {
         if (running) requestCancel();
         else setToolDetailOpen(false);
@@ -5948,6 +6036,14 @@ export function App({
         } else if (key.downArrow && references.length) {
           setReferenceDetailIndex(value => (value + 1) % references.length);
         }
+      } else if (key.pageUp) {
+        setToolDetailOffset(value => Math.max(0, value - TOOL_DETAIL_PAGE_SIZE));
+      } else if (key.pageDown) {
+        setToolDetailOffset(value => Math.min(detailPage.maxOffset, value + TOOL_DETAIL_PAGE_SIZE));
+      } else if (key.home) {
+        setToolDetailOffset(0);
+      } else if (key.end) {
+        setToolDetailOffset(detailPage.maxOffset);
       } else if (key.leftArrow && recoveryItems.length && !running) {
         updateRecoveryChoice(value => (value + recoveryItems.length - 1) % recoveryItems.length);
       } else if (key.rightArrow && recoveryItems.length && !running) {
@@ -5956,9 +6052,11 @@ export function App({
         recoverFailedTool(recoveryItems[Math.min(recoveryChoiceRef.current, recoveryItems.length - 1)].id);
       } else if (key.upArrow && detailRows.length) {
         setToolDetailIndex(value => (value + detailRows.length - 1) % detailRows.length);
+        setToolDetailOffset(0);
         updateRecoveryChoice(0);
       } else if (key.downArrow && detailRows.length) {
         setToolDetailIndex(value => (value + 1) % detailRows.length);
+        setToolDetailOffset(0);
         updateRecoveryChoice(0);
       } else if (character.toLowerCase() === 'r') recoverFailedTool('retry');
       else if (character.toLowerCase() === 'f') recoverFailedTool('fix');
@@ -6448,7 +6546,7 @@ export function App({
     approval: `←→选择 · Enter确认 · Esc拒绝${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     recovery: '←→选择 · Enter执行 · Esc返回输入',
     changes: '↑↓切换并加载 · Enter刷新 · D撤销 · Esc返回',
-    toolDetail: '↑↓选择 · Tab切换 · Esc返回',
+    toolDetail: 'PgUp/PgDn翻页 · Home/End首尾 · ↑↓选择 · Tab切换 · Esc返回',
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
@@ -6621,6 +6719,7 @@ export function App({
             running={running}
             hasReferences={Boolean(runProjection.references?.length)}
             recoveryChoice={recoveryChoice}
+            offset={toolDetailOffset}
           />
         )
       ) : taskStepDetailKey ? (

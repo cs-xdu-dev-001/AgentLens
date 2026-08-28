@@ -9,6 +9,8 @@ import {render} from 'ink-testing-library';
 import {
   activeTaskAnchorMetrics,
   App,
+  activityDetailLines,
+  activityDetailPage,
   buildTuiDeliveryPresentation,
   buildTuiDiagnosticReport,
   changeReviewArtifacts,
@@ -2658,6 +2660,58 @@ test('Ctrl+E opens trace-only tool details without legacy activity events', asyn
   assert.match(frame, /128项测试通过/);
   assert.doesNotMatch(frame, /sk-trace-secret/);
   assert.doesNotMatch(frame, /本轮还没有工具调用/);
+});
+
+test('tool detail pages long output, preserves redaction, and exposes an explicit truncation marker', () => {
+  const lines = activityDetailLines({
+    status: 'completed',
+    output: `${'token=sk-long-secret-1234567890\n'}${'输出内容\n'.repeat(20_000)}`,
+  });
+  const page = activityDetailPage({
+    status: 'completed',
+    output: `${'token=sk-long-secret-1234567890\n'}${'输出内容\n'.repeat(20_000)}`,
+  });
+  const text = lines.map(line => line.text).join('\n');
+  assert.doesNotMatch(text, /sk-long-secret/);
+  assert.match(text, /内容已截断/);
+  assert.equal(page.offset, 0);
+  assert.equal(page.lines.length, 14);
+  assert.ok(page.total > page.lines.length);
+  assert.equal(activityDetailPage({output: 'one\ntwo'}, 999).offset, 0);
+});
+
+test('Ctrl+E paginates long tool output with PgUp/PgDn and Home/End', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('查看长工具输出');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_result',
+      toolCallId: 'call-long-output',
+      toolName: 'run_sandbox_command',
+      status: 'completed',
+      output: Array.from({length: 40}, (_, index) => `输出行${index + 1}`).join('\n'),
+    },
+  });
+  await tick();
+  view.stdin.write('\u0005');
+  await waitForFrame(view, /详情内容 1-14\//);
+  assert.match(view.lastFrame(), /输出行1/);
+  assert.doesNotMatch(view.lastFrame(), /输出行30/);
+
+  view.stdin.write('\u001b[6~');
+  await waitForFrame(view, /输出行20/);
+  assert.doesNotMatch(view.lastFrame(), /输出行1(?:\D|$)/);
+
+  view.stdin.write('\u001b[H');
+  await waitForFrame(view, /输出行1/);
+  view.stdin.write('\u001b[F');
+  await waitForFrame(view, /输出行40/);
 });
 
 test('Ctrl+T exposes failed verification and opens its matching tool details', async t => {
