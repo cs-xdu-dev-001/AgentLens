@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { mergeAgentArtifactUpdate } from "../controller/agentEvents.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import { publishReactAgentArtifactsUpdated } from "../controller/messageEvents.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { AgentDiffView } from "./AgentDiffView.jsx";
@@ -102,7 +103,7 @@ export function AgentArtifactList({
       return;
     }
     try {
-      await navigator.clipboard.writeText(target);
+      await copyTextToClipboard(target);
       notifyToast("产物路径已复制");
     } catch (error) {
       notifyError(error, "复制产物路径失败");

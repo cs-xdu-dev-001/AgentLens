@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { memoryApi } from "../api/client.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import { publishMemoryActivity } from "../controller/memoryActivity.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import {
@@ -46,7 +47,7 @@ export function AgentTraceStepDetail({
     if (copying) return;
     setCopying(true);
     try {
-      await navigator.clipboard.writeText(traceCopyText(step));
+      await copyTextToClipboard(traceCopyText(step));
       notifyToast("已复制步骤详情");
     } catch (error) {
       notifyError(error, "复制失败，请重试。");

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { runtimeApi } from "../api/client.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import {
   AGENT_NOTIFICATION_PREFERENCE_EVENT,
   agentNotificationPreference,
@@ -87,10 +88,7 @@ export function AgentWindowFeedback() {
         version: versionRef.current,
       });
       try {
-        if (!navigator.clipboard?.writeText) {
-          throw new Error("Clipboard API unavailable");
-        }
-        await navigator.clipboard.writeText(report);
+        await copyTextToClipboard(report);
         notifyToast("脱敏诊断已复制");
       } catch (error) {
         setFallbackReport(report);
