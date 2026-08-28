@@ -11,6 +11,7 @@ import {
   traceStepFields,
   traceStepReason,
   traceStepTarget,
+  TRACE_DETAIL_LIMIT,
 } from "./agentTracePresentation.js";
 
 
@@ -35,6 +36,7 @@ export function AgentTraceStepDetail({
 }) {
   const [copying, setCopying] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [expandedFields, setExpandedFields] = useState(() => new Set());
   const fields = traceStepFields(step);
   const memoryItems = traceMemoryItems(step);
   const target = traceStepTarget(step);
@@ -94,6 +96,15 @@ export function AgentTraceStepDetail({
     );
   };
 
+  const toggleField = (label) => {
+    setExpandedFields((current) => {
+      const next = new Set(current);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
   return (
     <section
       className={"agent-trace-step-detail"}
@@ -107,9 +118,31 @@ export function AgentTraceStepDetail({
       {fields.length ? (
         <dl className={"agent-trace-fields"}>
           {fields.map((field) => (
-            <div key={`${field.label}-${field.value}`}>
-              <dt>{field.label}</dt>
-              <dd>{field.value}</dd>
+            <div
+              key={`${field.label}-${field.value}`}
+              className={field.truncated ? "agent-trace-field is-expandable" : "agent-trace-field"}
+            >
+              <div className={"agent-trace-field-heading"}>
+                <dt>{field.label}</dt>
+                {field.truncated ? (
+                  <button
+                    type={"button"}
+                    className={"agent-trace-field-toggle"}
+                    aria-expanded={expandedFields.has(field.label)}
+                    onClick={() => toggleField(field.label)}
+                  >
+                    {expandedFields.has(field.label) ? "收起" : "展开"}
+                  </button>
+                ) : null}
+              </div>
+              <dd className={expandedFields.has(field.label) ? "expanded" : undefined}>
+                {expandedFields.has(field.label) ? field.fullValue : field.value}
+              </dd>
+              {expandedFields.has(field.label) && field.hardTruncated ? (
+                <p className={"agent-trace-field-note"}>
+                  {`已显示前${TRACE_DETAIL_LIMIT}字符，超出部分已省略。`}
+                </p>
+              ) : null}
             </div>
           ))}
         </dl>

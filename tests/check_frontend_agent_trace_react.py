@@ -440,6 +440,8 @@ def check_workspace_sandbox_renderer_fixture() -> None:
     script = f"""
 import {{
   traceKindLabel,
+  traceCopyText,
+  redactTraceDetail,
   traceStepFields,
   traceStepReason,
   traceStepTitle,
@@ -485,6 +487,20 @@ const referenceStep = {{
   }},
 }};
 const referenceFields = traceStepFields(referenceStep);
+const longStep = {{
+  kind: "sandbox",
+  name: "run_sandbox_command",
+  status: "success",
+  inputSummary: {{ command: "node inspect.js" }},
+  outputSummary: {{
+    exit_code: 0,
+    stdout: "输出开头 · " + "x".repeat(400) + " · 输出末尾",
+    stderr: "token=sk-test-secret-value-1234567890",
+  }},
+}};
+const longFields = traceStepFields(longStep);
+const stdoutField = longFields.find((field) => field.label === "标准输出");
+const stderrField = longFields.find((field) => field.label === "错误输出");
 const readable = {{
   kindLabel: traceKindLabel("workspace"),
   sandboxLabel: traceKindLabel("sandbox"),
@@ -497,7 +513,16 @@ const readable = {{
   referenceTitle: traceStepTitle(referenceStep),
   referenceReason: traceStepReason(referenceStep),
 }};
-console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, readable }}));
+const expandable = {{
+  compact: stdoutField?.value,
+  full: stdoutField?.fullValue,
+  truncated: stdoutField?.truncated,
+  hardTruncated: stdoutField?.hardTruncated,
+  redacted: stderrField?.fullValue,
+  copied: traceCopyText(longStep),
+  ansi: redactTraceDetail("\\u001b[31m红色\\u001b[0m\\n下一行"),
+}};
+console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, readable, expandable }}));
 """
     completed = subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -528,6 +553,15 @@ console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, r
         {"label": "已读取", "value": "README.md、src/main.py"},
         {"label": "已跳过", "value": "1"},
     ]
+    expandable = result["expandable"]
+    assert expandable["truncated"] is True
+    assert expandable["hardTruncated"] is False
+    assert expandable["compact"].endswith("…")
+    assert expandable["full"].endswith("输出末尾")
+    assert "sk-test-secret" not in expandable["redacted"]
+    assert "[已隐藏]" in expandable["redacted"]
+    assert "输出末尾" in expandable["copied"]
+    assert expandable["ansi"] == "红色\n下一行"
     assert result["readable"] == {
         "kindLabel": "WORKSPACE",
         "sandboxLabel": "SANDBOX",
@@ -1200,6 +1234,12 @@ def main() -> None:
         "复制详情",
         "管理长期记忆",
         "查看恢复操作",
+        "field.fullValue",
+        "field.truncated",
+        "agent-trace-field-toggle",
+        "aria-expanded={expandedFields.has(field.label)}",
+        "收起",
+        "展开",
     ):
         require(detail, token, f"interactive detail {token}")
     for token in (
@@ -1207,6 +1247,8 @@ def main() -> None:
         "traceStepFields",
         "traceCopyText",
         "traceStepTarget",
+        "redactTraceDetail",
+        "TRACE_DETAIL_LIMIT",
     ):
         require(
             presentation,

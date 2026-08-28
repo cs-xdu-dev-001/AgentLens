@@ -282,7 +282,19 @@ function parseSummary(value) {
   }
 }
 
-function compactValue(value) {
+export const TRACE_DETAIL_LIMIT = 100_000;
+const TRACE_COMPACT_LIMIT = 260;
+const TRACE_REDACTION_PATTERNS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[已隐藏私钥]"],
+  [/\b(?:sk|ak)-[A-Za-z0-9_-]{12,}\b/g, "[已隐藏]"],
+  [/\b((?:org|proj)-)[A-Za-z0-9_-]{8,}\b/g, "$1[已隐藏]"],
+  [/\bBearer\s+[A-Za-z0-9._~-]{8,}\b/gi, "Bearer [已隐藏]"],
+  [/(api[_-]?key|token|password|secret|cookie|authorization|private[_-]?key)(\s*[:=]\s*)(["']?)[^\s,"'}]+/gi, "$1$2[已隐藏]"],
+  [/([?&](?:api[_-]?key|token|password|secret|cookie|authorization)=)[^&#\s]+/gi, "$1[已隐藏]"],
+  [/([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi, "$1[已隐藏]@"],
+];
+
+function traceScalarValue(value) {
   if (value == null || value === "") return "";
   if (Array.isArray(value)) {
     return value
@@ -291,17 +303,62 @@ function compactValue(value) {
       .join("、");
   }
   if (typeof value === "object") return "";
-  const text = safeText(value);
-  return text.length > 260 ? `${text.slice(0, 260)}…` : text;
+  return safeText(value);
+}
+
+export function redactTraceDetail(value, limit = TRACE_DETAIL_LIMIT) {
+  let text = traceScalarValue(value)
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+  TRACE_REDACTION_PATTERNS.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  return text.length > limit
+    ? `${text.slice(0, Math.max(0, limit - 1))}…`
+    : text;
+}
+
+function traceFieldDetail(value) {
+  const source = traceScalarValue(value);
+  const text = redactTraceDetail(source);
+  return {
+    originalLength: source.length,
+    text,
+    truncated: source.length > TRACE_DETAIL_LIMIT,
+  };
+}
+
+function compactValue(value) {
+  const text = traceFieldDetail(value).text.replace(/\s+/g, " ").trim();
+  return text.length > TRACE_COMPACT_LIMIT
+    ? `${text.slice(0, TRACE_COMPACT_LIMIT)}…`
+    : text;
 }
 
 function addField(fields, label, value) {
-  const text = compactValue(value);
+  const detail = traceFieldDetail(value);
+  const compact = compactValue(value);
   if (
-    text
+    compact
     && !fields.some((field) => field.label === label)
   ) {
-    fields.push({ label, value: text });
+    const field = { label, value: compact };
+    Object.defineProperties(field, {
+      fullValue: {
+        configurable: true,
+        value: detail.text,
+      },
+      truncated: {
+        configurable: true,
+        value: detail.text.length > TRACE_COMPACT_LIMIT || detail.truncated,
+      },
+      hardTruncated: {
+        configurable: true,
+        value: detail.truncated,
+      },
+    });
+    fields.push(field);
   }
 }
 
@@ -510,7 +567,10 @@ export function traceCopyText(step) {
     `为什么执行：${traceStepReason(step)}`,
   ];
   traceStepFields(step).forEach((field) => {
-    lines.push(`${field.label}：${field.value}`);
+    lines.push(`${field.label}：${field.fullValue || field.value}`);
+    if (field.hardTruncated) {
+      lines.push(`${field.label}：[内容已截断，最多显示${TRACE_DETAIL_LIMIT}字符]`);
+    }
   });
   traceMemoryItems(step).forEach((item) => {
     lines.push(`记忆${item.action || "记录"}：${item.content}`);
