@@ -3408,6 +3408,33 @@ test('fullscreen mode pins the active task above output until the turn settles',
   view.unmount();
 });
 
+test('native mode keeps a live task anchor in the dynamic controls while output grows', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.52.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查当前项目并修复问题');
+  view.stdin.write('\r');
+  const activeFrame = await waitForFrame(view, /任务\s+检查当前项目并修复问题.*运行中/);
+  assert.match(activeFrame, /任务\s+检查当前项目并修复问题.*\d+(?:ms|s).*运行中/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'text_delta',
+      text: Array.from({length: 40}, (_, index) => `输出行${index + 1}`).join('\n'),
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
+
+  client.emit('message', {type: 'turn_completed', answer: '检查完成'});
+  await tick();
+  await tick();
+  assert.match(view.lastFrame(), /就绪/);
+  assert.doesNotMatch(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
+  view.unmount();
+});
+
 test('terminal mode defaults to native scrollback and gates mouse capture behind fullscreen', () => {
   assert.deepEqual(resolveTerminalMode({}), {
     fullscreenEnabled: false,

@@ -6676,6 +6676,15 @@ export function App({
       {question ? <QuestionPrompt question={question} selected={questionChoice} custom={questionCustom} position={1} total={waitingInteractions.length} /> : null}
       {queueManagerOpen ? <QueueManager items={queue} selected={queueManagerIndex} paused={queuePaused} durable={queueDurable} /> : null}
       <QueuePreview items={queue} paused={queuePaused} durable={queueDurable} hidden={queueManagerOpen} />
+      {!fullscreenEnabled && running ? (
+        <ActiveTaskAnchor
+          elapsedMs={taskElapsedMs}
+          goal={lastQuestion}
+          runProjection={runProjection}
+          startedAt={runStartedAtRef.current}
+          state={runHeader}
+        />
+      ) : null}
       <RuntimeStatusLine
         approval={approval}
         cancelPending={cancelPending}
