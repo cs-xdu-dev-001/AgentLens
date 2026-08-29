@@ -450,6 +450,49 @@ def main() -> None:
         "cwd",
         "answer",
     }
+
+    class PausedRestoreBackend(FakeBackend):
+        def restore_session(self, run_id, event_sink):
+            event = {
+                "type": "approval_required",
+                "runId": run_id,
+                "approvalId": "approval_restored",
+                "toolName": "write_workspace_file",
+                "risk": "write",
+            }
+            event_sink(event)
+            return AgentExecution(
+                result={
+                    "paused": True,
+                    "runId": run_id,
+                    "restored": True,
+                    "messages": [
+                        {"role": "user", "content": "恢复旧问题"},
+                        {"role": "assistant", "content": "等待审批"},
+                    ],
+                },
+                events=[event],
+            )
+
+    paused_output = StringIO()
+    paused_bridge = InkRuntimeBridge(
+        PausedRestoreBackend(),
+        input_stream=StringIO(),
+        output_stream=paused_output,
+    )
+    paused_bridge.handle(
+        {
+            "type": "resume_session",
+            "requestId": "resume-paused",
+            "runId": "run_waiting",
+        }
+    )
+    paused_rows = wait_for(paused_output, "turn_paused")
+    paused_result = next(
+        row for row in reversed(paused_rows) if row.get("type") == "turn_paused"
+    )
+    assert paused_result["restored"] is True
+    assert paused_result["messages"][0]["content"] == "恢复旧问题"
     ready_bridge.handle({"type": "branch_session", "title": "方案B"})
     branch_rows = wait_for(ready_output, "session_branched")
     assert branch_rows[-1]["result"]["runId"] == "run_branch"

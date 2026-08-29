@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from urllib.parse import urlsplit
 
 from fastapi.testclient import TestClient
 
@@ -185,6 +186,46 @@ class FakeMemoryRunner:
         self.wake_count += 1
 
 
+class TestClientResponse:
+    def __init__(self, response):
+        self.response = response
+        self.status_code = response.status_code
+        self.ok = response.is_success
+
+    def json(self):
+        return self.response.json()
+
+    def iter_lines(self, decode_unicode=True):
+        assert decode_unicode
+        return iter(self.response.text.splitlines())
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+
+class TestClientSession:
+    def __init__(self, client: TestClient):
+        self.client = client
+        self.cookies = client.cookies
+        self.calls = []
+
+    def request(self, method, url, **kwargs):
+        path = urlsplit(url).path
+        self.calls.append((method, path, kwargs))
+        response = self.client.request(
+            method,
+            path,
+            json=kwargs.get("json"),
+            params=kwargs.get("params"),
+            headers=kwargs.get("headers"),
+            follow_redirects=False,
+        )
+        return TestClientResponse(response)
+
+
 def main() -> None:
     db_path = ROOT / "data" / "test-dbs" / "agent-task-execution.db"
     checkpoint_path = (
@@ -197,6 +238,8 @@ def main() -> None:
     os.environ["KNOWFLOW_SECRET_KEY"] = "agent-task-execution-secret"
     os.environ["KNOWFLOW_COOKIE_SECURE"] = "0"
     os.environ["KNOWFLOW_VECTOR_BACKEND"] = "local"
+    os.environ["LANGSMITH_TRACING"] = "false"
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
     os.environ["KNOWFLOW_LANGGRAPH_CHECKPOINT_DB"] = str(
         checkpoint_path
     )
@@ -204,6 +247,7 @@ def main() -> None:
 
     app_module = importlib.import_module("main")
     extensions = importlib.import_module("knowflow.routers.extensions")
+    remote_agent = importlib.import_module("knowflow.services.remote_agent")
     runtime = importlib.import_module("knowflow.runtime")
     client = TestClient(app_module.app)
     register(client, "task-execution-user")
@@ -312,7 +356,11 @@ def main() -> None:
         if item["id"] == snapshot["assistantMessageId"]
     )
     assert assistant["run"]["id"] == run_id
+    assert assistant["run"]["lastSequence"] > 0
     assert assistant["approvals"] == []
+    run_response = client.get(f"/api/agent/runs/{run_id}")
+    assert run_response.status_code == 200, run_response.text
+    assert run_response.json()["data"]["lastSequence"] > 0
     sessions = client.get("/api/sessions")
     assert sessions.status_code == 200, sessions.text
     projected_session = next(
@@ -325,6 +373,34 @@ def main() -> None:
     assert projected_session["latest_run"]["goalSummary"] == snapshot["goalSummary"]
     assert projected_session["latest_run"]["progress"] == {"completed": 2, "total": 2}
     assert projected_session["latest_run"]["durationMs"] >= 0
+    remote_session = TestClientSession(client)
+    remote_client = remote_agent.RemoteAgentClient(
+        "http://127.0.0.1:8010",
+        session=remote_session,
+    )
+    remote_sessions = remote_client.list_sessions()
+    assert any(item["id"] == snapshot["sessionId"] for item in remote_sessions)
+    remote_history = remote_client.session_messages(snapshot["sessionId"])
+    assert any(
+        (item.get("run") or {}).get("id") == run_id
+        for item in remote_history
+    )
+    remote_snapshot = remote_client.get_run(run_id)
+    assert remote_snapshot["lastSequence"] > 0
+    remote_execution = remote_client.watch_run(
+        run_id,
+        after_sequence=remote_snapshot["lastSequence"],
+    )
+    assert remote_execution.result["run"]["status"] == "completed"
+    assert "任务执行完成" in remote_execution.result["answer"]
+    event_request = next(
+        call
+        for call in reversed(remote_session.calls)
+        if call[1].endswith("/events")
+    )
+    assert event_request[2]["params"] == {
+        "afterSequence": remote_snapshot["lastSequence"]
+    }
     deleted = client.delete(
         f"/api/sessions/{snapshot['sessionId']}"
     )

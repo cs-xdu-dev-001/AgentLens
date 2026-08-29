@@ -2280,6 +2280,18 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
   assert.equal(client.sent.at(-1).runId, 'run_restore');
+  const resumeRequest = client.sent.at(-1);
+  client.emit('message', {
+    type: 'turn_paused',
+    requestId: resumeRequest.requestId,
+    runId: 'run_restore',
+    restored: true,
+    messages: [
+      {role: 'user', content: '恢复前的问题'},
+      {role: 'assistant', content: '等待继续操作'},
+    ],
+  });
+  await waitForFrame(view, /恢复前的问题[\s\S]*等待继续操作/);
   await waitForFrame(view, /会话 恢复测试/);
   view.unmount();
 });

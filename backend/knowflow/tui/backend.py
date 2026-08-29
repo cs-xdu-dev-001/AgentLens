@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
@@ -15,6 +16,25 @@ from ..services.session_portability import (
 
 
 MAX_TUI_ATTACHMENT_PATHS = 8
+
+
+def _unix_timestamp(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
 
 
 def _workspace_reference_token(value: Any) -> str:
@@ -396,7 +416,41 @@ class TuiBackend:
 
     def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         if self.remote_client is not None:
-            return []
+            sessions: list[dict[str, Any]] = []
+            for row in self.remote_client.list_sessions(limit=limit):
+                session_id = str(
+                    row.get("id") or row.get("sessionId") or ""
+                )
+                if not session_id:
+                    continue
+                latest = row.get("latestRun") or row.get("latest_run") or {}
+                latest = dict(latest) if isinstance(latest, dict) else {}
+                title = str(
+                    row.get("title")
+                    or latest.get("goalSummary")
+                    or "未命名会话"
+                )
+                goal_summary = str(latest.get("goalSummary") or "")
+                sessions.append(
+                    {
+                        # Ink's existing session protocol uses runId as its
+                        # transport key. In remote mode that key is the durable
+                        # chat session id; the latest Agent run stays separate.
+                        "runId": session_id,
+                        "title": title,
+                        "status": str(latest.get("status") or "completed"),
+                        "updatedAt": _unix_timestamp(
+                            row.get("updatedAt")
+                            or row.get("updated_at")
+                            or latest.get("updatedAt")
+                        ),
+                        "cwd": "",
+                        "answer": (
+                            goal_summary if goal_summary != title else ""
+                        ),
+                    }
+                )
+            return sessions
         return list(self.local_agent.list_sessions(limit=limit))
 
     def rename_session(self, title: str) -> dict[str, Any]:
@@ -408,7 +462,7 @@ class TuiBackend:
                 raise RuntimeError("当前没有可重命名的远程会话。")
             session = self.remote_client.rename_session(self.session_id, next_title)
             return {
-                "runId": "",
+                "runId": self.session_id,
                 "sessionId": self.session_id,
                 "title": session.get("title") or next_title,
             }
@@ -429,21 +483,18 @@ class TuiBackend:
             branch_id = str(branch.get("id") or "")
             if not branch_id:
                 raise RuntimeError("服务器未返回新的会话分支。")
-            messages = self.remote_client.request(
-                "GET",
-                f"/api/sessions/{branch_id}/messages",
-            )
+            messages = self.remote_client.session_messages(branch_id)
             self.session_id = branch_id
             self.current_run_id = None
             self.conversation = [
                 {"role": item.get("role"), "content": item.get("content")}
-                for item in (messages if isinstance(messages, list) else [])
+                for item in messages
                 if item.get("role") in {"user", "assistant"}
             ]
             self.transcript = list(self.conversation)
             self.context_metadata = {}
             return {
-                "runId": "",
+                "runId": branch_id,
                 "sessionId": branch_id,
                 "title": branch.get("title"),
                 "messageCount": len(self.transcript),
@@ -612,7 +663,162 @@ class TuiBackend:
         event_sink: AgentEventSink,
     ) -> AgentExecution:
         if self.remote_client is not None:
-            execution = self.remote_client.resume(run_id, event_sink)
+            reference = str(run_id or "").strip()
+            if not reference:
+                raise ValueError("请选择要恢复的会话。")
+
+            selected_run: dict[str, Any] = {}
+            session_id = reference
+            if reference.startswith("run_"):
+                selected_run = self.remote_client.get_run(reference)
+                session_id = str(selected_run.get("sessionId") or "")
+                if not session_id:
+                    raise RuntimeError("远程运行缺少所属会话。")
+
+            messages = self.remote_client.session_messages(session_id)
+            self.session_id = session_id
+            self.conversation = [
+                {
+                    "role": str(item.get("role") or ""),
+                    "content": str(item.get("content") or ""),
+                }
+                for item in messages
+                if item.get("role") in {"user", "assistant"}
+            ]
+            self.transcript = list(self.conversation)
+            self.context_metadata = {}
+
+            latest_message: dict[str, Any] = {}
+            if selected_run:
+                selected_id = str(selected_run.get("id") or reference)
+                latest_message = next(
+                    (
+                        item
+                        for item in reversed(messages)
+                        if isinstance(item.get("run"), dict)
+                        and str(item["run"].get("id") or "") == selected_id
+                    ),
+                    {},
+                )
+            else:
+                latest_message = next(
+                    (
+                        item
+                        for item in reversed(messages)
+                        if isinstance(item.get("run"), dict)
+                    ),
+                    {},
+                )
+                selected_run = dict(latest_message.get("run") or {})
+
+            latest_run_id = str(selected_run.get("id") or "")
+            status = str(selected_run.get("status") or "completed")
+            self.current_run_id = latest_run_id or None
+            try:
+                last_sequence = max(
+                    0,
+                    int(selected_run.get("lastSequence") or 0),
+                )
+            except (TypeError, ValueError):
+                last_sequence = 0
+
+            result = {
+                "paused": False,
+                "runId": latest_run_id or session_id,
+                "sessionId": session_id,
+                "answer": "",
+                "messages": self.transcript,
+                "restored": True,
+                "status": status,
+                "run": selected_run or None,
+                "lastSequence": last_sequence,
+            }
+
+            if status == "waiting_approval":
+                approval = next(
+                    (
+                        item
+                        for item in latest_message.get("approvals") or []
+                        if isinstance(item, dict)
+                        and item.get("status") == "waiting"
+                    ),
+                    None,
+                )
+                if approval is None:
+                    raise RuntimeError("等待审批的远程会话缺少审批状态。")
+                event = {
+                    **approval,
+                    "type": "approval_required",
+                    "runId": latest_run_id,
+                }
+                event_sink(event)
+                result["paused"] = True
+                execution = AgentExecution(result=result, events=[event])
+                self._finish(execution)
+                return execution
+
+            if status == "waiting_input":
+                pending = selected_run.get("pendingQuestion")
+                if not isinstance(pending, dict):
+                    pending = next(
+                        (
+                            item
+                            for item in latest_message.get("questions") or []
+                            if isinstance(item, dict)
+                        ),
+                        None,
+                    )
+                if not isinstance(pending, dict):
+                    raise RuntimeError("等待回答的远程会话缺少问题状态。")
+                event = {
+                    **pending,
+                    "type": "user_question_required",
+                    "runId": latest_run_id,
+                }
+                event_sink(event)
+                result["paused"] = True
+                execution = AgentExecution(result=result, events=[event])
+                self._finish(execution)
+                return execution
+
+            if latest_run_id and status in {
+                "planning",
+                "waiting_start",
+                "running",
+                "cancelling",
+            }:
+                execution = self.remote_client.watch_run(
+                    latest_run_id,
+                    event_sink,
+                    after_sequence=last_sequence,
+                )
+            elif latest_run_id and status in {"failed", "interrupted"}:
+                execution = self.remote_client.resume(
+                    latest_run_id,
+                    event_sink,
+                    after_sequence=last_sequence or None,
+                )
+            else:
+                execution = AgentExecution(result=result, events=[])
+
+            final_run = execution.result.get("run")
+            final_status = (
+                execution.result.get("status")
+                or (
+                    final_run.get("status")
+                    if isinstance(final_run, dict)
+                    else None
+                )
+                or status
+            )
+            execution.result.update(
+                {
+                    "sessionId": session_id,
+                    "messages": self.transcript,
+                    "restored": True,
+                    "status": final_status,
+                }
+            )
             self._finish(execution)
             return execution
         session = self.local_agent.load_session(run_id)
@@ -743,11 +949,20 @@ class TuiBackend:
             approval_id = execution.approval_id
             if not approval_id:
                 raise RuntimeError("Agent审批信息不可用。")
+            try:
+                last_sequence = int(
+                    execution.result.get("lastSequence")
+                    or (execution.result.get("run") or {}).get("lastSequence")
+                    or 0
+                )
+            except (AttributeError, TypeError, ValueError):
+                last_sequence = 0
             resolved = self.remote_client.resolve_approval(
                 run_id,
                 approval_id,
                 decision,
                 event_sink,
+                after_sequence=last_sequence or None,
             )
         else:
             if self.local_agent is None:
@@ -796,10 +1011,19 @@ class TuiBackend:
         if not payload["answer"]:
             raise ValueError("请先选择或输入回答。")
         if self.remote_client is not None:
+            try:
+                last_sequence = int(
+                    execution.result.get("lastSequence")
+                    or (execution.result.get("run") or {}).get("lastSequence")
+                    or 0
+                )
+            except (AttributeError, TypeError, ValueError):
+                last_sequence = 0
             resolved = self.remote_client.answer_question(
                 run_id,
                 payload,
                 event_sink,
+                after_sequence=last_sequence or None,
             )
         else:
             if self.local_agent is None:
@@ -828,8 +1052,6 @@ class TuiBackend:
         return resolved
 
     def _finish(self, execution: AgentExecution) -> None:
-        if execution.paused:
-            return
         value = execution.result
         run_id = str(value.get("runId") or "")
         if run_id:
@@ -837,6 +1059,8 @@ class TuiBackend:
         self.session_id = str(
             value.get("sessionId") or self.session_id or ""
         ) or None
+        if execution.paused:
+            return
         if self.remote_client is None:
             self.conversation = list(
                 value.get("messages") or self.conversation

@@ -1193,9 +1193,63 @@ def main() -> None:
     class FakeRemoteClient:
         def __init__(self):
             self.calls = []
+            self.resumed = []
+            self.session_rows = [
+                {
+                    "id": "session_remote",
+                    "title": "远程历史",
+                    "updated_at": "2026-08-29 12:00:00",
+                    "latest_run": {
+                        "id": "run_remote_complete",
+                        "status": "completed",
+                    },
+                }
+            ]
+            self.messages_by_session = {
+                "session_remote": [
+                    {"role": "user", "content": "旧问题"},
+                    {
+                        "role": "assistant",
+                        "content": "旧回答",
+                        "run": {
+                            "id": "run_remote_complete",
+                            "sessionId": "session_remote",
+                            "status": "completed",
+                            "lastSequence": 8,
+                        },
+                    },
+                ]
+            }
 
         def request(self, method, path):
             self.calls.append((method, path))
+
+        def list_sessions(self, limit=20):
+            return self.session_rows[:limit]
+
+        def session_messages(self, session_id):
+            return self.messages_by_session[session_id]
+
+        def get_run(self, run_id):
+            for messages in self.messages_by_session.values():
+                for message in messages:
+                    run = message.get("run") or {}
+                    if run.get("id") == run_id:
+                        return run
+            return {}
+
+        def resume(self, run_id, event_sink, *, after_sequence=None):
+            self.resumed.append((run_id, after_sequence))
+            event_sink({"type": "message", "content": "继续完成"})
+            return AgentExecution(
+                result={
+                    "paused": False,
+                    "runId": run_id,
+                    "sessionId": "session_failed",
+                    "answer": "继续完成",
+                    "lastSequence": (after_sequence or 0) + 1,
+                }
+            )
 
     remote_client = FakeRemoteClient()
     tui_backend = TuiBackend(
@@ -1210,6 +1264,67 @@ def main() -> None:
         ("POST", "/api/agent/runs/run_cancel/cancel")
     ]
     assert not tui_backend.cancel(None)
+    remote_sessions = tui_backend.list_sessions()
+    assert remote_sessions[0]["runId"] == "session_remote"
+    assert remote_sessions[0]["status"] == "completed"
+    assert isinstance(remote_sessions[0]["updatedAt"], float)
+    restored = tui_backend.restore_session("session_remote", lambda _event: None)
+    assert restored.result["restored"] is True
+    assert restored.result["messages"][-1]["content"] == "旧回答"
+    assert tui_backend.session_id == "session_remote"
+    assert tui_backend.current_run_id == "run_remote_complete"
+
+    remote_client.messages_by_session["session_waiting"] = [
+        {"role": "user", "content": "请发布"},
+        {
+            "role": "assistant",
+            "content": "",
+            "run": {
+                "id": "run_waiting",
+                "sessionId": "session_waiting",
+                "status": "waiting_approval",
+                "lastSequence": 10,
+            },
+            "approvals": [
+                {
+                    "approvalId": "approval_waiting",
+                    "status": "waiting",
+                    "toolName": "write_workspace_file",
+                    "risk": "write",
+                }
+            ],
+        },
+    ]
+    restored_events = []
+    waiting = tui_backend.restore_session(
+        "session_waiting",
+        restored_events.append,
+    )
+    assert waiting.paused
+    assert waiting.approval_id == "approval_waiting"
+    assert restored_events[-1]["type"] == "approval_required"
+    assert tui_backend.session_id == "session_waiting"
+    assert tui_backend.current_run_id == "run_waiting"
+
+    remote_client.messages_by_session["session_failed"] = [
+        {"role": "user", "content": "失败任务"},
+        {
+            "role": "assistant",
+            "content": "",
+            "run": {
+                "id": "run_failed",
+                "sessionId": "session_failed",
+                "status": "failed",
+                "lastSequence": 11,
+            },
+        },
+    ]
+    resumed = tui_backend.restore_session(
+        "session_failed",
+        lambda _event: None,
+    )
+    assert resumed.result["restored"] is True
+    assert remote_client.resumed == [("run_failed", 11)]
 
     class FakeLocalAgent:
         def __init__(self):

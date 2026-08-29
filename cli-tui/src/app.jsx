@@ -1533,10 +1533,14 @@ function modelProtocolLabel(value) {
 const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, maxVisible = 6}) {
   const spinner = useSpinner(loading, '连接会话');
   const labels = {
+    planning: ['规划中', ACCENT],
+    waiting_start: ['等待执行', WARNING],
     running: ['执行中', ACCENT],
+    cancelling: ['正在停止', WARNING],
     failed: ['失败，可继续', ERROR],
     interrupted: ['已中断，可继续', WARNING],
     waiting_approval: ['等待审批', WARNING],
+    waiting_input: ['等待回答', WARNING],
     cancelled: ['已取消', MUTED],
     completed: ['已完成', SUCCESS],
   };
@@ -2415,6 +2419,30 @@ export function App({
     const onMessage = message => {
       const scopedRequestId = String(message.requestId ?? '').trim();
       const turnScoped = ['agent_event', 'turn_completed', 'turn_failed', 'turn_paused', 'cancel_requested'].includes(message.type);
+      const restoreMessages = (values, archive = true) => {
+        if (!Array.isArray(values)) return false;
+        const restoredQuestion = [...values]
+          .reverse()
+          .find(item => item.role === 'user' && String(item.content ?? '').trim());
+        const restoredQuestionText = String(restoredQuestion?.content ?? '');
+        lastQuestionRef.current = restoredQuestionText;
+        setLastQuestion(restoredQuestionText);
+        const restoredAnswer = [...values]
+          .reverse()
+          .find(item => item.role === 'assistant' && String(item.content ?? '').trim());
+        lastAssistantAnswerRef.current = redact(
+          String(restoredAnswer?.content ?? ''),
+          200_000,
+        ).trim();
+        setStaticEpoch(value => value + 1);
+        setTranscript(values.map((item, index) => ({
+          id: `restored-${index}`,
+          role: item.role,
+          content: String(item.content ?? ''),
+        })));
+        setTaskArchived(archive);
+        return true;
+      };
       if (turnScoped && scopedRequestId) {
         if (settledRequestIdsRef.current.has(scopedRequestId)) return;
         if (activeRequestIdRef.current && scopedRequestId !== activeRequestIdRef.current) return;
@@ -2800,32 +2828,17 @@ export function App({
         setPhase('就绪');
         return;
       }
+      if (message.type === 'turn_paused') {
+        if (message.restored) restoreMessages(message.messages, false);
+        if (message.runId) setCurrentRunId(String(message.runId));
+        return;
+      }
       if (message.type === 'turn_completed') {
         setRunRecoveryOpen(false);
         settleCurrentRun(message.cancelled ? 'cancelled' : 'completed');
         const projectedArtifactCount = runProjectionRef.current.artifacts.length;
-        if (message.restored && Array.isArray(message.messages)) {
+        if (message.restored && restoreMessages(message.messages)) {
           lastTurnRequestRef.current = null;
-          const restoredQuestion = [...message.messages]
-            .reverse()
-            .find(item => item.role === 'user' && String(item.content ?? '').trim());
-          const restoredQuestionText = String(restoredQuestion?.content ?? '');
-          lastQuestionRef.current = restoredQuestionText;
-          setLastQuestion(restoredQuestionText);
-          const restoredAnswer = [...message.messages]
-            .reverse()
-            .find(item => item.role === 'assistant' && String(item.content ?? '').trim());
-          lastAssistantAnswerRef.current = redact(
-            String(restoredAnswer?.content ?? ''),
-            200_000,
-          ).trim();
-          setStaticEpoch(value => value + 1);
-          setTranscript(message.messages.map((item, index) => ({
-            id: `restored-${index}`,
-            role: item.role,
-            content: String(item.content ?? ''),
-          })));
-          setTaskArchived(true);
         } else {
           lastAssistantAnswerRef.current = redact(
             String(assistantDraftRef.current || message.answer || ''),

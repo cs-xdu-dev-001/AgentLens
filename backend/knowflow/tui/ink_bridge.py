@@ -144,6 +144,12 @@ class InkRuntimeBridge:
                     "approvalId": execution.approval_id,
                     "questionId": execution.question_id,
                     "interruptType": execution.interrupt_type,
+                    "restored": bool(execution.result.get("restored")),
+                    "messages": (
+                        self._public_messages(execution.result.get("messages"))
+                        if execution.result.get("restored")
+                        else None
+                    ),
                 }
             )
         else:

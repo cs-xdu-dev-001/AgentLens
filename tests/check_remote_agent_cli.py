@@ -286,6 +286,94 @@ def main() -> None:
     assert fake.calls[-1][1].endswith("/api/sessions/s1")
     assert fake.calls[-1][2]["json"] == {"title": "发布复盘"}
 
+    fake.responses.append(
+        FakeResponse(
+            {
+                "code": 0,
+                "data": [
+                    {"id": "s1", "title": "第一条"},
+                    {"id": "s2", "title": "第二条"},
+                ],
+            }
+        )
+    )
+    sessions = client.list_sessions(limit=1)
+    assert sessions == [{"id": "s1", "title": "第一条"}]
+    assert fake.calls[-1][1].endswith("/api/sessions")
+
+    fake.responses.append(
+        FakeResponse(
+            {
+                "code": 0,
+                "data": [
+                    {"role": "user", "content": "旧问题"},
+                    {"role": "assistant", "content": "旧回答"},
+                ],
+            }
+        )
+    )
+    assert client.session_messages("s1")[-1]["content"] == "旧回答"
+    assert fake.calls[-1][1].endswith("/api/sessions/s1/messages")
+
+    fake.responses.append(
+        FakeResponse(
+            {
+                "code": 0,
+                "data": {"id": "run_saved", "sessionId": "s1"},
+            }
+        )
+    )
+    assert client.get_run("run_saved")["sessionId"] == "s1"
+
+    fake.responses.append(
+        FakeResponse(
+            {},
+            lines=[
+                "event: run_snapshot",
+                'data: {"sequence":13,"run":{"id":"run_watch","status":"running"}}',
+                "",
+                "event: message",
+                'data: {"sequence":14,"content":"已接回"}',
+                "",
+                "event: done",
+                'data: {"sequence":15,"runId":"run_watch"}',
+                "",
+            ],
+        )
+    )
+    watched = client.watch_run("run_watch", after_sequence=12)
+    assert watched.result["answer"] == "已接回"
+    assert watched.result["lastSequence"] == 15
+    assert fake.calls[-1][2]["params"] == {"afterSequence": 12}
+
+    fake.responses.extend(
+        [
+            FakeResponse(
+                {
+                    "code": 0,
+                    "data": {"id": "run_retry", "lastSequence": 20},
+                }
+            ),
+            FakeResponse({"code": 0, "data": {"id": "run_retry"}}),
+            FakeResponse(
+                {},
+                lines=[
+                    "event: message",
+                    'data: {"sequence":21,"content":"续接成功"}',
+                    "",
+                    "event: done",
+                    'data: {"sequence":22,"runId":"run_retry"}',
+                    "",
+                ],
+            ),
+        ]
+    )
+    resumed = client.resume("run_retry")
+    assert resumed.result["answer"] == "续接成功"
+    assert fake.calls[-3][1].endswith("/api/agent/runs/run_retry")
+    assert fake.calls[-2][0] == "POST"
+    assert fake.calls[-1][2]["params"] == {"afterSequence": 20}
+
     cancelled_execution = RemoteAgentClient._collect(
         iter(
             [

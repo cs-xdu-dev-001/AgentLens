@@ -208,6 +208,35 @@ class RemoteAgentClient:
             return payload["data"]
         return payload
 
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        payload = self.request("GET", "/api/sessions")
+        rows = payload if isinstance(payload, list) else []
+        safe_limit = max(1, min(100, int(limit)))
+        return [dict(item) for item in rows[:safe_limit] if isinstance(item, dict)]
+
+    def session_messages(self, session_id: str) -> list[dict[str, Any]]:
+        payload = self.request("GET", f"/api/sessions/{session_id}/messages")
+        if not isinstance(payload, list):
+            return []
+        return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        payload = self.request("GET", f"/api/agent/runs/{run_id}")
+        return dict(payload) if isinstance(payload, dict) else {}
+
+    def _resume_sequence(
+        self,
+        run_id: str,
+        after_sequence: int | None,
+    ) -> int:
+        if after_sequence is not None:
+            return max(0, int(after_sequence))
+        snapshot = self.get_run(run_id)
+        try:
+            return max(0, int(snapshot.get("lastSequence") or 0))
+        except (TypeError, ValueError):
+            return 0
+
     def branch_session(self, session_id: str, title: str = "") -> dict[str, Any]:
         payload = self.request(
             "POST",
@@ -288,6 +317,7 @@ class RemoteAgentClient:
         path: str,
         *,
         body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Iterable[dict[str, Any]]:
         assert self.session is not None
         headers = {**self.headers, "Accept": "text/event-stream"}
@@ -296,6 +326,7 @@ class RemoteAgentClient:
                 method,
                 self._url(path),
                 json=body,
+                params=params,
                 headers=headers,
                 timeout=(10, 3600),
                 stream=True,
@@ -325,9 +356,20 @@ class RemoteAgentClient:
         self,
         run_id: str,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
+        *,
+        after_sequence: int | None = None,
     ) -> AgentExecution:
+        params = (
+            {"afterSequence": max(0, int(after_sequence))}
+            if after_sequence is not None
+            else None
+        )
         execution = self._collect(
-            self.stream("GET", f"/api/agent/runs/{run_id}/events"),
+            self.stream(
+                "GET",
+                f"/api/agent/runs/{run_id}/events",
+                params=params,
+            ),
             event_sink,
             run_id=run_id,
         )
@@ -368,9 +410,16 @@ class RemoteAgentClient:
         self,
         run_id: str,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
+        *,
+        after_sequence: int | None = None,
     ) -> AgentExecution:
+        cursor = self._resume_sequence(run_id, after_sequence)
         self.request("POST", f"/api/agent/runs/{run_id}/resume")
-        return self.watch_run(run_id, event_sink)
+        return self.watch_run(
+            run_id,
+            event_sink,
+            after_sequence=cursor,
+        )
 
     def resolve_approval(
         self,
@@ -378,7 +427,10 @@ class RemoteAgentClient:
         approval_id: str,
         decision: str,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
+        *,
+        after_sequence: int | None = None,
     ) -> AgentExecution:
+        cursor = self._resume_sequence(run_id, after_sequence)
         result = self.request(
             "POST",
             f"/api/agent/approvals/{approval_id}",
@@ -386,20 +438,31 @@ class RemoteAgentClient:
         )
         if isinstance(result, dict) and result.get("resumeRequired"):
             self.request("POST", f"/api/agent/runs/{run_id}/resume")
-        return self.watch_run(run_id, event_sink)
+        return self.watch_run(
+            run_id,
+            event_sink,
+            after_sequence=cursor,
+        )
 
     def answer_question(
         self,
         run_id: str,
         answer: dict[str, Any],
         event_sink: Callable[[dict[str, Any]], None] | None = None,
+        *,
+        after_sequence: int | None = None,
     ) -> AgentExecution:
+        cursor = self._resume_sequence(run_id, after_sequence)
         self.request(
             "POST",
             f"/api/agent/runs/{run_id}/answer",
             body=answer,
         )
-        return self.watch_run(run_id, event_sink)
+        return self.watch_run(
+            run_id,
+            event_sink,
+            after_sequence=cursor,
+        )
 
     @staticmethod
     def _collect(
@@ -413,6 +476,7 @@ class RemoteAgentClient:
         result: dict[str, Any] = {}
         paused = False
         cancelled = False
+        last_sequence = 0
         for event in source:
             events.append(event)
             if event_sink is not None:
@@ -432,6 +496,20 @@ class RemoteAgentClient:
                     "waiting_approval", "waiting_input",
                 }
                 cancelled = snapshot.get("status") == "cancelled"
+                try:
+                    last_sequence = max(
+                        last_sequence,
+                        int(snapshot.get("lastSequence") or 0),
+                    )
+                except (TypeError, ValueError):
+                    pass
+            try:
+                last_sequence = max(
+                    last_sequence,
+                    int(event.get("sequence") or event.get("lastSequence") or 0),
+                )
+            except (TypeError, ValueError):
+                pass
             for key in ("runId", "sessionId", "messageId", "memoryActivity"):
                 if event.get(key) is not None:
                     result[key] = event[key]
@@ -448,6 +526,8 @@ class RemoteAgentClient:
         result["answer"] = "".join(answer)
         result["paused"] = paused
         result["cancelled"] = cancelled
+        if last_sequence:
+            result["lastSequence"] = last_sequence
         result.setdefault("trace", [])
         result.setdefault("toolCalls", [])
         result.setdefault("references", [])

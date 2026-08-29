@@ -455,6 +455,7 @@ class AgentEventStore:
             if summary is not None:
                 run_summary.update(summary)
         return {
+            "lastSequence": self.latest_sequence(run_id),
             "artifacts": list(artifacts.values()),
             "usage": usage,
             "context": context,

@@ -130,6 +130,7 @@ def main() -> None:
     assert "secret" not in events.artifacts_for_run(1, "run_event_store")[0]
     assert "content" not in events.artifacts_for_run(1, "run_event_store")[0]
     metadata = events.metadata_for_run(1, "run_event_store")
+    assert metadata["lastSequence"] == 8
     assert metadata["artifacts"][0]["writtenBytes"] == 512
     assert metadata["usage"]["totalTokens"] == 150
     assert metadata["context"]["usagePercent"] == 75

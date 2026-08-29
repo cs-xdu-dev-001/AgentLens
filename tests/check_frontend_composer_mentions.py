@@ -21,7 +21,7 @@ def main() -> None:
     assert 'apiRequest("/api/workspace/mentions")' in client
     assert '@router.get("/api/workspace/mentions"' in router
     assert "workspace-mention-listbox" in composer
-    assert "@ 引用工作区文件" in composer
+    assert "@引用文件" in composer
     assert 'aria-label={"工作区文件"}' in picker
 
     script = r'''
