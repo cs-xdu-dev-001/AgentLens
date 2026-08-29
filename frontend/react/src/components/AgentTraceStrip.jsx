@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
 import { evidenceReferences } from "./agentEvidencePresentation.js";
-import { nextTraceStepId } from "./agentTraceNavigation.js";
+import { nextTraceStepId, visibleTraceWindow } from "./agentTraceNavigation.js";
 import {
   buildAgentRunPresentation,
   buildAgentVerificationPresentation,
@@ -33,9 +33,15 @@ export function AgentTraceStrip({
   const [expanded, setExpanded] = useState(active);
   const [focusedStepId, setFocusedStepId] = useState("");
   const capsuleRef = useRef(null);
-  const navigationIds = Array.isArray(presentation?.rows)
-    ? presentation.rows.slice(0, 5).map((item) => String(item.id || "")).filter(Boolean)
-    : [];
+  const inlineTraceWindow = visibleTraceWindow(
+    presentation?.rows,
+    presentation?.activeRow?.id,
+    5,
+  );
+  const inlineRows = inlineTraceWindow.rows;
+  const navigationIds = inlineRows
+    .map((item) => String(item.id || ""))
+    .filter(Boolean);
   const navigationKey = navigationIds.join("\u001f");
   const scopedRunId = String(presentation?.runId || run?.id || run?.runId || "");
 
@@ -174,7 +180,7 @@ export function AgentTraceStrip({
             <span>{`${progressCompleted}/${progressTotal || rows.length}完成`}</span>
           </div>
           <ol className={"agent-task-capsule-steps"}>
-            {rows.slice(0, 5).map((item) => {
+            {inlineRows.map((item) => {
               const itemId = String(item.id || "");
               return (
               <li
@@ -203,8 +209,17 @@ export function AgentTraceStrip({
               );
             })}
           </ol>
-          {rows.length > 5 ? (
-            <span className={"agent-task-capsule-more"}>{`另有${rows.length - 5}个步骤`}</span>
+          {inlineTraceWindow.hiddenBefore || inlineTraceWindow.hiddenAfter ? (
+            <span className={"agent-task-capsule-more"}>
+              {[
+                inlineTraceWindow.hiddenBefore
+                  ? `前${inlineTraceWindow.hiddenBefore}个步骤已收起`
+                  : "",
+                inlineTraceWindow.hiddenAfter
+                  ? `后${inlineTraceWindow.hiddenAfter}个步骤已收起`
+                  : "",
+              ].filter(Boolean).join(" · ")}
+            </span>
           ) : null}
           {context && (context.trimmed || context.percent >= 70) ? (
             <div className={`agent-context-pressure${context.trimmed ? " trimmed" : ""}`}>

@@ -1029,8 +1029,12 @@ def check_trace_keyboard_navigation_fixture() -> None:
         / "frontend/react/src/components/agentTraceNavigation.js"
     ).resolve().as_uri()
     script = f"""
-import {{ matchesFocusScope, nextTraceStepId, resolveTreeSelectionId }} from {json.dumps(module_url)};
+import {{ matchesFocusScope, nextTraceStepId, resolveTreeSelectionId, visibleTraceWindow }} from {json.dumps(module_url)};
 const ids = ["planning", "tool-failed", "answer"];
+const rows = Array.from({{ length: 9 }}, (_, index) => ({{ id: `step-${{index + 1}}` }}));
+const activeWindow = visibleTraceWindow(rows, "step-6", 5);
+const lastWindow = visibleTraceWindow(rows, "step-9", 5);
+const missingWindow = visibleTraceWindow(rows, "missing", 5);
 console.log(JSON.stringify({{
   down: nextTraceStepId(ids, "tool-failed", "ArrowDown"),
   wrapDown: nextTraceStepId(ids, "answer", "ArrowDown"),
@@ -1044,6 +1048,21 @@ console.log(JSON.stringify({{
   removed: resolveTreeSelectionId(ids, "removed", "answer", true),
   scoped: matchesFocusScope("workbench", "workbench"),
   foreignScope: matchesFocusScope("message", "workbench"),
+  activeWindow: {{
+    ids: activeWindow.rows.map((item) => item.id),
+    before: activeWindow.hiddenBefore,
+    after: activeWindow.hiddenAfter,
+  }},
+  lastWindow: {{
+    ids: lastWindow.rows.map((item) => item.id),
+    before: lastWindow.hiddenBefore,
+    after: lastWindow.hiddenAfter,
+  }},
+  missingWindow: {{
+    ids: missingWindow.rows.map((item) => item.id),
+    before: missingWindow.hiddenBefore,
+    after: missingWindow.hiddenAfter,
+  }},
 }}));
 """
     result = subprocess.run(
@@ -1068,6 +1087,21 @@ console.log(JSON.stringify({{
         "removed": "answer",
         "scoped": True,
         "foreignScope": False,
+        "activeWindow": {
+            "ids": ["step-4", "step-5", "step-6", "step-7", "step-8"],
+            "before": 3,
+            "after": 1,
+        },
+        "lastWindow": {
+            "ids": ["step-5", "step-6", "step-7", "step-8", "step-9"],
+            "before": 4,
+            "after": 0,
+        },
+        "missingWindow": {
+            "ids": ["step-1", "step-2", "step-3", "step-4", "step-5"],
+            "before": 0,
+            "after": 4,
+        },
     }
 
 
@@ -1545,8 +1579,8 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "rows.slice(0, 5)",
-        "concise inline task rows",
+        "visibleTraceWindow",
+        "active-centered concise inline task rows",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
