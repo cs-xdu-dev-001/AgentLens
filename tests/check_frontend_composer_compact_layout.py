@@ -43,6 +43,28 @@ def main() -> None:
             "selected Skill expansion",
         )
         require(stylesheet, "@media (max-width: 520px)", "mobile contract")
+    for stylesheet in ("frontend/refinement.css", "frontend/react/src/refinement.css"):
+        require(
+            stylesheet,
+            "/* AgentLens refinement: agent client parity */",
+            "agent client refinement contract",
+        )
+        require(
+            stylesheet,
+            "grid-template-columns: 36px minmax(0, 1fr) auto auto 36px",
+            "non-overlapping composer columns",
+        )
+        require(stylesheet, ".composer-permission-picker", "permission picker column")
+        require(stylesheet, "grid-column: 3 !important", "permission picker placement")
+        require(stylesheet, ".composer-model-picker", "model picker column")
+        require(stylesheet, "grid-column: 4 !important", "model picker placement")
+        require(stylesheet, "grid-column: 5 !important", "send button placement")
+        require(stylesheet, ".sidebar #runtime-box", "mobile runtime compaction")
+    require(
+        "frontend/react/src/components/ChatComposerForm.jsx",
+        "输入任务，/选择命令或Skill，@引用文件",
+        "compact composer prompt",
+    )
     print("composer chrome is compact and aligned")
 
 

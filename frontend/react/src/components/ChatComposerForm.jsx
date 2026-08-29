@@ -1059,7 +1059,7 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "有问题尽管问。输入 / 选择命令或Skill，@ 引用工作区文件"}
+            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "输入任务，/选择命令或Skill，@引用文件"}
             value={question}
             disabled={switchingSession}
             aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}

@@ -412,6 +412,28 @@ export function shouldAnimateRuntimeStatus({
   return Boolean(running && !blocked && !cancelPending && !hasVisibleStream && !hasVisibleWork);
 }
 
+export function shouldShowRuntimeStatus({
+  approval,
+  cancelPending = false,
+  phase = '',
+  question,
+  queueLength = 0,
+  queuePaused = false,
+  running = false,
+  waitingCount = 0,
+}) {
+  return Boolean(
+    running
+    || cancelPending
+    || approval
+    || question
+    || waitingCount
+    || queueLength
+    || queuePaused
+    || (phase && phase !== '就绪')
+  );
+}
+
 const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
   approval,
   cancelPending,
@@ -432,6 +454,16 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
     hasVisibleWork,
   });
   const spinner = useSpinner(animate, phase);
+  if (!shouldShowRuntimeStatus({
+    approval,
+    cancelPending,
+    phase,
+    question,
+    queueLength,
+    queuePaused,
+    running,
+    waitingCount,
+  })) return null;
   return (
     <Box marginTop={1}>
       <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${phase}` : phase}</Text>
@@ -1635,14 +1667,11 @@ function TranscriptSearch({matches, selected, query}) {
 }
 
 const Welcome = React.memo(function Welcome({version, model, workspace}) {
+  const workspaceName = workspaceLabel(workspace) || process.cwd();
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text color={ACCENT} bold>AgentLens</Text>
-        <Text color={MUTED}> v{version}</Text>
-      </Box>
-      <Text color={PRIMARY}>{model || '正在连接模型'} <Text color={MUTED}>· {workspaceLabel(workspace) || process.cwd()}</Text></Text>
-      <Text color={MUTED}>输入任务，/查看命令</Text>
+      <Text><Text color={ACCENT} bold>AgentLens</Text><Text color={MUTED}> v{version} · </Text><Text color={PRIMARY}>{model || '正在连接模型'}</Text></Text>
+      <Text color={MUTED} wrap="truncate-end">{workspaceName} · /命令 · Ctrl+T任务</Text>
     </Box>
   );
 });
@@ -5231,14 +5260,24 @@ export function App({
               </Box>
             </Box>
           ) : (
-            <Box justifyContent="space-between" flexShrink={0}>
-              <Text color={permissionColor}>{interactionStatus}</Text>
+            <Box flexDirection="column" flexShrink={0}>
               {!narrow ? (
-                <Text>
-                  <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
-                  <Text color={MUTED}> · {[contextIndicator(runProjection.context), model || '连接中', `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`, workspace?.branch || '工作区', interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换` : 'Esc返回输入', !fullscreenEnabled && (interactionFocus === 'composer' || interactionFocus === 'commands') ? '终端滚轮选择复制' : ''].filter(Boolean).join(' · ')}</Text>
-                </Text>
+                <Box justifyContent="space-between">
+                  <Text>
+                    <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
+                    <Text color={MUTED}> · {model || '连接中'} · {workspace?.branch || '工作区'}</Text>
+                  </Text>
+                  <Text color={MUTED}>{[contextIndicator(runProjection.context), `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`].filter(Boolean).join(' · ')}</Text>
+                </Box>
               ) : null}
+              <Box justifyContent="space-between">
+                <Text color={permissionColor}>{interactionStatus}</Text>
+                {!narrow ? (
+                  <Text color={MUTED}>
+                    {interactionFocus === 'composer' || interactionFocus === 'commands' ? `${permission.label} · Shift+Tab切换${!fullscreenEnabled ? ' · 终端滚轮选择复制' : ''}` : 'Esc返回输入'}
+                  </Text>
+                ) : null}
+              </Box>
             </Box>
           )}
         </>

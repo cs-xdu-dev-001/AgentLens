@@ -25,6 +25,7 @@ import {
   shellActivityPreview,
   settleRuntimeRows,
   shouldAnimateRuntimeStatus,
+  shouldShowRuntimeStatus,
   shouldCollapsePaste,
   streamingPreview,
   thinkingStateForPhase,
@@ -288,6 +289,13 @@ test('runtime spinner stops once useful progress is visible', () => {
   assert.equal(shouldAnimateRuntimeStatus({running: true, blocked: true}), false);
   assert.equal(shouldAnimateRuntimeStatus({running: true, cancelPending: true}), false);
   assert.equal(shouldAnimateRuntimeStatus({running: false}), false);
+});
+
+test('idle runtime status stays out of the transcript', () => {
+  assert.equal(shouldShowRuntimeStatus({phase: '就绪'}), false);
+  assert.equal(shouldShowRuntimeStatus({phase: '执行中', running: true}), true);
+  assert.equal(shouldShowRuntimeStatus({phase: '等待审批', approval: {}}), true);
+  assert.equal(shouldShowRuntimeStatus({phase: '就绪', queueLength: 1}), true);
 });
 
 test('shell progress keeps a redacted five-line live preview and classifies failures', () => {
