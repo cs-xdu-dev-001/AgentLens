@@ -75,6 +75,33 @@ def main() -> None:
         "completedSteps": 1,
         "progressPercent": 50,
     }
+    cancelling = normalize_agent_event({
+        "type": "cancel_requested",
+        "status": "cancelling",
+        "run": {
+            "id": "run_cancelling",
+            "status": "cancelling",
+            "goalSummary": "安全停止任务",
+            "steps": [{"id": "one", "status": "running"}],
+        },
+    })
+    assert cancelling["eventName"] == "run.cancelling"
+    assert cancelling["normalizedStatus"] == "cancelling"
+    assert cancelling["runSummary"]["status"] == "cancelling"
+    normalizer = AgentEventNormalizer("run_cancelling")
+    normalizer({
+        "type": "run_snapshot",
+        "run": {
+            "id": "run_cancelling",
+            "status": "running",
+            "steps": [{"id": "one", "status": "running"}],
+        },
+    })
+    cancelling_update = normalizer({
+        "type": "cancel_requested",
+        "status": "cancelling",
+    })
+    assert cancelling_update["runSummary"]["status"] == "cancelling"
     strict_summary = public_run_summary_projection({
         "runSummary": {
             "runId": "run_public",
@@ -414,6 +441,38 @@ def main() -> None:
       if (projection.runSummary?.headline !== '统一摘要') process.exit(50);
       if (projection.run?.runSummary?.progressPercent !== 25) process.exit(51);
       if (tuiProjection.runSummary?.totalTokens !== 900) process.exit(52);
+      const cancellingEvent = {
+        type: 'cancel_requested',
+        runId: 'run_cancelling',
+        status: 'cancelling',
+        phase: '正在安全停止当前操作',
+        run: {
+          id: 'run_cancelling',
+          status: 'cancelling',
+          currentStepId: 'step_cancelling',
+          steps: [{id: 'step_cancelling', title: '整理文件', status: 'running'}],
+        },
+        runSummary: {
+          runId: 'run_cancelling',
+          status: 'cancelling',
+          completedSteps: 0,
+          totalSteps: 1,
+        },
+      };
+      if (agentEventName(cancellingEvent) !== 'run.cancelling') process.exit(70);
+      if (tuiAgentEventName(cancellingEvent) !== 'run.cancelling') process.exit(71);
+      const webCancelling = projectAgentEvent(createAgentProjection(), cancellingEvent).projection;
+      const tuiCancelling = projectRunEvent(createRunProjection(), cancellingEvent);
+      if (webCancelling.run?.status !== 'cancelling') process.exit(72);
+      if (webCancelling.runSummary?.status !== 'cancelling') process.exit(73);
+      if (tuiCancelling.runSummary?.status !== 'cancelling') process.exit(74);
+      const cancellingPresentation = buildAgentRunPresentation({
+        run: webCancelling.run,
+        trace: [],
+      });
+      if (!cancellingPresentation?.active) process.exit(75);
+      if (cancellingPresentation.status?.className !== 'stopping') process.exit(76);
+      if (cancellingPresentation.processSummary !== '正在安全停止当前操作') process.exit(77);
       let progressProjection = createAgentProjection({
         run: {
           id: 'run_progress',

@@ -12,6 +12,7 @@ from ..services.agent_event_protocol import normalize_agent_event
 from ..services.agent_run_store import (
     ACTIVE_RUN_STATUSES,
     AgentRunStoreError,
+    OPEN_RUN_STATUSES,
 )
 from ..runtime import (
     agent_run_coordinator,
@@ -56,6 +57,16 @@ def _snapshot_or_404(user_id: int, run_id: str) -> dict[str, Any]:
     snapshot = agent_runs.get_snapshot(user_id, run_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Agent run not found.")
+    return snapshot
+
+
+def _runtime_snapshot_or_404(user_id: int, run_id: str) -> dict[str, Any]:
+    snapshot = _snapshot_or_404(user_id, run_id)
+    if (
+        snapshot["status"] in OPEN_RUN_STATUSES
+        and agent_run_events.has_event(user_id, run_id, "run.cancelling")
+    ):
+        return {**snapshot, "status": "cancelling"}
     return snapshot
 
 
@@ -148,7 +159,7 @@ def _launch(user_id: int, run_id: str, action: str) -> dict[str, Any]:
 @router.get("/api/agent/runs/{run_id}")
 def read_agent_run(run_id: str, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
-    snapshot = _snapshot_or_404(user_id, run_id)
+    snapshot = _runtime_snapshot_or_404(user_id, run_id)
     snapshot.update(agent_run_events.metadata_for_run(user_id, run_id))
     return api_success(snapshot)
 
@@ -165,17 +176,14 @@ def stream_agent_run_events(
     ),
 ) -> StreamingResponse:
     user_id = current_user_id(request)
-    snapshot = _snapshot_or_404(user_id, run_id)
+    snapshot = _runtime_snapshot_or_404(user_id, run_id)
     header_event_id = str(request.headers.get("last-event-id") or "")
     if header_event_id.isdigit() and len(header_event_id) <= 19:
         after_sequence = max(after_sequence, int(header_event_id))
 
     def generate() -> Iterable[str]:
         subscriber = agent_run_coordinator.subscribe(run_id)
-        current_snapshot = (
-            agent_runs.get_snapshot(user_id, run_id)
-            or snapshot
-        )
+        current_snapshot = _runtime_snapshot_or_404(user_id, run_id)
         last_sequence = after_sequence
         latest_persisted = agent_run_events.latest_sequence(run_id)
         terminal_seen = bool(
@@ -212,10 +220,7 @@ def stream_agent_run_events(
                 )
             if len(replay) < 500:
                 break
-        current_snapshot = (
-            agent_runs.get_snapshot(user_id, run_id)
-            or current_snapshot
-        )
+        current_snapshot = _runtime_snapshot_or_404(user_id, run_id)
         yield sse_event(
             "run_snapshot",
             normalize_agent_event(
@@ -368,21 +373,38 @@ def restart_agent_run(run_id: str, request: Request) -> dict[str, Any]:
 def cancel_agent_run(run_id: str, request: Request) -> dict[str, Any]:
     user_id = current_user_id(request)
     snapshot = _snapshot_or_404(user_id, run_id)
+    cancelling_snapshot = {**snapshot, "status": "cancelling"}
+    requested = agent_run_coordinator.cancel(
+        run_id,
+        {
+            "type": "cancel_requested",
+            "status": "cancelling",
+            "phase": "正在安全停止当前操作",
+            "run": cancelling_snapshot,
+        },
+    )
     agent_tool_operations.cancel_for_run(user_id, run_id)
-    requested = agent_run_coordinator.cancel(run_id)
-    if not requested and snapshot["status"] not in {
-        "completed",
-        "failed",
-        "cancelled",
-    }:
-        snapshot = agent_runs.transition_run(
-            user_id,
-            run_id,
+    if requested:
+        snapshot = cancelling_snapshot
+    else:
+        snapshot = _snapshot_or_404(user_id, run_id)
+        if snapshot["status"] not in {
+            "completed",
+            "failed",
             "cancelled",
-        )
+        }:
+            try:
+                snapshot = agent_runs.transition_run(
+                    user_id,
+                    run_id,
+                    "cancelled",
+                )
+            except AgentRunStoreError:
+                snapshot = _snapshot_or_404(user_id, run_id)
     return api_success(
         {
             "cancelRequested": requested,
+            "cancelState": snapshot["status"],
             "run": snapshot,
         }
     )

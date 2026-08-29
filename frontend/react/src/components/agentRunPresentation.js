@@ -513,6 +513,14 @@ function liveProgressMeta(value) {
 
 function statusPresentation(run, step, waitState, backgroundPending) {
   const status = run?.status || step?.status || "waiting";
+  if (status === "cancelling") {
+    return {
+      className: "stopping",
+      detail: "正在安全停止当前操作",
+      freshness: "实时",
+      label: "正在停止",
+    };
+  }
   if (run?.modelRetry) {
     return {
       className: "waiting",
@@ -596,7 +604,7 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     ? { ...(run || {}), status: protocolSummary.status }
     : run;
   const status = statusPresentation(statusRun, step, waitState, backgroundPending);
-  const active = ["running", "waiting"].includes(status.className);
+  const active = ["running", "stopping", "waiting"].includes(status.className);
   const rootStep = safeTrace.find((item) => item.name === "agent_run") || safeTrace[0];
   const startedAt = Date.parse(protocolSummary?.startedAt || run?.startedAt || rootStep?.startedAt || "");
   const finishedAt = Date.parse(protocolSummary?.finishedAt || run?.finishedAt || run?.updatedAt || "");

@@ -101,13 +101,43 @@ class AgentRunCoordinator:
         with self._lock:
             return run_id in self._active
 
-    def cancel(self, run_id: str) -> bool:
+    def cancel(
+        self,
+        run_id: str,
+        event: dict[str, Any] | None = None,
+    ) -> bool:
         with self._lock:
             active = self._active.get(run_id)
             if active is None:
                 return False
+            if event is None:
+                active.cancel_event.set()
+                return True
+
+        source = dict(event)
+        source.pop("sequence", None)
+        with active.publish_lock:
+            with self._lock:
+                if self._active.get(run_id) is not active:
+                    return False
+                subscribers = list(active.subscribers)
+                public = (
+                    active.normalize_event(source)
+                    if active.normalize_event is not None
+                    else source
+                )
+            if self.event_store is not None:
+                try:
+                    self.event_store.append(run_id, public)
+                except Exception:
+                    logger.exception(
+                        "Unable to persist cancellation event for run %s.",
+                        run_id,
+                    )
+            for subscriber in subscribers:
+                subscriber.put(dict(public))
             active.cancel_event.set()
-            return True
+        return True
 
     def cancel_and_wait(
         self,

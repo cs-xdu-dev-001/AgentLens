@@ -52,6 +52,7 @@ const trace = [
 ];
 console.log(JSON.stringify({
   active: isActiveRun(run),
+  cancellingActive: isActiveRun({id: "run_CANCEL", status: "cancelling"}),
   current: currentRunStep(run),
   progress: runProgress(run),
   traceProgress: runProgress(
@@ -83,6 +84,7 @@ console.log(JSON.stringify({
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     assert result["active"] is True
+    assert result["cancellingActive"] is True
     assert result["current"]["id"] == "plan_2"
     assert result["progress"] == {
         "completed": 1,

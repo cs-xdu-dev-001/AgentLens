@@ -18,6 +18,7 @@ const LEGACY_EVENT_NAMES = {
   run_snapshot: "run.updated",
   run_updated: "run.updated",
   plan_created: "run.plan_created",
+  cancel_requested: "run.cancelling",
   done: "run.completed",
   cancelled: "run.cancelled",
   error: "error.raised",

@@ -332,11 +332,16 @@ class TuiBackend:
             return bool(cancel(run_id)) if callable(cancel) else False
         if not run_id:
             return False
-        self.remote_client.request(
+        result = self.remote_client.request(
             "POST",
             f"/api/agent/runs/{run_id}/cancel",
         )
-        return True
+        if not isinstance(result, dict):
+            return True
+        return bool(
+            result.get("cancelRequested")
+            or result.get("cancelState") in {"cancelling", "cancelled"}
+        )
 
     def sandbox_diagnostics(self) -> list[dict[str, Any]]:
         if self.remote_client is not None:

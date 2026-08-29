@@ -121,6 +121,33 @@ class AgentEventStore:
             ).scalar()
         return max(0, int(value or 0))
 
+    def has_event(
+        self,
+        user_id: int,
+        run_id: str,
+        event_name: str,
+    ) -> bool:
+        with self.database.engine.connect() as conn:
+            value = conn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM agent_run_event AS event
+                    JOIN agent_run AS run ON run.id=event.run_id
+                    WHERE event.run_id=:run_id
+                      AND run.user_id=:user_id
+                      AND event.event_name=:event_name
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "event_name": str(event_name),
+                    "run_id": run_id,
+                    "user_id": user_id,
+                },
+            ).scalar()
+        return bool(value)
+
     def append(self, run_id: str, event: dict[str, Any]) -> bool:
         self._cleanup_if_due()
         public = normalize_agent_event(event, run_id=run_id)

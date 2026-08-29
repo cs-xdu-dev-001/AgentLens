@@ -120,6 +120,11 @@ def main() -> None:
         ("shouldOpenRestoredRun(workbenchTarget.run)", "actionable run auto-open"),
         ("function startNewChat", "new chat flow"),
         ("function stopChatGeneration", "stop generation flow"),
+        ("void handleAgentRunAction", "run-aware cancellation without aborting its event stream"),
+        ("const liveStream = Boolean", "live stream ownership during cancellation"),
+        ("if (!liveStream)", "restored run cancellation reconnect"),
+        ("if (ownsSendingState) setSending(false);", "sending state ownership"),
+        ("正在安全结束当前操作", "truthful cancellation acknowledgement"),
         ("async function retryAnswer", "retry answer flow"),
         ("async function submitChat", "streaming submit flow"),
         ("appendMessage(\"assistant\", \"\", { thinking: true, streaming: true })", "assistant streaming append"),
@@ -148,6 +153,7 @@ def main() -> None:
         "Skill id request snapshot and retry storage",
     )
     forbid(chat_flow, "payload: { ...payload }", "shallow retry payload snapshot")
+    forbid(chat_flow, 'publishAgentRunActionState(detail, "succeeded", "恢复请求已接受。");', "generic action acknowledgement")
     check_retry_snapshot_clone()
     require(
         bridge,

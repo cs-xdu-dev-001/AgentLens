@@ -22,6 +22,7 @@ _PUBLIC_ARTIFACT_TYPES = {"file", "link", "reference"}
 _PUBLIC_ARTIFACT_OPERATIONS = {"edit", "write"}
 _PUBLIC_RUN_STATUSES = {
     "cancelled",
+    "cancelling",
     "completed",
     "failed",
     "planning",
@@ -443,6 +444,8 @@ def _event_name(event: dict[str, Any]) -> str:
         return "run.updated"
     if legacy == "plan_created":
         return "run.plan_created"
+    if legacy == "cancel_requested":
+        return "run.cancelling"
     if legacy == "done":
         return "run.cancelled" if status == "cancelled" else "run.completed"
     if legacy == "cancelled":
@@ -666,6 +669,8 @@ class AgentEventNormalizer:
                 "status": "cancelled",
                 "finishedAt": str(event.get("occurredAt") or ""),
             })
+        elif event_name == "run.cancelling":
+            self.run_summary["status"] = "cancelling"
         elif event_name in {"run.failed", "error.raised"}:
             self.run_summary.update({
                 "status": "failed",

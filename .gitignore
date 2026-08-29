@@ -43,6 +43,7 @@ backend/data/skill-imports/
 data/test-uploads/
 data/test-workspace-changes/
 logs/
+tmp/
 *.log
 
 # Internal planning notes

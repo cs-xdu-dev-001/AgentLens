@@ -61,6 +61,7 @@ const LEGACY_AGENT_EVENT_NAMES = {
   memory_started: 'memory.started',
   memory_result: 'memory.completed',
   model_retry: 'model.retrying',
+  cancel_requested: 'run.cancelling',
   done: 'run.completed',
   cancelled: 'run.cancelled',
   error: 'error.raised',

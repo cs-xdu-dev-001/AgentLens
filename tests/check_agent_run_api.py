@@ -184,12 +184,14 @@ def main() -> None:
         entered.set()
         while not release.wait(0.01):
             if cancel_event.is_set():
-                runtime.agent_runs.transition_run(
+                cancelled.set()
+                release.wait(1)
+                terminal_snapshot = runtime.agent_runs.transition_run(
                     user_id,
                     run_id,
                     "cancelled",
                 )
-                cancelled.set()
+                publish({"type": "cancelled", "run": terminal_snapshot})
                 return
 
     run_router.configure_agent_run_executor(fake_executor)
@@ -201,6 +203,23 @@ def main() -> None:
     assert bob.post(f"/api/agent/runs/{run['id']}/cancel").status_code == 404
     cancel = alice.post(f"/api/agent/runs/{run['id']}/cancel")
     assert cancel.status_code == 200, cancel.text
+    cancel_data = cancel.json()["data"]
+    assert cancel_data["cancelRequested"] is True
+    assert cancel_data["cancelState"] == "cancelling"
+    assert cancel_data["run"]["status"] == "cancelling"
+    cancellation_events = runtime.agent_run_events.list_after(
+        alice_id,
+        run["id"],
+        after_sequence=0,
+    )
+    assert any(
+        event.get("eventName") == "run.cancelling"
+        and event.get("runSummary", {}).get("status") == "cancelling"
+        for event in cancellation_events
+    )
+    cancelling_snapshot = alice.get(f"/api/agent/runs/{run['id']}")
+    assert cancelling_snapshot.status_code == 200, cancelling_snapshot.text
+    assert cancelling_snapshot.json()["data"]["status"] == "cancelling", cancelling_snapshot.text
     assert cancelled.wait(1)
     release.set()
     for _ in range(100):
@@ -208,6 +227,15 @@ def main() -> None:
             break
         time.sleep(0.01)
     assert not runtime.agent_run_coordinator.is_active(run["id"])
+    final_cancellation_events = runtime.agent_run_events.list_after(
+        alice_id,
+        run["id"],
+        after_sequence=0,
+    )
+    final_event_names = [
+        event.get("eventName") for event in final_cancellation_events
+    ]
+    assert final_event_names.index("run.cancelling") < final_event_names.index("run.cancelled")
 
     waiting_run = runtime.agent_runs.create_run(
         user_id=alice_id,

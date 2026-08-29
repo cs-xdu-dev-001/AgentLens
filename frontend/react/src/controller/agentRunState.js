@@ -1,6 +1,7 @@
 const activeStatuses = new Set([
   "planning",
   "running",
+  "cancelling",
   "waiting_approval",
   "waiting_input",
 ]);

@@ -255,6 +255,18 @@ export function composerAgentStateFromProjection(projection = {}, context = {}) 
       ...recovery,
     };
   }
+  if (
+    runStatus === "cancelling"
+    || projection?.runSummary?.status === "cancelling"
+  ) {
+    return {
+      mode: "waiting",
+      label: "正在停止任务",
+      detail: "等待当前操作安全结束",
+      actionable: false,
+      ...recovery,
+    };
+  }
   if (projection?.paused) {
     return {
       mode: "waiting",
@@ -351,6 +363,7 @@ export function createChatFlow({
 }) {
   let sessionSwitchController = null;
   let composerStateKey = "";
+  let cancellingRunId = "";
 
   function publishAgentComposerState(detail = {}) {
     const next = {
@@ -629,6 +642,7 @@ export function createChatFlow({
       if (sessionChanged) renderActiveSession();
     }
     if (projection.terminal) {
+      cancellingRunId = "";
       state.activeRunId = null;
       state.activeRunMessageId = null;
       renderActiveSession();
@@ -688,6 +702,7 @@ export function createChatFlow({
     state.activeRunReconnectController = null;
     state.activeRunId = null;
     state.activeRunMessageId = null;
+    cancellingRunId = "";
     clearChatMessages(false);
     renderReferences([]);
     renderToolTimeline(null, []);
@@ -796,6 +811,9 @@ export function createChatFlow({
     publishSessionSwitch("success", { sessionId: "" });
     state.activeRunReconnectController?.abort();
     state.activeRunReconnectController = null;
+    state.activeRunId = null;
+    state.activeRunMessageId = null;
+    cancellingRunId = "";
     state.currentSessionId = null;
     state.currentSessionTitle = "";
     renderActiveSession();
@@ -827,7 +845,28 @@ export function createChatFlow({
       actionable: false,
     });
     if (state.activeRunId) {
-      agentRunApi.cancel(state.activeRunId).catch(() => {});
+      if (cancellingRunId === state.activeRunId) return;
+      if (state.activeRunMessageId) {
+        void handleAgentRunAction({
+          detail: {
+            action: "cancel",
+            messageId: state.activeRunMessageId,
+            runId: state.activeRunId,
+          },
+        });
+      } else {
+        agentRunApi.cancel(state.activeRunId).catch(() => {
+          publishAgentComposerState({
+            mode: "running",
+            label: "Agent继续运行",
+            detail: "停止请求未送达，可再次尝试",
+            actionable: false,
+            runId: state.activeRunId,
+          });
+          toast("停止请求失败，任务仍在运行。", 4200, "error");
+        });
+      }
+      return;
     }
     if (
       state.activeChatController
@@ -1369,9 +1408,22 @@ export function createChatFlow({
       || !messageId
       || !["start", "replan", "resume", "restart", "cancel", "fix"].includes(action)
     ) return;
+    if (action === "cancel" && cancellingRunId === runId) return;
+    const ownsSendingState = action !== "fix" && !state.sending;
+    if (action === "cancel") {
+      cancellingRunId = runId;
+      publishAgentComposerState({
+        mode: "waiting",
+        label: "正在停止任务",
+        detail: "已发送取消请求，等待当前操作安全结束",
+        actionable: false,
+        messageId,
+        runId,
+      });
+    }
     publishAgentRunActionState(detail, "pending");
     try {
-      setSending(true);
+      if (ownsSendingState) setSending(true);
       if (action === "fix") {
         const retryRequest = messageRetryRequests.get(messageId) || state.lastChatRequest;
         if (!retryRequest?.question) {
@@ -1395,24 +1447,60 @@ export function createChatFlow({
       const nextRun = result?.run || result;
       const nextRunId = nextRun?.id || runId;
       renderAgentRun({ messageId }, nextRun);
-      if (action !== "cancel") {
+      if (action === "cancel") {
         state.activeRunId = nextRunId;
         state.activeRunMessageId = messageId;
-        const projection = await reconnectAgentRun(nextRunId, messageId);
-        settleQueueAfterRun(projection);
-      } else {
-        state.activeRunId = null;
-        state.activeRunMessageId = null;
+        publishAgentRunActionState(
+          detail,
+          "succeeded",
+          "停止请求已接受，正在安全结束当前操作。",
+        );
+        const liveStream = Boolean(
+          state.activeChatController
+          && !state.activeChatController.signal.aborted
+        );
+        if (!liveStream) {
+          try {
+            const projection = await reconnectAgentRun(nextRunId, messageId);
+            settleQueueAfterRun(projection);
+          } catch {
+            toast("停止请求已接受，但运行状态连接已中断，请刷新页面确认。", 4200, "error");
+          }
+        }
+        return;
       }
-      publishAgentRunActionState(detail, "succeeded", "恢复请求已接受。");
+      state.activeRunId = nextRunId;
+      state.activeRunMessageId = messageId;
+      const projection = await reconnectAgentRun(nextRunId, messageId);
+      settleQueueAfterRun(projection);
+      const successMessage = {
+        replan: "重新规划已开始。",
+        restart: "重新运行已开始。",
+        resume: "继续执行请求已接受。",
+        start: "执行已开始。",
+      }[action] || "请求已接受。";
+      publishAgentRunActionState(detail, "succeeded", successMessage);
     } catch (error) {
+      if (action === "cancel") {
+        cancellingRunId = "";
+        publishAgentComposerState({
+          mode: "running",
+          label: "Agent继续运行",
+          detail: "停止请求未送达，可再次尝试",
+          actionable: false,
+          messageId,
+          runId,
+        });
+      }
       const message = action === "fix"
         ? "分析任务未提交，请检查网络或配置后重试。"
-        : "恢复失败，请检查网络或配置后重试。";
+        : action === "cancel"
+          ? "停止请求失败，任务仍在运行。"
+          : "恢复失败，请检查网络或配置后重试。";
       publishAgentRunActionState(detail, "failed", message);
       toast(message, 4200, "error");
     } finally {
-      setSending(false);
+      if (ownsSendingState) setSending(false);
     }
   }
 

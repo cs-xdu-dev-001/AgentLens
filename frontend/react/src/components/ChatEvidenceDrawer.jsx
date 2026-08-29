@@ -543,7 +543,7 @@ export function ChatEvidenceDrawer() {
         aria-live={"polite"}
         aria-atomic={"true"}
       >
-        <AgentRunSummary trace={trace} run={run} />
+        <AgentRunSummary messageId={messageId} trace={trace} run={run} />
         <button className={"icon-button"} id={"inspector-close"} type={"button"} title={"收起运行面板"} aria-label={"收起运行面板"} onClick={handleDrawerClose}>
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
             <path d={"M6 6l12 12M18 6 6 18"} fill={"none"} stroke={"currentColor"} strokeWidth={"2"} strokeLinecap={"round"} />
@@ -630,6 +630,7 @@ export function ChatEvidenceDrawer() {
             focusStepId={focusStepId}
             onFocusStepChange={publishFocusStep}
             focusScope={"workbench"}
+            showCancelAction={false}
           />
           {!run?.steps?.length ? (
             <AgentTraceView

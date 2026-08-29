@@ -46,6 +46,7 @@ export function AgentTaskPlan({
   focusStepId = "",
   onFocusStepChange = null,
   focusScope = "message",
+  showCancelAction = true,
 }) {
   const steps = Array.isArray(run?.steps) ? run.steps : [];
   const current = currentRunStep(run);
@@ -311,7 +312,7 @@ export function AgentTaskPlan({
             </button>
           </>
         ) : null}
-        {active ? (
+        {active && run.status !== "cancelling" && showCancelAction ? (
           <button
             type={"button"}
             onClick={() => dispatchAction(run, "cancel", messageId)}

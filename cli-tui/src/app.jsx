@@ -896,6 +896,7 @@ const TaskSummary = React.memo(function TaskSummary({
     ? Math.min(Math.max(0, Number(runSummary?.completedSteps) || 0), protocolTotal)
     : localCompleted;
   const waiting = rows.some(row => row.status === 'waiting');
+  const cancelling = runSummary?.status === 'cancelling';
   const estimatedTokens = tracedRows.reduce((total, row) => {
     if (row.kind !== 'model') return total;
     return total + Math.max(0, Number(parseSummary(row.inputSummary).estimatedTokenCount) || 0);
@@ -927,15 +928,17 @@ const TaskSummary = React.memo(function TaskSummary({
       ? `${modelRetry.reason || '模型请求失败'}，${retryRemainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
       : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`
     : '';
-  const stateLabel = modelRetry ? '等待重试' : waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
-  const stateColor = failed ? ERROR : modelRetry || waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const stateLabel = cancelling ? '取消中' : modelRetry ? '等待重试' : waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
+  const stateColor = cancelling ? WARNING : failed ? ERROR : modelRetry || waiting ? WARNING : running ? ACCENT : SUCCESS;
   const failureMessage = failed && failure?.message
     ? userFacingErrorMessage(failure.message)
     : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
-  const processLabel = running
-    ? retryLabel || publicLabel(phase || currentRow?.title, '正在执行')
+  const processLabel = cancelling
+    ? '正在安全停止当前操作'
+    : running
+      ? retryLabel || publicLabel(phase || currentRow?.title, '正在执行')
     : failed
       ? failureMessage || '执行失败，可选择恢复操作'
       : artifacts.length
