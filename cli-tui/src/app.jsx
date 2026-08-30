@@ -325,6 +325,8 @@ const HELP_SHORTCUTS = Object.freeze([
   {value: 'Ctrl+F', description: '搜索当前对话'},
   {value: 'Ctrl+R', description: '搜索输入历史'},
   {value: 'Ctrl+S', description: '暂存或恢复草稿'},
+  {value: 'Ctrl+A/B', description: '移到行首或向左一格'},
+  {value: 'Ctrl+U/W/K/Y', description: '剪切行、词并粘回'},
   {value: 'Shift+Tab', description: '切换权限模式'},
   {value: 'Alt+P', description: '切换模型'},
   {value: 'Alt+R', description: '切换推理强度'},
@@ -6482,7 +6484,7 @@ export function App({
       submitComposer(inputRef.current);
       return;
     }
-    if (key.leftArrow) {
+    if (key.leftArrow || (key.ctrl && character === 'b')) {
       composerUndoCoalescingRef.current = false;
       const next = Math.max(0, cursorOffsetRef.current - 1);
       cursorOffsetRef.current = next;
@@ -6496,7 +6498,7 @@ export function App({
       setCursorOffset(next);
       return;
     }
-    if (key.home) {
+    if (key.home || (key.ctrl && character === 'a')) {
       composerUndoCoalescingRef.current = false;
       const next = lineStartOffset(inputRef.current, cursorOffsetRef.current);
       cursorOffsetRef.current = next;

@@ -3717,6 +3717,37 @@ test('composer supports multiline prompts and line-aware cursor movement', async
   view.unmount();
 });
 
+test('composer supports readline cursor movement and kill-ring editing', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('one two');
+  view.stdin.write('\x17');
+  view.stdin.write('three');
+  view.stdin.write('\x1b[13;2u');
+  view.stdin.write('tail');
+  view.stdin.write('\x01');
+  view.stdin.write('X');
+  view.stdin.write('\x02');
+  view.stdin.write('Y');
+  view.stdin.write('\x15');
+  view.stdin.write('\x19');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.equal(client.sent.at(-1).text, 'one three\nYXtail');
+
+  view.stdin.write('/help');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /Ctrl\+A\/B/);
+  for (let index = 0; index < 8; index += 1) view.stdin.write('\x1b[B');
+  await tick();
+  assert.match(view.lastFrame(), /Ctrl\+U\/W\/K\/Y/);
+});
+
 test('empty Ctrl+C requires confirmation before exiting', async () => {
   const client = new ClosingClient();
   const view = render(<App client={client} version="0.17.0" />);
