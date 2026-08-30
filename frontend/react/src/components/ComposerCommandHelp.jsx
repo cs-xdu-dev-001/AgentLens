@@ -12,6 +12,7 @@ const WEB_SHORTCUTS = Object.freeze([
   { value: "Alt+E", label: "查看运行过程", description: "直达步骤、工具调用和错误详情" },
   { value: "Alt+G", label: "查看文件变更", description: "直达本轮新增、修改和删除内容" },
   { value: "Ctrl/⌘+F", label: "搜索对话", description: "查找当前对话中实际显示的内容" },
+  { value: "Ctrl/⌘+R", label: "搜索输入历史", description: "筛选最近输入并回填到当前草稿" },
   { value: "Ctrl/⌘+S", label: "暂存或恢复草稿", description: "临时收起输入内容，再次按下即可恢复" },
   { value: "Shift+Tab", label: "切换权限模式", description: "在计划、询问、自动编辑和完全访问间切换" },
   { value: "Esc×2", label: "从历史继续", description: "空输入框下快速回到最近问题并创建分支" },

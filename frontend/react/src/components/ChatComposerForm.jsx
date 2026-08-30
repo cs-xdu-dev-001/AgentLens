@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import {
   readComposerDraft,
   writeComposerDraft,
 } from "../controller/composerDraftPersistence.js";
+import {
+  appendComposerHistory,
+  readComposerHistory,
+  writeComposerHistory,
+} from "../controller/composerHistoryPersistence.js";
 import { readActiveSessionPreference } from "../controller/sessionPersistence.js";
 import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
+import { ComposerHistorySearch } from "./ComposerHistorySearch.jsx";
 import { CommandPalette } from "./CommandPalette.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
@@ -81,6 +87,8 @@ export function ChatComposerForm() {
   const initialDraftRef = useRef(null);
   if (!initialDraftRef.current) initialDraftRef.current = initialComposerDraft(user);
   const initialDraft = initialDraftRef.current.draft;
+  const initialHistoryRef = useRef(null);
+  if (!initialHistoryRef.current) initialHistoryRef.current = readComposerHistory(user);
   const [attachments, setAttachments] = useState([]);
   const [availableSkills, setAvailableSkills] = useState([]);
   const [skillsStatus, setSkillsStatus] = useState("idle");
@@ -90,6 +98,8 @@ export function ChatComposerForm() {
   const [activeIndex, setActiveIndex] = useState(-1);
   const [slashRange, setSlashRange] = useState(null);
   const [commandHelpOpen, setCommandHelpOpen] = useState(false);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [composerHistory, setComposerHistory] = useState(initialHistoryRef.current.entries);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionStatus, setMentionStatus] = useState("idle");
   const [mentionPaths, setMentionPaths] = useState([]);
@@ -121,6 +131,8 @@ export function ChatComposerForm() {
   const requestGenerationRef = useRef(0);
   const agentStateResetRef = useRef(null);
   const promptStashRef = useRef(null);
+  const historySearchDraftRef = useRef(null);
+  const composerHistoryRef = useRef(initialHistoryRef.current.entries);
   const pendingStashRestoreRef = useRef(false);
   const lastEmptyEscapeAtRef = useRef(0);
   const sessionSwitchingRef = useRef(false);
@@ -136,6 +148,7 @@ export function ChatComposerForm() {
   questionRef.current = question;
   selectedSkillRef.current = selectedSkill;
   attachmentsRef.current = attachments;
+  composerHistoryRef.current = composerHistory;
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -154,6 +167,26 @@ export function ChatComposerForm() {
     setCommandHelpOpen(false);
     if (!restoreFocus) return;
     window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const closeComposerHistory = useCallback((restoreDraft = true) => {
+    setHistorySearchOpen(false);
+    const snapshot = historySearchDraftRef.current;
+    historySearchDraftRef.current = null;
+    if (!restoreDraft) return;
+    if (snapshot) {
+      questionRef.current = snapshot.question;
+      setQuestion(snapshot.question);
+    }
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      const start = Math.min(snapshot?.selectionStart ?? textarea.value.length, textarea.value.length);
+      const end = Math.min(snapshot?.selectionEnd ?? start, textarea.value.length);
+      textarea.setSelectionRange(start, end);
+      resizeTextarea(textarea);
+    });
   }, []);
 
   const closeMentionPicker = useCallback(() => {
@@ -215,8 +248,9 @@ export function ChatComposerForm() {
     }));
     closeSkillPicker();
     closeMentionPicker();
+    closeComposerHistory(false);
     window.requestAnimationFrame(() => resizeTextarea());
-  }, [closeMentionPicker, closeSkillPicker, flushComposerDraft, updatePromptStash]);
+  }, [closeComposerHistory, closeMentionPicker, closeSkillPicker, flushComposerDraft, updatePromptStash]);
 
   const adoptCreatedSession = useCallback((sessionId) => {
     const nextSessionId = valueOf(sessionId).trim();
@@ -358,13 +392,14 @@ export function ChatComposerForm() {
     };
   }, [flushComposerDraft, question, selectedSkill]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const current = draftContextRef.current;
     if (current.userId === draftOwnerId) return;
     flushComposerDraft();
     transientDraftsRef.current.clear();
     const nextInitial = initialComposerDraft({ id: draftOwnerId });
     const nextDraft = nextInitial.draft;
+    const nextHistory = readComposerHistory({ id: draftOwnerId }).entries;
     draftContextRef.current = {
       userId: draftOwnerId,
       sessionId: nextInitial.sessionId,
@@ -372,16 +407,20 @@ export function ChatComposerForm() {
     questionRef.current = nextDraft.question;
     selectedSkillRef.current = nextDraft.skill;
     attachmentsRef.current = [];
+    composerHistoryRef.current = nextHistory;
     setQuestion(nextDraft.question);
     setSelectedSkill(nextDraft.skill);
+    setComposerHistory(nextHistory);
     updatePromptStash(null);
     window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
       detail: { attachments: [] },
     }));
     closeSkillPicker();
     closeMentionPicker();
+    closeComposerHistory(false);
     window.requestAnimationFrame(() => resizeTextarea());
   }, [
+    closeComposerHistory,
     closeMentionPicker,
     closeSkillPicker,
     draftOwnerId,
@@ -409,12 +448,15 @@ export function ChatComposerForm() {
     const handleSessionSwitchState = (event) => {
       const loading = event.detail?.status === "loading";
       sessionSwitchingRef.current = loading;
-      if (loading) clearApprovalSessionGrants();
+      if (loading) {
+        clearApprovalSessionGrants();
+        closeComposerHistory(false);
+      }
       setSwitchingSession(loading);
     };
     window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
     return () => window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitchState);
-  }, []);
+  }, [closeComposerHistory]);
 
   useEffect(() => {
     pickerOpenRef.current = pickerOpen;
@@ -513,6 +555,7 @@ export function ChatComposerForm() {
       setSelectedSkill(nextSkill);
       closeSkillPicker();
       closeMentionPicker();
+      closeComposerHistory(false);
       window.requestAnimationFrame(() => {
         resizeTextarea();
         if (shouldFocus) textareaRef.current?.focus();
@@ -520,7 +563,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, [availableSkills, closeMentionPicker, closeSkillPicker, updatePromptStash]);
+  }, [availableSkills, closeComposerHistory, closeMentionPicker, closeSkillPicker, updatePromptStash]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -684,12 +727,14 @@ export function ChatComposerForm() {
     if (switchingSession) return;
     const parsedCommand = parseComposerCommand(question);
     if (parsedCommand) {
+      rememberComposerInput(question);
       setQuestion("");
       closeSkillPicker();
       runComposerCommand(parsedCommand.command, parsedCommand.args);
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }
+    rememberComposerInput(question);
     const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
       detail: { question: question.trim() },
     });
@@ -720,6 +765,64 @@ export function ChatComposerForm() {
     window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
       detail: { message, duration: 2600, tone: "neutral" },
     }));
+  };
+
+  const rememberComposerInput = useCallback((value) => {
+    const ownerId = draftContextRef.current.userId;
+    if (!ownerId) return;
+    const current = composerHistoryRef.current;
+    const next = appendComposerHistory(current, value);
+    if (next.length === current.length && next.at(-1) === current.at(-1)) return;
+    composerHistoryRef.current = next;
+    setComposerHistory(next);
+    writeComposerHistory({ id: ownerId }, next);
+  }, []);
+
+  const openComposerHistory = () => {
+    if (!composerHistoryRef.current.length) {
+      notifyCommandUnavailable("还没有可搜索的输入历史");
+      return;
+    }
+    const textarea = textareaRef.current;
+    historySearchDraftRef.current = {
+      question: questionRef.current,
+      selectionStart: textarea?.selectionStart ?? questionRef.current.length,
+      selectionEnd: textarea?.selectionEnd ?? questionRef.current.length,
+    };
+    closeCommandHelp(false);
+    closeSkillPicker();
+    closeMentionPicker();
+    setMenuOpen(false);
+    setHistorySearchOpen(true);
+  };
+
+  const takeComposerHistory = (value) => {
+    const nextQuestion = String(value || "");
+    historySearchDraftRef.current = null;
+    questionRef.current = nextQuestion;
+    setQuestion(nextQuestion);
+    setHistorySearchOpen(false);
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextQuestion.length, nextQuestion.length);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const clearComposerInputHistory = () => {
+    const ownerId = draftContextRef.current.userId;
+    if (!ownerId || !writeComposerHistory({ id: ownerId }, [])) {
+      notifyCommandUnavailable("无法清空输入历史，请检查浏览器存储权限");
+      return;
+    }
+    composerHistoryRef.current = [];
+    setComposerHistory([]);
+    closeComposerHistory();
+    notifyCommandUnavailable("已清空此浏览器的输入历史");
   };
 
   const runMessageCommand = (action, unavailableMessage, args = "") => {
@@ -792,6 +895,7 @@ export function ChatComposerForm() {
     if (command.action === "help") {
       closeSkillPicker();
       closeMentionPicker();
+      closeComposerHistory(false);
       setCommandHelpOpen(true);
       if (!skillsLoadedRef.current && skillsStatus !== "loading") loadAvailableSkills();
       return;
@@ -925,6 +1029,11 @@ export function ChatComposerForm() {
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
     if (event.key !== "Escape") lastEmptyEscapeAtRef.current = 0;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      openComposerHistory();
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
       if (question.trim() || attachments.length || selectedSkill) {
@@ -1065,12 +1174,14 @@ export function ChatComposerForm() {
     event.preventDefault();
     const parsedCommand = parseComposerCommand(question);
     if (parsedCommand) {
+      rememberComposerInput(question);
       setQuestion("");
       closeSkillPicker();
       runComposerCommand(parsedCommand.command, parsedCommand.args);
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }
+    rememberComposerInput(question);
     const submitEvent = new CustomEvent("knowflow:react-chat-enter-submit", {
       detail: { question: question.trim() },
     });
@@ -1323,6 +1434,7 @@ export function ChatComposerForm() {
         disabled={switchingSession}
         onCommand={(command) => {
           closeCommandHelp(false);
+          closeComposerHistory(false);
           closeSkillPicker();
           closeMentionPicker();
           setMenuOpen(false);
@@ -1348,6 +1460,14 @@ export function ChatComposerForm() {
           onSkill={takeHelpSkill}
           onRetrySkills={loadAvailableSkills}
           onManageSkills={handleManageSkills}
+        />
+      ) : null}
+      {historySearchOpen ? (
+        <ComposerHistorySearch
+          entries={composerHistory}
+          onClear={clearComposerInputHistory}
+          onClose={closeComposerHistory}
+          onSelect={takeComposerHistory}
         />
       ) : null}
       {mentionOpen ? (
@@ -1581,10 +1701,17 @@ export function ChatComposerForm() {
                   : "输入任务，/选择命令或Skill，@引用文件"}
             value={question}
             disabled={switchingSession}
-            aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}
-            aria-expanded={mentionOpen || pickerOpen}
+            aria-controls={historySearchOpen
+              ? "composer-history-listbox"
+              : mentionOpen
+                ? "workspace-mention-listbox"
+                : pickerOpen
+                  ? "composer-slash-listbox"
+                  : undefined}
+            aria-expanded={historySearchOpen || mentionOpen || pickerOpen}
             aria-haspopup={"listbox"}
             aria-label={"消息"}
+            aria-keyshortcuts={"Control+R Meta+R"}
             aria-activedescendant={activeOptionId}
             onInput={handleChatInput}
             onPaste={handleChatPaste}
