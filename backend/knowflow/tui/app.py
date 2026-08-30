@@ -591,6 +591,210 @@ class ApprovalScreen(ModalScreen[str]):
         self.dismiss("allow_session")
 
 
+class QuestionScreen(ModalScreen[dict[str, Any] | None]):
+    """Structured prompt for an Agent user-question interrupt.
+
+    The Ink client renders these prompts inline, while Textual needs a modal
+    surface to keep keyboard focus inside the pending interaction.  The
+    screen deliberately returns the same small payload accepted by
+    ``TuiBackend.answer_question`` so local and remote runs share one path.
+    """
+
+    CUSTOM_OPTION_ID = "__custom__"
+    BINDINGS = [
+        Binding("ctrl+enter", "submit", "提交", show=False),
+        Binding("ctrl+u", "focus_custom", "自定义回答", show=False),
+        Binding("escape", "cancel", "取消", show=False),
+    ]
+
+    def __init__(
+        self,
+        header: Any,
+        question: Any,
+        options: Any,
+        allow_custom: bool = True,
+        *,
+        question_id: Any = "",
+    ) -> None:
+        self.header = redact_public_detail(header or "需要回答", limit=80) or "需要回答"
+        self.question = (
+            redact_public_detail(question or "请选择下一步。", limit=600)
+            or "请选择下一步。"
+        )
+        self.allow_custom = bool(allow_custom)
+        self.question_id = str(question_id or "").strip()[:160]
+        self.options = self._normalize_options(options)
+        self._submitted = False
+        super().__init__()
+
+    @staticmethod
+    def _normalize_options(value: Any) -> list[dict[str, str]]:
+        source = value if isinstance(value, (list, tuple)) else []
+        normalized: list[dict[str, str]] = []
+        for index, item in enumerate(source[:4]):
+            if isinstance(item, dict):
+                raw_value = str(item.get("value") or item.get("label") or "").strip()
+                raw_label = str(item.get("label") or raw_value or "").strip()
+                raw_description = str(item.get("description") or "").strip()
+            else:
+                raw_value = str(item or "").strip()
+                raw_label = raw_value
+                raw_description = ""
+            if not raw_value and not raw_label:
+                continue
+            raw_value = raw_value[:120] or raw_label[:120]
+            label = redact_public_detail(
+                raw_label or raw_value or f"选项{index + 1}",
+                limit=120,
+            ) or f"选项{index + 1}"
+            description = redact_public_detail(raw_description, limit=180)
+            normalized.append(
+                {
+                    "value": raw_value,
+                    "label": label,
+                    "description": description,
+                }
+            )
+        return normalized
+
+    def compose(self) -> ComposeResult:
+        with Container(id="question-dialog"):
+            yield Static(self.header, classes="question-title")
+            yield Static(self.question, classes="question-body")
+            yield OptionList(id="question-options", compact=True)
+            if self.allow_custom:
+                yield Input(
+                    placeholder="选择“自定义回答”后，在这里输入…",
+                    id="question-custom-input",
+                )
+            with Horizontal(classes="question-actions"):
+                yield Button("提交回答", id="question-submit", variant="primary")
+                yield Button("取消并停止", id="question-cancel")
+            yield Static(
+                "↑↓选择 · Enter提交 · Ctrl+U自定义 · Esc取消并停止",
+                classes="question-footer",
+            )
+
+    def on_mount(self) -> None:
+        options = self.query_one("#question-options", OptionList)
+        options.add_options(
+            [
+                Option(
+                    Text.assemble(
+                        (item["label"], "bold"),
+                        (
+                            f"  {item['description']}"
+                            if item["description"]
+                            else "",
+                            "dim",
+                        ),
+                    ),
+                    id=f"option:{index}",
+                )
+                for index, item in enumerate(self.options)
+            ]
+        )
+        if self.allow_custom:
+            options.add_option(
+                Option(
+                    Text.assemble(
+                        ("自定义回答", "bold"),
+                        ("  输入自己的答案", "dim"),
+                    ),
+                    id=self.CUSTOM_OPTION_ID,
+                )
+            )
+        if not options.option_count:
+            options.add_option(Option("没有可用选项，请按Esc停止任务。", disabled=True))
+        options.highlighted = 0
+        options.focus()
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    def _selected_option(self) -> tuple[str, dict[str, str] | None]:
+        options = self.query_one("#question-options", OptionList)
+        index = options.highlighted
+        if index is None or index < 0 or index >= options.option_count:
+            return "", None
+        option = options.get_option_at_index(index)
+        option_id = str(option.id or "")
+        if option_id == self.CUSTOM_OPTION_ID:
+            return self.CUSTOM_OPTION_ID, None
+        if option_id.startswith("option:"):
+            try:
+                option_index = int(option_id.split(":", 1)[1])
+            except (TypeError, ValueError):
+                return "", None
+            if 0 <= option_index < len(self.options):
+                return option_id, self.options[option_index]
+        return "", None
+
+    def _submit_answer(self, *, custom: bool = False) -> None:
+        if self._submitted:
+            return
+        selected_id, selected = self._selected_option()
+        custom_selected = custom or selected_id == self.CUSTOM_OPTION_ID
+        if custom_selected:
+            if not self.allow_custom:
+                return
+            field = self.query_one("#question-custom-input", Input)
+            answer = field.value.strip()
+            if not answer:
+                field.focus()
+                self.notify("请输入自定义回答后再提交。", severity="warning")
+                return
+            selected_options: list[str] = []
+        elif selected is not None:
+            answer = selected["value"].strip()
+            selected_options = [answer] if answer else []
+        else:
+            self.notify("请先选择一个回答。", severity="warning")
+            return
+        if not answer:
+            self.notify("请先选择或输入回答。", severity="warning")
+            return
+        self._submitted = True
+        self.dismiss(
+            {
+                "answer": answer[:4000],
+                "selectedOptions": selected_options[:4],
+            }
+        )
+
+    @on(OptionList.OptionSelected, "#question-options")
+    def handle_selected(self, event: OptionList.OptionSelected) -> None:
+        if str(event.option.id or "") == self.CUSTOM_OPTION_ID:
+            if self.allow_custom:
+                self.query_one("#question-custom-input", Input).focus()
+            return
+        self._submit_answer()
+
+    @on(Input.Submitted, "#question-custom-input")
+    def handle_custom_submitted(self, event: Input.Submitted) -> None:
+        self._submit_answer(custom=True)
+
+    @on(Button.Pressed)
+    def handle_button(self, event: Button.Pressed) -> None:
+        button_id = str(event.button.id or "")
+        if button_id == "question-cancel":
+            self.action_cancel()
+        elif button_id == "question-submit":
+            self._submit_answer()
+
+    def action_submit(self) -> None:
+        self._submit_answer()
+
+    def action_focus_custom(self) -> None:
+        if self.allow_custom:
+            self.query_one("#question-custom-input", Input).focus()
+
+    def action_cancel(self) -> None:
+        if not self._submitted:
+            self.dismiss(None)
+
+
 class KnowFlowTui(App[None]):
     CSS_PATH = "knowflow.tcss"
     TITLE = "AgentLens"
@@ -643,7 +847,9 @@ class KnowFlowTui(App[None]):
         self.current_approval_policy = ""
         self.current_run_id: str | None = None
         self.current_approval_id: str | None = None
+        self.current_question_id: str | None = None
         self._approval_in_progress = False
+        self._question_in_progress = False
         self._stream_failure_reported = False
         self._queue_manager_previous_pause: bool | None = None
         self.workspace = str(Path.cwd())
@@ -1416,6 +1622,25 @@ class KnowFlowTui(App[None]):
         except Exception as exc:
             self.post_message(TurnFailed(exc))
 
+    @work(exclusive=True, thread=True, group="agent")
+    def answer_turn(
+        self,
+        execution: AgentExecution,
+        answer: dict[str, Any],
+    ) -> None:
+        try:
+            resolved = self.backend.answer_question(
+                execution,
+                answer,
+                lambda event: self.post_message(AgentEventMessage(event)),
+            )
+            if resolved.paused:
+                self.post_message(TurnPaused(resolved))
+            else:
+                self.post_message(TurnCompleted(resolved))
+        except Exception as exc:
+            self.post_message(TurnFailed(exc))
+
     async def on_agent_event_message(self, message: AgentEventMessage) -> None:
         event = message.event
         event_name = agent_event_name(event)
@@ -1488,6 +1713,10 @@ class KnowFlowTui(App[None]):
             self._set_status("更新任务进度")
         elif event_name == "approval.required":
             self._set_status("等待确认")
+        elif event_name == "question.required" or event.get(
+            "type"
+        ) == "user_question_required":
+            self._set_status("等待回答")
         elif event_name in {"error.raised", "run.failed"}:
             error = event.get("error")
             detail = (
@@ -1527,6 +1756,8 @@ class KnowFlowTui(App[None]):
         transcript.finalize_assistant()
         await transcript.finish_run(cancelled=interrupted)
         self.pending_execution = None
+        self.current_question_id = None
+        self._question_in_progress = False
         self.current_run_id = None
         self.running = False
         self.started_at = None
@@ -1552,6 +1783,45 @@ class KnowFlowTui(App[None]):
 
     def on_turn_paused(self, message: TurnPaused) -> None:
         self.pending_execution = message.execution
+        if message.execution.interrupt_type == "user_question":
+            event = next(
+                (
+                    value
+                    for value in reversed(message.execution.events)
+                    if value.get("type") == "user_question_required"
+                ),
+                {},
+            )
+            question_id = message.execution.question_id or str(
+                event.get("questionId") or ""
+            ).strip()
+            if not question_id:
+                self._set_status("问题状态无效")
+                self.notify(
+                    "Agent返回的问题缺少ID，无法安全恢复。",
+                    severity="error",
+                )
+                return
+            if (
+                self._question_in_progress
+                and self.current_question_id == question_id
+            ):
+                return
+            self.current_question_id = question_id
+            self._question_in_progress = True
+            self.current_approval_id = None
+            self._set_status("等待回答")
+            self.push_screen(
+                QuestionScreen(
+                    event.get("header") or "需要回答",
+                    event.get("question") or "请选择下一步。",
+                    event.get("options") or [],
+                    bool(event.get("allowCustom", True)),
+                    question_id=question_id,
+                ),
+                self._on_question_screen_result,
+            )
+            return
         event = next(
             (
                 value
@@ -1606,6 +1876,41 @@ class KnowFlowTui(App[None]):
             return
         self._approval_decided(decision)
 
+    def _on_question_screen_result(
+        self,
+        answer: dict[str, Any] | None,
+    ) -> None:
+        self._question_in_progress = False
+        execution = self.pending_execution
+        if execution is None:
+            self.current_question_id = None
+            return
+        self.pending_execution = None
+        self.current_question_id = None
+        if answer is None:
+            run_id = str(execution.result.get("runId") or self.current_run_id or "")
+            self.session.cancel_requested = True
+            self._set_status("正在停止")
+            self.notify("问题已取消，正在停止当前任务。", severity="warning")
+            if run_id:
+                self.cancel_turn(run_id)
+            self.post_message(
+                TurnCompleted(
+                    AgentExecution(
+                        result={
+                            "paused": False,
+                            "runId": run_id,
+                            "answer": "",
+                            "cancelled": True,
+                        }
+                    )
+                )
+            )
+            return
+        self._set_status("正在继续…")
+        self.answer_turn(execution, answer)
+        self._refresh_status_bar()
+
     def _approval_decided(self, decision: str | None) -> None:
         if self._approval_in_progress:
             return
@@ -1638,6 +1943,8 @@ class KnowFlowTui(App[None]):
         self.pending_execution = None
         self.current_approval_id = None
         self._approval_in_progress = False
+        self.current_question_id = None
+        self._question_in_progress = False
         self.current_run_id = None
         self.started_at = None
         self._set_status("执行失败")
@@ -1665,6 +1972,8 @@ class KnowFlowTui(App[None]):
             )
 
     def on_cancel_requested(self, message: CancelRequested) -> None:
+        if not self.running:
+            return
         if message.sent:
             self._set_status("正在停止，等待当前操作收尾")
         elif message.error is not None:

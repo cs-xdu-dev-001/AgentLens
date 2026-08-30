@@ -123,6 +123,7 @@ function WorkbenchShell() {
   const [visitedPages, setVisitedPages] = useState(() => new Set(["chat", readInitialPage()]));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readInitialSidebarCollapsed);
   const [drawerCollapsed, setDrawerCollapsed] = useState(() => readStoredBoolean("knowflow.drawerCollapsed", true));
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const pendingWorkbenchFocusRef = useRef(false);
   const drawerCollapsedRef = useRef(drawerCollapsed);
   const drawerFocusOriginRef = useRef(null);
@@ -201,6 +202,25 @@ function WorkbenchShell() {
     document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
     return () => document.body.classList.remove("sidebar-collapsed");
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    document.body.classList.toggle("mobile-history-open", mobileHistoryOpen);
+    return () => document.body.classList.remove("mobile-history-open");
+  }, [mobileHistoryOpen]);
+
+  useEffect(() => {
+    if (activePage !== "chat" && mobileHistoryOpen) {
+      setMobileHistoryOpen(false);
+    }
+  }, [activePage, mobileHistoryOpen]);
+
+  useEffect(() => {
+    const closeOnWideViewport = () => {
+      if (window.innerWidth > 760) setMobileHistoryOpen(false);
+    };
+    window.addEventListener("resize", closeOnWideViewport);
+    return () => window.removeEventListener("resize", closeOnWideViewport);
+  }, []);
 
   useEffect(() => {
     document.body.classList.toggle("drawer-collapsed", drawerCollapsed);
@@ -293,6 +313,9 @@ function WorkbenchShell() {
             activePage={activePage}
             collapsed={sidebarCollapsed}
             onPageIntent={preloadPageModule}
+            mobileHistoryOpen={mobileHistoryOpen}
+            onMobileHistoryToggle={() => setMobileHistoryOpen((current) => !current)}
+            onMobileHistoryClose={() => setMobileHistoryOpen(false)}
           />
           <main className="main-stage" id="main-stage" tabIndex={-1}>
             <ChatPage

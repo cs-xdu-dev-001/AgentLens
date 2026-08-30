@@ -34,6 +34,19 @@ const runStatusLabels = {
   completed: "已完成",
 };
 
+const mobileHistoryFocusableSelector =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+function mobileHistoryFocusable(container) {
+  return Array.from(
+    container?.querySelectorAll(mobileHistoryFocusableSelector) || [],
+  ).filter(
+    (element) =>
+      !element.hidden &&
+      element.getAttribute("aria-hidden") !== "true",
+  );
+}
+
 const sessionMenuItems = (pinned, archived) => [
   { action: "continue", icon: "message", label: "继续" },
   ...(archived
@@ -367,7 +380,7 @@ function sessionTitle(session) {
 }
 
 
-function SessionHistory() {
+function SessionHistory({ mobileOpen = false, onMobileClose = null }) {
   const { authenticated, user } = useAuth();
   const userId = String(user?.id ?? "");
   const [sessions, setSessions] = useState([]);
@@ -392,6 +405,60 @@ function SessionHistory() {
   sessionOwnerRef.current = userId;
   const sessionScopeRef = useRef("active");
   const sessionRequestRef = useRef(0);
+  const mobileCloseRef = useRef(onMobileClose);
+  const mobileRestoreFocusRef = useRef(null);
+  mobileCloseRef.current = onMobileClose;
+
+  useEffect(() => {
+    if (!mobileOpen || typeof document === "undefined") return undefined;
+    mobileRestoreFocusRef.current = document.activeElement;
+    const focusFrame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    const handleMobileHistoryKeyDown = (event) => {
+      const history = historyRef.current;
+      if (!history) return;
+      const outsideModal = event.target?.closest?.(
+        '[role="dialog"]:not(#session-history), [role="alertdialog"]',
+      );
+      if (outsideModal) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        mobileCloseRef.current?.();
+        return;
+      }
+      if (event.key !== "Tab" || !history.contains(document.activeElement)) return;
+      const focusable = mobileHistoryFocusable(history);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleMobileHistoryKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleMobileHistoryKeyDown, true);
+      const previous = mobileRestoreFocusRef.current;
+      mobileRestoreFocusRef.current = null;
+      window.requestAnimationFrame(() => {
+        if (
+          previous &&
+          previous.isConnected &&
+          typeof previous.focus === "function" &&
+          previous !== document.body
+        ) {
+          previous.focus();
+        }
+      });
+    };
+  }, [mobileOpen]);
 
   const loadSessions = useCallback(async () => {
     const sequence = sessionLoadSequenceRef.current + 1;
@@ -572,6 +639,7 @@ function SessionHistory() {
       window.dispatchEvent(new CustomEvent("knowflow:react-session-switch-state", {
         detail: { status: "success", sessionId },
       }));
+      onMobileClose?.();
       return;
     }
     const session = sessions.find((item) => item.id === sessionId);
@@ -584,6 +652,7 @@ function SessionHistory() {
         chatModelConfigId: session?.chat_model_config_id ?? null,
       },
     }));
+    onMobileClose?.();
   };
 
   const startSessionRename = (sessionId) => {
@@ -847,8 +916,28 @@ function SessionHistory() {
     : sessions;
   const groups = groupSessions(filteredSessions);
 
-  return (
-    <section className={"chat-history-shell"} ref={historyRef}>
+  const historyContent = (
+    <section
+      className={mobileOpen ? "chat-history-shell mobile-history-open" : "chat-history-shell"}
+      id={"session-history"}
+      ref={historyRef}
+      role={mobileOpen ? "dialog" : undefined}
+      aria-modal={mobileOpen ? "true" : undefined}
+      aria-labelledby={mobileOpen ? "mobile-session-history-title" : undefined}
+    >
+      {mobileOpen ? (
+        <div className={"mobile-history-head"}>
+          <strong id={"mobile-session-history-title"}>{"会话历史"}</strong>
+          <button
+            className={"icon-button"}
+            type={"button"}
+            aria-label={"关闭会话历史"}
+            onClick={() => onMobileClose?.()}
+          >
+            {"×"}
+          </button>
+        </div>
+      ) : null}
       <div className={"session-scope-tabs"} role={"tablist"} aria-label={"任务范围"}>
         <button type={"button"} role={"tab"} aria-selected={sessionScope === "active"} className={sessionScope === "active" ? "active" : ""} onClick={() => handleSessionScopeChange("active")}>{"任务"}</button>
         <button type={"button"} role={"tab"} aria-selected={sessionScope === "archived"} className={sessionScope === "archived" ? "active" : ""} onClick={() => handleSessionScopeChange("archived")}>{"已归档"}</button>
@@ -969,6 +1058,21 @@ function SessionHistory() {
       />
     </section>
   );
+  if (mobileOpen && typeof document !== "undefined") {
+    return createPortal(
+      <div className={"mobile-session-history-layer"}>
+        <button
+          className={"mobile-session-history-backdrop"}
+          type={"button"}
+          aria-label={"关闭会话历史"}
+          onClick={() => onMobileClose?.()}
+        />
+        {historyContent}
+      </div>,
+      document.body,
+    );
+  }
+  return historyContent;
 }
 
 function UserMenu() {
@@ -1086,13 +1190,25 @@ function RuntimeStatus() {
   );
 }
 
-export function Sidebar({ activePage = "chat", collapsed = false, onPageIntent = null }) {
-  const sidebarClassName = collapsed ? "sidebar collapsed" : "sidebar";
+export function Sidebar({
+  activePage = "chat",
+  collapsed = false,
+  onPageIntent = null,
+  mobileHistoryOpen = false,
+  onMobileHistoryToggle = null,
+  onMobileHistoryClose = null,
+}) {
+  const sidebarClassName = [
+    "sidebar",
+    collapsed ? "collapsed" : "",
+    mobileHistoryOpen ? "mobile-history-open" : "",
+  ].filter(Boolean).join(" ");
   const sidebarToggleLabel = collapsed ? "展开侧边栏" : "收起侧边栏";
   const handlePageChange = (page) => {
     window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page } }));
   };
   const handleNewChat = () => {
+    onMobileHistoryClose?.();
     window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
   };
   const handleSidebarToggle = () => {
@@ -1138,7 +1254,24 @@ export function Sidebar({ activePage = "chat", collapsed = false, onPageIntent =
           {"新对话"}
         </strong>
       </button>
-      <SessionHistory />
+      <button
+        className={"mobile-history-trigger"}
+        id={"mobile-history-btn"}
+        type={"button"}
+        aria-label={"打开会话历史"}
+        aria-controls={"session-history"}
+        aria-expanded={Boolean(mobileHistoryOpen)}
+        onClick={() => onMobileHistoryToggle?.()}
+      >
+        <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+          <rect x={"4"} y={"5"} width={"16"} height={"14"} rx={"3"} />
+          <path d={"M8 9h8M8 13h5"} />
+        </svg>
+      </button>
+      <SessionHistory
+        mobileOpen={mobileHistoryOpen}
+        onMobileClose={onMobileHistoryClose}
+      />
       <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
         {sidebarTools.map((tool) =>
           tool.href ? (

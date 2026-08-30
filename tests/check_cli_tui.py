@@ -21,6 +21,7 @@ from knowflow.tui.app import (  # noqa: E402
     KnowFlowTui,
     PermissionModeScreen,
     PermissionRuleScreen,
+    QuestionScreen,
     QueueManagerScreen,
 )
 from knowflow.tui.backend import TuiBackend  # noqa: E402
@@ -226,6 +227,57 @@ class ApprovalBackend(FakeBackend):
                 "answer": "已写入",
             }
         )
+
+
+class QuestionBackend(FakeBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.answers: list[dict[str, object]] = []
+        self.cancelled: list[str | None] = []
+
+    def run(self, question, event_sink):
+        self.questions.append(question)
+        question_id = f"question_{len(self.questions)}"
+        event = {
+            "type": "user_question_required",
+            "questionId": question_id,
+            "runId": "run_question",
+            "header": "部署环境",
+            "question": "选择要使用的环境。",
+            "options": [
+                {
+                    "value": "staging",
+                    "label": "测试环境",
+                    "description": "适合先验证改动。",
+                },
+                {
+                    "value": "production",
+                    "label": "生产环境",
+                    "description": "会直接影响线上服务。",
+                },
+            ],
+            "allowCustom": True,
+        }
+        event_sink(event)
+        return AgentExecution(
+            result={"paused": True, "runId": "run_question", "answer": ""},
+            events=[event],
+        )
+
+    def answer_question(self, execution, answer, event_sink):
+        self.answers.append(dict(answer))
+        event_sink({"type": "text_delta", "text": "已收到回答"})
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run_question",
+                "answer": "已收到回答",
+            }
+        )
+
+    def cancel(self, run_id=None):
+        self.cancelled.append(run_id)
+        return True
 
 
 class ScopedApprovalBackend(ApprovalBackend):
@@ -829,6 +881,68 @@ async def exercise_approval() -> None:
         assert backend.decisions == ["allow_once"]
         assert not app.running
         assert len(list(app.query(".assistant-message"))) == 1
+
+
+async def exercise_question() -> None:
+    backend = QuestionBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        composer.load_text("deploy")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, QuestionScreen):
+                break
+        assert isinstance(app.screen, QuestionScreen)
+        screen = app.screen
+        assert "选择要使用的环境" in str(screen.query_one(".question-body").render())
+        assert screen.query_one("#question-options").option_count == 3
+        await pilot.press("down", "enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if backend.answers and not app.running:
+                break
+        assert backend.answers[-1] == {
+            "answer": "production",
+            "selectedOptions": ["production"],
+        }
+
+        composer.load_text("custom deploy")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, QuestionScreen):
+                break
+        assert isinstance(app.screen, QuestionScreen)
+        await pilot.press("end", "enter")
+        custom = app.screen.query_one("#question-custom-input", Input)
+        assert app.screen.focused is custom
+        custom.value = "临时环境"
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if len(backend.answers) >= 2 and not app.running:
+                break
+        assert backend.answers[-1] == {
+            "answer": "临时环境",
+            "selectedOptions": [],
+        }
+
+        composer.load_text("cancel deploy")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, QuestionScreen):
+                break
+        await pilot.press("escape")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if not app.running:
+                break
+        assert backend.cancelled == ["run_question"]
+        assert not app.running
+        assert "已停止" in str(app.query_one("#run-status").render())
 
 
 async def exercise_permission_modes() -> None:
@@ -1435,6 +1549,7 @@ def main() -> None:
         asyncio.run(exercise_tool_failure_feedback())
         asyncio.run(exercise_narrow_command_menu())
         asyncio.run(exercise_approval())
+        asyncio.run(exercise_question())
         asyncio.run(exercise_permission_modes())
         asyncio.run(exercise_session_approval())
         asyncio.run(exercise_queue())
