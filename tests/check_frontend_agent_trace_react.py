@@ -1346,8 +1346,13 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentRecoveryPanel.jsx",
-        "failure.retryable === false",
-        "non-retryable failures suppress retry actions",
+        "agentRecoveryActions({ ...run, failure })",
+        "recovery panel shares the checkpoint recovery contract",
+    )
+    require(
+        "frontend/react/src/controller/agentRunState.js",
+        "run.failure?.retryable === false",
+        "shared recovery contract suppresses non-retryable failures",
     )
     require(
         detail,

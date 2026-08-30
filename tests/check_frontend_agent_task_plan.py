@@ -234,12 +234,12 @@ console.log(JSON.stringify({
     )
     require(
         "frontend/react/src/controller/agentEvents.js",
-        'name === "error.raised" || name === "run.failed"',
+        'terminalName === "error.raised" || terminalName === "run.failed"',
         "projected terminal error event",
     )
     require(
         "frontend/react/src/controller/agentEvents.js",
-        'name === "run.cancelled"',
+        'terminalName === "run.cancelled"',
         "projected cancellation event",
     )
     require(

@@ -135,7 +135,7 @@ def main() -> None:
         ("void handleAgentRunAction", "run-aware cancellation without aborting its event stream"),
         ("const liveStream = Boolean", "live stream ownership during cancellation"),
         ("if (!liveStream)", "restored run cancellation reconnect"),
-        ("if (ownsSendingState) setSending(false);", "sending state ownership"),
+        ("if (ownsSendingState && ownsView() && (!controller || ownsController)) setSending(false);", "sending state belongs to the current view and controller"),
         ("正在安全结束当前操作", "truthful cancellation acknowledgement"),
         ("async function retryAnswer", "retry answer flow"),
         ("async function submitChat", "streaming submit flow"),

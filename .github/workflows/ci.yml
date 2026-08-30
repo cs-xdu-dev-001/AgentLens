@@ -83,6 +83,11 @@ jobs:
         shell: pwsh
         run: npm run build
 
+      - name: Test frontend
+        working-directory: frontend
+        shell: pwsh
+        run: npm test
+
       - name: Run project checks
         shell: pwsh
         run: |

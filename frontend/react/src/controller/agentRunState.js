@@ -21,6 +21,20 @@ export function isActiveRun(run) {
   return Boolean(run?.id && activeStatuses.has(run.status));
 }
 
+export function agentRecoveryActions(run) {
+  if (!run?.id || !["failed", "interrupted", "cancelled"].includes(run.status)) return [];
+  if (run.status === "cancelled" || run.failure?.code === "langgraph_checkpoint_not_found") {
+    return ["retry"];
+  }
+  if (run.failure?.retryable === false) return [];
+  const advertised = [...new Set(
+    (Array.isArray(run.recoveryActions) ? run.recoveryActions : [])
+      .filter(action => ["continue", "retry", "fix"].includes(action)),
+  )];
+  // LangGraph checkpoints also back runs with no explicit task-plan steps.
+  return advertised.length ? advertised : ["continue", "retry"];
+}
+
 export function traceStepWaitState(step) {
   const waiting = ["waiting", "waiting_approval", "waiting_input"].includes(
     step?.status,

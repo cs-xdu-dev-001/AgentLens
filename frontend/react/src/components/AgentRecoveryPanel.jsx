@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { agentRecoveryActions } from "../controller/agentRunState.js";
 import {
   buildAgentRunPresentation,
   compactPublicText,
@@ -60,6 +61,10 @@ const failureLabels = {
   service_restart_interrupted: {
     title: "任务被服务重启中断",
     summary: "运行记录已保存，可以从中断位置继续。",
+  },
+  langgraph_checkpoint_not_found: {
+    title: "恢复检查点不可用",
+    summary: "运行记录仍保留，可以重新运行本轮。",
   },
   upstream_timeout: {
     title: "上游响应超时",
@@ -148,6 +153,7 @@ export function AgentRecoveryPanel({
 }) {
   const headingId = useId();
   const panelRef = useRef(null);
+  const actionPendingRef = useRef(false);
   const [actionState, setActionState] = useState({
     action: "",
     message: "",
@@ -155,6 +161,7 @@ export function AgentRecoveryPanel({
   });
 
   useEffect(() => {
+    actionPendingRef.current = false;
     setActionState({ action: "", message: "", status: "idle" });
   }, [run?.id, run?.status]);
 
@@ -165,8 +172,10 @@ export function AgentRecoveryPanel({
         String(detail.runId || "") !== String(run?.id || "")
         || String(detail.messageId || "") !== String(messageId || "")
       ) return;
+      actionPendingRef.current = ["pending", "succeeded"].includes(detail.status);
       setActionState({
-        action: detail.action || "",
+        action: Object.keys(actionMap).find(action => actionMap[action] === detail.action)
+          || detail.action || "",
         message: detail.message || "",
         status: detail.status || "idle",
       });
@@ -216,18 +225,8 @@ export function AgentRecoveryPanel({
   const copy = failureLabels[failure.code] || failureLabels.agent_run_failed;
   const failedStep = latestFailedStep(run);
   const attemptCount = Number(failedStep?.attemptCount || 0);
-  const canResume = ["failed", "interrupted"].includes(run.status)
-    && Array.isArray(run.steps)
-    && run.steps.length > 0;
   const target = failure.target;
-  const advertisedActions = Array.isArray(run.recoveryActions)
-    ? run.recoveryActions.filter((action) => actionMap[action])
-    : [];
-  const recoveryActions = failure.retryable === false
-    ? []
-    : advertisedActions.length
-      ? advertisedActions
-      : [canResume ? "continue" : null, messageId ? "retry" : null].filter(Boolean);
+  const recoveryActions = messageId ? agentRecoveryActions({ ...run, failure }) : [];
   const failureReason = compactPublicText(
     failure.message || failure.summary,
     compact ? 180 : 260,
@@ -246,7 +245,8 @@ export function AgentRecoveryPanel({
   ].filter(Boolean);
 
   function requestRecovery(action) {
-    if (!interactive) return;
+    if (!interactive || actionPendingRef.current || !messageId) return;
+    actionPendingRef.current = true;
     setActionState({ action, message: "", status: "pending" });
     dispatchRunAction(
       run,
@@ -263,7 +263,7 @@ export function AgentRecoveryPanel({
 
   return (
     <section
-      className={`agent-recovery-panel ${failure.retryable !== false ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
+      className={`agent-recovery-panel ${recoveryActions.length ? "retryable" : "needs-config"}${compact ? " compact" : ""}`}
       aria-labelledby={headingId}
       aria-busy={actionPending}
       ref={panelRef}
@@ -276,7 +276,7 @@ export function AgentRecoveryPanel({
           <div className={"agent-recovery-title-row"}>
             <strong id={headingId}>{copy.title}</strong>
             <span className={"agent-recovery-state"}>
-              {failure.retryable !== false ? "可恢复" : "需要处理"}
+              {recoveryActions.length ? "可恢复" : "需要处理"}
             </span>
           </div>
           <p>{copy.summary}</p>

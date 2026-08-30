@@ -1,3 +1,5 @@
+import { agentRecoveryActions } from "./agentRunState.js";
+
 export const AGENT_EVENT_SCHEMA_VERSION = 1;
 
 const LEGACY_EVENT_NAMES = {
@@ -575,11 +577,28 @@ export function createAgentProjection(initial = {}) {
   };
 }
 
+export function createAgentProjectionFromSnapshot(run, initial = {}) {
+  const lastSequence = Number(run?.lastSequence || 0);
+  return projectAgentEvent(createAgentProjection({
+    ...initial,
+    lastSequence: Number.isSafeInteger(lastSequence) && lastSequence > 0 ? lastSequence : 0,
+  }), { type: "run_snapshot", run }).projection;
+}
+
 export function projectAgentEvent(current, event) {
   const previous = createAgentProjection(current);
   const next = { ...previous };
   const changed = new Set();
   const name = agentEventName(event);
+  // A live run_updated can precede the final answer. Only the reconnect
+  // snapshot stands in for a terminal event that the server will not replay.
+  const snapshotStatus = event?.type === "run_snapshot" ? event?.run?.status : "";
+  const terminalName = {
+    completed: "run.completed",
+    cancelled: "run.cancelled",
+    failed: "run.failed",
+    interrupted: "run.failed",
+  }[snapshotStatus] || name;
   if (
     previous.modelRetry
     && (
@@ -605,7 +624,28 @@ export function projectAgentEvent(current, event) {
   if (event?.run) {
     next.run = { ...(previous.run || {}), ...event.run };
     next.paused = ["waiting_approval", "waiting_input"].includes(event.run.status);
+    if (["planning", "running", "cancelling", "waiting_approval", "waiting_input"].includes(event.run.status)) {
+      next.terminal = null;
+      next.error = null;
+      changed.add("error");
+    }
     changed.add("run");
+    for (const key of ["trace", "toolCalls", "artifacts", "verifications"]) {
+      if (Array.isArray(event.run[key])) {
+        next[key] = event.run[key];
+        changed.add(key);
+      }
+    }
+    for (const key of ["context", "usage", "runSummary"]) {
+      if (event.run[key] && typeof event.run[key] === "object") {
+        next[key] = event.run[key];
+        changed.add(key);
+      }
+    }
+    if (event.run.status) {
+      next.recoveryActions = agentRecoveryActions(event.run);
+      changed.add("recoveryActions");
+    }
     if (event.run?.status === "waiting_input" && event.run?.pendingQuestion) {
       next.questions = mergeQuestion(previous.questions, {
         ...event.run.pendingQuestion,
@@ -722,7 +762,7 @@ export function projectAgentEvent(current, event) {
     changed.add("recoveryActions");
   }
 
-  if (name === "run.completed") {
+  if (terminalName === "run.completed") {
     if (Array.isArray(event?.trace)) {
       next.trace = settleAgentTrace(event.trace, "completed");
     } else {
@@ -742,7 +782,7 @@ export function projectAgentEvent(current, event) {
     changed.add("approvals");
     changed.add("questions");
     changed.add("recoveryActions");
-  } else if (name === "run.cancelled") {
+  } else if (terminalName === "run.cancelled") {
     next.approvals = cancelPendingAgentApprovals(next.approvals);
     next.questions = settlePendingQuestions(next.questions, "cancelled");
     next.trace = markAgentTraceInterrupted(next.trace);
@@ -750,6 +790,7 @@ export function projectAgentEvent(current, event) {
     next.runSummary = settleRunSummary(next.runSummary, "cancelled", event);
     next.paused = false;
     next.terminal = "cancelled";
+    next.error = null;
     next.recoveryActions = [];
     changed.add("approvals");
     changed.add("questions");
@@ -757,7 +798,7 @@ export function projectAgentEvent(current, event) {
     changed.add("toolCalls");
     if (next.runSummary) changed.add("runSummary");
     changed.add("recoveryActions");
-  } else if (name === "error.raised" || name === "run.failed") {
+  } else if (terminalName === "error.raised" || terminalName === "run.failed") {
     next.approvals = cancelPendingAgentApprovals(next.approvals);
     next.questions = settlePendingQuestions(next.questions, "cancelled");
     next.trace = markAgentTraceInterrupted(next.trace);
@@ -765,7 +806,14 @@ export function projectAgentEvent(current, event) {
     next.runSummary = settleRunSummary(next.runSummary, "failed", event);
     next.paused = false;
     next.terminal = "failed";
-    next.error = agentEventError(event);
+    next.error = agentEventError(snapshotStatus ? {
+      ...event,
+      error: {
+        ...event.run.failure,
+        message: event.run.failure?.message || event.run.failure?.summary,
+      },
+      recoveryActions: next.recoveryActions,
+    } : event);
     next.recoveryActions = next.error.recoveryActions;
     changed.add("approvals");
     changed.add("questions");
@@ -781,7 +829,7 @@ export function projectAgentEvent(current, event) {
     next.run = {
       ...(next.run || {}),
       ...(event?.runId && !next.run?.id ? { id: event.runId } : {}),
-      status: next.terminal,
+      status: snapshotStatus === "interrupted" ? "interrupted" : next.terminal,
       steps: settleRunSteps(next.run?.steps, next.terminal),
       currentStepId: null,
       finishedAt,
