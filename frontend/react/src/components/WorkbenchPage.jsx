@@ -141,21 +141,44 @@ export function WorkbenchPage({ active = false }) {
           })}
         </nav>
 
-        <div className="workspace-file-list" aria-busy={loading}>
+        <div className={`workspace-file-list${loading ? " is-loading" : ""}`} aria-busy={loading}>
+          {loading && !entries.length ? (
+            <div className="workspace-loading" role="status" aria-live="polite">
+              <div className="workspace-loading-heading">
+                <span className="workspace-loading-dot" aria-hidden="true" />
+                <strong>正在读取工作区…</strong>
+              </div>
+              <div className="workspace-loading-skeleton" aria-hidden="true">
+                {[0, 1, 2, 3].map((index) => (
+                  <div className="workspace-loading-row" key={index}>
+                    <span className="workspace-loading-icon" />
+                    <span className="workspace-loading-name" />
+                    <span className="workspace-loading-meta" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {loading && entries.length ? (
+            <div className="workspace-refreshing" role="status" aria-live="polite">
+              <span className="workspace-loading-dot" aria-hidden="true" />
+              <span>正在更新列表…</span>
+            </div>
+          ) : null}
           {path ? (
-            <button className="workspace-file-row directory" type="button" onClick={() => load(parentPath(path))}>
+            <button className="workspace-file-row directory" type="button" onClick={() => load(parentPath(path))} disabled={loading}>
               <span className="workspace-file-icon">↰</span><strong>返回上一级</strong>
             </button>
           ) : null}
           {!loading && !entries.length ? <div className="workspace-empty">工作区为空。上传文件，或让Agent在这里生成产物。</div> : null}
           {entries.map((entry) => (
             <div className="workspace-file-row" key={entry.path}>
-              <button className="workspace-file-open" type="button" onClick={() => entry.kind === "directory" ? load(entry.path) : window.location.assign(workspaceApi.downloadUrl(entry.path))}>
+              <button className="workspace-file-open" type="button" onClick={() => entry.kind === "directory" ? load(entry.path) : window.location.assign(workspaceApi.downloadUrl(entry.path))} disabled={loading}>
                 <span className="workspace-file-icon">{entry.kind === "directory" ? "▢" : "·"}</span>
                 <strong>{entry.path.split("/").pop()}</strong>
                 <span>{entry.kind === "directory" ? "文件夹" : "下载"}</span>
               </button>
-              {entry.kind === "file" ? <button className="workspace-file-delete" type="button" onClick={() => handleDelete(entry)}>删除</button> : null}
+              {entry.kind === "file" ? <button className="workspace-file-delete" type="button" onClick={() => handleDelete(entry)} disabled={loading}>删除</button> : null}
             </div>
           ))}
         </div>
