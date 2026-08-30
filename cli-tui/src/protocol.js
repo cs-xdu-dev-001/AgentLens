@@ -733,11 +733,13 @@ export class RuntimeClient extends EventEmitter {
     this.python = python;
     this.config = config;
     this.child = null;
+    this.closing = false;
     this.stderr = [];
   }
 
   start() {
     if (this.child) return;
+    this.closing = false;
     this.child = spawn(this.python, [
       '-m',
       'knowflow.tui.ink_bridge',
@@ -776,6 +778,7 @@ export class RuntimeClient extends EventEmitter {
         detail: this.stderr.at(-1) ?? '',
       });
       this.child = null;
+      this.closing = false;
     });
   }
 
@@ -786,11 +789,12 @@ export class RuntimeClient extends EventEmitter {
   }
 
   close() {
-    if (!this.child) return;
+    if (!this.child || this.closing) return;
+    this.closing = true;
     this.send({type: 'shutdown'});
     const child = this.child;
     setTimeout(() => {
       if (child.exitCode === null) child.kill('SIGTERM');
-    }, 500).unref();
+    }, 2500).unref();
   }
 }

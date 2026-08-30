@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from threading import Lock, Thread
+from threading import current_thread, Lock, Thread
+from time import monotonic
 from typing import Any, TextIO
 
 from ..services.agent_event_protocol import (
@@ -80,6 +81,10 @@ class InkRuntimeBridge:
         self._state_lock = Lock()
         self._running = False
         self._stopping = False
+        self._worker_thread: Thread | None = None
+        self._cancel_thread: Thread | None = None
+        self._cancel_requested = False
+        self._shutdown_deadline: float | None = None
         self._pending: AgentExecution | None = None
         self._queued_decision: str | None = None
         self._queued_answer: dict[str, Any] | None = None
@@ -101,6 +106,14 @@ class InkRuntimeBridge:
     def _public_error(self, exc: Exception) -> str:
         value = sanitize_trace_value(str(exc), max_chars=500)
         return str(value or type(exc).__name__)
+
+    def _runtime_busy(self) -> bool:
+        with self._state_lock:
+            return (
+                self._running
+                or self._cancel_thread is not None
+                or self._stopping
+            )
 
     def _agent_event(self, event: dict[str, Any]) -> None:
         event = normalize_agent_event(event, run_id=self._run_id or None)
@@ -125,52 +138,193 @@ class InkRuntimeBridge:
             }
         )
 
-    def _set_running(self, value: bool) -> bool:
+    def _start_worker(self, target: Any, *, busy_message: str) -> bool:
         with self._state_lock:
-            if value and self._running:
-                return False
-            self._running = value
-            return True
+            if self._running or self._stopping or self._cancel_thread is not None:
+                thread = None
+            else:
+                thread = Thread(target=target, daemon=True)
+                self._running = True
+                self._cancel_requested = False
+                self._worker_thread = thread
+                try:
+                    thread.start()
+                except Exception:
+                    self._worker_thread = None
+                    self._running = False
+                    raise
+        if thread is None:
+            self.send({"type": "busy", "message": busy_message})
+            return False
+        return True
+
+    def _finish_worker(self) -> None:
+        with self._state_lock:
+            if self._worker_thread is current_thread():
+                self._worker_thread = None
+                self._running = False
+
+    def _cancel_active_run(
+        self,
+        request_id: str,
+        run_id: str,
+        report: bool,
+    ) -> None:
+        accepted = False
+        try:
+            accepted = bool(self.backend.cancel(run_id or None))
+        except Exception as exc:
+            message = self._public_error(exc)
+            if report:
+                self.send(
+                    {
+                        "type": "cancel_requested",
+                        "requestId": request_id,
+                        "runId": run_id,
+                        "accepted": False,
+                        "message": message,
+                    }
+                )
+            else:
+                sys.stderr.write(
+                    f"AgentLens runtime cancellation failed: {message}\n"
+                )
+                sys.stderr.flush()
+        else:
+            if report:
+                self.send(
+                    {
+                        "type": "cancel_requested",
+                        "requestId": request_id,
+                        "runId": run_id,
+                        "accepted": accepted,
+                    }
+                )
+        finally:
+            with self._state_lock:
+                if self._cancel_thread is current_thread():
+                    self._cancel_thread = None
+                if report and not accepted:
+                    self._cancel_requested = False
+
+    def _launch_cancel_locked(self, *, report: bool) -> Thread:
+        thread = Thread(
+            target=self._cancel_active_run,
+            args=(self._request_id, self._run_id, report),
+            daemon=True,
+        )
+        self._cancel_thread = thread
+        try:
+            thread.start()
+        except Exception:
+            self._cancel_thread = None
+            raise
+        return thread
+
+    def _request_cancel(self) -> None:
+        launch_error = None
+        with self._state_lock:
+            already_pending = self._cancel_requested
+            if not already_pending:
+                self._cancel_requested = True
+                try:
+                    self._launch_cancel_locked(report=True)
+                except Exception as exc:
+                    self._cancel_requested = False
+                    launch_error = exc
+        if launch_error is not None:
+            self.send(
+                {
+                    "type": "cancel_requested",
+                    "requestId": self._request_id,
+                    "runId": self._run_id,
+                    "accepted": False,
+                    "message": self._public_error(launch_error),
+                }
+            )
+        elif already_pending:
+            self.send(
+                {
+                    "type": "cancel_requested",
+                    "requestId": self._request_id,
+                    "runId": self._run_id,
+                    "accepted": True,
+                }
+            )
+
+    def _shutdown(self, *, timeout_seconds: float = 2.0) -> bool:
+        with self._state_lock:
+            self._stopping = True
+            if self._shutdown_deadline is None:
+                self._shutdown_deadline = (
+                    monotonic() + max(0.0, float(timeout_seconds))
+                )
+            deadline = self._shutdown_deadline
+            worker_thread = self._worker_thread
+            cancel_thread = self._cancel_thread
+            if self._running and not self._cancel_requested:
+                self._cancel_requested = True
+                if cancel_thread is None:
+                    try:
+                        cancel_thread = self._launch_cancel_locked(report=False)
+                    except Exception:
+                        self._cancel_requested = False
+                        cancel_thread = None
+        caller = current_thread()
+        threads = tuple(
+            thread
+            for thread in (worker_thread, cancel_thread)
+            if thread is not None and thread is not caller
+        )
+        for thread in threads:
+            thread.join(max(0.0, deadline - monotonic()))
+        return all(not thread.is_alive() for thread in threads)
 
     def _complete(self, execution: AgentExecution) -> None:
-        if execution.paused:
-            with self._state_lock:
+        with self._state_lock:
+            cancelled_pause = execution.paused and (
+                self._cancel_requested or self._stopping
+            )
+            if execution.paused and not cancelled_pause:
                 self._pending = execution
-            self.send(
-                {
-                    "type": "turn_paused",
-                    "requestId": self._request_id,
-                    "runId": str(execution.result.get("runId") or self._run_id),
-                    "approvalId": execution.approval_id,
-                    "questionId": execution.question_id,
-                    "interruptType": execution.interrupt_type,
-                    "restored": bool(execution.result.get("restored")),
-                    "messages": (
-                        self._public_messages(execution.result.get("messages"))
-                        if execution.result.get("restored")
-                        else None
-                    ),
-                }
-            )
-        else:
-            with self._state_lock:
-                self._pending = None
-            self.send(
-                {
-                    "type": "turn_completed",
-                    "requestId": self._request_id,
-                    "runId": str(execution.result.get("runId") or self._run_id),
-                    "answer": str(execution.result.get("answer") or ""),
-                    "cancelled": bool(execution.result.get("cancelled")),
-                    "restored": bool(execution.result.get("restored")),
-                    "messages": (
-                        self._public_messages(execution.result.get("messages"))
-                        if execution.result.get("restored")
-                        else None
-                    ),
-                    "changes": self._workspace_changes(),
-                }
-            )
+                self.send(
+                    {
+                        "type": "turn_paused",
+                        "requestId": self._request_id,
+                        "runId": str(
+                            execution.result.get("runId") or self._run_id
+                        ),
+                        "approvalId": execution.approval_id,
+                        "questionId": execution.question_id,
+                        "interruptType": execution.interrupt_type,
+                        "restored": bool(execution.result.get("restored")),
+                        "messages": (
+                            self._public_messages(execution.result.get("messages"))
+                            if execution.result.get("restored")
+                            else None
+                        ),
+                    }
+                )
+                return
+            self._pending = None
+        self.send(
+            {
+                "type": "turn_completed",
+                "requestId": self._request_id,
+                "runId": str(execution.result.get("runId") or self._run_id),
+                "answer": str(execution.result.get("answer") or ""),
+                "cancelled": bool(
+                    execution.result.get("cancelled") or cancelled_pause
+                ),
+                "restored": bool(execution.result.get("restored")),
+                "messages": (
+                    self._public_messages(execution.result.get("messages"))
+                    if execution.result.get("restored")
+                    else None
+                ),
+                "changes": [] if cancelled_pause else self._workspace_changes(),
+            }
+        )
 
     @staticmethod
     def _public_messages(value: Any) -> list[dict[str, str]]:
@@ -194,71 +348,102 @@ class InkRuntimeBridge:
         return list(files) if isinstance(files, list) else []
 
     def _execute(self, callback: Any) -> None:
-        queued_decision = None
-        queued_answer = None
-        try:
-            with redirect_stdout(sys.stderr):
-                execution = callback()
-            self._complete(execution)
-        except Exception as exc:
-            message = self._public_error(exc)
-            error_code = str(type(exc).__name__ or "turn_failed")[:80]
-            recovery_actions = (
-                ["continue", "retry", "fix"]
-                if self._run_id
-                else ["retry", "fix"]
-            )
-            self._agent_event(
-                {
-                    "type": "error",
-                    "errorCode": error_code,
-                    "message": message,
-                    "recoveryActions": recovery_actions,
-                }
-            )
-            self.send(
-                {
-                    "type": "turn_failed",
-                    "requestId": self._request_id,
-                    "runId": self._run_id,
-                    "message": message,
-                    "errorCode": error_code,
-                    "recoveryActions": recovery_actions,
-                }
-            )
-        finally:
-            self._set_running(False)
+        while True:
+            try:
+                with redirect_stdout(sys.stderr):
+                    execution = callback()
+                self._complete(execution)
+            except Exception as exc:
+                message = self._public_error(exc)
+                error_code = str(type(exc).__name__ or "turn_failed")[:80]
+                recovery_actions = (
+                    ["continue", "retry", "fix"]
+                    if self._run_id
+                    else ["retry", "fix"]
+                )
+                self._agent_event(
+                    {
+                        "type": "error",
+                        "errorCode": error_code,
+                        "message": message,
+                        "recoveryActions": recovery_actions,
+                    }
+                )
+                self.send(
+                    {
+                        "type": "turn_failed",
+                        "requestId": self._request_id,
+                        "runId": self._run_id,
+                        "message": message,
+                        "errorCode": error_code,
+                        "recoveryActions": recovery_actions,
+                    }
+                )
+            next_callback = None
             with self._state_lock:
-                if self._pending is not None and self._queued_decision is not None:
-                    queued_decision = self._queued_decision
-                    self._queued_decision = None
-                if self._pending is not None and self._queued_answer is not None:
-                    queued_answer = self._queued_answer
-                    self._queued_answer = None
-        if queued_decision is not None:
-            self._approve({"decision": queued_decision})
-        elif queued_answer is not None:
-            self._answer_question(queued_answer)
+                pending = self._pending
+                queued_decision = self._queued_decision
+                queued_answer = self._queued_answer
+                self._queued_decision = None
+                self._queued_answer = None
+                if (
+                    not self._stopping
+                    and not self._cancel_requested
+                    and pending is not None
+                ):
+                    if (
+                        pending.interrupt_type == "tool_approval"
+                        and queued_decision is not None
+                    ):
+                        self._pending = None
+                        next_callback = lambda: self.backend.resolve(
+                            pending,
+                            queued_decision,
+                            self._agent_event,
+                        )
+                    elif (
+                        pending.interrupt_type == "user_question"
+                        and queued_answer is not None
+                    ):
+                        self._pending = None
+                        next_callback = lambda: self.backend.answer_question(
+                            pending,
+                            queued_answer,
+                            self._agent_event,
+                        )
+                if next_callback is None:
+                    if self._worker_thread is current_thread():
+                        self._worker_thread = None
+                    self._running = False
+            if next_callback is None:
+                return
+            callback = next_callback
 
     def _start(self, callback: Any) -> None:
-        if not self._set_running(True):
-            self.send({"type": "busy", "message": "当前任务尚未结束。"})
-            return
-        Thread(target=self._execute, args=(callback,), daemon=True).start()
+        def worker() -> None:
+            try:
+                self._execute(callback)
+            except (BrokenPipeError, OSError, ValueError):
+                pass
+            finally:
+                self._finish_worker()
+
+        self._start_worker(
+            worker,
+            busy_message="当前任务尚未结束。",
+        )
 
     def _submit(self, message: dict[str, Any]) -> None:
         text = str(message.get("text") or "").strip()
         if not text:
             return
-        with self._state_lock:
-            if self._running:
-                self.send({"type": "busy", "message": "当前任务尚未结束。"})
-                return
+        if self._runtime_busy():
+            self.send({"type": "busy", "message": "当前任务尚未结束。"})
+            return
         self._request_id = str(message.get("requestId") or "")
         self._run_id = ""
         self._pending = None
         self._queued_decision = None
-        self._queued_answer = None
         self._queued_answer = None
         if not self.history_store.append(text):
             self.send(
@@ -296,10 +481,9 @@ class InkRuntimeBridge:
         command = str(message.get("command") or "").strip()
         if not command:
             return
-        with self._state_lock:
-            if self._running:
-                self.send({"type": "busy", "message": "当前任务尚未结束。"})
-                return
+        if self._runtime_busy():
+            self.send({"type": "busy", "message": "当前任务尚未结束。"})
+            return
         self._request_id = str(message.get("requestId") or "")
         self._run_id = ""
         self._pending = None
@@ -354,11 +538,19 @@ class InkRuntimeBridge:
         if decision not in {"allow_once", "allow_session", "deny"}:
             decision = "deny"
         with self._state_lock:
-            if self._running:
+            if self._cancel_requested or self._stopping:
+                blocked = True
+                execution = None
+            elif self._running:
                 self._queued_decision = decision
                 self.send({"type": "approval_queued"})
                 return
-            execution = self._pending
+            else:
+                blocked = self._cancel_thread is not None
+                execution = None if blocked else self._pending
+        if blocked:
+            self.send({"type": "busy", "message": "当前任务正在取消。"})
+            return
         if execution is None:
             self.send({"type": "protocol_error", "message": "没有等待审批的任务。"})
             return
@@ -379,11 +571,19 @@ class InkRuntimeBridge:
             return
         payload = {"answer": answer, "selectedOptions": selected}
         with self._state_lock:
-            if self._running:
+            if self._cancel_requested or self._stopping:
+                blocked = True
+                execution = None
+            elif self._running:
                 self._queued_answer = payload
                 self.send({"type": "question_answer_queued"})
                 return
-            execution = self._pending
+            else:
+                blocked = self._cancel_thread is not None
+                execution = None if blocked else self._pending
+        if blocked:
+            self.send({"type": "busy", "message": "当前任务正在取消。"})
+            return
         if execution is None or execution.interrupt_type != "user_question":
             self.send({"type": "protocol_error", "message": "没有等待回答的问题。"})
             return
@@ -406,7 +606,7 @@ class InkRuntimeBridge:
 
     def _update_cli(self) -> None:
         with self._state_lock:
-            if self._running:
+            if self._running or self._cancel_thread is not None or self._stopping:
                 self.send({"type": "cli_update_failed", "message": "请等待当前任务结束后再更新CLI。"})
                 return
             if self._updating_cli:
@@ -455,6 +655,9 @@ class InkRuntimeBridge:
 
     def _workspace(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
+        if action in {"add", "cd", "undo"} and self._runtime_busy():
+            self.send({"type": "busy", "message": "请等待当前任务结束后再修改工作区。"})
+            return
         try:
             if action == "status":
                 result = self.backend.workspace_status()
@@ -493,6 +696,9 @@ class InkRuntimeBridge:
         if not run_id:
             self.send({"type": "protocol_error", "message": "请选择要恢复的会话。"})
             return
+        if self._runtime_busy():
+            self.send({"type": "busy", "message": "当前任务尚未结束。"})
+            return
         self._request_id = str(message.get("requestId") or "")
         self._run_id = run_id
         self._pending = None
@@ -500,7 +706,7 @@ class InkRuntimeBridge:
         self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
 
     def _branch_session(self, message: dict[str, Any]) -> None:
-        if self._running:
+        if self._runtime_busy():
             self.send({"type": "busy", "message": "请等待当前任务结束后再创建分支。"})
             return
         try:
@@ -521,7 +727,7 @@ class InkRuntimeBridge:
             )
 
     def _rename_session(self, message: dict[str, Any]) -> None:
-        if self._running:
+        if self._runtime_busy():
             self.send({"type": "busy", "message": "请等待当前任务结束后再重命名会话。"})
             return
         try:
@@ -542,7 +748,7 @@ class InkRuntimeBridge:
             )
 
     def _export_session(self, message: dict[str, Any]) -> None:
-        if self._running:
+        if self._runtime_busy():
             self.send({"type": "busy", "message": "请等待当前任务结束后再导出会话。"})
             return
         try:
@@ -586,9 +792,6 @@ class InkRuntimeBridge:
         if action != "compact":
             self.send({"type": "protocol_error", "message": "未知上下文操作。"})
             return
-        if not self._set_running(True):
-            self.send({"type": "busy", "message": "请等待当前任务结束后再压缩上下文。"})
-            return
 
         def compact() -> None:
             try:
@@ -613,13 +816,16 @@ class InkRuntimeBridge:
                     }
                 )
             finally:
-                self._set_running(False)
+                self._finish_worker()
 
-        Thread(target=compact, daemon=True).start()
+        self._start_worker(
+            compact,
+            busy_message="请等待当前任务结束后再压缩上下文。",
+        )
 
     def _models(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "list")
-        if self._running:
+        if self._runtime_busy():
             self.send({"type": "busy", "message": "请等待当前任务结束后再切换模型。"})
             return
         try:
@@ -663,35 +869,17 @@ class InkRuntimeBridge:
         elif message_type == "answer_question":
             self._answer_question(message)
         elif message_type == "cancel":
-            try:
-                accepted = self.backend.cancel(self._run_id or None)
-            except Exception as exc:
-                self.send(
-                    {
-                        "type": "cancel_requested",
-                        "requestId": self._request_id,
-                        "runId": self._run_id,
-                        "accepted": False,
-                        "message": self._public_error(exc),
-                    }
-                )
-            else:
-                self.send(
-                    {
-                        "type": "cancel_requested",
-                        "requestId": self._request_id,
-                        "runId": self._run_id,
-                        "accepted": bool(accepted),
-                    }
-                )
+            self._request_cancel()
         elif message_type == "reset":
-            if self._running:
+            if self._runtime_busy():
                 self.send({"type": "busy", "message": "请先取消当前任务。"})
             else:
                 self.backend.reset()
-                self._pending = None
-                self._queued_decision = None
-                self._queued_answer = None
+                with self._state_lock:
+                    self._cancel_requested = False
+                    self._pending = None
+                    self._queued_decision = None
+                    self._queued_answer = None
                 self.send({"type": "session_reset"})
         elif message_type == "catalog":
             self.send({"type": "command_catalog", "commands": self.backend.command_catalog()})
@@ -742,9 +930,7 @@ class InkRuntimeBridge:
         elif message_type == "models":
             self._models(message)
         elif message_type == "shutdown":
-            self._stopping = True
-            if self._running:
-                self.backend.cancel(self._run_id or None)
+            self._shutdown()
         else:
             self.send({"type": "protocol_error", "message": "未知运行时命令。"})
 
@@ -777,18 +963,24 @@ class InkRuntimeBridge:
                 "models": models,
             }
         )
-        for line in self.input_stream:
-            if self._stopping:
-                break
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                self.send({"type": "protocol_error", "message": "运行时消息不是有效JSON。"})
-                continue
-            if not isinstance(payload, dict):
-                self.send({"type": "protocol_error", "message": "运行时消息必须是对象。"})
-                continue
-            self.handle(payload)
+        try:
+            for line in self.input_stream:
+                if self._stopping:
+                    break
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    self.send({"type": "protocol_error", "message": "运行时消息不是有效JSON。"})
+                    continue
+                if not isinstance(payload, dict):
+                    self.send({"type": "protocol_error", "message": "运行时消息必须是对象。"})
+                    continue
+                self.handle(payload)
+                if self._stopping:
+                    break
+        finally:
+            if self._running or self._stopping:
+                self._shutdown()
 
 
 def _parse_config() -> dict[str, Any]:

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from threading import Event
 import time
 
 
@@ -294,6 +295,85 @@ class FailureBackend(FakeBackend):
         raise RuntimeError("检查命令失败")
 
 
+class BlockingShutdownBackend(FakeBackend):
+    def __init__(self) -> None:
+        super().__init__("/shutdown-workspace")
+        self.started = Event()
+        self.release = Event()
+        self.finished = Event()
+
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
+        event_sink({"type": "run_started", "runId": "run-shutdown"})
+        self.started.set()
+        self.release.wait(2)
+        self.finished.set()
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run-shutdown",
+                "answer": "",
+                "cancelled": True,
+            }
+        )
+
+    def cancel(self, run_id):
+        self.cancelled = True
+        self.release.set()
+        return True
+
+
+class BlockingCancelBackend(BlockingShutdownBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancel_count = 0
+        self.cancel_started = Event()
+        self.cancel_release = Event()
+
+    def cancel(self, run_id):
+        self.cancel_count += 1
+        self.cancelled = True
+        self.cancel_started.set()
+        self.cancel_release.wait(1)
+        return True
+
+
+class PausedAfterCancelBackend(BlockingShutdownBackend):
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
+        approval = {
+            "type": "approval_required",
+            "runId": "run-paused-after-cancel",
+            "approvalId": "approval-after-cancel",
+            "toolName": "write_workspace_file",
+            "risk": "write",
+        }
+        self.started.set()
+        self.release.wait(2)
+        self.finished.set()
+        return AgentExecution(
+            result={"paused": True, "runId": "run-paused-after-cancel"},
+            events=[approval],
+        )
+
+
+class BrokenOutput(StringIO):
+    def write(self, value):
+        raise BrokenPipeError("output closed")
+
+
 def wait_for(output: StringIO, event_type: str) -> list[dict]:
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
@@ -361,6 +441,20 @@ def main() -> None:
     assert turn_failure["errorCode"] == "RuntimeError"
     assert turn_failure["recoveryActions"] == ["continue", "retry", "fix"]
 
+    broken_output_bridge = InkRuntimeBridge(
+        FakeBackend("/broken-output-workspace"),
+        input_stream=StringIO(),
+        output_stream=BrokenOutput(),
+    )
+    broken_output_bridge.handle(
+        {"type": "submit", "requestId": "turn-broken-output", "text": "输出已关闭"}
+    )
+    broken_output_deadline = time.monotonic() + 1
+    while broken_output_bridge._running and time.monotonic() < broken_output_deadline:
+        time.sleep(0.01)
+    assert broken_output_bridge._running is False
+    assert broken_output_bridge._worker_thread is None
+
     shell_output = StringIO()
     shell_bridge = InkRuntimeBridge(
         backend,
@@ -397,6 +491,96 @@ def main() -> None:
     assert ready["sessions"][0]["runId"] == "run_ink"
     assert ready["history"] == ["你好", "!echo sandbox-ok"]
     assert ready["models"][0]["selected"] is True
+
+    shutdown_backend = BlockingShutdownBackend()
+    shutdown_bridge = InkRuntimeBridge(
+        shutdown_backend,
+        input_stream=StringIO(
+            json.dumps({
+                "type": "submit",
+                "requestId": "turn-shutdown",
+                "text": "等待取消",
+            }) + "\n"
+        ),
+        output_stream=StringIO(),
+    )
+    shutdown_bridge.run()
+    assert shutdown_backend.cancelled
+    assert shutdown_backend.finished.is_set()
+
+    blocking_cancel_backend = BlockingCancelBackend()
+    blocking_cancel_output = StringIO()
+    blocking_cancel_bridge = InkRuntimeBridge(
+        blocking_cancel_backend,
+        input_stream=StringIO(),
+        output_stream=blocking_cancel_output,
+    )
+    blocking_cancel_bridge.handle(
+        {"type": "submit", "requestId": "turn-blocked-cancel", "text": "取消超时"}
+    )
+    assert blocking_cancel_backend.started.wait(1)
+    cancel_started = time.monotonic()
+    blocking_cancel_bridge.handle({"type": "cancel"})
+    assert time.monotonic() - cancel_started < 0.5
+    assert blocking_cancel_backend.cancel_started.wait(1)
+    blocking_cancel_bridge.handle({"type": "cancel"})
+    assert blocking_cancel_backend.cancel_count == 1
+    blocking_cancel_backend.release.set()
+    assert blocking_cancel_backend.finished.wait(1)
+    blocking_cancel_bridge.handle({"type": "reset"})
+    blocking_cancel_bridge.handle(
+        {"type": "models", "action": "use", "modelId": 2}
+    )
+    blocking_cancel_bridge.handle(
+        {"type": "workspace", "action": "cd", "path": "/other"}
+    )
+    blocking_cancel_bridge.handle(
+        {"type": "branch_session", "title": "不得创建"}
+    )
+    assert blocking_cancel_backend.reset_count == 0
+    assert blocking_cancel_backend.selected_model_id == 1
+    blocking_cancel_bridge.handle(
+        {"type": "submit", "requestId": "turn-too-early", "text": "不得启动"}
+    )
+    busy_rows = wait_for(blocking_cancel_output, "busy")
+    assert busy_rows[-1]["message"] == "当前任务尚未结束。"
+    assert not any(
+        row.get("type")
+        in {"session_reset", "model_changed", "workspace_result", "session_branched"}
+        for row in busy_rows
+    )
+    assert blocking_cancel_bridge._request_id == "turn-blocked-cancel"
+    assert "不得启动" not in blocking_cancel_bridge.history_store.load()
+    blocking_cancel_backend.cancel_release.set()
+    cancel_rows = wait_for(blocking_cancel_output, "cancel_requested")
+    cancel_result = next(
+        row for row in reversed(cancel_rows) if row.get("type") == "cancel_requested"
+    )
+    assert cancel_result["accepted"] is True
+    blocking_cancel_bridge.handle({"type": "cancel"})
+    assert blocking_cancel_backend.cancel_count == 1
+
+    paused_cancel_backend = PausedAfterCancelBackend()
+    paused_cancel_output = StringIO()
+    paused_cancel_bridge = InkRuntimeBridge(
+        paused_cancel_backend,
+        input_stream=StringIO(),
+        output_stream=paused_cancel_output,
+    )
+    paused_cancel_bridge.handle(
+        {
+            "type": "submit",
+            "requestId": "turn-paused-after-cancel",
+            "text": "取消后不得暂停",
+        }
+    )
+    assert paused_cancel_backend.started.wait(1)
+    paused_cancel_bridge.handle({"type": "cancel"})
+    paused_cancel_rows = wait_for(paused_cancel_output, "turn_completed")
+    assert paused_cancel_backend.finished.is_set()
+    assert not any(row.get("type") == "turn_paused" for row in paused_cancel_rows)
+    assert paused_cancel_rows[-1]["cancelled"] is True
+    assert paused_cancel_bridge._pending is None
 
     ready_bridge.handle({"type": "models", "action": "list"})
     model_rows = wait_for(ready_output, "model_list")
