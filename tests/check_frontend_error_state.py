@@ -50,6 +50,11 @@ def main() -> None:
     require("frontend/react/src/components/AuthScreen.jsx", "normalizeErrorMessage", "auth screen normalizes auth failures")
     require("frontend/react/src/components/AuthScreen.jsx", "BACKEND_UNAVAILABLE_MESSAGE", "auth screen keeps clear backend unavailable fallback")
     require("frontend/react/src/components/AppErrorBoundary.jsx", "export class AppErrorBoundary", "React render error boundary")
+    require("frontend/react/src/components/AppErrorBoundary.jsx", 'role={"alert"}', "fatal error is announced")
+    require("frontend/react/src/components/AppErrorBoundary.jsx", 'aria-labelledby={"app-fatal-title"}', "fatal error has an accessible title")
+    require("frontend/react/src/components/AppErrorBoundary.jsx", "如果问题仍然存在", "fatal error offers a recovery alternative")
+    forbid("frontend/react/src/components/AppErrorBoundary.jsx", "this.state.error?.message", "raw render error leak")
+    forbid("frontend/react/src/components/AppErrorBoundary.jsx", "<code>{message}</code>", "raw render error details")
     require("frontend/react/src/main.jsx", "<AppErrorBoundary>", "React root wrapped by error boundary")
     require("frontend/styles.css", ".app-fatal-screen", "error boundary fallback styling")
 

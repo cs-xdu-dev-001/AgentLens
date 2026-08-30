@@ -12,7 +12,7 @@ def main() -> None:
     visible_surfaces = {
         "frontend/index.html": "<title>AgentLens</title>",
         "frontend/react/src/components/AuthScreen.jsx": "登录AgentLens",
-        "frontend/react/src/components/AppErrorBoundary.jsx": '>{"AgentLens"}<',
+        "frontend/react/src/components/AppErrorBoundary.jsx": "重新打开AgentLens",
         "frontend/react/src/components/Sidebar.jsx": "AgentLens",
         "cli-tui/src/app.jsx": "AgentLens",
         "backend/knowflow/app.py": 'title="AgentLens API"',
