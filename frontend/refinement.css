@@ -769,11 +769,11 @@ body {
 
 /* AgentLens refinement: aligned empty composer */
 /* AgentLens refinement: Codex composer surface */
-:root:not([data-theme="mono-dark"]) #page-chat,
-:root:not([data-theme="mono-dark"]) #page-chat .chat-layout,
-:root:not([data-theme="mono-dark"]) #page-chat .chat-panel,
-:root:not([data-theme="mono-dark"]) #page-chat .messages {
-  background: #fff !important;
+#page-chat,
+#page-chat .chat-layout,
+#page-chat .chat-panel,
+#page-chat .messages {
+  background: var(--workspace-bg) !important;
 }
 
 #page-chat.chat-empty {
@@ -838,12 +838,8 @@ body {
   padding: 12px !important;
   border: 1px solid color-mix(in srgb, var(--control-border) 92%, transparent) !important;
   border-radius: 22px !important;
-  background: var(--panel-bg) !important;
+  background: var(--control-bg) !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.07) !important;
-}
-
-:root:not([data-theme="mono-dark"]) #chat-form.composer .composer-shell {
-  background: #fff !important;
 }
 
 #chat-form.composer .composer-input-stack textarea {
@@ -915,13 +911,9 @@ body {
   gap: 2px !important;
   border: 1px solid var(--control-border) !important;
   border-radius: 14px !important;
-  background: var(--panel-bg) !important;
+  background: var(--control-bg) !important;
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.12) !important;
   backdrop-filter: none !important;
-}
-
-:root:not([data-theme="mono-dark"]) #chat-form.composer .composer-menu {
-  background: #fff !important;
 }
 
 #chat-form.composer .composer-menu.open {
@@ -1044,7 +1036,7 @@ body {
   transform: none !important;
 }
 
-/* AgentLens refinement: Codex white sidebar and knowledge */
+/* AgentLens refinement: tokenized sidebar and knowledge */
 :root {
   --sidebar-width: 252px;
   --sidebar-collapsed-width: 56px;
@@ -1056,9 +1048,9 @@ body {
   gap: 4px !important;
 }
 
-:root:not([data-theme="mono-dark"]) .sidebar {
-  border-right-color: #e7e7e7 !important;
-  background: #fff !important;
+.sidebar {
+  border-right-color: var(--control-border) !important;
+  background: var(--rail-bg) !important;
 }
 
 .sidebar-brand {
@@ -1104,21 +1096,21 @@ body {
   flex-basis: 20px !important;
 }
 
-:root:not([data-theme="mono-dark"]) .sidebar #sidebar-toggle:hover,
-:root:not([data-theme="mono-dark"]) .sidebar .new-chat-button:hover,
-:root:not([data-theme="mono-dark"]) .sidebar .sidebar-tool:hover,
-:root:not([data-theme="mono-dark"]) .sidebar .user-menu-button:hover,
-:root:not([data-theme="mono-dark"]) .sidebar .sidebar-list-item:hover,
-:root:not([data-theme="mono-dark"]) .sidebar-search input:hover,
-:root:not([data-theme="mono-dark"]) .sidebar-search input:focus,
-:root:not([data-theme="mono-dark"]) .sidebar-refresh-button:hover {
-  background: #f5f5f5 !important;
+.sidebar #sidebar-toggle:hover,
+.sidebar .new-chat-button:hover,
+.sidebar .sidebar-tool:hover,
+.sidebar .user-menu-button:hover,
+.sidebar .sidebar-list-item:hover,
+.sidebar-search input:hover,
+.sidebar-search input:focus,
+.sidebar-refresh-button:hover {
+  background: var(--rail-hover) !important;
 }
 
-:root:not([data-theme="mono-dark"]) .sidebar .sidebar-tool.active,
-:root:not([data-theme="mono-dark"]) .sidebar .session-row.active,
-:root:not([data-theme="mono-dark"]) .sidebar .session-row.menu-open {
-  background: #ececec !important;
+.sidebar .sidebar-tool.active,
+.sidebar .session-row.active,
+.sidebar .session-row.menu-open {
+  background: var(--rail-hover) !important;
 }
 
 .chat-history-shell {
@@ -1157,9 +1149,9 @@ body {
   font-size: 14px !important;
 }
 
-:root:not([data-theme="mono-dark"]) .sidebar-search input {
-  color: #161616 !important;
-  background: #fff !important;
+.sidebar-search input {
+  color: var(--text) !important;
+  background: var(--rail-panel) !important;
 }
 
 .sidebar-refresh-button {
@@ -1278,7 +1270,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-radius: 9px !important;
 }
 
-:root:not([data-theme="mono-dark"]) :where(
+:where(
   #page-knowledge,
   #page-knowledge .workspace-page,
   #page-knowledge .knowledge-hero,
@@ -1292,10 +1284,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   #page-knowledge .panel,
   #page-knowledge .settings-panel-card
 ) {
-  background: #fff !important;
+  background: var(--panel-bg) !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge :where(
+#page-knowledge :where(
   .knowledge-hero,
   .knowledge-shell,
   .knowledge-rail,
@@ -1306,7 +1298,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   select,
   textarea
 ) {
-  border-color: #e7e7e7 !important;
+  border-color: var(--control-border) !important;
 }
 
 #page-knowledge .knowledge-hero {
@@ -1415,10 +1407,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   box-shadow: none !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge .kb-search-box input,
-:root:not([data-theme="mono-dark"]) #page-knowledge .active-kb-select select {
-  color: #161616 !important;
-  background: #fff !important;
+#page-knowledge .kb-search-box input,
+#page-knowledge .active-kb-select select {
+  color: var(--text) !important;
+  background: var(--control-bg) !important;
 }
 
 #page-knowledge .kb-card-list {
@@ -1432,14 +1424,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   box-shadow: none !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row:hover,
-:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row-main:hover {
-  background: #f5f5f5 !important;
+#page-knowledge .kb-row:hover,
+#page-knowledge .kb-row-main:hover {
+  background: var(--control-bg-hover) !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row.active,
-:root:not([data-theme="mono-dark"]) #page-knowledge .kb-row.active .kb-row-main {
-  background: #ececec !important;
+#page-knowledge .kb-row.active,
+#page-knowledge .kb-row.active .kb-row-main {
+  background: var(--control-bg-hover) !important;
 }
 
 #page-knowledge .knowledge-tabbar {
@@ -1459,14 +1451,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   box-shadow: none !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge .knowledge-tab:hover {
-  color: #161616 !important;
+#page-knowledge .knowledge-tab:hover {
+  color: var(--text) !important;
   background: transparent !important;
 }
 
-:root:not([data-theme="mono-dark"]) #page-knowledge .knowledge-tab.active {
-  border-bottom-color: #161616 !important;
-  color: #161616 !important;
+#page-knowledge .knowledge-tab.active {
+  border-bottom-color: var(--text) !important;
+  color: var(--text) !important;
   background: transparent !important;
 }
 
@@ -1522,7 +1514,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   padding: 0 12px;
   border: 1px solid var(--control-border);
   border-radius: 9px;
-  background: #fff;
+  background: var(--control-bg);
   color: var(--text-soft);
   font-size: 13px;
   font-weight: 620;
@@ -2955,24 +2947,24 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 #page-settings .settings-workspace-shell {
   grid-template-columns: 304px minmax(0, 1fr);
   background: var(--panel-bg);
-  border-color: #deded9;
+  border-color: var(--control-border);
   border-radius: 12px;
 }
 
-:root:not([data-theme="mono-dark"]) #page-settings :where(
+#page-settings :where(
   .settings-workspace,
   .settings-workspace-shell,
   .model-config-list,
   .settings-workspace-detail,
   .model-config-details
 ) {
-  background: #fff !important;
+  background: var(--panel-bg) !important;
 }
 
 .model-config-list-header {
   min-height: 46px;
   padding-inline: 16px;
-  background: #fff;
+  background: var(--panel-bg);
 }
 
 .model-config-item {
@@ -2987,8 +2979,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   display: none;
 }
 
-:root:not([data-theme="mono-dark"]) .model-config-item.selected {
-  background: #f5f5f5 !important;
+.model-config-item.selected {
+  background: var(--control-bg-hover) !important;
 }
 
 .model-config-provider-mark {
@@ -3219,15 +3211,15 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 #page-settings .model-config-form input,
 #page-settings .model-config-form select {
   min-height: 40px;
-  border-color: #d6d6d1;
-  background: #fff;
+  border-color: var(--control-border);
+  background: var(--control-bg);
   color: var(--text);
 }
 
 #page-settings .model-config-form input:focus,
 #page-settings .model-config-form select:focus {
-  border-color: #999991;
-  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.08);
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 #page-settings .model-config-form .button-row {

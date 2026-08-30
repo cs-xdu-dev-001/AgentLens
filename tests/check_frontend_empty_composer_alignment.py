@@ -36,8 +36,13 @@ def main() -> None:
         )
         require(
             source,
-            "background: #fff !important;",
-            "pure white chat surface",
+            "background: var(--workspace-bg) !important;",
+            "themed chat surface",
+        )
+        require(
+            source,
+            "background: var(--control-bg) !important;",
+            "themed composer surface",
         )
         require(
             source,
