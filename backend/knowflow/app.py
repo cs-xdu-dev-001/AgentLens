@@ -148,6 +148,7 @@ for api_router in routers:
 
 @app.on_event("startup")
 def interrupt_stale_agent_runs() -> None:
+    agent_run_coordinator.start_accepting()
     runtime_directories = [
         ("data", DATA_DIR),
         ("uploads", UPLOAD_DIR),
@@ -181,5 +182,6 @@ def interrupt_stale_agent_runs() -> None:
 @app.on_event("shutdown")
 def close_memory_runtime() -> None:
     approval_runner.stop()
+    agent_run_coordinator.shutdown(timeout_seconds=5.0)
     memory_operation_runner.stop()
     memory_manager.close()

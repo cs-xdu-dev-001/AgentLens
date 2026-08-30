@@ -4,7 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 import logging
 from queue import Queue
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, current_thread
+from time import monotonic
 from typing import Any
 
 from .agent_event_protocol import AgentEventNormalizer
@@ -26,8 +27,20 @@ class ActiveAgentRun:
 class AgentRunCoordinator:
     def __init__(self, *, event_store: AgentEventStore | None = None):
         self._lock = Lock()
+        self._lifecycle_lock = Lock()
         self._active: dict[str, ActiveAgentRun] = {}
+        self._shutting_down = False
         self.event_store = event_store
+
+    def start_accepting(self) -> None:
+        """Allow new workers for a fresh application lifecycle."""
+        with self._lifecycle_lock:
+            with self._lock:
+                if self._active:
+                    raise RuntimeError(
+                        "Cannot accept Agent runs while previous workers are active."
+                    )
+                self._shutting_down = False
 
     def start(
         self,
@@ -37,19 +50,15 @@ class AgentRunCoordinator:
             None,
         ],
     ) -> bool:
-        with self._lock:
-            if run_id in self._active:
-                return False
-            initial_sequence = (
-                self.event_store.latest_sequence(run_id)
-                if self.event_store is not None
-                else 0
-            )
-            active = ActiveAgentRun(normalize_event=AgentEventNormalizer(
-                run_id,
-                initial_sequence=initial_sequence,
-            ))
-            self._active[run_id] = active
+        initial_sequence = (
+            self.event_store.latest_sequence(run_id)
+            if self.event_store is not None
+            else 0
+        )
+        active = ActiveAgentRun(normalize_event=AgentEventNormalizer(
+            run_id,
+            initial_sequence=initial_sequence,
+        ))
 
         def publish(event: dict[str, Any]) -> dict[str, Any]:
             return self.publish(run_id, event)
@@ -80,7 +89,15 @@ class AgentRunCoordinator:
 
         thread = Thread(target=worker, daemon=True)
         active.thread = thread
-        thread.start()
+        with self._lock:
+            if self._shutting_down or run_id in self._active:
+                return False
+            self._active[run_id] = active
+            try:
+                thread.start()
+            except Exception:
+                self._active.pop(run_id, None)
+                raise
         return True
 
     def finish(self, run_id: str) -> None:
@@ -155,6 +172,39 @@ class AgentRunCoordinator:
         if thread is not None:
             thread.join(max(0.0, float(timeout_seconds)))
         return not self.is_active(run_id)
+
+    def shutdown(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> tuple[str, ...]:
+        """Cancel all active workers and wait for one shared shutdown deadline."""
+        with self._lifecycle_lock:
+            deadline = monotonic() + max(0.0, float(timeout_seconds))
+            with self._lock:
+                self._shutting_down = True
+                active_runs = list(self._active.items())
+                for _, active in active_runs:
+                    active.cancel_event.set()
+
+            caller = current_thread()
+            for _, active in active_runs:
+                thread = active.thread
+                if thread is not None and thread is not caller:
+                    thread.join(max(0.0, deadline - monotonic()))
+
+            with self._lock:
+                remaining = tuple(sorted(
+                    run_id
+                    for run_id, active in active_runs
+                    if self._active.get(run_id) is active
+                ))
+            if remaining:
+                logger.warning(
+                    "Agent run shutdown timed out with active runs: %s",
+                    ", ".join(remaining),
+                )
+            return remaining
 
     def subscribe(self, run_id: str) -> Queue | None:
         with self._lock:
