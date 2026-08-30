@@ -360,6 +360,7 @@ export function createChatFlow({
   requestComposerReset,
   requestReactSessionsRefresh,
   switchPage,
+  rememberActiveSession = () => {},
 }) {
   let sessionSwitchController = null;
   let composerStateKey = "";
@@ -639,7 +640,10 @@ export function createChatFlow({
           state.lastChatRequest?.question,
         );
       }
-      if (sessionChanged) renderActiveSession();
+      if (sessionChanged) {
+        rememberActiveSession(projection.sessionId);
+        renderActiveSession();
+      }
     }
     if (projection.terminal) {
       cancellingRunId = "";
@@ -670,6 +674,10 @@ export function createChatFlow({
   async function continueSession(sessionId, options = {}) {
     const nextSessionId = String(sessionId || "").trim();
     if (!nextSessionId) return;
+    const ownerUserId = String(options.ownerUserId ?? state.currentUser?.id ?? "");
+    if (!ownerUserId || ownerUserId !== String(state.currentUser?.id ?? "")) {
+      return false;
+    }
     sessionSwitchController?.abort();
     const controller = new AbortController();
     sessionSwitchController = controller;
@@ -687,6 +695,7 @@ export function createChatFlow({
         { signal: controller.signal },
       );
       if (sessionSwitchController !== controller || controller.signal.aborted) return false;
+      if (ownerUserId !== String(state.currentUser?.id ?? "")) return false;
     } catch (error) {
       if (!controller.signal.aborted) {
         publishSessionSwitch("error", switchDetail);
@@ -756,6 +765,7 @@ export function createChatFlow({
     });
     state.currentSessionId = nextSessionId;
     state.currentSessionTitle = String(options.title || "").trim();
+    rememberActiveSession(nextSessionId);
     renderActiveSession();
     requestReactSessionsRefresh();
     switchPage("chat");
@@ -805,6 +815,21 @@ export function createChatFlow({
     return true;
   }
 
+  function abortChatActivity() {
+    sessionSwitchController?.abort();
+    sessionSwitchController = null;
+    state.activeChatController?.abort();
+    state.activeChatController = null;
+    state.activeRunReconnectController?.abort();
+    state.activeRunReconnectController = null;
+    state.activeRunId = null;
+    state.activeRunMessageId = null;
+    cancellingRunId = "";
+    setSending(false);
+    publishSessionSwitch("success", { sessionId: "" });
+    publishAgentComposerState(composerAgentStateFromProjection());
+  }
+
   function startNewChat() {
     sessionSwitchController?.abort();
     sessionSwitchController = null;
@@ -816,6 +841,7 @@ export function createChatFlow({
     cancellingRunId = "";
     state.currentSessionId = null;
     state.currentSessionTitle = "";
+    rememberActiveSession("");
     renderActiveSession();
     clearChatMessages(true);
     renderReferences([]);
@@ -1579,6 +1605,7 @@ export function createChatFlow({
   );
 
   return {
+    abortChatActivity,
     clearQueuedChats,
     continueSession,
     removeQueuedChat,

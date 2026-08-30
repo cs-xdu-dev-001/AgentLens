@@ -4,6 +4,7 @@ async function copyAssistantMessageContent(content, toast) {
 }
 
 export function bindReactControllerEvents({
+  abortChatActivity = () => {},
   state,
   clearChatMessages,
   clearQueuedChats,
@@ -24,6 +25,7 @@ export function bindReactControllerEvents({
   resolveChatKnowledgeBaseId,
   resolveChatModelConfigId,
   resolveKnowledgeBaseId,
+  restoreActiveSession = async () => false,
   retryAnswer,
   resumeQueuedChats,
   showAppScreen,
@@ -39,16 +41,29 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-auth-success", (event) => {
     const detail = event.detail || {};
     if (detail.user) {
+      const currentUserId = String(state.currentUser?.id ?? "");
+      const nextUserId = String(detail.user.id ?? "");
+      if (currentUserId && nextUserId && currentUserId !== nextUserId) {
+        abortChatActivity();
+        state.currentSessionId = null;
+        state.currentSessionTitle = "";
+        clearQueuedChats();
+        renderActiveSession();
+        clearChatMessages();
+      }
       state.currentUser = detail.user;
       renderCurrentUser();
     }
     showAppScreen();
     if (detail.message) toast(detail.message);
-    refresh().catch((error) => toast(error.message || "刷新失败", 4200, "error"));
+    refresh()
+      .then(() => restoreActiveSession())
+      .catch((error) => toast(error.message || "刷新失败", 4200, "error"));
   });
 
   window.addEventListener("knowflow:react-auth-logout", (event) => {
     const detail = event.detail || {};
+    abortChatActivity();
     state.currentUser = null;
     state.currentSessionId = null;
     state.currentSessionTitle = "";

@@ -247,7 +247,8 @@ function sessionTitle(session) {
 
 
 function SessionHistory() {
-  const { authenticated } = useAuth();
+  const { authenticated, user } = useAuth();
+  const userId = String(user?.id ?? "");
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
@@ -262,8 +263,13 @@ function SessionHistory() {
   const historyRef = useRef(null);
   const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
+  const sessionLoadSequenceRef = useRef(0);
+  const sessionOwnerRef = useRef(userId);
+  sessionOwnerRef.current = userId;
 
   const loadSessions = useCallback(async () => {
+    const sequence = sessionLoadSequenceRef.current + 1;
+    sessionLoadSequenceRef.current = sequence;
     if (!authenticated) {
       setSessions([]);
       setCurrentSessionId(null);
@@ -274,18 +280,29 @@ function SessionHistory() {
     setLoadingSessions(true);
     try {
       const nextSessions = await sessionApi.list();
+      if (
+        sequence !== sessionLoadSequenceRef.current
+        || userId !== sessionOwnerRef.current
+      ) return [];
       const sessionList = Array.isArray(nextSessions) ? nextSessions : [];
       setSessions(sessionList);
       setSessionLoadFailed(false);
       return sessionList;
     } catch (error) {
+      if (
+        sequence !== sessionLoadSequenceRef.current
+        || userId !== sessionOwnerRef.current
+      ) return [];
       setSessionLoadFailed(true);
       notifyError(error, "刷新会话失败");
       return [];
     } finally {
-      setLoadingSessions(false);
+      if (
+        sequence === sessionLoadSequenceRef.current
+        && userId === sessionOwnerRef.current
+      ) setLoadingSessions(false);
     }
-  }, [authenticated]);
+  }, [authenticated, userId]);
 
   useEffect(() => {
     loadSessions();

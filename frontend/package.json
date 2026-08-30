@@ -6,6 +6,7 @@
   "scripts": {
     "sync:assets": "node scripts/sync-assets.mjs",
     "sync:styles": "npm run sync:assets",
+    "test": "node --test test/*.test.mjs",
     "predev": "npm run sync:assets",
     "dev": "node scripts/vite-no-net-use.mjs --configLoader native --host 127.0.0.1",
     "prebuild": "npm run sync:assets",

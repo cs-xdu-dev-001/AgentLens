@@ -5,6 +5,12 @@ import { createCatalogSync } from "./catalogSync.js";
 import { createChatFlow } from "./chatFlow.js";
 import { state, messageRetryRequests } from "./controllerState.js";
 import {
+  clearActiveSessionPreference,
+  readActiveSessionPreference,
+  selectSessionToRestore,
+  writeActiveSessionPreference,
+} from "./sessionPersistence.js";
+import {
   appendReactMessage,
   dispatchReactMessagesReset,
   updateReactMessageApprovals,
@@ -153,6 +159,14 @@ function clearChatMessages(showWelcome = false) {
   dispatchReactMessagesReset(showWelcome);
 }
 
+function sessionOwner(userId = state.currentUser?.id) {
+  return { id: userId };
+}
+
+function rememberActiveSession(sessionId, userId = state.currentUser?.id) {
+  writeActiveSessionPreference(sessionOwner(userId), sessionId);
+}
+
 const authFlow = createAuthFlow({
   state,
   notifyReactAuthStateUpdated,
@@ -201,10 +215,73 @@ const chatFlow = createChatFlow({
   requestComposerReset,
   requestReactSessionsRefresh,
   switchPage,
+  rememberActiveSession,
 });
+
+async function openRestoredSession(session, ownerUserId) {
+  const modelId = catalogSync.resolveChatModelConfigId(
+    session.chat_model_config_id || "",
+  );
+  const opened = await chatFlow.continueSession(session.id, {
+    title: session.title,
+    chatModelConfigId: modelId || null,
+    ownerUserId,
+  });
+  if (!opened) return false;
+  state.selectedChatModelConfigId = modelId;
+  notifyReactModelSelectionUpdated(state.selectedChatModelConfigId);
+  return true;
+}
+
+async function restoreActiveSession() {
+  const ownerUserId = String(state.currentUser?.id ?? "");
+  if (!ownerUserId) return false;
+  const owner = sessionOwner(ownerUserId);
+  const isCurrentOwner = () => (
+    ownerUserId === String(state.currentUser?.id ?? "")
+  );
+  const preference = readActiveSessionPreference(owner);
+  if (["new", "unavailable"].includes(preference.kind)) return false;
+
+  let sessions;
+  try {
+    sessions = await request("/api/sessions");
+  } catch {
+    return false;
+  }
+  if (!isCurrentOwner()) return false;
+  const candidate = selectSessionToRestore(sessions, preference);
+  if (!candidate) {
+    if (preference.kind === "session") clearActiveSessionPreference(owner);
+    return false;
+  }
+
+  try {
+    return await openRestoredSession(candidate, ownerUserId);
+  } catch (error) {
+    if (error?.name === "AbortError") return false;
+    if (error?.status !== 404) return false;
+    if (!isCurrentOwner()) return false;
+    clearActiveSessionPreference(owner);
+
+    const fallback = selectSessionToRestore(
+      (Array.isArray(sessions) ? sessions : []).filter(
+        (session) => String(session?.id || "") !== String(candidate.id),
+      ),
+      { kind: "missing", sessionId: "" },
+    );
+    if (!fallback) return false;
+    try {
+      return await openRestoredSession(fallback, ownerUserId);
+    } catch {
+      return false;
+    }
+  }
+}
 
 function bindEvents() {
   bindReactControllerEvents({
+    abortChatActivity: chatFlow.abortChatActivity,
     state,
     clearChatMessages,
     continueSession: chatFlow.continueSession,
@@ -224,6 +301,7 @@ function bindEvents() {
     resolveChatKnowledgeBaseId: catalogSync.resolveChatKnowledgeBaseId,
     resolveChatModelConfigId: catalogSync.resolveChatModelConfigId,
     resolveKnowledgeBaseId: catalogSync.resolveKnowledgeBaseId,
+    restoreActiveSession,
     retryAnswer: chatFlow.retryAnswer,
     resumeQueuedChats: chatFlow.resumeQueuedChats,
     showAppScreen: authFlow.showAppScreen,
@@ -245,6 +323,7 @@ async function bootstrap() {
   const authenticated = await authFlow.checkAuth();
   if (authenticated) {
     await catalogSync.refresh();
+    await restoreActiveSession();
   }
 }
 
