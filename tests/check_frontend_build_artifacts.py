@@ -57,7 +57,9 @@ def main() -> None:
     assert 'React.createElement' in jsx_runtime
     assert 'export const jsx = createElement' in jsx_runtime
     assert 'return "solving"' in thinking_orb
-    assert 'state={state}' in thinking_orb
+    assert 'state={stable.state}' in thinking_orb
+    assert 'Math.max(0, 2000 -' in thinking_orb
+    assert 'aria-atomic={"true"}' in thinking_orb
     assert 'size={20}' in thinking_orb
     assert '"thinking-orbs": "0.2.0"' in package_json
     assert ".message-row.thinking-row .message-actions" in react_css

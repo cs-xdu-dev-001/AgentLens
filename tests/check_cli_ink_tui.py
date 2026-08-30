@@ -9,6 +9,7 @@ import subprocess
 import sys
 from threading import Event
 import time
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +18,46 @@ sys.path.insert(0, str(ROOT / "backend"))
 from knowflow.services.agent_execution import AgentExecution  # noqa: E402
 from knowflow.services.agent_event_protocol import AGENT_EVENT_SCHEMA_VERSION  # noqa: E402
 from knowflow.tui.backend import question_with_workspace_attachments  # noqa: E402
-from knowflow.tui.ink_bridge import PROTOCOL_VERSION, InkRuntimeBridge  # noqa: E402
+from knowflow.tui.ink_bridge import (  # noqa: E402
+    PROTOCOL_VERSION,
+    InkRuntimeBridge,
+    _history_scope,
+)
+from knowflow.tui import ink_launcher  # noqa: E402
+
+
+def check_launcher_single_run() -> None:
+    calls: list[list[str]] = []
+    original_run = ink_launcher.subprocess.run
+    original_which = ink_launcher.shutil.which
+    original_entry_path = ink_launcher._entry_path
+    original_node_major = ink_launcher._node_major
+    previous_allow = os.environ.get("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED")
+
+    def fake_run(command, **_kwargs):
+        calls.append([str(part) for part in command])
+        return SimpleNamespace(returncode=0)
+
+    try:
+        os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = "1"
+        ink_launcher.subprocess.run = fake_run
+        ink_launcher.shutil.which = lambda _name: "node"
+        ink_launcher._entry_path = lambda: Path("index.mjs")
+        ink_launcher._node_major = lambda _node: 22
+        backend = SimpleNamespace(remote_client=None, local_agent=None)
+        assert ink_launcher.run_ink_tui(backend) is True
+    finally:
+        ink_launcher.subprocess.run = original_run
+        ink_launcher.shutil.which = original_which
+        ink_launcher._entry_path = original_entry_path
+        ink_launcher._node_major = original_node_major
+        if previous_allow is None:
+            os.environ.pop("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED", None)
+        else:
+            os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = previous_allow
+
+    assert len(calls) == 1
+    assert calls[0] == ["node", "index.mjs"]
 
 
 class FakeBackend:
@@ -69,6 +109,25 @@ class FakeBackend:
         selected = next(item for item in self.model_catalog() if item["id"] == self.selected_model_id)
         self.model_label = selected["name"]
         return selected
+
+    def local_model_configuration(self):
+        return {
+            "provider": "custom",
+            "baseUrl": "https://api.example.com/v1",
+            "modelName": self.model_label,
+            "apiMode": "chat_completions",
+            "hasApiKey": True,
+            "overriddenFields": {},
+        }
+
+    def configure_local_model(self, value):
+        assert value["apiKey"] == "sk-test-secret"
+        self.model_label = str(value["modelName"])
+        return {
+            "detail": "连接可用",
+            "model": self.model_label,
+            "config": self.local_model_configuration(),
+        }
 
     def run(
         self,
@@ -149,6 +208,15 @@ class FakeBackend:
             "changedFiles": 0,
         }
 
+    def workspace_switch_root(self, path):
+        self.workspace_root = path
+        self.reset()
+        return {
+            **self.workspace_status(),
+            "workspaceKind": "project",
+            "message": f"已切换工作区：{path}",
+        }
+
     def workspace_diff(self, path=None):
         return {"files": [], "patch": ""}
 
@@ -166,11 +234,13 @@ class FakeBackend:
             "workspace": self.workspace_status(),
         }
 
-    def list_sessions(self, limit=20):
+    def list_sessions(self, limit=20, archived=False):
         return [
             {
                 "runId": "run_ink",
                 "title": "测试会话",
+                "pinned": False,
+                "archived": bool(archived),
                 "status": "completed",
                 "updatedAt": 1_700_000_000,
                 "cwd": "/workspace",
@@ -188,7 +258,13 @@ class FakeBackend:
             }
         )
 
-    def branch_session(self, title=""):
+    def branch_session(
+        self,
+        title="",
+        *,
+        before_message_id=None,
+        before_message_index=None,
+    ):
         return {
             "runId": "run_branch",
             "title": title or "测试会话（分支）",
@@ -197,10 +273,39 @@ class FakeBackend:
                 {"role": "user", "content": "旧问题"},
                 {"role": "assistant", "content": "旧回答"},
             ],
+            "restoredQuestion": "要重新处理的问题" if before_message_index is not None else "",
         }
+
+    def rewind_points(self):
+        return [
+            {
+                "messageId": None,
+                "messageIndex": 0,
+                "preview": "要重新处理的问题",
+            }
+        ]
 
     def rename_session(self, title=""):
         return {"runId": "run_ink", "title": title}
+
+    def set_session_pinned(self, pinned=False, run_id="", session_id=""):
+        return {"runId": run_id or "run_ink", "pinned": bool(pinned)}
+
+    def set_session_archived(self, archived=False, run_id="", session_id=""):
+        return {
+            "runId": run_id or "run_ink",
+            "sessionId": session_id,
+            "archived": bool(archived),
+            "pinned": False,
+        }
+
+    def delete_session(self, run_id="", session_id=""):
+        return {
+            "runId": run_id or "run_ink",
+            "sessionId": session_id,
+            "deleted": True,
+            "current": False,
+        }
 
     def export_session(self, filename=""):
         return {
@@ -385,6 +490,15 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 
 def main() -> None:
+    check_launcher_single_run()
+    remote_a = SimpleNamespace(
+        remote_client=SimpleNamespace(server="https://agent.example", token="session-a")
+    )
+    remote_b = SimpleNamespace(
+        remote_client=SimpleNamespace(server="https://agent.example", token="session-b")
+    )
+    assert _history_scope(remote_a) != _history_scope(remote_b)
+    assert "session-a" not in _history_scope(remote_a)
     history_root = ROOT / ".tmp-check-cli-ink-history"
     os.environ["XDG_DATA_HOME"] = str(history_root)
     if history_root.exists():
@@ -491,6 +605,60 @@ def main() -> None:
     assert ready["sessions"][0]["runId"] == "run_ink"
     assert ready["history"] == ["你好", "!echo sandbox-ok"]
     assert ready["models"][0]["selected"] is True
+    assert ready["queueDurable"] is True
+
+    queued_item = {
+        "id": "queue-bridge",
+        "text": "检查队列恢复",
+        "displayText": "检查队列恢复",
+        "priority": "next",
+        "sequence": 1,
+        "mode": "prompt",
+        "reasoningEffort": "high",
+        "permissionMode": "ask",
+        "attachmentPaths": [],
+    }
+    ready_bridge.handle(
+        {"type": "queue", "action": "sync", "items": [queued_item], "paused": True}
+    )
+    queue_rows = wait_for(ready_output, "queue_saved")
+    assert queue_rows[-1]["count"] == 1
+    ready_bridge.handle(
+        {
+            "type": "queue",
+            "action": "claim",
+            "itemId": "queue-bridge",
+            "requestId": "turn-queue",
+            "item": queued_item,
+        }
+    )
+    queue_rows = wait_for(ready_output, "queue_claimed")
+    assert queue_rows[-1]["requestId"] == "turn-queue"
+    assert ready_bridge.queue_store.load()["items"][0]["lifecycle"] == "started"
+    restart_output = StringIO()
+    restart_bridge = InkRuntimeBridge(
+        backend,
+        input_stream=StringIO(""),
+        output_stream=restart_output,
+    )
+    restart_bridge.run()
+    restart_ready = json.loads(restart_output.getvalue().splitlines()[1])
+    assert restart_ready["queueRecovered"] == 1
+    assert restart_ready["queuePaused"] is True
+    assert restart_ready["queueDurable"] is True
+    assert restart_ready["queue"][0]["lifecycle"] == "queued"
+    assert ready_bridge.queue_store.sync([], paused=False)
+    original_queue_sync = ready_bridge.queue_store.sync
+    try:
+        ready_bridge.queue_store.sync = lambda _items, paused: False
+        ready_bridge.handle(
+            {"type": "queue", "action": "sync", "items": [queued_item], "paused": False}
+        )
+        queue_rows = wait_for(ready_output, "queue_failed")
+    finally:
+        ready_bridge.queue_store.sync = original_queue_sync
+    assert queue_rows[-1]["action"] == "sync"
+    assert "仅在本次运行" in queue_rows[-1]["message"]
 
     shutdown_backend = BlockingShutdownBackend()
     shutdown_bridge = InkRuntimeBridge(
@@ -590,6 +758,26 @@ def main() -> None:
     assert model_rows[-1]["model"] == "GPT 5.5"
     assert backend.selected_model_id == 2
 
+    ready_bridge.handle({"type": "local_model_config", "action": "get"})
+    config_rows = wait_for(ready_output, "local_model_config")
+    assert config_rows[-1]["config"]["hasApiKey"] is True
+    assert "apiKey" not in config_rows[-1]["config"]
+    ready_bridge.handle(
+        {
+            "type": "local_model_config",
+            "action": "test_and_save",
+            "config": {
+                "baseUrl": "https://api.example.com/v1",
+                "modelName": "gpt-5.6-sol",
+                "apiMode": "responses",
+                "apiKey": "sk-test-secret",
+            },
+        }
+    )
+    config_rows = wait_for(ready_output, "local_model_config_saved")
+    assert config_rows[-1]["model"] == "gpt-5.6-sol"
+    assert "sk-test-secret" not in ready_output.getvalue()
+
     isolated_output = StringIO()
     isolated_bridge = InkRuntimeBridge(
         FakeBackend("/other-workspace"),
@@ -614,6 +802,33 @@ def main() -> None:
     ready_bridge.handle(
         {
             "type": "workspace",
+            "action": "diff",
+            "path": "reports/report.md",
+            "requestId": "change-diff-1",
+        }
+    )
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert workspace_rows[-1]["requestId"] == "change-diff-1"
+    initial_history_path = ready_bridge.history_store.path
+    ready_bridge._running = True
+    ready_bridge.handle(
+        {"type": "workspace", "action": "switch", "path": "/workspace/busy"}
+    )
+    assert wait_for(ready_output, "workspace_failed")[-1]["action"] == "switch"
+    assert backend.workspace_root == "/workspace"
+    ready_bridge._running = False
+    ready_bridge.handle(
+        {"type": "workspace", "action": "switch", "path": "/workspace/project"}
+    )
+    workspace_rows = wait_for(ready_output, "workspace_result")
+    assert workspace_rows[-1]["action"] == "switch"
+    assert workspace_rows[-1]["result"]["projectRoot"] == "/workspace/project"
+    assert workspace_rows[-1]["sessions"][0]["runId"] == "run_ink"
+    assert ready_bridge.history_store.path != initial_history_path
+    assert wait_for(ready_output, "session_reset")
+    ready_bridge.handle(
+        {
+            "type": "workspace",
             "action": "undo",
             "operationId": "edit_report",
             "runId": "run_ink",
@@ -628,7 +843,10 @@ def main() -> None:
     assert session_rows[-1]["sessions"][0]["answer"] == "恢复后的回答预览"
     assert set(session_rows[-1]["sessions"][0]) == {
         "runId",
+        "sessionId",
         "title",
+        "pinned",
+        "archived",
         "status",
         "updatedAt",
         "cwd",
@@ -681,10 +899,44 @@ def main() -> None:
     branch_rows = wait_for(ready_output, "session_branched")
     assert branch_rows[-1]["result"]["runId"] == "run_branch"
     assert branch_rows[-1]["result"]["title"] == "方案B"
+    ready_bridge.handle({"type": "rewind_points"})
+    rewind_rows = wait_for(ready_output, "rewind_points")
+    assert rewind_rows[-1]["points"][0]["messageIndex"] == 0
+    ready_bridge.handle({"type": "branch_session", "messageIndex": 0})
+    rewound_rows = wait_for(ready_output, "session_branched")
+    assert rewound_rows[-1]["result"]["restoredQuestion"] == "要重新处理的问题"
     ready_bridge.handle({"type": "rename_session", "title": "发布复盘"})
     rename_rows = wait_for(ready_output, "session_renamed")
     assert rename_rows[-1]["result"]["runId"] == "run_ink"
     assert rename_rows[-1]["result"]["title"] == "发布复盘"
+    ready_bridge.handle({"type": "session_pin", "runId": "run_ink", "pinned": True})
+    pin_rows = wait_for(ready_output, "session_pinned")
+    assert pin_rows[-1]["result"] == {
+        "runId": "run_ink",
+        "pinned": True,
+    }
+    ready_bridge.handle({"type": "session_archive", "runId": "run_ink", "archived": True})
+    archive_rows = wait_for(ready_output, "session_archived")
+    assert archive_rows[-1]["result"] == {
+        "runId": "run_ink",
+        "sessionId": "",
+        "archived": True,
+        "pinned": False,
+    }
+    ready_bridge._running = True
+    ready_bridge.handle({"type": "session_delete", "runId": "run_ink"})
+    assert wait_for(ready_output, "busy")[-1]["message"] == (
+        "请先取消当前任务，再永久删除会话。"
+    )
+    ready_bridge._running = False
+    ready_bridge.handle({"type": "session_delete", "runId": "run_ink"})
+    delete_rows = wait_for(ready_output, "session_deleted")
+    assert delete_rows[-1]["result"] == {
+        "runId": "run_ink",
+        "sessionId": "",
+        "deleted": True,
+        "current": False,
+    }
     ready_bridge.handle({"type": "export_session", "filename": "会话记录.md"})
     export_rows = wait_for(ready_output, "session_exported")
     assert export_rows[-1]["result"]["filename"] == "会话记录.md"
@@ -775,10 +1027,11 @@ def main() -> None:
         cli_module._installed_cli_version = original_installed_version
         ink_bridge_module.subprocess.run = original_update_run
     assert "ghp_secretvalue" not in str(failed_update_rows[-1])
-    assert "knowflow update" in failed_update_rows[-1]["message"]
+    assert "agentlens update" in failed_update_rows[-1]["message"]
 
+    reset_count = backend.reset_count
     bridge.handle({"type": "reset"})
-    assert backend.reset_count == 1
+    assert backend.reset_count == reset_count + 1
 
     package = (ROOT / "backend" / "pyproject.toml").read_text(encoding="utf-8")
     assert '"ink_tui/*.mjs"' in package
@@ -812,6 +1065,13 @@ def main() -> None:
         encoding="utf-8"
     )
     assert '"workspaceRoot"' in launcher_source
+    assert '"startupAction"' in launcher_source
+    assert 'startup_action in {"resume", "continue"}' in launcher_source
+    assert "INK_CONFIGURE_EXIT_CODE" not in launcher_source
+    assert '[sys.executable, "-m", "knowflow.cli", "configure"]' not in launcher_source
+    assert "startupAction={String(config.startupAction || '')}" in entry_source
+    assert "CONFIGURE_EXIT_CODE" not in entry_source
+    assert "localMode={config.mode !== 'remote'}" in entry_source
     app_source = (ROOT / "cli-tui" / "src" / "app.jsx").read_text(
         encoding="utf-8"
     )
@@ -830,10 +1090,21 @@ def main() -> None:
     assert "/tasks remove <序号>" in app_source
     assert "transcriptSnapshot" in app_source
     assert "对话记录" in app_source
+    assert "const ActiveTaskAnchor" in app_source
+    assert "activeTaskAnchorMetrics" in app_source
+    assert "fullscreenEnabled && frozen.running" in app_source
+    assert "<ActiveTaskAnchor" in app_source
+    assert "goal={lastQuestion}" in app_source
+    assert "startedAt={runStartedAtRef.current}" in app_source
+    assert "runProjection={runProjection}" in app_source
+    assert "state={runHeader}" in app_source
     assert "runtime_handshake" in app_source
     assert "agentEventSchemaVersion" in app_source
     assert "cli_update_completed" in app_source
     assert "client.send({type: 'cli_update'})" in app_source
+    assert "输入/configure可在当前TUI内重新配置模型" in app_source
+    assert "requestLocalConfiguration" in app_source
+    assert "<LocalModelConfigPanel" in app_source
 
     shutil.rmtree(history_root, ignore_errors=True)
     print("Ink TUI bridge, bundle, and runtime protocol checks passed")

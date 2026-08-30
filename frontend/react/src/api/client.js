@@ -234,11 +234,19 @@ export const memoryApi = {
 };
 
 export const sessionApi = {
-  list: () => apiRequest("/api/sessions"),
+  list: ({ archived = false } = {}) => apiRequest(`/api/sessions?archived=${archived ? "true" : "false"}`),
   messages: (id) => apiRequest(`/api/sessions/${id}/messages`),
+  context: (id) => apiRequest(`/api/sessions/${id}/context`),
+  compactContext: (id, instructions = "") =>
+    apiRequest(`/api/sessions/${id}/context/compact`, {
+      method: "POST",
+      body: { instructions },
+    }),
   branch: (id, payload = {}) => apiRequest(`/api/sessions/${id}/branch`, { method: "POST", body: payload }),
   export: (id) => apiRequest(`/api/sessions/${id}/export`),
   update: (id, payload) => apiRequest(`/api/sessions/${id}`, { method: "PUT", body: payload }),
+  setPinned: (id, pinned) => apiRequest(`/api/sessions/${id}/pin`, { method: "PUT", body: { pinned } }),
+  setArchived: (id, archived) => apiRequest(`/api/sessions/${id}/archive`, { method: "PUT", body: { archived } }),
   delete: (id) => apiRequest(`/api/sessions/${id}`, { method: "DELETE" }),
 };
 

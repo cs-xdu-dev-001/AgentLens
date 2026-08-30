@@ -33,6 +33,10 @@ from ..services.agent_trace import (
     sanitize_trace_value,
 )
 from ..services.memory import append_long_term_memory_context
+from ..services.project_instructions import (
+    load_project_instructions,
+    project_instruction_system_message,
+)
 from ..services.skill_runtime import (
     SkillActivationSession,
     SkillRuntimeError,
@@ -797,6 +801,17 @@ def execute_agent_chat(
                 attachments=payload.attachments,
                 memories=memories if memory_active else None,
             )
+            if WORKSPACE_ENABLED:
+                instruction_runtime = WorkspaceRuntime(
+                    WORKSPACE_DIR,
+                    user_id=user_id,
+                    max_file_bytes=WORKSPACE_MAX_FILE_BYTES,
+                )
+                project_message = project_instruction_system_message(
+                    load_project_instructions(instruction_runtime.root)
+                )
+                if project_message is not None:
+                    base_messages.insert(1, project_message)
             if (
                 workspace_reference_bundle is not None
                 and workspace_reference_bundle.context_message

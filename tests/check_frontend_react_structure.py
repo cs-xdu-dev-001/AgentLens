@@ -63,11 +63,20 @@ def main() -> None:
     if "legacyTemplate" in app_source:
         raise AssertionError("React shell should not import legacyTemplate")
 
-    for component_name in ["AuthScreen", "Sidebar", "ChatPage", "KnowledgePage", "SettingsPage", "Toast"]:
+    for component_name in ["AuthScreen", "Sidebar", "ChatPage", "Toast"]:
         require("frontend/react/src/App.jsx", f"import {{ {component_name} }}", f"{component_name} import")
         require_file(f"frontend/react/src/components/{component_name}.jsx", f"{component_name} component file")
         require(f"frontend/react/src/components/{component_name}.jsx", f"export function {component_name}", f"{component_name} named export")
         forbid("frontend/react/src/App.jsx", f"function {component_name}", f"inline {component_name} component")
+
+    for page_name, page_key in [("KnowledgePage", "knowledge"), ("SettingsPage", "settings")]:
+        require(
+            "frontend/react/src/App.jsx",
+            f'const {page_name} = lazyNamed("{page_key}", "{page_name}")',
+            f"{page_name} deferred import",
+        )
+        require_file(f"frontend/react/src/components/{page_name}.jsx", f"{page_name} component file")
+        require(f"frontend/react/src/components/{page_name}.jsx", f"export function {page_name}", f"{page_name} named export")
 
     require("frontend/react/src/components/Toast.jsx", "useState", "React toast owns message state")
     require("frontend/react/src/components/Toast.jsx", "visible", "React toast owns visibility state")
@@ -248,6 +257,8 @@ def main() -> None:
     require("frontend/react/src/controller/knowflowController.js", "clearChatMessages", "controller delegates message reset to React")
     require("frontend/react/src/controller/bridgeBindings.js", "bindReactControllerEvents", "consolidated React controller bridge binder")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-message-copy", "legacy message copy bridge event")
+    require("frontend/react/src/controller/bridgeBindings.js", "copySelection", "shared Web copy selection bridge")
+    require("frontend/react/src/controller/copyPresentation.js", "redactCopyText", "Web copy redaction")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-message-retry", "legacy message retry bridge event")
     require("frontend/react/src/components/ChatEvidenceDrawer.jsx", "evidence-drawer", "evidence drawer markup")
     require("frontend/react/src/components/ChatEvidenceDrawer.jsx", "reference-list", "reference list id retained")
@@ -503,5 +514,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

@@ -168,7 +168,7 @@ class RemoteAgentClient:
             pass
         if response.status_code == 401:
             code = "authentication_required"
-            message = "登录已失效，请重新执行knowflow auth login。"
+            message = "登录已失效，请重新执行agentlens auth login。"
         return RemoteAgentError(code, message)
 
     def request(
@@ -208,12 +208,6 @@ class RemoteAgentClient:
             return payload["data"]
         return payload
 
-    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
-        payload = self.request("GET", "/api/sessions")
-        rows = payload if isinstance(payload, list) else []
-        safe_limit = max(1, min(100, int(limit)))
-        return [dict(item) for item in rows[:safe_limit] if isinstance(item, dict)]
-
     def session_messages(self, session_id: str) -> list[dict[str, Any]]:
         payload = self.request("GET", f"/api/sessions/{session_id}/messages")
         if not isinstance(payload, list):
@@ -237,13 +231,41 @@ class RemoteAgentClient:
         except (TypeError, ValueError):
             return 0
 
-    def branch_session(self, session_id: str, title: str = "") -> dict[str, Any]:
+    def branch_session(
+        self,
+        session_id: str,
+        title: str = "",
+        *,
+        before_message_id: int | None = None,
+    ) -> dict[str, Any]:
         payload = self.request(
             "POST",
             f"/api/sessions/{session_id}/branch",
-            body={"title": title or None},
+            body={
+                "title": title or None,
+                "beforeMessageId": before_message_id,
+            },
         )
         return payload if isinstance(payload, dict) else {}
+
+    def list_sessions(
+        self,
+        limit: int = 20,
+        *,
+        archived: bool = False,
+    ) -> list[dict[str, Any]]:
+        payload = self.request(
+            "GET",
+            "/api/sessions",
+            params={"archived": bool(archived)},
+        )
+        rows = payload if isinstance(payload, list) else []
+        safe_limit = max(1, min(100, int(limit)))
+        return [
+            dict(item)
+            for item in rows[:safe_limit]
+            if isinstance(item, dict)
+        ]
 
     def rename_session(self, session_id: str, title: str) -> dict[str, Any]:
         payload = self.request(
@@ -252,6 +274,26 @@ class RemoteAgentClient:
             body={"title": title},
         )
         return payload if isinstance(payload, dict) else {}
+
+    def set_session_pinned(self, session_id: str, pinned: bool) -> dict[str, Any]:
+        payload = self.request(
+            "PUT",
+            f"/api/sessions/{session_id}/pin",
+            body={"pinned": bool(pinned)},
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    def set_session_archived(self, session_id: str, archived: bool) -> dict[str, Any]:
+        payload = self.request(
+            "PUT",
+            f"/api/sessions/{session_id}/archive",
+            body={"archived": bool(archived)},
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    def delete_session(self, session_id: str) -> bool:
+        payload = self.request("DELETE", f"/api/sessions/{session_id}")
+        return bool(payload)
 
     def export_session(self, session_id: str) -> dict[str, Any]:
         payload = self.request("GET", f"/api/sessions/{session_id}/export")

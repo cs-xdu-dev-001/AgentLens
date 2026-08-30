@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 
 
@@ -45,19 +46,42 @@ const stateLabels = {
 };
 
 export function AgentThinkingOrb({ trace = [], state: requestedState = "", label: requestedLabel = "" }) {
-  const state = requestedState || agentThinkingState(trace);
-  const label = requestedLabel || stateLabels[state] || stateLabels.solving;
+  const next = useMemo(() => {
+    const state = requestedState || agentThinkingState(trace);
+    return {
+      label: requestedLabel || stateLabels[state] || stateLabels.solving,
+      state,
+    };
+  }, [requestedLabel, requestedState, trace]);
+  const [stable, setStable] = useState(next);
+  const committedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (stable.state === next.state && stable.label === next.label) return undefined;
+    const remaining = Math.max(0, 2000 - (Date.now() - committedAtRef.current));
+    const commit = () => {
+      committedAtRef.current = Date.now();
+      setStable(next);
+    };
+    if (!remaining) {
+      commit();
+      return undefined;
+    }
+    const timer = window.setTimeout(commit, remaining);
+    return () => window.clearTimeout(timer);
+  }, [next, stable.label, stable.state]);
+
   return (
-    <div className={"agent-thinking-orb"} aria-live={"polite"}>
+    <div className={"agent-thinking-orb"} aria-atomic={"true"} aria-live={"polite"}>
       <ThinkingOrb
-        aria-label={label}
+        aria-label={stable.label}
         className={"agent-thinking-orb-canvas"}
         size={20}
         speed={0.9}
-        state={state}
+        state={stable.state}
         theme={"light"}
       />
-      <span>{label}</span>
+      <span>{stable.label}</span>
     </div>
   );
 }

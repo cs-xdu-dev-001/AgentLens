@@ -140,6 +140,10 @@ class LangGraphAgentEngine:
     def checkpoint_diagnostic(self) -> dict[str, object]:
         return self._checkpoints.diagnostic()
 
+    def delete_checkpoints(self, user_id: int, run_ids: list[str]) -> None:
+        """Delete durable graph state before removing the owning sessions."""
+        self._checkpoints.delete_threads(user_id, run_ids)
+
     @staticmethod
     def _append_retrieval_context(
         messages: list[dict[str, Any]],

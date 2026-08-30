@@ -65,6 +65,9 @@ const operationVerbs = {
   write_workspace_file: "更新",
 };
 
+const RUN_QUIET_AFTER_MS = 15_000;
+const RUN_STALLED_AFTER_MS = 45_000;
+
 export function pendingAgentInteractions({ approvals = [], questions = [] } = {}) {
   const safeApprovals = Array.isArray(approvals) ? approvals : [];
   const safeQuestions = Array.isArray(questions) ? questions : [];
@@ -368,6 +371,68 @@ function formatElapsed(milliseconds) {
   const minutes = Math.floor(value / 60_000);
   const seconds = Math.floor((value % 60_000) / 1000);
   return `${minutes}m ${seconds}s`;
+}
+
+export function buildAgentDeliveryPresentation({
+  artifacts = [],
+  verifications = [],
+  runStatus = "",
+} = {}) {
+  const safeArtifacts = Array.isArray(artifacts) ? artifacts : [];
+  const safeVerifications = Array.isArray(verifications) ? verifications : [];
+  const status = String(runStatus || "").trim().toLowerCase();
+  const cancelled = ["cancelled", "canceled", "已取消"].includes(status);
+  const failedRun = ["error", "failed", "interrupted", "执行失败", "失败"].includes(status);
+  const failedCount = safeVerifications.filter((item) => item?.status === "failed").length;
+  const passedCount = safeVerifications.filter((item) => item?.status === "passed").length;
+  const externalCount = safeArtifacts.filter((artifact) => /^https?:\/\//i.test(String(
+    artifact?.url || artifact?.href || artifact?.path || "",
+  ))).length;
+  const fileCount = Math.max(0, safeArtifacts.length - externalCount);
+  const revertedCount = safeArtifacts.filter((artifact) => artifact?.reverted).length;
+  const metrics = safeArtifacts.reduce((total, artifact) => ({
+    added: total.added + Math.max(0, Number(artifact?.addedLines) || 0),
+    removed: total.removed + Math.max(0, Number(artifact?.removedLines) || 0),
+  }), { added: 0, removed: 0 });
+  const summary = [
+    fileCount ? `${fileCount}个文件已更改` : "",
+    externalCount ? `${externalCount}个链接已生成` : "",
+    revertedCount ? `${revertedCount}项已撤销` : "",
+    safeVerifications.length ? `${passedCount}/${safeVerifications.length}项验证通过` : "",
+  ].filter(Boolean).join(" · ");
+
+  let state = { className: "unverified", label: "待验证" };
+  if (cancelled) state = { className: "cancelled", label: "已取消" };
+  else if (failedRun) state = { className: "failed", label: "运行失败" };
+  else if (failedCount) state = { className: "failed", label: `${failedCount}项未通过` };
+  else if (safeVerifications.length) state = { className: "passed", label: "验证通过" };
+
+  const partial = cancelled || failedRun;
+  const failedVerification = failedCount > 0;
+  return {
+    ...metrics,
+    cancelled,
+    externalCount,
+    failedRun,
+    failedVerification,
+    fileCount,
+    passedCount,
+    revertedCount,
+    summary,
+    title: partial ? "本轮结果" : safeArtifacts.length ? "本轮交付" : "本轮验收",
+    state,
+    expandByDefault: partial || failedVerification,
+    actionLabel: failedVerification
+      ? "查看失败步骤与恢复操作"
+      : partial
+        ? "查看未完成步骤"
+        : safeArtifacts.length
+          ? "审阅文件变更"
+          : "查看验证过程",
+    actionTarget: failedVerification || partial
+      ? "trace"
+      : safeArtifacts.length ? "artifacts" : "trace",
+  };
 }
 
 const verificationStatuses = new Set([
@@ -688,6 +753,42 @@ function statusPresentation(run, step, waitState, backgroundPending) {
   return { className: "waiting", freshness: "等待", label: "等待开始" };
 }
 
+function latestActivityAt(run, trace, startedAt) {
+  const candidates = [
+    run?.runSummary?.lastActivityAt,
+    run?.lastActivityAt,
+    run?.updatedAt,
+    ...trace.flatMap((item) => [
+      item?.occurredAt,
+      item?.updatedAt,
+      item?.finishedAt,
+      item?.startedAt,
+    ]),
+  ].map((value) => Date.parse(value || "")).filter(Number.isFinite);
+  return candidates.length ? Math.max(...candidates) : startedAt;
+}
+
+function quietRunStatus(status, { active, lastActivityAt, now, protectedState }) {
+  if (!active || protectedState || !Number.isFinite(lastActivityAt)) return status;
+  const quietForMs = Math.max(0, now - lastActivityAt);
+  if (quietForMs >= RUN_STALLED_AFTER_MS) {
+    return {
+      className: "waiting",
+      detail: "暂未收到新进展，任务仍在运行",
+      freshness: "等待上游",
+      label: "等待响应",
+    };
+  }
+  if (quietForMs >= RUN_QUIET_AFTER_MS) {
+    return {
+      ...status,
+      detail: "仍在运行，等待下一条进展",
+      freshness: "暂未更新",
+    };
+  }
+  return status;
+}
+
 function modelRetrySummary(modelRetry, now) {
   if (!modelRetry) return "";
   const remainingSeconds = Math.max(
@@ -697,6 +798,10 @@ function modelRetrySummary(modelRetry, now) {
   return remainingSeconds > 0
     ? `${modelRetry.reason || "模型请求失败"}，${remainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
     : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`;
+}
+
+export function shouldAutoExpandAgentTrace(active = false, statusClassName = "") {
+  return Boolean(active || ["failed", "warning"].includes(String(statusClassName || "")));
 }
 
 export function buildAgentRunPresentation({ run = null, trace = [], now = Date.now() } = {}) {
@@ -726,11 +831,38 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
   const statusRun = protocolSummary?.status
     ? { ...(run || {}), status: protocolSummary.status }
     : run;
-  const status = statusPresentation(statusRun, step, waitState, backgroundPending);
+  let status = statusPresentation(statusRun, step, waitState, backgroundPending);
+  const failedOperationCount = operations.reduce((total, row) => (
+    ["failed", "interrupted"].includes(row.status)
+      ? total + Math.max(1, Number(row.repeatCount) || 1)
+      : total
+  ), 0);
+  const completedWithWarnings = status.className === "success" && failedOperationCount > 0;
+  if (completedWithWarnings) {
+    status = {
+      className: "warning",
+      detail: `任务已完成，${failedOperationCount}个工具调用未成功`,
+      freshness: "已保存",
+      label: "完成，有警告",
+    };
+  }
   const active = ["running", "stopping", "waiting"].includes(status.className);
   const rootStep = safeTrace.find((item) => item.name === "agent_run") || safeTrace[0];
   const startedAt = Date.parse(protocolSummary?.startedAt || run?.startedAt || rootStep?.startedAt || "");
   const finishedAt = Date.parse(protocolSummary?.finishedAt || run?.finishedAt || run?.updatedAt || "");
+  const lastActivityAt = latestActivityAt(run, safeTrace, startedAt);
+  status = quietRunStatus(status, {
+    active,
+    lastActivityAt,
+    now,
+    protectedState: Boolean(
+      run?.modelRetry
+      || waitState.approval
+      || waitState.background
+      || backgroundPending
+      || status.className === "waiting"
+    ),
+  });
   const elapsedMs = rootStep?.durationMs != null
     ? rootStep.durationMs
     : Number.isFinite(startedAt)
@@ -781,7 +913,9 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     ? modelRetrySummary(run?.modelRetry, now)
       || status.detail
       || `当前：${activeRow?.title || headline}${activeProgress ? ` · ${activeProgress}` : ""}`
-    : artifacts.length
+    : completedWithWarnings
+      ? status.detail
+      : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
   const context = contextPresentation(run);
@@ -794,7 +928,9 @@ export function buildAgentRunPresentation({ run = null, trace = [], now = Date.n
     context,
     elapsed: formatElapsed(elapsedMs),
     elapsedMs,
+    failedOperationCount,
     headline,
+    lastActivityAt: Number.isFinite(lastActivityAt) ? new Date(lastActivityAt).toISOString() : "",
     hasPlan: Boolean(Array.isArray(run?.steps) && run.steps.length),
     metrics: [
       formatElapsed(elapsedMs),

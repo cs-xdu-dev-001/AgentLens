@@ -1,6 +1,11 @@
-async function copyAssistantMessageContent(content, toast) {
-  await navigator.clipboard.writeText(content || "");
-  toast("答案已复制");
+import { copySelection } from "./copyPresentation.js";
+import { copyTextToClipboard } from "./clipboard.js";
+
+const ANSWER_COPY_SUCCESS_TOAST = "答案已复制";
+
+async function copyAssistantMessageContent(content, toast, label = "答案") {
+  await copyTextToClipboard(content || "");
+  toast(label === "答案" ? ANSWER_COPY_SUCCESS_TOAST : `${label}已复制`);
 }
 
 export function bindReactControllerEvents({
@@ -18,6 +23,7 @@ export function bindReactControllerEvents({
   removeQueuedChat,
   retrieveQueuedChat,
   reprioritizeQueuedChat,
+  restoreQueuedChats,
   renderActiveSession,
   renderCurrentUser,
   requestComposerReset,
@@ -27,6 +33,7 @@ export function bindReactControllerEvents({
   resolveKnowledgeBaseId,
   restoreActiveSession = async () => false,
   retryAnswer,
+  rewindSessionAtMessage,
   resumeQueuedChats,
   showAppScreen,
   showAuthScreen,
@@ -53,6 +60,7 @@ export function bindReactControllerEvents({
       }
       state.currentUser = detail.user;
       renderCurrentUser();
+      restoreQueuedChats();
     }
     showAppScreen();
     if (detail.message) toast(detail.message);
@@ -64,10 +72,10 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-auth-logout", (event) => {
     const detail = event.detail || {};
     abortChatActivity();
+    clearQueuedChats({ preserveStored: true });
     state.currentUser = null;
     state.currentSessionId = null;
     state.currentSessionTitle = "";
-    clearQueuedChats();
     renderActiveSession();
     clearChatMessages();
     showAuthScreen(state.oauthProviders);
@@ -83,8 +91,19 @@ export function bindReactControllerEvents({
   });
 
   window.addEventListener("knowflow:react-message-copy", (event) => {
-    const content = event.detail?.rawContent || "";
-    copyAssistantMessageContent(content, toast).catch(() => toast("复制失败，请重试", 4200, "error"));
+    const detail = event.detail || {};
+    const result = copySelection({
+      assistant: detail.rawContent || "",
+      assistantMessage: detail.assistantMessage,
+      messages: detail.messages,
+      args: detail.args,
+    });
+    if (!result.ok) {
+      toast(result.message, 3200, "neutral");
+      return;
+    }
+    copyAssistantMessageContent(result.text, toast, result.label)
+      .catch(() => toast("复制失败，请重试", 4200, "error"));
   });
 
   window.addEventListener("knowflow:react-message-edit", (event) => {
@@ -99,6 +118,17 @@ export function bindReactControllerEvents({
 
   window.addEventListener("knowflow:react-message-retry", (event) => {
     retryAnswer(event.detail?.messageId || null).catch((error) => toast(error.message || "重试失败", 4200, "error"));
+  });
+
+  window.addEventListener("knowflow:react-message-rewind", (event) => {
+    rewindSessionAtMessage(
+      event.detail?.sourceMessageId,
+      event.detail?.rawContent,
+    )
+      .then((branch) => {
+        if (branch) toast("已从所选问题创建新分支，原会话和文件保持不变");
+      })
+      .catch((error) => toast(error.message || "回到历史消息失败", 4200, "error"));
   });
 
   window.addEventListener("knowflow:react-page-change", (event) => {
@@ -192,6 +222,11 @@ export function bindReactControllerEvents({
   window.addEventListener("knowflow:react-chat-paste", (event) =>
     handleComposerPaste(event.detail || {}).catch((error) => toast(error.message || "粘贴失败", 4200, "error")),
   );
+  window.addEventListener("knowflow:react-attachments-replace", (event) => {
+    state.chatAttachments = (Array.isArray(event.detail?.attachments) ? event.detail.attachments : [])
+      .map((attachment) => ({ ...attachment }));
+    renderAttachmentTray();
+  });
   window.addEventListener("knowflow:react-chat-enter-submit", (event) =>
     submitChat({ question: event.detail?.question, skillId: event.detail?.skillId }).catch((error) => toast(error.message || "发送失败", 4200, "error")),
   );

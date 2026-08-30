@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
-import { nextTraceStepId } from "./agentTraceNavigation.js";
-import { buildAgentRunPresentation } from "./agentRunPresentation.js";
+import { evidenceReferences } from "./agentEvidencePresentation.js";
+import { nextTraceStepId, visibleTraceWindow } from "./agentTraceNavigation.js";
+import {
+  buildAgentRunPresentation,
+  buildAgentVerificationPresentation,
+  shouldAutoExpandAgentTrace,
+  verificationTraceStepId,
+} from "./agentRunPresentation.js";
 
 export function AgentTraceStrip({
   interactionPending = false,
@@ -17,19 +23,30 @@ export function AgentTraceStrip({
     () => buildAgentRunPresentation({ run, trace: safeTrace, now }),
     [now, run, safeTrace],
   );
+  const verifications = useMemo(
+    () => buildAgentVerificationPresentation(safeTrace, run?.verifications),
+    [run?.verifications, safeTrace],
+  );
+  const references = useMemo(() => evidenceReferences(run), [run]);
   const active = Boolean(presentation?.active);
   const status = presentation?.status || { className: "waiting", label: "等待开始" };
   const [expanded, setExpanded] = useState(active);
   const [focusedStepId, setFocusedStepId] = useState("");
   const capsuleRef = useRef(null);
-  const navigationIds = Array.isArray(presentation?.rows)
-    ? presentation.rows.slice(0, 5).map((item) => String(item.id || "")).filter(Boolean)
-    : [];
+  const inlineTraceWindow = visibleTraceWindow(
+    presentation?.rows,
+    presentation?.activeRow?.id,
+    5,
+  );
+  const inlineRows = inlineTraceWindow.rows;
+  const navigationIds = inlineRows
+    .map((item) => String(item.id || ""))
+    .filter(Boolean);
   const navigationKey = navigationIds.join("\u001f");
   const scopedRunId = String(presentation?.runId || run?.id || run?.runId || "");
 
   useEffect(() => {
-    setExpanded(active || status.className === "failed");
+    setExpanded(shouldAutoExpandAgentTrace(active, status.className));
   }, [active, run?.id, status.className]);
 
   useEffect(() => {
@@ -75,6 +92,9 @@ export function AgentTraceStrip({
     rows,
     total: progressTotal,
   } = presentation;
+  const settled = status.className === "success" && !expanded;
+  const failedVerification = verifications.find((item) => item.status === "failed");
+  const passedVerificationCount = verifications.filter((item) => item.status === "passed").length;
 
   const handleOpen = (activeTab = "trace", focusStepId = "") => {
     if (focusStepId) setFocusedStepId(String(focusStepId));
@@ -105,7 +125,7 @@ export function AgentTraceStrip({
   return (
     <section
       ref={capsuleRef}
-      className={`agent-task-capsule ${status.className}${expanded ? " expanded" : ""}`}
+      className={`agent-task-capsule ${status.className}${expanded ? " expanded" : ""}${settled ? " settled" : ""}`}
       aria-label={"本次运行过程"}
     >
       <div className={"agent-task-capsule-head"}>
@@ -116,10 +136,21 @@ export function AgentTraceStrip({
           aria-expanded={expanded}
           aria-label={expanded ? "收起任务过程" : "展开任务过程"}
         >
-          <span className={"agent-task-capsule-chevron"} aria-hidden={"true"}>⌄</span>
+          <svg
+            className={"agent-task-capsule-chevron"}
+            viewBox={"0 0 20 20"}
+            aria-hidden={"true"}
+            focusable={"false"}
+          >
+            {settled ? (
+              <path d={"M4.5 10.3 8.2 14l7.3-8"} />
+            ) : (
+              <path d={"m6 8 4 4 4-4"} />
+            )}
+          </svg>
           <span className={"agent-task-capsule-title"}>
             <strong>{headline}</strong>
-            <span className={"agent-task-capsule-summary"}>{processSummary}</span>
+            {!settled ? <span className={"agent-task-capsule-summary"}>{processSummary}</span> : null}
           </span>
         </button>
         <div className={"agent-task-capsule-meta"}>
@@ -145,11 +176,11 @@ export function AgentTraceStrip({
       <div className={"agent-task-capsule-disclosure"} aria-hidden={!expanded}>
         <div className={"agent-task-capsule-body"}>
           <div className={"agent-task-capsule-section-head"}>
-            <strong>{"执行过程"}</strong>
+            <strong>{"运行时间线"}</strong>
             <span>{`${progressCompleted}/${progressTotal || rows.length}完成`}</span>
           </div>
           <ol className={"agent-task-capsule-steps"}>
-            {rows.slice(0, 5).map((item) => {
+            {inlineRows.map((item) => {
               const itemId = String(item.id || "");
               return (
               <li
@@ -178,8 +209,17 @@ export function AgentTraceStrip({
               );
             })}
           </ol>
-          {rows.length > 5 ? (
-            <span className={"agent-task-capsule-more"}>{`另有${rows.length - 5}个步骤`}</span>
+          {inlineTraceWindow.hiddenBefore || inlineTraceWindow.hiddenAfter ? (
+            <span className={"agent-task-capsule-more"}>
+              {[
+                inlineTraceWindow.hiddenBefore
+                  ? `前${inlineTraceWindow.hiddenBefore}个步骤已收起`
+                  : "",
+                inlineTraceWindow.hiddenAfter
+                  ? `后${inlineTraceWindow.hiddenAfter}个步骤已收起`
+                  : "",
+              ].filter(Boolean).join(" · ")}
+            </span>
           ) : null}
           {context && (context.trimmed || context.percent >= 70) ? (
             <div className={`agent-context-pressure${context.trimmed ? " trimmed" : ""}`}>
@@ -190,6 +230,38 @@ export function AgentTraceStrip({
               <span className={"agent-context-pressure-track"} aria-hidden={"true"}>
                 <i style={{ transform: `scaleX(${context.percent / 100})` }}></i>
               </span>
+            </div>
+          ) : null}
+          {artifacts.length || verifications.length || references.length ? (
+            <div className={"agent-task-capsule-outcomes"} aria-label={"运行结果"}>
+              <strong>{"结果"}</strong>
+              <div>
+                {artifacts.length ? (
+                  <button type={"button"} onClick={() => handleOpen("artifacts")}>
+                    <span>{"变更"}</span>
+                    <b>{`${artifacts.length}项`}</b>
+                  </button>
+                ) : null}
+                {verifications.length ? (
+                  <button
+                    className={failedVerification ? "failed" : "passed"}
+                    type={"button"}
+                    onClick={() => handleOpen(
+                      "trace",
+                      verificationTraceStepId(failedVerification || verifications.at(-1), safeTrace),
+                    )}
+                  >
+                    <span>{"验证"}</span>
+                    <b>{`${passedVerificationCount}/${verifications.length}通过`}</b>
+                  </button>
+                ) : null}
+                {references.length ? (
+                  <button type={"button"} onClick={() => handleOpen("evidence")}>
+                    <span>{"来源"}</span>
+                    <b>{`${references.length}个`}</b>
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
           <AgentRecoveryPanel

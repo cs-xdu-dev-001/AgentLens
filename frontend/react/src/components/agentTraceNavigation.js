@@ -11,6 +11,33 @@ export function nextTraceStepId(stepIds, currentId, key) {
   return ids[currentIndex];
 }
 
+export function visibleTraceWindow(rows, activeId, limit = 5) {
+  const source = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!source.length) return { rows: [], hiddenBefore: 0, hiddenAfter: 0 };
+
+  const requestedLimit = Number(limit);
+  const windowSize = Math.min(
+    source.length,
+    Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 5),
+  );
+  const normalizedActiveId = String(activeId || "");
+  const activeIndex = source.findIndex(
+    (row) => String(row?.id || "") === normalizedActiveId,
+  );
+  const maxStart = Math.max(0, source.length - windowSize);
+  const centerOffset = Math.floor((windowSize - 1) / 2);
+  const start = activeIndex < 0
+    ? 0
+    : Math.min(maxStart, Math.max(0, activeIndex - centerOffset));
+  const end = start + windowSize;
+
+  return {
+    rows: source.slice(start, end),
+    hiddenBefore: start,
+    hiddenAfter: Math.max(0, source.length - end),
+  };
+}
+
 export function resolveTreeSelectionId(
   stepIds,
   currentId,

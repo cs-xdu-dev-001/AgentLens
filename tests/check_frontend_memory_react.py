@@ -131,7 +131,7 @@ def main() -> None:
     assert 'aria-busy={interactionLocked}' in page
     check_memory_time(page)
 
-    assert 'import { MemoryPage } from "./components/MemoryPage.jsx"' in app
+    assert 'const MemoryPage = lazyNamed("memory", "MemoryPage")' in app
     assert '"memory"' in app
     assert '<MemoryPage active={activePage === "memory"} />' in app
     assert 'label: "记忆"' in navigation

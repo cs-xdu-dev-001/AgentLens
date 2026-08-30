@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { runtimeApi } from "../api/client.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import {
+  AGENT_NOTIFICATION_PREFERENCE_EVENT,
+  agentNotificationPreference,
   buildAgentDiagnosticReport,
   agentWindowFaviconDataUrl,
   agentWindowFeedback,
@@ -15,16 +19,26 @@ export function AgentWindowFeedback() {
   const feedbackRef = useRef(agentWindowFeedback(null));
   const diagnosticRef = useRef(null);
   const runRef = useRef(null);
+  const versionRef = useRef("");
   const [fallbackReport, setFallbackReport] = useState("");
 
   useEffect(() => {
     const originalTitle = document.title || "AgentLens";
     const favicon = findFavicon();
     const originalFavicon = favicon?.getAttribute("href") || "/favicon.svg";
+    let notificationEnabled = agentNotificationPreference().enabled;
+    void runtimeApi.get()
+      .then((runtime) => {
+        versionRef.current = String(runtime?.version || "");
+      })
+      .catch(() => {
+        // Offline diagnostics remain useful without a server version.
+      });
 
     const publishNotification = (feedback) => {
       if (
         !feedback.notification
+        || !notificationEnabled
         || typeof window.Notification !== "function"
         || window.Notification.permission !== "granted"
       ) return;
@@ -65,13 +79,16 @@ export function AgentWindowFeedback() {
           : next,
       );
     };
+    const handleNotificationPreference = (event) => {
+      notificationEnabled = Boolean(event.detail?.enabled);
+    };
     const handleDiagnosticCopy = async () => {
-      const report = buildAgentDiagnosticReport(runRef.current);
+      const report = buildAgentDiagnosticReport(runRef.current, {
+        platform: navigator.userAgentData?.platform || navigator.platform || "浏览器",
+        version: versionRef.current,
+      });
       try {
-        if (!navigator.clipboard?.writeText) {
-          throw new Error("Clipboard API unavailable");
-        }
-        await navigator.clipboard.writeText(report);
+        await copyTextToClipboard(report);
         notifyToast("脱敏诊断已复制");
       } catch (error) {
         setFallbackReport(report);
@@ -87,11 +104,13 @@ export function AgentWindowFeedback() {
     };
 
     window.addEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+    window.addEventListener(AGENT_NOTIFICATION_PREFERENCE_EVENT, handleNotificationPreference);
     window.addEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
     window.addEventListener("focus", acknowledgeTerminalState);
     document.addEventListener("visibilitychange", acknowledgeTerminalState);
     return () => {
       window.removeEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+      window.removeEventListener(AGENT_NOTIFICATION_PREFERENCE_EVENT, handleNotificationPreference);
       window.removeEventListener("knowflow:react-diagnostic-copy-request", handleDiagnosticCopy);
       window.removeEventListener("focus", acknowledgeTerminalState);
       document.removeEventListener("visibilitychange", acknowledgeTerminalState);

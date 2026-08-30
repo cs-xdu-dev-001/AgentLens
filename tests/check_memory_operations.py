@@ -65,7 +65,7 @@ def main() -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.unlink(missing_ok=True)
     database = Database(f"sqlite:///{db_path.as_posix()}")
-    assert CURRENT_SCHEMA_VERSION == 12
+    assert CURRENT_SCHEMA_VERSION == 15
 
     with database.engine.connect() as conn:
         columns = database.table_columns(conn, "memory_operation")

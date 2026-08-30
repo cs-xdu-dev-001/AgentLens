@@ -31,7 +31,7 @@ def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
 
 
 def main() -> None:
-    require("frontend/react/src/App.jsx", 'import { SkillsPage }', "Skills page import")
+    require("frontend/react/src/App.jsx", 'const SkillsPage = lazyNamed("skills", "SkillsPage")', "Skills page deferred import")
     require(
         "frontend/react/src/App.jsx",
         '<SkillsPage active={activePage === "skills"}',

@@ -174,7 +174,7 @@ class TuiBackend:
             models = self.model_catalog()
             if models and str(model_id) in {"", "local", str(models[0]["id"])}:
                 return models[0]
-            raise RuntimeError("本地CLI只有当前配置；请运行knowflow configure修改模型。")
+            raise RuntimeError("本地CLI只有当前配置；请运行agentlens configure修改模型。")
         try:
             identifier = int(model_id)
         except (TypeError, ValueError) as exc:
@@ -188,6 +188,81 @@ class TuiBackend:
         for item in models:
             item["selected"] = item.get("id") == identifier
         return {**selected, "selected": True, "label": self._model_label}
+
+    def local_model_configuration(self) -> dict[str, Any]:
+        """Return editable local model metadata without exposing credentials."""
+        if self.remote_client is not None or self.local_agent is None:
+            raise RuntimeError("远程模式请到Web设置页管理模型配置。")
+        value = self.local_agent.config_store.editable_snapshot()
+        return {
+            "provider": str(value.get("provider") or "custom"),
+            "baseUrl": str(value.get("base_url") or ""),
+            "modelName": str(value.get("model_name") or ""),
+            "apiMode": str(value.get("api_mode") or "responses"),
+            "hasApiKey": bool(value.get("has_api_key")),
+            "overriddenFields": dict(value.get("overridden_fields") or {}),
+        }
+
+    def configure_local_model(self, value: dict[str, Any]) -> dict[str, Any]:
+        """Test and persist a local BYOK model without restarting the TUI."""
+        if self.remote_client is not None or self.local_agent is None:
+            raise RuntimeError("远程模式请到Web设置页管理模型配置。")
+        from ..services.local_cli_runtime import (
+            LocalCliConfigError,
+            explain_local_connection_error,
+            probe_local_connection,
+        )
+
+        store = self.local_agent.config_store
+        current = store.load()
+        candidate = store.validate_editable(
+            provider=str(value.get("provider") or current.get("provider") or "custom"),
+            base_url=str(value.get("baseUrl") or ""),
+            model_name=str(value.get("modelName") or ""),
+            api_mode=str(value.get("apiMode") or "responses"),
+            api_key=(
+                str(value.get("apiKey") or "").strip()
+                if "apiKey" in value
+                else None
+            ),
+        )
+        connection = probe_local_connection(candidate)
+        if connection["status"] != "available":
+            recommended = connection.get("recommendedApiMode")
+            if recommended:
+                return {
+                    "saved": False,
+                    "message": explain_local_connection_error(
+                        connection["message"]
+                    ),
+                    "recommendation": {
+                        "apiMode": recommended,
+                        "label": (
+                            "Chat Completions"
+                            if recommended == "chat_completions"
+                            else "Responses API"
+                        ),
+                    },
+                    "checkedProtocols": connection["checkedProtocols"],
+                }
+            detail = explain_local_connection_error(connection["message"])
+            if len(connection.get("checkedProtocols") or []) > 1:
+                detail += "\n已同时检查Responses API与Chat Completions，均不可用。"
+            raise LocalCliConfigError(detail)
+        saved = store.save_editable(
+            provider=candidate["provider"],
+            base_url=candidate["base_url"],
+            model_name=candidate["model_name"],
+            api_mode=candidate["api_mode"],
+            api_key=(candidate["api_key"] if "apiKey" in value else None),
+        )
+        self._model_label = saved["model_name"]
+        return {
+            "saved": True,
+            "detail": str(connection["message"] or "连接可用"),
+            "model": self._model_label,
+            "config": self.local_model_configuration(),
+        }
 
     def reset(self) -> None:
         self.session_id = None
@@ -369,7 +444,7 @@ class TuiBackend:
                 {
                     "name": "mode",
                     "ready": False,
-                    "detail": "远程模式请在服务器运行knowflow doctor。",
+                    "detail": "远程模式请在服务器运行agentlens doctor。",
                 }
             ]
         diagnostic = getattr(self.local_agent, "sandbox_diagnostics", None)
@@ -389,6 +464,15 @@ class TuiBackend:
         if self.local_agent is None:
             return {}
         return dict(self.local_agent.workspace_status())
+
+    def workspace_switch_root(self, path: str) -> dict[str, Any]:
+        if self.remote_client is not None:
+            raise RuntimeError("远程模式不能切换服务器工作区。")
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        result = dict(self.local_agent.workspace_switch_root(path))
+        self.reset()
+        return result
 
     def workspace_add_directory(self, path: str) -> dict[str, Any]:
         if self.remote_client is not None:
@@ -414,10 +498,19 @@ class TuiBackend:
             raise RuntimeError("远程模式暂不支持本地文件撤销。")
         return dict(self.local_agent.workspace_undo(operation_id, run_id))
 
-    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_sessions(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         if self.remote_client is not None:
             sessions: list[dict[str, Any]] = []
-            for row in self.remote_client.list_sessions(limit=limit):
+            try:
+                remote_sessions = self.remote_client.list_sessions(
+                    limit=limit,
+                    archived=archived,
+                )
+            except TypeError as exc:
+                if archived or "archived" not in str(exc):
+                    raise
+                remote_sessions = self.remote_client.list_sessions(limit=limit)
+            for row in remote_sessions:
                 session_id = str(
                     row.get("id") or row.get("sessionId") or ""
                 )
@@ -425,6 +518,9 @@ class TuiBackend:
                     continue
                 latest = row.get("latestRun") or row.get("latest_run") or {}
                 latest = dict(latest) if isinstance(latest, dict) else {}
+                run_id = str(latest.get("id") or session_id)
+                if not run_id:
+                    continue
                 title = str(
                     row.get("title")
                     or latest.get("goalSummary")
@@ -433,11 +529,15 @@ class TuiBackend:
                 goal_summary = str(latest.get("goalSummary") or "")
                 sessions.append(
                     {
-                        # Ink's existing session protocol uses runId as its
-                        # transport key. In remote mode that key is the durable
-                        # chat session id; the latest Agent run stays separate.
-                        "runId": session_id,
+                        "runId": run_id,
+                        "sessionId": session_id,
                         "title": title,
+                        "pinned": bool(
+                            row.get("isPinned") or row.get("is_pinned")
+                        ),
+                        "archived": bool(
+                            row.get("isArchived") or row.get("is_archived")
+                        ),
                         "status": str(latest.get("status") or "completed"),
                         "updatedAt": _unix_timestamp(
                             row.get("updatedAt")
@@ -451,7 +551,7 @@ class TuiBackend:
                     }
                 )
             return sessions
-        return list(self.local_agent.list_sessions(limit=limit))
+        return list(self.local_agent.list_sessions(limit=limit, archived=archived))
 
     def rename_session(self, title: str) -> dict[str, Any]:
         next_title = " ".join(str(title or "").split())
@@ -475,11 +575,133 @@ class TuiBackend:
             "title": session.get("title") or next_title,
         }
 
-    def branch_session(self, title: str = "") -> dict[str, Any]:
+    def set_session_pinned(self, pinned: bool, run_id: str = "", session_id: str = "") -> dict[str, Any]:
+        if self.remote_client is not None:
+            target_session_id = str(session_id or self.session_id or "")
+            if not target_session_id:
+                raise RuntimeError("当前没有可置顶的远程会话。")
+            session = self.remote_client.set_session_pinned(target_session_id, pinned)
+            return {
+                "runId": str(run_id or ""),
+                "sessionId": target_session_id,
+                "pinned": bool(session.get("pinned", pinned)),
+            }
+        target_run_id = str(run_id or self.current_run_id or "")
+        if self.local_agent is None or not target_run_id:
+            raise RuntimeError("当前没有可置顶的本地会话。")
+        session = self.local_agent.set_session_pinned(target_run_id, pinned)
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "pinned": bool(session.get("pinned", pinned)),
+        }
+
+    def set_session_archived(self, archived: bool, run_id: str = "", session_id: str = "") -> dict[str, Any]:
+        target_run_id = str(run_id or self.current_run_id or "")
+        target_session_id = str(session_id or self.session_id or "")
+        if not target_run_id and not target_session_id:
+            raise RuntimeError("当前没有可归档的会话。")
+        if self.remote_client is not None:
+            if not target_session_id:
+                raise RuntimeError("当前远程会话缺少会话标识。")
+            session = self.remote_client.set_session_archived(target_session_id, archived)
+            return {
+                "runId": target_run_id,
+                "sessionId": target_session_id,
+                "archived": bool(session.get("archived", archived)),
+                "pinned": bool(session.get("pinned", False)),
+            }
+        if self.local_agent is None:
+            raise RuntimeError("本地Agent尚未初始化。")
+        session = self.local_agent.set_session_archived(target_run_id, archived)
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "archived": bool(session.get("archived", archived)),
+            "pinned": bool(session.get("pinned", False)),
+        }
+
+    def delete_session(self, run_id: str = "", session_id: str = "") -> dict[str, Any]:
+        target_run_id = str(run_id or "")
+        target_session_id = str(session_id or "")
+        if not target_run_id and not target_session_id:
+            target_run_id = str(self.current_run_id or "")
+            target_session_id = str(self.session_id or "")
+        deleting_current = bool(
+            (target_run_id and target_run_id == str(self.current_run_id or ""))
+            or (
+                target_session_id
+                and target_session_id == str(self.session_id or "")
+            )
+        )
+        if not target_run_id and not target_session_id:
+            raise RuntimeError("当前没有可删除的会话。")
+        if self.remote_client is not None:
+            if not target_session_id:
+                raise RuntimeError("当前远程会话缺少会话标识。")
+            deleted = self.remote_client.delete_session(target_session_id)
+            if not deleted:
+                raise RuntimeError("服务器未确认会话删除结果。")
+            if deleting_current:
+                self.reset()
+            return {
+                "runId": target_run_id,
+                "sessionId": target_session_id,
+                "deleted": True,
+                "current": deleting_current,
+            }
+        if self.local_agent is None or not target_run_id:
+            raise RuntimeError("当前没有可删除的本地会话。")
+        result = self.local_agent.delete_session(target_run_id)
+        if deleting_current:
+            self.reset()
+        return {
+            "runId": target_run_id,
+            "sessionId": "",
+            "deleted": bool(result.get("deleted")),
+            "current": deleting_current,
+        }
+
+    def rewind_points(self) -> list[dict[str, Any]]:
+        if self.remote_client is not None:
+            if not self.session_id:
+                raise RuntimeError("当前没有可回退的远程会话。")
+            source = self.remote_client.request(
+                "GET",
+                f"/api/sessions/{self.session_id}/messages",
+            )
+            messages = source if isinstance(source, list) else []
+        else:
+            if self.local_agent is None or not self.current_run_id:
+                raise RuntimeError("当前没有可回退的本地会话。")
+            source = self.local_agent.load_session(self.current_run_id)
+            messages = list(source.get("messages") or [])
+        return [
+            {
+                "messageId": message.get("id"),
+                "messageIndex": index,
+                "preview": str(message.get("content") or "").strip(),
+            }
+            for index, message in enumerate(messages)
+            if message.get("role") == "user"
+            and str(message.get("content") or "").strip()
+        ]
+
+    def branch_session(
+        self,
+        title: str = "",
+        *,
+        before_message_id: int | None = None,
+        before_message_index: int | None = None,
+    ) -> dict[str, Any]:
         if self.remote_client is not None:
             if not self.session_id:
                 raise RuntimeError("当前没有可创建分支的远程会话。")
-            branch = self.remote_client.branch_session(self.session_id, title)
+            branch = self.remote_client.branch_session(
+                self.session_id,
+                title,
+                before_message_id=before_message_id,
+            )
             branch_id = str(branch.get("id") or "")
             if not branch_id:
                 raise RuntimeError("服务器未返回新的会话分支。")
@@ -487,8 +709,12 @@ class TuiBackend:
             self.session_id = branch_id
             self.current_run_id = None
             self.conversation = [
-                {"role": item.get("role"), "content": item.get("content")}
-                for item in messages
+                {
+                    "id": item.get("id"),
+                    "role": item.get("role"),
+                    "content": item.get("content"),
+                }
+                for item in (messages if isinstance(messages, list) else [])
                 if item.get("role") in {"user", "assistant"}
             ]
             self.transcript = list(self.conversation)
@@ -499,10 +725,15 @@ class TuiBackend:
                 "title": branch.get("title"),
                 "messageCount": len(self.transcript),
                 "messages": self.transcript,
+                "restoredQuestion": branch.get("restoredQuestion") or "",
             }
         if self.local_agent is None or not self.current_run_id:
             raise RuntimeError("当前没有可创建分支的本地会话。")
-        branch = self.local_agent.branch_session(self.current_run_id, title)
+        branch = self.local_agent.branch_session(
+            self.current_run_id,
+            title,
+            before_message_index=before_message_index,
+        )
         branch_id = str(branch.get("runId") or "")
         self.current_run_id = branch_id or self.current_run_id
         self.conversation = list(
@@ -516,6 +747,7 @@ class TuiBackend:
             "title": branch.get("title"),
             "messageCount": len(self.transcript),
             "messages": self.transcript,
+            "restoredQuestion": branch.get("restoredQuestion") or "",
         }
 
     def export_session(self, filename: str = "") -> dict[str, Any]:
@@ -661,17 +893,25 @@ class TuiBackend:
         self,
         run_id: str,
         event_sink: AgentEventSink,
+        *,
+        session_id: str = "",
+        status: str = "",
     ) -> AgentExecution:
         if self.remote_client is not None:
-            reference = str(run_id or "").strip()
+            reference = str(run_id or session_id or "").strip()
             if not reference:
                 raise ValueError("请选择要恢复的会话。")
 
             selected_run: dict[str, Any] = {}
-            session_id = reference
+            requested_status = str(status or "").strip()
+            session_id = str(session_id or "").strip() or reference
             if reference.startswith("run_"):
                 selected_run = self.remote_client.get_run(reference)
-                session_id = str(selected_run.get("sessionId") or "")
+                session_id = str(
+                    selected_run.get("sessionId")
+                    or selected_run.get("session_id")
+                    or session_id
+                )
                 if not session_id:
                     raise RuntimeError("远程运行缺少所属会话。")
 
@@ -679,6 +919,7 @@ class TuiBackend:
             self.session_id = session_id
             self.conversation = [
                 {
+                    "id": item.get("id"),
                     "role": str(item.get("role") or ""),
                     "content": str(item.get("content") or ""),
                 }
@@ -712,7 +953,11 @@ class TuiBackend:
                 selected_run = dict(latest_message.get("run") or {})
 
             latest_run_id = str(selected_run.get("id") or "")
-            status = str(selected_run.get("status") or "completed")
+            status = str(
+                selected_run.get("status")
+                or requested_status
+                or "completed"
+            )
             self.current_run_id = latest_run_id or None
             try:
                 last_sequence = max(

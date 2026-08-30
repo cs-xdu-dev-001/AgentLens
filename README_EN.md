@@ -19,7 +19,7 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 </p>
 
 <p>
-  <a href="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml/badge.svg"></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square"></a>
 </p>
 
@@ -27,7 +27,7 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 > The current release is intended for personal use, learning agent engineering, and testing in controlled environments. The agent runtime and CLI target Linux; Windows is supported for local development and browser access.
 
-> The product is now AgentLens. To keep existing installations and server upgrades compatible, the CLI command remains `knowflow`, while the Python package and environment-variable prefix remain `knowflow-ai` and `KNOWFLOW_*`.
+> The product is now AgentLens. The canonical CLI command is `agentlens`; the legacy `knowflow` alias remains supported, and existing users can run `knowflow update` once to receive the new entry point. The Python package name, config directories, and environment-variable prefix remain `knowflow-ai`, `knowflow`, and `KNOWFLOW_*` so upgrades do not lose local data.
 
 ## Core capabilities
 
@@ -51,22 +51,22 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 The CLI is a local BYOK agent by default. It needs no AgentLens account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
-With Node.js 22+ installed on Linux, `knowflow chat` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `knowflow chat --plain` for scripts and pipelines.
+With Node.js 22+ installed on Linux, `agentlens chat` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `agentlens chat --plain` for scripts and pipelines.
 
-The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, prompt history, queued tasks, streaming Markdown answers, approvals, and in-place tool progress. Type `/`, navigate with the arrow keys, accept with Tab or →, and dismiss with Esc. `Alt+P` or `/model` opens a searchable chat-model picker: remote mode switches among the existing Web model configurations, while local mode uses `knowflow configure` for its single active configuration. Run `/update` to update the CLI inside the TUI, then exit and restart `knowflow chat`; use `/version` to verify the CLI and runtime protocol versions. `Shift+Tab` cycles Ask, Auto edit, and Full access; `/permissions` opens the inline picker. `Ctrl+R` searches persistent history for the current workspace, while `/history clear` clears only that workspace; `Ctrl+S` stashes or restores the current draft. `Shift+Enter` or `Ctrl+J` inserts a newline, `Ctrl+_` or `Ctrl+Z` undoes composer edits; `Ctrl+U/K/W` kills to the line start, line end, or previous word, and `Ctrl+Y` yanks it back. Pasted text over two lines or 800 characters collapses to a reference while retaining the full source through submission, queuing, and draft restore, keeping large logs out of the live input layout. The default main-screen mode delegates scrollback, wheel navigation, text selection, and copy to the terminal; `Ctrl+O` opens the full transcript and `Ctrl+E` expands tool details. Run `KNOWFLOW_CLI_FULLSCREEN=1 knowflow chat` for a fixed-composer fullscreen mode with `PgUp/PgDn` scrolling. To capture the wheel there, also set `KNOWFLOW_CLI_MOUSE=1`; some terminals then require Shift-drag for native selection. Shell progress shows recent output, elapsed time, lines, and bytes. While a turn is running, `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary; on an empty composer, press `Ctrl+C` twice to exit. The advanced Allow/Ask/Deny rule editor remains available through the Textual fallback during migration.
+The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, prompt history, queued tasks, streaming Markdown answers, approvals, and in-place tool progress. Type `/`, navigate with the arrow keys, accept with Tab or →, and dismiss with Esc. `Alt+P` or `/model` opens a searchable chat-model picker: remote mode switches among the existing Web model configurations, while local mode uses `agentlens configure` for its single active configuration. Run `/update` to update the CLI inside the TUI, then exit and restart `agentlens chat`; use `/version` to verify the CLI and runtime protocol versions. The terminal emits one attention signal when a task completes, fails, or needs input; `/notifications on|off|status` controls it for the current session. The Web app sends redacted desktop notifications only after the user enables the top-bar notification control and grants browser permission. `Shift+Tab` cycles Ask, Auto edit, and Full access; `/permissions` opens the inline picker. `Ctrl+R` searches persistent history for the current workspace, while `/history clear` clears only that workspace; `Ctrl+S` stashes or restores the current draft. `Shift+Enter` or `Ctrl+J` inserts a newline, `Ctrl+_` or `Ctrl+Z` undoes composer edits; `Ctrl+U/K/W` kills to the line start, line end, or previous word, and `Ctrl+Y` yanks it back. Pasted text over two lines or 800 characters collapses to a reference while retaining the full source through submission, queuing, and draft restore, keeping large logs out of the live input layout. The default main-screen mode delegates scrollback, wheel navigation, text selection, and copy to the terminal; `Ctrl+O` opens the full transcript and `Ctrl+E` expands tool details. Run `KNOWFLOW_CLI_FULLSCREEN=1 agentlens chat` for a fixed-composer fullscreen mode with `PgUp/PgDn` scrolling. To capture the wheel there, also set `KNOWFLOW_CLI_MOUSE=1`; some terminals then require Shift-drag for native selection. Shell progress shows recent output, elapsed time, lines, and bytes. While a turn is running, `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary; on an empty composer, press `Ctrl+C` twice to exit. The advanced Allow/Ask/Deny rule editor remains available through the Textual fallback during migration.
 
-A workspace is more than the current directory. The project root is the task boundary; `/cd` changes only the tool execution directory, while `/add-dir` explicitly grants another directory for the current session. The header and `/workspace` show cwd, Git branch, dirty state, and allowed directories. Structured file edits keep before-change snapshots: `/diff` shows the current turn and `/undo` reverts only when the file has not changed again. Sessions are stored with LangGraph checkpoints. Use `/resume` to select one, `/continue` to proceed from a failed checkpoint, or `/retry tool` and `/retry turn` to choose the retry scope.
+A workspace is more than the current directory. The project root is the task boundary. `/workspace <project-directory>` switches projects in place while isolating sessions, history, and queued tasks; `/cd` changes only the tool execution directory, while `/add-dir` explicitly grants another directory for the current session. The header and `/workspace` show cwd, Git branch, dirty state, and allowed directories. Structured file edits keep before-change snapshots: `/diff` shows the current turn and `/undo` reverts only when the file has not changed again. Sessions are stored with LangGraph checkpoints. Use `/resume` inside the TUI, or run `agentlens resume` or `agentlens chat --resume`, to open the current workspace's session picker. `agentlens chat --continue` restores its most recent session automatically. `/rewind` selects an earlier user prompt, creates an independent branch, and restores that prompt to the composer without changing the original session or workspace files. Use `/continue` to proceed from a failed checkpoint, or `/retry tool` and `/retry turn` to choose the retry scope. The existing `agentlens resume <run_id>` form still restores a specific interrupted run.
 
 The model context is stored separately from the full transcript. `/context` shows token usage, role distribution, and the automatic-compaction threshold. `/compact [instructions]` turns early turns into a structured summary while preserving recent messages and the complete original transcript. At 75% usage, the CLI compacts before the next turn. A compaction failure keeps the old context and does not corrupt the session or checkpoint. Mem0 long-term memory remains separate from session context.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # The Ink interface requires v22+
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
-knowflow configure
-knowflow doctor --cli
-knowflow chat
-knowflow update
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
+agentlens configure
+agentlens doctor --cli
+agentlens chat
+agentlens update
 ```
 
 The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first. The CLI remains usable without Node.js 22, but falls back to Textual.
@@ -77,41 +77,41 @@ Install SRT and its Linux dependencies only when shell tools are needed:
 sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
 srt echo sandbox-ok
-knowflow doctor --cli
+agentlens doctor --cli
 ```
 
 Use `/doctor` for the same checks inside the TUI. Some Ubuntu 24.04 cloud images restrict unprivileged user namespaces with AppArmor; prefer a minimal `bwrap` policy and do not globally disable AppArmor restrictions on production hosts.
 
-`knowflow configure` accepts the API key through a hidden prompt and stores public settings separately from credentials. `KNOWFLOW_API_BASE`, `KNOWFLOW_API_KEY`, `KNOWFLOW_MODEL`, and `KNOWFLOW_API_MODE` can temporarily override saved values.
+`agentlens configure` accepts the API key through a hidden prompt and stores public settings separately from credentials. `KNOWFLOW_API_BASE`, `KNOWFLOW_API_KEY`, `KNOWFLOW_MODEL`, and `KNOWFLOW_API_MODE` can temporarily override saved values.
 
 Useful commands:
 
 ```bash
-knowflow run "Summarize the current project" --events
-knowflow run "Run the tests and fix failures" --yes
-knowflow update
+agentlens run "Summarize the current project" --events
+agentlens run "Run the tests and fix failures" --yes
+agentlens update
 ```
 
 The local CLI and Web app share the Agent tool-assembly layer. Reading a user-supplied public webpage needs no configuration. Web search, MCP, Skills, and Mem0 are enabled as needed and do not require an AgentLens account:
 
 ```bash
 # Tavily web search
-knowflow tools configure web-search
-knowflow tools list
+agentlens tools configure web-search
+agentlens tools list
 
 # Public HTTPS MCP; Notion uses https://mcp.notion.com/mcp
-knowflow mcp add notion https://mcp.notion.com/mcp --auth oauth
-knowflow mcp oauth <ID printed by the previous command>
-knowflow mcp list
+agentlens mcp add notion https://mcp.notion.com/mcp --auth oauth
+agentlens mcp oauth <ID printed by the previous command>
+agentlens mcp list
 
 # Install a local Skill
-knowflow skills install ./my-skill
-knowflow skills list
+agentlens skills install ./my-skill
+agentlens skills list
 
 # Optional Mem0 long-term memory
-knowflow memory configure
-knowflow memory enable
-knowflow memory list
+agentlens memory configure
+agentlens memory enable
+agentlens memory list
 ```
 
 Type `/tools`, `/mcp`, `/skills`, or `/memory` in the TUI to inspect real runtime status. `/tool:*`, `/skill:*`, and `/mcp:*` commands are discovered at runtime. Secret-bearing setup remains in hidden-input CLI commands so keys do not enter TUI transcripts or shell history.
@@ -121,9 +121,9 @@ Public settings live in `~/.config/knowflow/config.json`; the mode-600 `credenti
 Connecting to an existing AgentLens Web deployment is optional:
 
 ```bash
-knowflow auth login https://your-knowflow-server.example
-knowflow chat --remote
-knowflow run "Summarize the knowledge base" --remote
+agentlens auth login https://your-agentlens-server.example
+agentlens chat --remote
+agentlens run "Summarize the knowledge base" --remote
 ```
 
 ## Local development on Windows
@@ -131,8 +131,8 @@ knowflow run "Summarize the knowledge base" --remote
 ### 1. Clone the repository
 
 ```powershell
-git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
-Set-Location "KnowFlow-AI"
+git clone https://github.com/cs-xdu-dev-001/AgentLens.git
+Set-Location "AgentLens"
 ```
 
 ### 2. Install dependencies
@@ -248,7 +248,7 @@ sudo apt-get update
 sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
 srt echo sandbox-ok
-knowflow doctor --cli
+agentlens doctor --cli
 ```
 
 Store production data under `/var/lib/knowflow-ai` and grant write access to the service user. A consistent stopped-service backup must include the main database, LangGraph checkpoint, `skills`, `workspaces`, `tool-results`, and `mem0` data.

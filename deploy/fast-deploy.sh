@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 TARGET_REF="${1:-}"
 APP_DIR="${KNOWFLOW_DEPLOY_DIR:-/opt/knowflow-ai/app}"
-REPOSITORY="${KNOWFLOW_GITHUB_REPOSITORY:-cs-xdu-dev-001/KnowFlow-AI}"
+REPOSITORY="${KNOWFLOW_GITHUB_REPOSITORY:-cs-xdu-dev-001/AgentLens}"
 SERVICE="${KNOWFLOW_SYSTEMD_SERVICE:-knowflow-ai.service}"
 VENV_DIR="${KNOWFLOW_VENV_DIR:-/opt/knowflow-ai/venv}"
 HEALTH_URL="${KNOWFLOW_HEALTH_URL:-http://127.0.0.1:8010/api/health}"

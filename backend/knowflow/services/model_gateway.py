@@ -26,6 +26,106 @@ RATE_LIMIT_RETRY_BASE_SECONDS = 5.0
 TRANSIENT_RETRY_BASE_SECONDS = 1.0
 
 
+def model_connection_diagnostic(status: Any, detail: Any) -> dict[str, Any]:
+    """Classify model connection results without exposing provider-specific secrets."""
+
+    normalized_status = str(status or "").strip().lower()
+    text = " ".join(str(detail or "").split())[:800]
+    lowered = text.lower()
+    if normalized_status in {"available", "success"}:
+        return {"code": "available", "retryable": False}
+    if "invalid temperature" in lowered or "unsupported parameter" in lowered:
+        code = "incompatible_parameters"
+    elif "http 401" in lowered or "authentication" in lowered or "unauthorized" in lowered:
+        code = "authentication_failed"
+    elif "http 403" in lowered or "forbidden" in lowered:
+        code = "access_denied"
+    elif "http 404" in lowered or "model_not_found" in lowered or "not found" in lowered:
+        code = "not_found"
+    elif "http 429" in lowered or "rate_limit" in lowered:
+        code = "rate_limited"
+    elif (
+        ("not support" in lowered or "unsupported" in lowered)
+        and ("chat completion" in lowered or "responses" in lowered or "protocol" in lowered)
+    ):
+        code = "protocol_unsupported"
+    elif (
+        "http 503" in lowered
+        or "no available channel" in lowered
+        or "unavailable channel" in lowered
+    ):
+        code = "upstream_unavailable"
+    elif "timeout" in lowered or "timed out" in lowered or "connection error" in lowered:
+        code = "network_error"
+    elif "http 400" in lowered or "invalid_request" in lowered:
+        code = "invalid_request"
+    else:
+        code = "connection_failed"
+    return {
+        "code": code,
+        "retryable": code in {"rate_limited", "upstream_unavailable", "network_error"},
+    }
+
+
+PROTOCOL_FALLBACK_CODES = {
+    "access_denied",
+    "not_found",
+    "protocol_unsupported",
+    "upstream_unavailable",
+    "invalid_request",
+    "incompatible_parameters",
+    "connection_failed",
+}
+
+
+def test_model_protocols(gateway: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """Test the selected chat protocol and probe the alternative when useful.
+
+    The selected protocol remains authoritative. A successful alternative is
+    returned as an explicit recommendation and is never persisted silently.
+    """
+
+    selected_mode = str(config.get("api_mode") or "chat_completions")
+    status, message = gateway.test(config)
+    diagnostic = model_connection_diagnostic(status, message)
+    selected = {
+        "apiMode": selected_mode,
+        "status": status,
+        "message": message,
+        **diagnostic,
+    }
+    result: dict[str, Any] = {
+        **selected,
+        "checkedProtocols": [selected],
+    }
+    if (
+        str(config.get("model_type") or "chat") != "chat"
+        or status == "available"
+        or diagnostic["code"] not in PROTOCOL_FALLBACK_CODES
+    ):
+        return result
+
+    alternate_mode = (
+        "chat_completions" if selected_mode == "responses" else "responses"
+    )
+    alternate_config = {**config, "api_mode": alternate_mode}
+    alternate_status, alternate_message = gateway.test(alternate_config)
+    alternate_diagnostic = model_connection_diagnostic(
+        alternate_status,
+        alternate_message,
+    )
+    alternate = {
+        "apiMode": alternate_mode,
+        "status": alternate_status,
+        "message": alternate_message,
+        **alternate_diagnostic,
+    }
+    result["checkedProtocols"].append(alternate)
+    if alternate_status == "available":
+        result["recommendedApiMode"] = alternate_mode
+    return result
+
+
 class ChatCompletionsStreamAccumulator:
     """Build one assistant message from OpenAI-compatible chat SSE chunks."""
 

@@ -1,3 +1,4 @@
+import json
 from queue import Empty, Queue
 from threading import Event, Thread
 from datetime import datetime, timezone
@@ -10,6 +11,12 @@ from ..services.session_portability import (
     render_session_markdown,
     safe_export_filename,
     unique_branch_title,
+)
+from ..services.context_compaction import (
+    ContextCompactionError,
+    SUMMARY_MARKER,
+    compact_context,
+    context_status,
 )
 from ..services.workspace_references import has_workspace_references
 from .extensions import agent_chat, agent_chat_stream
@@ -424,16 +431,16 @@ def read_message_memory_activity(
 
 
 @router.get("/api/sessions", tags=SESSION_TAGS, summary="List chat sessions")
-def list_sessions(request: Request) -> dict[str, Any]:
+def list_sessions(request: Request, archived: bool = False) -> dict[str, Any]:
     user_id = current_user_id(request)
     rows = fetch_all(
         """
-        SELECT id, title, knowledge_base_id, chat_model_config_id, created_at, updated_at
+        SELECT id, title, is_pinned, is_archived, knowledge_base_id, chat_model_config_id, created_at, updated_at
         FROM chat_session
-        WHERE user_id=:user_id
-        ORDER BY updated_at DESC
+        WHERE user_id=:user_id AND is_archived=:is_archived
+        ORDER BY is_pinned DESC, updated_at DESC
         """,
-        {"user_id": user_id},
+        {"user_id": user_id, "is_archived": 1 if archived else 0},
     )
     latest_runs = _latest_session_runs(user_id)
     for row in rows:
@@ -520,6 +527,170 @@ def read_session_messages(session_id: str, request: Request) -> dict[str, Any]:
     return api_success(messages)
 
 
+def _session_context_status(
+    session_id: str,
+    user_id: int,
+) -> dict[str, Any]:
+    session, _, messages = get_session_context_messages(session_id, user_id)
+    count_row = fetch_one(
+        "SELECT COUNT(*) AS total FROM chat_message WHERE session_id=:session_id",
+        {"session_id": session_id},
+    ) or {}
+    metadata = session_context_metadata(session)
+    status = context_status(
+        messages,
+        max_tokens=AGENT_CONTEXT_MAX_TOKENS,
+    )
+    status.update(
+        {
+            "compacted": bool(session.get("context_summary")),
+            "compaction": metadata,
+            "transcriptMessageCount": int(count_row.get("total") or 0),
+        }
+    )
+    return status
+
+
+@router.get(
+    "/api/sessions/{session_id}/context",
+    tags=SESSION_TAGS,
+    summary="Read session context status",
+)
+def read_session_context(session_id: str, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    return api_success(_session_context_status(session_id, user_id))
+
+
+@router.post(
+    "/api/sessions/{session_id}/context/compact",
+    tags=SESSION_TAGS,
+    summary="Compact early session context",
+)
+def compact_session_context(
+    session_id: str,
+    payload: SessionContextCompactIn,
+    request: Request,
+) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    session, rows, messages = get_session_context_messages(session_id, user_id)
+    active_run = agent_runs.get_open_run_for_session(user_id, session_id)
+    if active_run is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_context_active",
+                "message": "Wait for the current Agent run to finish before compacting context.",
+                "data": None,
+            },
+        )
+    chat_config = get_model_config(
+        session.get("chat_model_config_id"),
+        "chat",
+        user_id,
+    )
+    if chat_config is None or not cipher.decrypt(chat_config.get("api_key_cipher")):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_context_model_required",
+                "message": "Select an available chat model for this session before compacting context.",
+                "data": None,
+            },
+        )
+    try:
+        result = compact_context(
+            messages,
+            gateway=gateway,
+            config=chat_config,
+            max_tokens=AGENT_CONTEXT_MAX_TOKENS,
+            custom_instructions=payload.instructions,
+            reason="manual",
+        )
+    except ContextCompactionError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "session_context_compaction_failed",
+                "message": "Context compaction failed; the original conversation is unchanged.",
+                "data": None,
+            },
+        ) from exc
+    if not result.compacted:
+        return api_success(
+            {
+                "compacted": False,
+                "reason": result.reason,
+                "metadata": {},
+                "status": _session_context_status(session_id, user_id),
+            }
+        )
+    summary_message = next(
+        (
+            item for item in result.messages
+            if item.get("role") == "system"
+            and SUMMARY_MARKER in str(item.get("content") or "")
+        ),
+        None,
+    )
+    if summary_message is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "session_context_summary_missing",
+                "message": "The compaction result did not contain a restorable summary; the original conversation is unchanged.",
+                "data": None,
+            },
+        )
+    recent_ids = {
+        int(item["id"])
+        for item in result.messages
+        if item.get("id") is not None
+    }
+    compacted_row_ids = [
+        int(row["id"]) for row in rows if int(row["id"]) not in recent_ids
+    ]
+    if not compacted_row_ids:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "session_context_boundary_missing",
+                "message": "A safe compaction boundary could not be determined; the original conversation is unchanged.",
+                "data": None,
+            },
+        )
+    boundary = max(compacted_row_ids)
+    metadata = {
+        **result.metadata,
+        "boundaryMessageId": boundary,
+    }
+    execute(
+        """
+        UPDATE chat_session
+        SET context_summary=:summary,
+            context_summary_metadata_json=:metadata,
+            context_summary_up_to_message_id=:boundary,
+            updated_at=:updated_at
+        WHERE id=:session_id AND user_id=:user_id
+        """,
+        {
+            "summary": str(summary_message.get("content") or ""),
+            "metadata": json.dumps(metadata, ensure_ascii=False),
+            "boundary": boundary,
+            "updated_at": now_str(),
+            "session_id": session_id,
+            "user_id": user_id,
+        },
+    )
+    return api_success(
+        {
+            "compacted": True,
+            "reason": result.reason,
+            "metadata": metadata,
+            "status": _session_context_status(session_id, user_id),
+        }
+    )
+
+
 @router.post(
     "/api/sessions/{session_id}/branch",
     tags=SESSION_TAGS,
@@ -573,16 +744,61 @@ def branch_session(
         """,
         {"session_id": session_id},
     )
+    restored_question = ""
+    if payload.beforeMessageId is not None:
+        branch_point = next(
+            (
+                message
+                for message in source_messages
+                if int(message["id"]) == payload.beforeMessageId
+            ),
+            None,
+        )
+        if branch_point is None or branch_point.get("role") != "user":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "session_branch_point_not_found",
+                    "message": "The selected user message is not in this session.",
+                    "data": None,
+                },
+            )
+        restored_question = str(branch_point.get("content") or "")
+        source_messages = [
+            message
+            for message in source_messages
+            if int(message["id"]) < payload.beforeMessageId
+        ]
+    source_context_boundary = int(
+        source.get("context_summary_up_to_message_id") or 0
+    )
+    inherit_context = bool(
+        source.get("context_summary")
+        and source_context_boundary
+        and (
+            payload.beforeMessageId is None
+            or payload.beforeMessageId > source_context_boundary
+        )
+        and any(
+            int(message["id"]) == source_context_boundary
+            for message in source_messages
+        )
+    )
     with db.engine.begin() as conn:
         conn.execute(
             text(
                 """
                 INSERT INTO chat_session (
                   id, user_id, title, knowledge_base_id,
-                  chat_model_config_id, created_at, updated_at
+                  chat_model_config_id, context_summary,
+                  context_summary_metadata_json,
+                  context_summary_up_to_message_id,
+                  created_at, updated_at
                 ) VALUES (
                   :id, :user_id, :title, :knowledge_base_id,
-                  :chat_model_config_id, :created_at, :updated_at
+                  :chat_model_config_id, :context_summary,
+                  :context_summary_metadata_json, NULL,
+                  :created_at, :updated_at
                 )
                 """
             ),
@@ -592,6 +808,14 @@ def branch_session(
                 "title": title,
                 "knowledge_base_id": source.get("knowledge_base_id"),
                 "chat_model_config_id": source.get("chat_model_config_id"),
+                "context_summary": (
+                    source.get("context_summary") if inherit_context else None
+                ),
+                "context_summary_metadata_json": (
+                    source.get("context_summary_metadata_json")
+                    if inherit_context
+                    else None
+                ),
                 "created_at": created_at,
                 "updated_at": created_at,
             },
@@ -623,6 +847,20 @@ def branch_session(
                 },
             )
             message_id_map[int(message["id"])] = int(inserted.lastrowid)
+        if inherit_context:
+            conn.execute(
+                text(
+                    """
+                    UPDATE chat_session
+                    SET context_summary_up_to_message_id=:boundary
+                    WHERE id=:session_id
+                    """
+                ),
+                {
+                    "boundary": message_id_map[source_context_boundary],
+                    "session_id": new_session_id,
+                },
+            )
         for old_id, new_id in message_id_map.items():
             references = conn.execute(
                 text(
@@ -662,6 +900,8 @@ def branch_session(
             "updated_at": created_at,
             "sourceSessionId": session_id,
             "messageCount": len(source_messages),
+            "restoredQuestion": restored_question,
+            "rewindMessageId": payload.beforeMessageId,
         }
     )
 
@@ -702,6 +942,75 @@ def rename_session(session_id: str, payload: SessionUpdate, request: Request) ->
     get_session_for_user(session_id, user_id)
     execute("UPDATE chat_session SET title=:title, updated_at=:updated_at WHERE id=:id AND user_id=:user_id", {"title": payload.title, "updated_at": now_str(), "id": session_id, "user_id": user_id})
     return api_success(True)
+
+
+@router.put("/api/sessions/{session_id}/pin", tags=SESSION_TAGS, summary="Pin or unpin a session")
+def pin_session(session_id: str, payload: SessionPinUpdate, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    session = get_session_for_user(session_id, user_id)
+    if payload.pinned and bool(session.get("is_archived")):
+        raise HTTPException(status_code=409, detail="Restore the session before pinning it.")
+    execute(
+        "UPDATE chat_session SET is_pinned=:is_pinned WHERE id=:id AND user_id=:user_id",
+        {
+            "is_pinned": 1 if payload.pinned else 0,
+            "id": session_id,
+            "user_id": user_id,
+        },
+    )
+    return api_success({"id": session_id, "pinned": payload.pinned})
+
+
+@router.put("/api/sessions/{session_id}/archive", tags=SESSION_TAGS, summary="Archive or restore a session")
+def archive_session(session_id: str, payload: SessionArchiveUpdate, request: Request) -> dict[str, Any]:
+    user_id = current_user_id(request)
+    get_session_for_user(session_id, user_id)
+    updated = execute_rowcount(
+        """
+        UPDATE chat_session
+        SET is_archived=:is_archived,
+            is_pinned=CASE WHEN :is_archived=1 THEN 0 ELSE is_pinned END
+        WHERE id=:id AND user_id=:user_id
+          AND (
+            :is_archived=0
+            OR NOT EXISTS (
+              SELECT 1 FROM agent_run
+              WHERE session_id=:id AND user_id=:user_id
+                AND status IN ('planning', 'waiting_start', 'running', 'waiting_approval', 'waiting_input')
+            )
+          )
+        """,
+        {
+            "is_archived": 1 if payload.archived else 0,
+            "id": session_id,
+            "user_id": user_id,
+        },
+    )
+    if payload.archived and updated == 0:
+        active = fetch_one(
+            """
+            SELECT id FROM agent_run
+            WHERE session_id=:session_id AND user_id=:user_id
+              AND status IN ('planning', 'waiting_start', 'running', 'waiting_approval', 'waiting_input')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            {"session_id": session_id, "user_id": user_id},
+        )
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail="Wait for the active run to finish before archiving this session.",
+            )
+    return api_success(
+        {
+            "id": session_id,
+            "archived": payload.archived,
+            "pinned": False if payload.archived else bool(
+                get_session_for_user(session_id, user_id).get("is_pinned")
+            ),
+        }
+    )
 
 
 @router.delete("/api/sessions/{session_id}", tags=SESSION_TAGS, summary="Delete a session")
@@ -759,7 +1068,8 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
                 "data": None,
             },
         ) from exc
-    execute(
+    params = {"session_id": session_id, "user_id": user_id}
+    statements = (
         """
         DELETE FROM agent_tool_operation
         WHERE run_id IN (
@@ -767,9 +1077,6 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run_event
         WHERE run_id IN (
@@ -777,9 +1084,6 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run_step
         WHERE run_id IN (
@@ -787,24 +1091,31 @@ def delete_session(session_id: str, request: Request) -> dict[str, Any]:
           WHERE session_id=:session_id AND user_id=:user_id
         )
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute(
         """
         DELETE FROM agent_run
         WHERE session_id=:session_id AND user_id=:user_id
         """,
-        {"session_id": session_id, "user_id": user_id},
-    )
-    execute("DELETE FROM agent_tool_call WHERE session_id=:session_id", {"session_id": session_id})
-    execute(
+        "DELETE FROM agent_tool_call WHERE session_id=:session_id",
         """
         DELETE FROM memory_operation
         WHERE session_id=:session_id AND user_id=:user_id
         """,
-        {"session_id": session_id, "user_id": user_id},
+        """
+        DELETE FROM retrieval_run
+        WHERE user_id=:user_id AND message_id IN (
+          SELECT id FROM chat_message WHERE session_id=:session_id
+        )
+        """,
+        """
+        DELETE FROM message_reference
+        WHERE message_id IN (
+          SELECT id FROM chat_message WHERE session_id=:session_id
+        )
+        """,
+        "DELETE FROM chat_message WHERE session_id=:session_id",
+        "DELETE FROM chat_session WHERE id=:session_id AND user_id=:user_id",
     )
-    execute("DELETE FROM message_reference WHERE message_id IN (SELECT id FROM chat_message WHERE session_id=:session_id)", {"session_id": session_id})
-    execute("DELETE FROM chat_message WHERE session_id=:session_id", {"session_id": session_id})
-    execute("DELETE FROM chat_session WHERE id=:session_id", {"session_id": session_id})
+    with db.engine.begin() as conn:
+        for statement in statements:
+            conn.execute(text(statement), params)
     return api_success(True)

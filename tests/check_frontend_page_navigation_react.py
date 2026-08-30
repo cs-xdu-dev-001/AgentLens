@@ -32,7 +32,13 @@ def main() -> None:
     require("frontend/react/src/App.jsx", "setActivePage", "React shell page setter")
     require("frontend/react/src/App.jsx", "knowflow:react-page-change", "React shell receives page navigation")
     require("frontend/react/src/App.jsx", "knowflow:react-page-activated", "React shell receives controller page activation")
-    require("frontend/react/src/App.jsx", "<Sidebar activePage={activePage}", "Sidebar receives active page prop")
+    require("frontend/react/src/App.jsx", "activePage={activePage}", "Sidebar receives active page prop")
+    require("frontend/react/src/App.jsx", "pageModuleLoaders", "deferred page module catalog")
+    require("frontend/react/src/App.jsx", "lazyNamed", "named page lazy loading")
+    require("frontend/react/src/App.jsx", "visitedPages", "visited page state preservation")
+    require("frontend/react/src/App.jsx", "onPageIntent={preloadPageModule}", "navigation intent prefetch")
+    require("frontend/react/src/components/Sidebar.jsx", "onMouseEnter={() => onPageIntent?.(tool.page)}", "pointer page prefetch")
+    require("frontend/react/src/components/Sidebar.jsx", "onFocus={() => onPageIntent?.(tool.page)}", "keyboard page prefetch")
     require_pattern(
         "frontend/react/src/App.jsx",
         r'<ChatPage\b[^>]*\bactive=\{activePage === "chat"\}',

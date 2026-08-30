@@ -64,8 +64,13 @@ CREATE TABLE IF NOT EXISTS chat_session (
   id TEXT PRIMARY KEY,
   user_id INTEGER,
   title TEXT,
+  is_pinned INTEGER NOT NULL DEFAULT 0,
+  is_archived INTEGER NOT NULL DEFAULT 0,
   knowledge_base_id INTEGER,
   chat_model_config_id INTEGER,
+  context_summary TEXT,
+  context_summary_metadata_json TEXT,
+  context_summary_up_to_message_id INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -429,8 +434,13 @@ CREATE TABLE IF NOT EXISTS chat_session (
   id VARCHAR(64) PRIMARY KEY,
   user_id BIGINT,
   title VARCHAR(255),
+  is_pinned TINYINT(1) NOT NULL DEFAULT 0,
+  is_archived TINYINT(1) NOT NULL DEFAULT 0,
   knowledge_base_id BIGINT,
   chat_model_config_id BIGINT,
+  context_summary LONGTEXT,
+  context_summary_metadata_json LONGTEXT,
+  context_summary_up_to_message_id BIGINT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

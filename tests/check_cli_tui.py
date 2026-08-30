@@ -1223,11 +1223,35 @@ def main() -> None:
 
         def request(self, method, path):
             self.calls.append((method, path))
+            if path.endswith("/messages"):
+                return [
+                    {"role": "user", "content": "普通对话"},
+                    {"role": "assistant", "content": "普通回复"},
+                ]
 
-        def list_sessions(self, limit=20):
-            return self.session_rows[:limit]
+        def delete_session(self, session_id):
+            self.calls.append(("DELETE", f"/api/sessions/{session_id}"))
+            return True
+
+        def list_sessions(self, limit=20, *, archived=False):
+            return [
+                {
+                    "id": "session_without_run",
+                    "title": "普通Web对话",
+                    "is_pinned": False,
+                    "is_archived": bool(archived),
+                    "updated_at": "2026-08-27 10:00:00",
+                    "latest_run": None,
+                },
+                *self.session_rows,
+            ][:limit]
 
         def session_messages(self, session_id):
+            if session_id == "session_without_run":
+                return [
+                    {"role": "user", "content": "普通对话"},
+                    {"role": "assistant", "content": "普通回复"},
+                ]
             return self.messages_by_session[session_id]
 
         def get_run(self, run_id):
@@ -1259,15 +1283,60 @@ def main() -> None:
         model_id=None,
         skill_id=None,
     )
+    remote_sessions = tui_backend.list_sessions()
+    assert remote_sessions[0] == {
+        "runId": "session_without_run",
+        "sessionId": "session_without_run",
+        "title": "普通Web对话",
+        "pinned": False,
+        "archived": False,
+        "status": "completed",
+        "updatedAt": 1787824800.0,
+        "cwd": "",
+        "answer": "",
+    }
+    restored = tui_backend.restore_session(
+        "session_without_run",
+        lambda _event: None,
+        session_id="session_without_run",
+        status="completed",
+    )
+    assert restored.result["restored"] is True
+    assert restored.result["messages"][-1]["content"] == "普通回复"
+    deleted = tui_backend.delete_session(
+        "session_without_run",
+        "session_without_run",
+    )
+    assert deleted == {
+        "runId": "session_without_run",
+        "sessionId": "session_without_run",
+        "deleted": True,
+        "current": True,
+    }
+    assert remote_client.calls[-1] == (
+        "DELETE",
+        "/api/sessions/session_without_run",
+    )
+    tui_backend.current_run_id = "unrelated_run"
+    tui_backend.session_id = "current_session"
+    assert tui_backend.delete_session(session_id="other_session")["current"] is False
+    assert remote_client.calls[-1] == (
+        "DELETE",
+        "/api/sessions/other_session",
+    )
+    remote_client.calls.clear()
     assert tui_backend.cancel("run_cancel")
     assert remote_client.calls == [
         ("POST", "/api/agent/runs/run_cancel/cancel")
     ]
     assert not tui_backend.cancel(None)
     remote_sessions = tui_backend.list_sessions()
-    assert remote_sessions[0]["runId"] == "session_remote"
-    assert remote_sessions[0]["status"] == "completed"
-    assert isinstance(remote_sessions[0]["updatedAt"], float)
+    remote_run_session = next(
+        item for item in remote_sessions if item["sessionId"] == "session_remote"
+    )
+    assert remote_run_session["runId"] == "run_remote_complete"
+    assert remote_run_session["status"] == "completed"
+    assert isinstance(remote_run_session["updatedAt"], float)
     restored = tui_backend.restore_session("session_remote", lambda _event: None)
     assert restored.result["restored"] is True
     assert restored.result["messages"][-1]["content"] == "旧回答"
@@ -1334,6 +1403,9 @@ def main() -> None:
             self.cancelled.append(run_id)
             return True
 
+        def delete_session(self, run_id):
+            return {"runId": run_id, "deleted": True}
+
     local_agent = FakeLocalAgent()
     local_backend = TuiBackend(
         local_agent=local_agent,
@@ -1344,6 +1416,13 @@ def main() -> None:
     )
     assert local_backend.cancel(None)
     assert local_agent.cancelled == [None]
+    local_backend.current_run_id = "run_local"
+    assert local_backend.delete_session("run_local") == {
+        "runId": "run_local",
+        "sessionId": "",
+        "deleted": True,
+        "current": True,
+    }
     original_data_home = os.environ.get("XDG_DATA_HOME")
     with TemporaryDirectory() as data_home:
         os.environ["XDG_DATA_HOME"] = data_home

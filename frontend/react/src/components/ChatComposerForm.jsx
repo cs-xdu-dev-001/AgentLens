@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
+import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
@@ -22,6 +23,7 @@ import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
+const doubleEscapeWindowMs = 800;
 const queuePriorityLabels = Object.freeze({ now: "立即", next: "接下来", later: "稍后" });
 const queueBlockLabels = Object.freeze({
   approval: "等待权限确认",
@@ -29,6 +31,7 @@ const queueBlockLabels = Object.freeze({
   run: "等待当前任务继续",
   failed: "发送失败，队列已暂停",
   cancelled: "已停止，待发送已暂停",
+  restored: "已恢复，确认后继续",
 });
 const idleAgentState = Object.freeze({
   mode: "idle",
@@ -40,6 +43,7 @@ const idleAgentState = Object.freeze({
   recoveryActions: [],
   failureCode: "",
   failedStepTitle: "",
+  suggestedPrompt: "",
 });
 
 function pickKnowledgeValue(knowledgeBases, currentValue) {
@@ -62,6 +66,7 @@ export function ChatComposerForm() {
   const [pickerQuery, setPickerQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
   const [slashRange, setSlashRange] = useState(null);
+  const [commandHelpOpen, setCommandHelpOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionStatus, setMentionStatus] = useState("idle");
   const [mentionPaths, setMentionPaths] = useState([]);
@@ -76,9 +81,13 @@ export function ChatComposerForm() {
   const [queuedChats, setQueuedChats] = useState([]);
   const [queuePaused, setQueuePaused] = useState(false);
   const [queueBlockReason, setQueueBlockReason] = useState("");
+  const [queueDurable, setQueueDurable] = useState(false);
   const [switchingSession, setSwitchingSession] = useState(false);
   const [agentState, setAgentState] = useState(idleAgentState);
+  const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState("");
+  const [promptStash, setPromptStash] = useState(null);
   const [contextStatus, setContextStatus] = useState(null);
+  const [contextOperation, setContextOperation] = useState({ status: "idle", message: "" });
   const [commandUsage, setCommandUsage] = useState({});
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
@@ -88,6 +97,9 @@ export function ChatComposerForm() {
   const mentionsLoadedAtRef = useRef(0);
   const requestGenerationRef = useRef(0);
   const agentStateResetRef = useRef(null);
+  const promptStashRef = useRef(null);
+  const pendingStashRestoreRef = useRef(false);
+  const lastEmptyEscapeAtRef = useRef(0);
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -102,12 +114,44 @@ export function ChatComposerForm() {
     setSlashRange(null);
   }, []);
 
+  const closeCommandHelp = useCallback((restoreFocus = true) => {
+    setCommandHelpOpen(false);
+    if (!restoreFocus) return;
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
   const closeMentionPicker = useCallback(() => {
     setMentionOpen(false);
     setMentionQuery("");
     setMentionRange(null);
     setMentionActiveIndex(-1);
   }, []);
+
+  const updatePromptStash = useCallback((value) => {
+    promptStashRef.current = value;
+    setPromptStash(value);
+  }, []);
+
+  const restorePromptStash = useCallback(() => {
+    const stash = promptStashRef.current;
+    if (!stash) return false;
+    updatePromptStash(null);
+    setQuestion(stash.question);
+    setSelectedSkill(stash.skill || null);
+    window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+      detail: { attachments: stash.attachments || [] },
+    }));
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(stash.question.length, stash.question.length);
+      resizeTextarea(textarea);
+    });
+    return true;
+  }, [closeMentionPicker, closeSkillPicker, updatePromptStash]);
 
   const loadAvailableSkills = useCallback(async () => {
     const requestId = ++requestGenerationRef.current;
@@ -155,6 +199,32 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-focus", handleComposerFocus);
     return () => window.removeEventListener("knowflow:react-composer-focus", handleComposerFocus);
+  }, []);
+
+  useEffect(() => {
+    const handleContextStatus = (event) => {
+      const next = event.detail?.status;
+      if (!next || typeof next !== "object" || !Number(next.maxTokens)) {
+        setContextStatus(null);
+        return;
+      }
+      setContextStatus({
+        ...next,
+        trimmed: Boolean(next.trimmed || next.compacted || next.contextTrimmed),
+      });
+    };
+    const handleContextOperation = (event) => {
+      setContextOperation({
+        status: String(event.detail?.status || "idle"),
+        message: String(event.detail?.message || ""),
+      });
+    };
+    window.addEventListener("knowflow:react-context-status-updated", handleContextStatus);
+    window.addEventListener("knowflow:react-context-compact-state", handleContextOperation);
+    return () => {
+      window.removeEventListener("knowflow:react-context-status-updated", handleContextStatus);
+      window.removeEventListener("knowflow:react-context-compact-state", handleContextOperation);
+    };
   }, []);
 
   useEffect(() => {
@@ -214,6 +284,31 @@ export function ChatComposerForm() {
       const shouldFocus = Boolean(event.detail?.focus);
       const nextQuestion = String(event.detail?.question || "");
       const nextSkillId = event.detail?.skillId ?? null;
+      const stashed = promptStashRef.current;
+      if (pendingStashRestoreRef.current && !nextQuestion && stashed) {
+        pendingStashRestoreRef.current = false;
+        updatePromptStash(null);
+        setQuestion(stashed.question);
+        setSelectedSkill(stashed.skill || null);
+        closeSkillPicker();
+        closeMentionPicker();
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+            detail: { attachments: stashed.attachments || [] },
+          }));
+          window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
+            detail: { message: "已自动恢复暂存草稿" },
+          }));
+        }, 0);
+        window.requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          textarea.setSelectionRange(stashed.question.length, stashed.question.length);
+          resizeTextarea(textarea);
+        });
+        return;
+      }
       setQuestion(nextQuestion);
       setSelectedSkill(
         nextSkillId === null
@@ -229,7 +324,7 @@ export function ChatComposerForm() {
     };
     window.addEventListener("knowflow:react-composer-reset", handleComposerReset);
     return () => window.removeEventListener("knowflow:react-composer-reset", handleComposerReset);
-  }, [availableSkills, closeMentionPicker, closeSkillPicker]);
+  }, [availableSkills, closeMentionPicker, closeSkillPicker, updatePromptStash]);
 
   useEffect(() => {
     const handleAttachmentsUpdated = (event) => {
@@ -286,6 +381,7 @@ export function ChatComposerForm() {
           : [],
         failureCode: String(detail.failureCode || ""),
         failedStepTitle: String(detail.failedStepTitle || ""),
+        suggestedPrompt: String(detail.suggestedPrompt || ""),
       };
       setContextStatus(
         detail.context && Number(detail.context.maxTokens) > 0
@@ -302,13 +398,18 @@ export function ChatComposerForm() {
         && current.recoveryActions.join(",") === next.recoveryActions.join(",")
         && current.failureCode === next.failureCode
         && current.failedStepTitle === next.failedStepTitle
+        && current.suggestedPrompt === next.suggestedPrompt
           ? current
           : next
       ));
       if (["completed", "cancelled"].includes(next.mode)) {
         agentStateResetRef.current = window.setTimeout(() => {
           agentStateResetRef.current = null;
-          setAgentState(idleAgentState);
+          setAgentState((current) => ({
+            ...idleAgentState,
+            runId: current.runId,
+            suggestedPrompt: current.suggestedPrompt,
+          }));
         }, 2400);
       }
     };
@@ -330,10 +431,40 @@ export function ChatComposerForm() {
       setQueuedChats(Array.isArray(event.detail?.items) ? event.detail.items : []);
       setQueuePaused(Boolean(event.detail?.paused));
       setQueueBlockReason(String(event.detail?.blockedReason || ""));
+      setQueueDurable(Boolean(event.detail?.durable));
     };
     window.addEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
     return () => window.removeEventListener("knowflow:react-chat-queue-updated", handleQueueUpdated);
   }, []);
+
+  const followUpSuggestionKey = `${agentState.runId}:${agentState.suggestedPrompt}`;
+  const followUpSuggestion = !sending
+    && !switchingSession
+    && !question
+    && agentState.suggestedPrompt
+    && dismissedFollowUpKey !== followUpSuggestionKey
+      ? agentState.suggestedPrompt
+      : "";
+
+  const dismissFollowUpSuggestion = () => {
+    if (!followUpSuggestion) return;
+    setDismissedFollowUpKey(followUpSuggestionKey);
+  };
+
+  const acceptFollowUpSuggestion = () => {
+    if (!followUpSuggestion) return;
+    setDismissedFollowUpKey(followUpSuggestionKey);
+    setQuestion(followUpSuggestion);
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(followUpSuggestion.length, followUpSuggestion.length);
+      resizeTextarea(textarea);
+    });
+  };
 
   const handleComposerMenuToggle = (event) => {
     event.stopPropagation();
@@ -367,7 +498,9 @@ export function ChatComposerForm() {
       detail: { question: question.trim() },
     });
     submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    pendingStashRestoreRef.current = Boolean(promptStashRef.current);
     window.dispatchEvent(submitEvent);
+    if (pendingStashRestoreRef.current) pendingStashRestoreRef.current = false;
   };
 
   const handleStopClick = (event) => {
@@ -387,6 +520,39 @@ export function ChatComposerForm() {
     }));
   };
 
+  const notifyCommandUnavailable = (message) => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
+      detail: { message, duration: 2600, tone: "neutral" },
+    }));
+  };
+
+  const runMessageCommand = (action, unavailableMessage, args = "") => {
+    const detail = { action, args: String(args || "").trim(), handled: false };
+    window.dispatchEvent(new CustomEvent("knowflow:react-message-command", { detail }));
+    if (!detail.handled) notifyCommandUnavailable(unavailableMessage);
+  };
+
+  const handleQuickRewindEscape = () => {
+    const now = Date.now();
+    if (now - lastEmptyEscapeAtRef.current <= doubleEscapeWindowMs) {
+      lastEmptyEscapeAtRef.current = 0;
+      runMessageCommand("rewind", "当前会话还没有可回到的历史问题");
+      return;
+    }
+    lastEmptyEscapeAtRef.current = now;
+    notifyCommandUnavailable("再按一次Esc，从最近问题创建新分支");
+  };
+
+  const openArtifactCommand = () => {
+    const detail = { handled: false };
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-artifacts-open", { detail }));
+    if (!detail.handled) {
+      notifyCommandUnavailable("当前会话还没有可查看的文件变更");
+      return;
+    }
+    handleOpenAgentWorkbench();
+  };
+
   const handleRecoveryCommand = (action) => {
     const advertised = new Set(agentState.recoveryActions);
     if (action === "continue" && !advertised.has("continue") && queuePaused) {
@@ -403,7 +569,7 @@ export function ChatComposerForm() {
     }
     window.dispatchEvent(new CustomEvent("knowflow:react-agent-run-action", {
       detail: {
-        action: action === "continue" ? "resume" : "restart",
+        action: action === "continue" ? "resume" : action === "fix" ? "fix" : "restart",
         failedStepTitle: agentState.failedStepTitle,
         failureCode: agentState.failureCode || "agent_run_failed",
         messageId: agentState.messageId,
@@ -436,24 +602,30 @@ export function ChatComposerForm() {
       return;
     }
     if (command.action === "help") {
-      setQuestion("/");
-      setPickerOpen(true);
-      setPickerQuery("");
-      setActiveIndex(0);
-      setSlashRange({ start: 0, end: 1 });
-      window.requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        textarea.setSelectionRange(1, 1);
-        resizeTextarea(textarea);
-      });
+      closeSkillPicker();
+      closeMentionPicker();
+      setCommandHelpOpen(true);
+      if (!skillsLoadedRef.current && skillsStatus !== "loading") loadAvailableSkills();
       return;
     }
     if (command.action === "transcript-search") {
       window.dispatchEvent(new CustomEvent("knowflow:react-transcript-search-open", {
         detail: { query: String(args || "").trim() },
       }));
+      return;
+    }
+    if (command.action.startsWith("message-")) {
+      const action = command.action.slice("message-".length);
+      const unavailableMessages = {
+        copy: "当前会话还没有可复制的完整回答",
+        edit: "当前会话还没有可编辑的问题",
+        rewind: "当前会话还没有可回到的历史问题",
+      };
+      runMessageCommand(action, unavailableMessages[action], args);
+      return;
+    }
+    if (command.action.startsWith("artifacts-")) {
+      openArtifactCommand();
       return;
     }
     if (command.action.startsWith("session-")) {
@@ -507,7 +679,7 @@ export function ChatComposerForm() {
       window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
       return;
     }
-    if (["continue", "retry"].includes(command.action)) {
+    if (["continue", "retry", "fix"].includes(command.action)) {
       handleRecoveryCommand(command.action);
       return;
     }
@@ -564,11 +736,69 @@ export function ChatComposerForm() {
 
   const handleChatKeyDown = (event) => {
     if (event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229) return;
+    if (event.key !== "Escape") lastEmptyEscapeAtRef.current = 0;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (question.trim() || attachments.length || selectedSkill) {
+        updatePromptStash({
+          question,
+          skill: selectedSkill,
+          attachments: attachments.map((attachment) => ({ ...attachment })),
+        });
+        setQuestion("");
+        setSelectedSkill(null);
+        window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+          detail: { attachments: [] },
+        }));
+        closeSkillPicker();
+        closeMentionPicker();
+        window.requestAnimationFrame(() => resizeTextarea());
+      } else {
+        restorePromptStash();
+      }
+      return;
+    }
     if (event.key === "Tab" && event.shiftKey) {
       event.preventDefault();
       closeSkillPicker();
       closeMentionPicker();
       cycleComposerPermissionMode();
+      return;
+    }
+    if (
+      event.key === "Tab"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && followUpSuggestion
+    ) {
+      event.preventDefault();
+      acceptFollowUpSuggestion();
+      return;
+    }
+    if (
+      event.key === "Escape"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && followUpSuggestion
+    ) {
+      event.preventDefault();
+      dismissFollowUpSuggestion();
+      return;
+    }
+    if (
+      event.key === "Escape"
+      && !question
+      && !pickerOpen
+      && !mentionOpen
+      && !menuOpen
+      && !sending
+      && !switchingSession
+    ) {
+      event.preventDefault();
+      if (followUpSuggestion) setDismissedFollowUpKey(followUpSuggestionKey);
+      handleQuickRewindEscape();
       return;
     }
     if (mentionOpen) {
@@ -657,7 +887,9 @@ export function ChatComposerForm() {
       detail: { question: question.trim() },
     });
     submitEvent.detail.skillId = selectedSkill?.id ?? null;
+    pendingStashRestoreRef.current = Boolean(promptStashRef.current);
     window.dispatchEvent(submitEvent);
+    if (pendingStashRestoreRef.current) pendingStashRestoreRef.current = false;
   };
 
   const filteredSkills = useMemo(() => {
@@ -678,6 +910,16 @@ export function ChatComposerForm() {
       usage: commandUsage,
     }),
     [agentState.recoveryActions, commandUsage, pickerQuery, queuePaused, sending],
+  );
+
+  const helpCommands = useMemo(
+    () => composerCommandSuggestions("", {
+      sending,
+      recoveryActions: agentState.recoveryActions,
+      queuePaused,
+      usage: commandUsage,
+    }),
+    [agentState.recoveryActions, commandUsage, queuePaused, sending],
   );
 
   const slashOptions = useMemo(() => [
@@ -789,6 +1031,24 @@ export function ChatComposerForm() {
     });
   };
 
+  const takeHelpCommand = (command) => {
+    const completed = `${command.value} `;
+    setQuestion(completed);
+    closeCommandHelp(false);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(completed.length, completed.length);
+      resizeTextarea(textarea);
+    });
+  };
+
+  const takeHelpSkill = (skill) => {
+    setSelectedSkill(skill);
+    closeCommandHelp();
+  };
+
   const completeWorkspaceMention = () => {
     if (!mentionRange || !filteredMentionPaths.length) return;
     const commonPrefix = workspaceMentionCommonPrefix(filteredMentionPaths);
@@ -817,6 +1077,7 @@ export function ChatComposerForm() {
 
   const handleManageSkills = () => {
     closeSkillPicker();
+    closeCommandHelp(false);
     window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
       detail: { page: "skills" },
     }));
@@ -842,6 +1103,7 @@ export function ChatComposerForm() {
   const queueHeading = queuePaused
     ? `${queueBlockLabels[queueBlockReason] || "待发送已暂停"} · ${queuedChats.length}`
     : `接下来 ${queuedChats.length}`;
+  const queueStorageLabel = queueDurable ? "已保存" : "仅本页";
   const canResumeQueue = queuePaused
     && !["approval", "question", "run"].includes(queueBlockReason);
   const queueInteractionBlocked = ["approval", "question", "run"].includes(
@@ -866,9 +1128,20 @@ export function ChatComposerForm() {
             actionable: false,
           }
         : idleAgentState;
-
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
+      {commandHelpOpen ? (
+        <ComposerCommandHelp
+          commands={helpCommands}
+          skills={availableSkills}
+          skillsStatus={skillsStatus}
+          onClose={closeCommandHelp}
+          onCommand={takeHelpCommand}
+          onSkill={takeHelpSkill}
+          onRetrySkills={loadAvailableSkills}
+          onManageSkills={handleManageSkills}
+        />
+      ) : null}
       {mentionOpen ? (
         <WorkspaceMentionPicker
           paths={filteredMentionPaths}
@@ -893,6 +1166,7 @@ export function ChatComposerForm() {
           <div className={"composer-queue-heading"}>
             <strong>{queueHeading}</strong>
             <span>
+              <span className={"composer-queue-storage"}>{queueStorageLabel}</span>
               {canResumeQueue ? (
                 <button type={"button"} onClick={() => handleQueueAction("resume")}>{"继续发送"}</button>
               ) : null}
@@ -979,6 +1253,12 @@ export function ChatComposerForm() {
           );
         })}
       </div>
+      {promptStash ? (
+        <div className={"composer-stash-notice"} role={"status"} aria-live={"polite"}>
+          <span>{"草稿已暂存，发送当前输入后自动恢复"}</span>
+          <button type={"button"} title={"Ctrl+S恢复"} onClick={() => restorePromptStash()}>{"立即恢复"}</button>
+        </div>
+      ) : null}
       {visibleAgentState.mode !== "idle" ? (
         <div
           className={`composer-agent-state ${visibleAgentState.mode}`}
@@ -995,6 +1275,31 @@ export function ChatComposerForm() {
               {visibleAgentState.mode === "failed" ? "查看恢复操作" : "查看并处理"}
             </button>
           ) : null}
+        </div>
+      ) : null}
+      {followUpSuggestion ? (
+        <div className={"composer-follow-up"} role={"status"} aria-live={"polite"}>
+          <button
+            className={"composer-follow-up-accept"}
+            type={"button"}
+            title={"放入输入框继续编辑"}
+            onClick={acceptFollowUpSuggestion}
+          >
+            <span className={"composer-follow-up-label"}>{"下一步"}</span>
+            <span className={"composer-follow-up-text"}>{followUpSuggestion}</span>
+            <kbd>{"Tab"}</kbd>
+          </button>
+          <button
+            className={"composer-follow-up-dismiss"}
+            type={"button"}
+            aria-label={"忽略下一步建议"}
+            title={"忽略建议（Esc）"}
+            onClick={dismissFollowUpSuggestion}
+          >
+            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M5 5l10 10M15 5 5 15"}></path>
+            </svg>
+          </button>
         </div>
       ) : null}
       <div className={"composer-shell"}>
@@ -1059,7 +1364,13 @@ export function ChatComposerForm() {
             ref={textareaRef}
             name={"question"}
             rows={"1"}
-            placeholder={switchingSession ? "正在打开任务…" : sending ? "继续输入，Enter加入待发送" : "输入任务，/选择命令或Skill，@引用文件"}
+            placeholder={switchingSession
+              ? "正在打开任务…"
+              : sending
+                ? "继续输入，Enter加入待发送"
+                : followUpSuggestion
+                  ? `${followUpSuggestion} · Tab采纳`
+                  : "输入任务，/选择命令或Skill，@引用文件"}
             value={question}
             disabled={switchingSession}
             aria-controls={mentionOpen ? "workspace-mention-listbox" : pickerOpen ? "composer-slash-listbox" : undefined}
@@ -1073,9 +1384,15 @@ export function ChatComposerForm() {
           />
           <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
           <ComposerModelPicker
+            contextOperation={contextOperation}
             contextStatus={contextStatus}
             disabled={sending || switchingSession}
             inputRef={textareaRef}
+            onCompactContext={() => {
+              window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
+                detail: { action: "compact", args: "" },
+              }));
+            }}
           />
         </div>
         <button

@@ -15,11 +15,11 @@
   <a href="#选择你的使用方式">快速开始</a> ·
   <a href="#linux-cli">Linux CLI</a> ·
   <a href="#linux部署">部署</a> ·
-  <a href="#进一步阅读">文档</a>
+  <a href="https://cs-xdu-dev-001.github.io/AgentLens/">在线文档</a>
 </p>
 
 <p>
-  <a href="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/KnowFlow-AI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cs-xdu-dev-001/AgentLens/actions/workflows/ci.yml/badge.svg"></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square"></a>
 </p>
 
@@ -27,7 +27,7 @@
 
 > 当前版本适合个人使用、学习Agent工程和在受控环境中测试。Agent运行时与CLI优先支持Linux；Windows可用于本地开发和浏览器访问。
 
-> 项目已更名为AgentLens。为保证现有安装和服务器升级不断链，CLI命令暂保留`knowflow`，Python包名与环境变量前缀仍为`knowflow-ai`和`KNOWFLOW_*`。
+> 项目已更名为AgentLens。正式CLI命令是`agentlens`；旧版`knowflow`命令继续兼容，已有用户可先运行一次`knowflow update`获得新入口。Python包名、配置目录与环境变量前缀仍保留`knowflow-ai`、`knowflow`和`KNOWFLOW_*`，避免升级时丢失数据。
 
 ## 核心能力
 
@@ -51,22 +51,22 @@
 
 CLI默认是本地BYOK Agent：不需要AgentLens账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
-Linux安装Node.js 22+后，`knowflow chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual knowflow chat`主动切换。脚本或管道场景使用`knowflow chat --plain`。
+Linux安装Node.js 22+后，`agentlens chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual agentlens chat`主动切换。脚本或管道场景使用`agentlens chat --plain`。
 
-Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Alt+P`或`/model`打开可搜索的聊天模型选择器，远程模式直接切换Web端已有模型配置，本地模式使用`knowflow configure`修改当前配置。`/update`可在TUI内更新CLI，完成后退出并重新运行`knowflow chat`；`/version`用于核验CLI与运行协议版本。`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器。`Ctrl+R`搜索当前工作区的持久输入历史，`/history clear`只清空该工作区的历史；`Ctrl+S`暂存或恢复当前草稿，`Shift+Enter`或`Ctrl+J`插入换行，`Ctrl+_`或`Ctrl+Z`撤销输入，`Ctrl+U/K/W`分别删除到行首、行尾或前一词，`Ctrl+Y`粘回。超过2行或800字符的粘贴内容会折叠为引用，提交、排队或恢复草稿时仍保留完整原文，避免大段日志拖慢输入区。默认使用终端主屏scrollback，滚轮浏览和拖拽选择复制都由终端负责；`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。需要固定输入框的全屏模式时使用`KNOWFLOW_CLI_FULLSCREEN=1 knowflow chat`，该模式支持`PgUp/PgDn`滚动；如需应用捕获滚轮，同时设置`KNOWFLOW_CLI_MOUSE=1`，部分终端此时需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；运行中按`Ctrl+C`终止SRT进程组并在安全边界停止Agent，空输入时连续按两次`Ctrl+C`退出。高级Allow/Ask/Deny规则编辑仍可通过Textual回退界面使用。
+Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Alt+P`或`/model`打开可搜索的聊天模型选择器，远程模式直接切换Web端已有模型配置，本地模式使用`agentlens configure`修改当前配置。`/update`可在TUI内更新CLI，完成后退出并重新运行`agentlens chat`；`/version`用于核验CLI与运行协议版本。任务完成、失败或等待操作时会发送一次终端提醒，使用`/notifications on|off|status`可在本次会话中控制；Web端只会在用户点击顶部提醒按钮并授权后发送脱敏桌面通知。`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，并可继续进入Allow/Ask/Deny工具规则；也可直接输入`/permissions allow|ask|deny <工具名>`。Deny优先拒绝，Ask始终询问，Allow自动放行，规则只作用于本次会话。`Ctrl+R`搜索当前工作区的持久输入历史，`/history clear`只清空该工作区的历史；`Ctrl+S`暂存或恢复当前草稿，`Shift+Enter`或`Ctrl+J`插入换行，`Ctrl+_`或`Ctrl+Z`撤销输入，`Ctrl+U/K/W`分别删除到行首、行尾或前一词，`Ctrl+Y`粘回。超过2行或800字符的粘贴内容会折叠为引用，提交、排队或恢复草稿时仍保留完整原文，避免大段日志拖慢输入区。默认使用终端主屏scrollback，滚轮浏览和拖拽选择复制都由终端负责；`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。需要固定输入框的全屏模式时使用`KNOWFLOW_CLI_FULLSCREEN=1 agentlens chat`，该模式支持`PgUp/PgDn`滚动；如需应用捕获滚轮，同时设置`KNOWFLOW_CLI_MOUSE=1`，部分终端此时需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；运行中按`Ctrl+C`终止SRT进程组并在安全边界停止Agent，空输入时连续按两次`Ctrl+C`退出。
 
-工作区不等于当前目录：项目根目录是任务边界，`/cd`只改变工具执行位置，`/add-dir`可为本次会话增加明确允许的目录；Header和`/workspace`会显示cwd、Git分支、dirty状态与允许目录。文件修改使用结构化编辑并保存修改前快照，`/diff`查看本轮差异，`/undo`只在文件没有被后续改动时安全撤销。会话与LangGraph checkpoint一起保存；`/resume`选择历史会话，失败后队列会暂停，使用`/continue`从失败点继续，或用`/retry tool`、`/retry turn`选择重试范围。
+工作区不等于当前目录：项目根目录是任务边界，`/workspace <项目目录>`可在TUI内原地切换项目并隔离会话、历史和队列；`/cd`只改变工具执行位置，`/add-dir`可为本次会话增加明确允许的目录。Header和`/workspace`会显示cwd、Git分支、dirty状态与允许目录。文件修改使用结构化编辑并保存修改前快照，`/diff`查看本轮差异，`/undo`只在文件没有被后续改动时安全撤销。会话与LangGraph checkpoint一起保存；在TUI内输入`/resume`，或直接运行`agentlens resume`、`agentlens chat --resume`打开当前工作区的历史会话选择器；`agentlens chat --continue`自动恢复当前工作区最近一次会话。`/rewind`选择历史问题并创建独立分支、恢复该问题到输入框，原会话和工作区文件都不会改变。失败后队列会暂停，使用`/continue`从失败点继续，或用`/retry tool`、`/retry turn`选择重试范围。原有`agentlens resume <run_id>`仍用于恢复指定的中断运行。
 
 模型上下文与完整对话记录分开保存：`/context`查看token占用、角色分布和自动压缩阈值；`/compact [补充要求]`把早期会话整理为结构化摘要，同时保留最近消息和完整原始记录。上下文达到75%时，CLI会在下一轮开始前自动压缩；压缩失败会继续使用原上下文，不会破坏会话或checkpoint。长期记忆Mem0与当前会话上下文仍是两套独立机制。
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # 新版Ink界面需要v22+
-curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/KnowFlow-AI/main/install.sh | sh
-knowflow configure
-knowflow doctor --cli
-knowflow chat
-knowflow update
+curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
+agentlens configure
+agentlens doctor --cli
+agentlens chat
+agentlens update
 ```
 
 安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。Node.js不满足22时CLI仍可用，但会回退旧Textual界面。
@@ -77,41 +77,41 @@ knowflow update
 sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
 srt echo sandbox-ok
-knowflow doctor --cli
+agentlens doctor --cli
 ```
 
 `/doctor`可在TUI内执行同一组检查。部分Ubuntu 24.04云镜像会用AppArmor限制非特权user namespace；请优先为`bwrap`配置最小化策略，不要在生产机全局关闭AppArmor限制。
 
-`knowflow configure`会安全输入API Key，并分别保存公开配置与凭据。也可通过`KNOWFLOW_API_BASE`、`KNOWFLOW_API_KEY`、`KNOWFLOW_MODEL`、`KNOWFLOW_API_MODE`临时覆盖配置。
+`agentlens configure`会安全输入API Key，并分别保存公开配置与凭据。也可通过`KNOWFLOW_API_BASE`、`KNOWFLOW_API_KEY`、`KNOWFLOW_MODEL`、`KNOWFLOW_API_MODE`临时覆盖配置。
 
 常用命令：
 
 ```bash
-knowflow run "总结当前项目" --events
-knowflow run "检查测试并修复失败" --yes
-knowflow update
+agentlens run "总结当前项目" --events
+agentlens run "检查测试并修复失败" --yes
+agentlens update
 ```
 
 本地CLI与Web端共用Agent工具装配逻辑。读取用户提供的公共网页无需配置；联网搜索、MCP、Skills和Mem0按需启用，也不需要AgentLens账号：
 
 ```bash
 # Tavily联网搜索
-knowflow tools configure web-search
-knowflow tools list
+agentlens tools configure web-search
+agentlens tools list
 
 # 公共HTTPS MCP；Notion使用 https://mcp.notion.com/mcp
-knowflow mcp add notion https://mcp.notion.com/mcp --auth oauth
-knowflow mcp oauth <上一步显示的ID>
-knowflow mcp list
+agentlens mcp add notion https://mcp.notion.com/mcp --auth oauth
+agentlens mcp oauth <上一步显示的ID>
+agentlens mcp list
 
 # 安装本地Skill
-knowflow skills install ./my-skill
-knowflow skills list
+agentlens skills install ./my-skill
+agentlens skills list
 
 # 可选：Mem0长期记忆
-knowflow memory configure
-knowflow memory enable
-knowflow memory list
+agentlens memory configure
+agentlens memory enable
+agentlens memory list
 ```
 
 TUI输入`/tools`、`/mcp`、`/skills`或`/memory`可查看真实状态；`/tool:*`、`/skill:*`、`/mcp:*`来自运行时动态发现。涉及Key的配置仍通过隐藏输入的CLI命令完成，避免密钥出现在TUI记录或终端历史中。
@@ -121,9 +121,9 @@ TUI输入`/tools`、`/mcp`、`/skills`或`/memory`可查看真实状态；`/tool
 连接已有AgentLens Web服务是可选模式：
 
 ```bash
-knowflow auth login https://你的AgentLens服务器
-knowflow chat --remote
-knowflow run "总结知识库" --remote
+agentlens auth login https://你的AgentLens服务器
+agentlens chat --remote
+agentlens run "总结知识库" --remote
 ```
 
 ## Windows本地开发
@@ -131,8 +131,8 @@ knowflow run "总结知识库" --remote
 ### 1. 获取代码
 
 ```powershell
-git clone https://github.com/cs-xdu-dev-001/KnowFlow-AI.git
-Set-Location "KnowFlow-AI"
+git clone https://github.com/cs-xdu-dev-001/AgentLens.git
+Set-Location "AgentLens"
 ```
 
 ### 2. 安装依赖
@@ -280,7 +280,7 @@ sudo apt-get update
 sudo apt-get install -y bubblewrap util-linux ripgrep socat
 npm install -g @anthropic-ai/sandbox-runtime
 srt echo sandbox-ok
-knowflow doctor --cli
+agentlens doctor --cli
 ```
 
 生产数据建议放在`/var/lib/knowflow-ai`，并确保服务用户可写。备份时应在同一停服快照中保存主数据库、LangGraph checkpoint、`skills`、`workspaces`、`tool-results`和`mem0`数据。
@@ -331,11 +331,27 @@ npm run build
 
 ## 进一步阅读
 
+- [在线文档](https://cs-xdu-dev-001.github.io/AgentLens/)
+- [系统架构](https://cs-xdu-dev-001.github.io/AgentLens/architecture/)
+- [使用指南](https://cs-xdu-dev-001.github.io/AgentLens/usage/)
 - [Web搜索Agent循环](docs/langgraph-web-search-loop.md)
 - [MCP写操作审批](docs/langgraph-mcp-write-approval.md)
 - [Skills与任务计划](docs/langgraph-skills-and-planning.md)
 - [长期记忆生命周期](docs/langgraph-memory-lifecycle.md)
-- [API调试](docs/api-debug.md)
+
+### 本地预览文档
+
+```powershell
+py -3 -m venv .venv-docs
+.\.venv-docs\Scripts\python -m pip install -r requirements-docs.txt
+.\.venv-docs\Scripts\python -m mkdocs serve --dev-addr 127.0.0.1:8008
+```
+
+打开<http://127.0.0.1:8008/>。提交前使用`mkdocs build --strict`检查导航、链接和配置。
+
+### 首次发布GitHub Pages
+
+仓库的`Docs`工作流会在`main`分支文档变更后构建并部署。首次发布前，在GitHub仓库进入`Settings → Pages → Build and deployment`，将`Source`设为`GitHub Actions`；之后无需维护`gh-pages`分支。
 
 ## 技术栈
 

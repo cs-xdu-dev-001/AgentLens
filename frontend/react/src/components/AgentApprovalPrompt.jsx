@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { approvalApi } from "../api/client.js";
 import {
   allowApprovalForSession,
+  composerPermissionRuleBehavior,
   permissionModeAllowsApproval,
   readComposerPermissionMode,
+  readComposerPermissionRules,
   sessionAllowsApproval,
   subscribeComposerPermissionMode,
+  subscribeComposerPermissionRules,
 } from "./composerPermissions.js";
 
 const pendingApprovalIds = new Set();
@@ -77,10 +80,12 @@ export function AgentApprovalPrompt({
   const [localDecision, setLocalDecision] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [permissionMode, setPermissionMode] = useState(readComposerPermissionMode);
+  const [permissionRules, setPermissionRules] = useState(readComposerPermissionRules);
   const rootRef = useRef(null);
   const autoAttemptRef = useRef("");
 
   useEffect(() => subscribeComposerPermissionMode(setPermissionMode), []);
+  useEffect(() => subscribeComposerPermissionRules(setPermissionRules), []);
 
   useEffect(() => {
     const approvalId = approval?.approvalId;
@@ -122,6 +127,7 @@ export function AgentApprovalPrompt({
   const decision = approval?.decision || localDecision;
   const pending = approval?.status === "waiting" && !decision;
   const risk = riskLabels[approval?.risk] || "需确认操作";
+  const ruleBehavior = composerPermissionRuleBehavior(approval, permissionRules);
 
   const handleDecision = async (nextDecision) => {
     if (
@@ -185,16 +191,21 @@ export function AgentApprovalPrompt({
   };
 
   useEffect(() => {
-    const automaticallyAllowed = permissionModeAllowsApproval(permissionMode, approval)
-      || sessionAllowsApproval(approval);
-    if (!pending || busy || !automaticallyAllowed) {
-      return;
-    }
-    const attemptKey = `${approval.approvalId}:${permissionMode}`;
+    if (!pending || busy || ruleBehavior === "ask") return;
+    const automaticDecision = ruleBehavior === "deny"
+      ? "deny"
+      : ruleBehavior === "allow"
+        ? "allow_once"
+        : permissionModeAllowsApproval(permissionMode, approval)
+          || sessionAllowsApproval(approval)
+          ? "allow_once"
+          : "";
+    if (!automaticDecision) return;
+    const attemptKey = `${approval.approvalId}:${permissionMode}:${ruleBehavior}:${automaticDecision}`;
     if (autoAttemptRef.current === attemptKey) return;
     autoAttemptRef.current = attemptKey;
-    handleDecision("allow_once");
-  }, [approval, busy, pending, permissionMode]);
+    handleDecision(automaticDecision);
+  }, [approval, busy, pending, permissionMode, ruleBehavior]);
 
   useEffect(() => {
     if (!pending || busy || !approval?.expiresAt) return undefined;
@@ -261,6 +272,7 @@ export function AgentApprovalPrompt({
             {approval.toolName || "未知工具"}
             {" · "}
             {risk}
+            {ruleBehavior === "ask" ? " · Ask规则" : ""}
             {queuedCount ? ` · 另有${queuedCount}项待处理` : ""}
           </span>
         </div>

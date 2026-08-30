@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 15
 
 
 class Database:
@@ -84,6 +84,37 @@ class Database:
             "request_json",
             "LONGTEXT" if self.is_mysql else "TEXT",
         )
+        summary_type = "LONGTEXT" if self.is_mysql else "TEXT"
+        self.add_column_if_missing(
+            conn,
+            "chat_session",
+            "context_summary",
+            summary_type,
+        )
+        self.add_column_if_missing(
+            conn,
+            "chat_session",
+            "context_summary_metadata_json",
+            summary_type,
+        )
+        self.add_column_if_missing(
+            conn,
+            "chat_session",
+            "context_summary_up_to_message_id",
+            id_type,
+        )
+        self.add_column_if_missing(
+            conn,
+            "chat_session",
+            "is_pinned",
+            "TINYINT(1) NOT NULL DEFAULT 0" if self.is_mysql else "INTEGER NOT NULL DEFAULT 0",
+        )
+        self.add_column_if_missing(
+            conn,
+            "chat_session",
+            "is_archived",
+            "TINYINT(1) NOT NULL DEFAULT 0" if self.is_mysql else "INTEGER NOT NULL DEFAULT 0",
+        )
 
     def record_schema_version(self, conn: Any) -> None:
         if self.is_mysql:
@@ -103,7 +134,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Persist replayable Agent run events."
+                    "Persist per-user archived chat sessions."
                 ),
             },
         )

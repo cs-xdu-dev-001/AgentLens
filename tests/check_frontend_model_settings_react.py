@@ -204,13 +204,21 @@ def main() -> None:
         'new Set(["unavailable", "error", "failed", "failure"])',
         "backend and frontend failure statuses are normalized",
     )
+    require(
+        details,
+        "connectionResultPresentation(connectionResult)",
+        "structured connection diagnosis presentation",
+    )
+    require(details, "查看技术详情", "collapsed upstream error details")
+    require(details, "model-config-protocol-switch", "recommended protocol action")
+    require(settings, "handleProtocolApply", "recommended protocol update flow")
     node_check = subprocess.run(
         [
             "node",
             "--input-type=module",
             "-e",
             """
-import { connectionResultStatus } from './frontend/react/src/components/modelConnectionState.js';
+import { connectionResultPresentation, connectionResultStatus } from './frontend/react/src/components/modelConnectionState.js';
 const cases = [
   [{ status: 'available', message: 'connection succeeded' }, 'success'],
   [{ status: 'unavailable', message: 'HTTPError (HTTP 400)' }, 'error'],
@@ -221,6 +229,19 @@ const cases = [
 for (const [input, expected] of cases) {
   const actual = connectionResultStatus(input);
   if (actual !== expected) throw new Error(`${JSON.stringify(input)} => ${actual}, expected ${expected}`);
+}
+const presentations = [
+  [{ status: 'unavailable', code: 'access_denied', message: 'HTTP 403' }, 'access_denied', '当前Key无访问权限', 'Key分组'],
+  [{ status: 'unavailable', message: 'HTTP 503: no available channel' }, 'upstream_unavailable', '当前渠道不可用', '渠道状态'],
+  [{ status: 'unavailable', code: 'rate_limited', message: 'HTTP 429' }, 'rate_limited', '请求过于频繁', 'RPM'],
+  [{ status: 'unavailable', apiMode: 'responses', recommendedApiMode: 'chat_completions', message: 'HTTP 403' }, 'protocol_fallback_available', '检测到可用协议', 'Chat Completions'],
+  [{ status: 'available', message: 'ok' }, 'available', '连接可用', ''],
+];
+for (const [input, code, title, action] of presentations) {
+  const actual = connectionResultPresentation(input);
+  if (actual.code !== code || actual.title !== title || !actual.action.includes(action)) {
+    throw new Error(`${JSON.stringify(input)} => ${JSON.stringify(actual)}`);
+  }
 }
 """,
         ],

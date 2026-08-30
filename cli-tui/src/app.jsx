@@ -28,6 +28,7 @@ import {
   userFacingErrorMessage,
   verificationToolCallId,
   verificationRows,
+  workspaceChangesToArtifactEvents,
 } from './protocol.js';
 import {MarkdownText, stableMarkdownBoundary} from './markdown.jsx';
 import {
@@ -41,8 +42,17 @@ import {
 import {
   terminalClipboardSequence,
   terminalCopySelection,
+  terminalNotificationsEnabled,
+  toolRowsForContext,
   useTerminalFeedback,
 } from './terminalFeedback.js';
+import {
+  LOCAL_MODEL_CONFIG_FIELDS,
+  LocalModelConfigPanel,
+  editLocalModelConfigText,
+  localModelConfigPayload,
+  normalizeLocalModelConfig,
+} from './localModelConfig.jsx';
 
 const ACCENT = '#d97757';
 const PRIMARY = '#e5e7eb';
@@ -63,6 +73,99 @@ const X10_MOUSE_INPUT = /(?:\u001b)?\[M[\x20-\x7f]{3}/g;
 const UNSAFE_CONTROL_INPUT = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 const PASTE_THRESHOLD = 800;
 const PASTE_REFERENCE_PATTERN = /\[粘贴内容 #(\d+) \+(\d+)行\]/g;
+const DOUBLE_PRESS_TIMEOUT_MS = 800;
+const RUN_QUIET_AFTER_MS = 15_000;
+const RUN_STALLED_AFTER_MS = 45_000;
+
+export function buildTuiDeliveryPresentation({
+  artifacts = [],
+  verifications = [],
+  status = '',
+} = {}) {
+  const safeArtifacts = Array.isArray(artifacts) ? artifacts : [];
+  const safeVerifications = Array.isArray(verifications) ? verifications : [];
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  const cancelled = ['cancelled', 'canceled', '已取消'].includes(normalizedStatus);
+  const failedRun = ['error', 'failed', 'interrupted', '执行失败', '失败'].includes(normalizedStatus);
+  const failedCount = safeVerifications.filter(row => row?.status === 'failed').length;
+  const passedCount = safeVerifications.filter(row => row?.status === 'passed').length;
+  const externalCount = safeArtifacts.filter(artifact => /^https?:\/\//i.test(String(
+    artifact?.url || artifact?.href || artifact?.path || '',
+  ))).length;
+  const fileCount = Math.max(0, safeArtifacts.length - externalCount);
+  const revertedCount = safeArtifacts.filter(artifact => artifact?.reverted).length;
+  const metrics = safeArtifacts.reduce((total, artifact) => ({
+    added: total.added + Math.max(0, Number(artifact?.addedLines) || 0),
+    removed: total.removed + Math.max(0, Number(artifact?.removedLines) || 0),
+  }), {added: 0, removed: 0});
+  const summary = [
+    fileCount ? `${fileCount}个文件已更改` : '',
+    externalCount ? `${externalCount}个链接已生成` : '',
+    revertedCount ? `${revertedCount}项已撤销` : '',
+    safeVerifications.length ? `${passedCount}/${safeVerifications.length}项验证通过` : '',
+  ].filter(Boolean).join(' · ');
+  const failedVerification = failedCount > 0;
+  let state = {tone: 'muted', label: '待验证'};
+  if (cancelled) state = {tone: 'warning', label: '已取消'};
+  else if (failedRun) state = {tone: 'error', label: '运行失败'};
+  else if (failedVerification) state = {tone: 'error', label: `${failedCount}项未通过`};
+  else if (safeVerifications.length) state = {tone: 'success', label: '验证通过'};
+  const partial = cancelled || failedRun;
+  return {
+    ...metrics,
+    cancelled,
+    externalCount,
+    failedRun,
+    failedVerification,
+    fileCount,
+    passedCount,
+    revertedCount,
+    summary,
+    title: partial ? '本轮结果' : safeArtifacts.length ? '本轮交付' : '本轮验收',
+    state,
+    actionHint: failedVerification
+      ? 'Ctrl+E查看失败步骤与恢复操作'
+      : partial
+        ? 'Ctrl+T查看未完成步骤'
+        : safeArtifacts.length
+          ? 'Ctrl+G审阅文件变更'
+          : 'Ctrl+T查看验证过程',
+  };
+}
+
+function useDoublePress(setPending, onDoublePress, onFirstPress) {
+  const lastPressRef = useRef(0);
+  const timeoutRef = useRef(null);
+
+  const clearPending = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+  }, []);
+
+  useEffect(() => clearPending, [clearPending]);
+
+  return useCallback(() => {
+    const now = Date.now();
+    const isDoublePress = now - lastPressRef.current <= DOUBLE_PRESS_TIMEOUT_MS
+      && timeoutRef.current !== null;
+    lastPressRef.current = now;
+
+    if (isDoublePress) {
+      clearPending();
+      setPending(false);
+      onDoublePress();
+      return;
+    }
+
+    onFirstPress?.();
+    setPending(true);
+    clearPending();
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      setPending(false);
+    }, DOUBLE_PRESS_TIMEOUT_MS);
+  }, [clearPending, onDoublePress, onFirstPress, setPending]);
+}
 
 function envEnabled(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
@@ -251,6 +354,8 @@ const INTERACTION_FOCUS_LABELS = Object.freeze({
   queueManager: '任务队列',
   help: '命令浏览',
   sessions: '恢复会话',
+  rewind: '回到历史消息',
+  localConfig: '配置本地模型',
   models: '选择模型',
   reasoning: '推理强度',
   history: '搜索历史',
@@ -271,6 +376,8 @@ export function resolveInteractionFocus(state = {}) {
   if (state.queueManagerOpen) return 'queueManager';
   if (state.taskNavigationOpen) return 'taskNavigation';
   if (state.sessionPicker) return 'sessions';
+  if (state.rewindPicker) return 'rewind';
+  if (state.localConfigOpen) return 'localConfig';
   if (state.modelPicker) return 'models';
   if (state.reasoningPicker) return 'reasoning';
   if (state.transcriptSearchOpen) return 'transcriptSearch';
@@ -321,6 +428,7 @@ export function transcriptSearchText(item = {}) {
       item.phase,
       ...(Array.isArray(item.activities) ? item.activities.flatMap(([, activity]) => [activity?.label, activity?.title, activity?.toolName]) : []),
       ...(Array.isArray(item.traceSteps) ? item.traceSteps.flatMap(([, step]) => [step?.label, step?.title, step?.toolName]) : []),
+      ...(Array.isArray(item.verifications) ? item.verifications.flatMap(row => [row?.label, row?.tool, row?.statusLabel]) : []),
     ].filter(Boolean).join('\n');
   }
   if (item.role === 'delivery_summary') {
@@ -368,6 +476,47 @@ const PERMISSION_MODES = [
   {id: 'auto_edit', label: '自动编辑', detail: '普通文件修改自动通过，命令仍确认'},
   {id: 'full_access', label: '完全访问', detail: '本会话自动执行，仍受工作区与沙箱限制'},
 ];
+const PERMISSION_BEHAVIORS = [
+  {id: 'allow', label: 'Allow', detail: '匹配工具自动放行，包括破坏性操作'},
+  {id: 'ask', label: 'Ask', detail: '匹配工具始终询问'},
+  {id: 'deny', label: 'Deny', detail: '匹配工具直接拒绝'},
+];
+const emptyPermissionRules = () => ({allow: [], ask: [], deny: []});
+
+function normalizePermissionRule(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return /^[a-z0-9_.:*/-]+$/u.test(normalized) ? normalized.slice(0, 120) : '';
+}
+
+export function permissionRuleBehavior(toolName, rules = {}) {
+  const normalized = normalizePermissionRule(toolName);
+  if (!normalized) return '';
+  for (const behavior of ['deny', 'ask', 'allow']) {
+    const values = Array.isArray(rules?.[behavior]) ? rules[behavior] : [];
+    if (values.includes('*') || values.includes(normalized)) return behavior;
+  }
+  return '';
+}
+
+export function updatePermissionRules(rules, behavior, toolName, remove = false) {
+  const normalized = normalizePermissionRule(toolName);
+  if (!PERMISSION_BEHAVIORS.some(item => item.id === behavior) || !normalized) return rules;
+  const next = emptyPermissionRules();
+  for (const item of PERMISSION_BEHAVIORS) {
+    next[item.id] = [...new Set((rules?.[item.id] ?? [])
+      .map(normalizePermissionRule)
+      .filter(Boolean))];
+  }
+  for (const item of PERMISSION_BEHAVIORS) {
+    next[item.id] = next[item.id].filter(value => value !== normalized);
+  }
+  if (!remove) next[behavior] = [...next[behavior], normalized].sort();
+  return next;
+}
+
+function permissionRuleCount(rules) {
+  return PERMISSION_BEHAVIORS.reduce((total, item) => total + (rules?.[item.id]?.length ?? 0), 0);
+}
 const REASONING_EFFORTS = [
   {id: 'default', command: 'auto', label: '自动', detail: '由模型服务选择合适强度'},
   {id: 'low', command: 'low', label: '快速', detail: '降低推理开销，优先响应速度'},
@@ -400,6 +549,37 @@ function useSpinner(active, phase) {
     return () => clearInterval(timer);
   }, [active, frames]);
   return frames[frame % frames.length];
+}
+
+function useStableActivityLabel(value, active, minimumMs = 2000) {
+  const normalized = String(value ?? '');
+  const [stable, setStable] = useState(normalized);
+  const committedAtRef = useRef(Date.now());
+  const activeRef = useRef(active);
+
+  useEffect(() => {
+    const wasActive = activeRef.current;
+    activeRef.current = active;
+    if (!active || !wasActive) {
+      committedAtRef.current = Date.now();
+      setStable(normalized);
+      return undefined;
+    }
+    if (normalized === stable) return undefined;
+    const remaining = Math.max(0, minimumMs - (Date.now() - committedAtRef.current));
+    const commit = () => {
+      committedAtRef.current = Date.now();
+      setStable(normalized);
+    };
+    if (!remaining) {
+      commit();
+      return undefined;
+    }
+    const timer = setTimeout(commit, remaining);
+    return () => clearTimeout(timer);
+  }, [active, minimumMs, normalized, stable]);
+
+  return active ? stable : normalized;
 }
 
 export function shouldAnimateRuntimeStatus({
@@ -446,6 +626,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
   running,
   waitingCount,
 }) {
+  const stablePhase = useStableActivityLabel(phase, running);
   const animate = shouldAnimateRuntimeStatus({
     running,
     blocked: Boolean(approval || question),
@@ -453,7 +634,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
     hasVisibleStream,
     hasVisibleWork,
   });
-  const spinner = useSpinner(animate, phase);
+  const spinner = useSpinner(animate, stablePhase);
   if (!shouldShowRuntimeStatus({
     approval,
     cancelPending,
@@ -466,7 +647,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
   })) return null;
   return (
     <Box marginTop={1}>
-      <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${phase}` : phase}</Text>
+      <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${stablePhase}` : stablePhase}</Text>
       {running ? <Text color={cancelPending ? WARNING : MUTED}>{cancelPending ? ' · 取消中' : ' · Ctrl+C取消'}</Text> : null}
       {waitingCount ? <Text color={WARNING}> · 待处理{waitingCount}</Text> : null}
       {queueLength ? <Text color={MUTED}> · 队列{queueLength}</Text> : null}
@@ -639,6 +820,45 @@ function formatTaskElapsed(milliseconds) {
   return `${minutes}m ${seconds}s`;
 }
 
+function useTaskClock(active, refreshKey = '') {
+  const [now, setNow] = useState(() => Date.now());
+  const refreshedAt = useMemo(() => Date.now(), [refreshKey]);
+  useEffect(() => {
+    setNow(Date.now());
+    if (!active) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active, refreshKey]);
+  return Math.max(now, refreshedAt);
+}
+
+export function runActivityPresentation({
+  running = false,
+  lastActivityAt = '',
+  now = Date.now(),
+  protectedState = false,
+} = {}) {
+  if (!running || protectedState) return null;
+  const timestamp = Date.parse(String(lastActivityAt || ''));
+  if (!Number.isFinite(timestamp)) return null;
+  const quietForMs = Math.max(0, now - timestamp);
+  if (quietForMs >= RUN_STALLED_AFTER_MS) {
+    return {
+      color: WARNING,
+      detail: '暂未收到新进展，任务仍在运行',
+      label: '等待响应',
+    };
+  }
+  if (quietForMs >= RUN_QUIET_AFTER_MS) {
+    return {
+      color: ACCENT,
+      detail: '仍在运行，等待下一条进展',
+      label: '仍在运行',
+    };
+  }
+  return null;
+}
+
 function statusSymbol(status, spinner) {
   if (['success', 'succeeded', 'completed'].includes(status)) return {symbol: '✓', color: SUCCESS};
   if (['failed', 'error', 'interrupted'].includes(status)) return {symbol: '✕', color: ERROR};
@@ -648,7 +868,76 @@ function statusSymbol(status, spinner) {
 }
 
 const ACTIVE_RUNTIME_STATUSES = new Set(['pending', 'planning', 'queued', 'running', 'started', 'waiting', 'waiting_approval']);
+
+export function nextPromptSuggestion(projection = {}) {
+  const recoveryActions = new Set(
+    (Array.isArray(projection?.recoveryActions) ? projection.recoveryActions : [])
+      .map(String),
+  );
+  const runStatus = String(
+    projection?.runSummary?.status
+    ?? projection?.run?.status
+    ?? projection?.terminal
+    ?? '',
+  ).toLowerCase();
+  const failed = Boolean(
+    projection?.error
+    || ['failed', 'error', 'interrupted'].includes(runStatus),
+  );
+  if (failed) {
+    if (recoveryActions.has('fix')) return '分析这个错误并继续完成任务';
+    if (recoveryActions.has('retry')) return '调整方案后重试本轮任务';
+    return '分析刚才失败的原因';
+  }
+  if (!['completed', 'success', 'succeeded'].includes(runStatus)) return '';
+  if (Array.isArray(projection?.artifacts) && projection.artifacts.length) {
+    return '检查本次改动并运行相关验证';
+  }
+  if (Array.isArray(projection?.references) && projection.references.length) {
+    return '核对这些来源并总结关键结论';
+  }
+  return '';
+}
 const FAILURE_RUNTIME_STATUSES = new Set(['error', 'failed', 'interrupted']);
+const SUCCESS_RUN_STATUSES = new Set(['completed', 'success', 'succeeded']);
+const TERMINAL_RUN_STATUSES = new Set([
+  ...SUCCESS_RUN_STATUSES,
+  ...FAILURE_RUNTIME_STATUSES,
+  'cancelled',
+]);
+
+export function taskOutcomeState({
+  failure = null,
+  phase = '',
+  rows = [],
+  runSummary = null,
+  running = false,
+} = {}) {
+  const runStatus = String(runSummary?.status ?? '').toLowerCase();
+  const childFailureCount = rows.reduce((total, row) => (
+    FAILURE_RUNTIME_STATUSES.has(String(row?.status ?? '').toLowerCase())
+      ? total + Math.max(1, Number(row?.repeatCount) || 1)
+      : total
+  ), 0);
+  const authoritativeTerminal = TERMINAL_RUN_STATUSES.has(runStatus);
+  const failed = FAILURE_RUNTIME_STATUSES.has(runStatus) || (
+    !authoritativeTerminal
+    && !running
+    && Boolean(failure || childFailureCount || /失败|错误/.test(String(phase ?? '')))
+  );
+  const completedWithWarnings = SUCCESS_RUN_STATUSES.has(runStatus) && childFailureCount > 0;
+  const waiting = !authoritativeTerminal && rows.some(row => (
+    ['waiting', 'waiting_approval', 'waiting_input'].includes(String(row?.status ?? '').toLowerCase())
+  ));
+  return {childFailureCount, completedWithWarnings, failed, runStatus, waiting};
+}
+
+export function taskReviewHint({completedWithWarnings = false, expanded = false, failed = false} = {}) {
+  if (expanded) return '';
+  if (failed) return 'Ctrl+E查看错误与恢复操作';
+  if (completedWithWarnings) return 'Ctrl+T查看未成功步骤 · Ctrl+E运行详情';
+  return '';
+}
 const RECOVERY_ACTION_OPTIONS = Object.freeze([
   {id: 'continue', label: '从checkpoint继续', shortcut: 'C'},
   {id: 'retry', label: '重试本轮', shortcut: 'R'},
@@ -749,14 +1038,92 @@ function taskSummaryModel(activities, traceSteps, artifacts = [], references = [
   return {tracedRows, operations, planRows, rows, navigationItems};
 }
 
-function ActivityDetails({row, compact = false}) {
-  const output = safeJson(row.output, compact ? 1200 : 10000);
-  const stdout = safeJson(row.stdout, compact ? 1200 : 10000);
-  const stderr = safeJson(row.stderr, compact ? 1200 : 10000);
+export const TOOL_DETAIL_PAGE_SIZE = 14;
+const TOOL_DETAIL_VALUE_LIMIT = 100_000;
+
+function stringifyDetailValue(value) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function activityDetailEntries(row, compact = false) {
+  const argumentsValue = row.arguments ?? row.inputSummary ?? row.inputJson ?? row.input_json;
+  const outputValue = row.output ?? row.outputSummary ?? row.details?.output;
+  const valueLimit = compact ? 1200 : TOOL_DETAIL_VALUE_LIMIT;
+  const inputLimit = compact ? 600 : TOOL_DETAIL_VALUE_LIMIT;
+  const fields = [
+    ['输入', argumentsValue, MUTED, inputLimit],
+    ['stdout', row.stdout ?? row.details?.stdout, MUTED, valueLimit],
+    ['stderr', row.stderr ?? row.details?.stderr, ERROR, valueLimit],
+    ['输出', outputValue, row.status === 'failed' ? ERROR : MUTED, valueLimit],
+    ['原因', row.errorMessage, ERROR, 1200],
+    ['错误码', row.errorCode, ERROR, 240],
+  ];
+  return fields.flatMap(([label, value, color, limit]) => {
+    if (value === undefined || value === null || value === '') return [];
+    const source = stringifyDetailValue(value);
+    const text = redact(source, limit).replace(/\r\n?/g, '\n');
+    if (!text) return [];
+    return [{color, label, limit, sourceLength: source.length, text, truncated: source.length > limit}];
+  });
+}
+
+export function activityDetailLines(row, compact = false) {
+  return activityDetailEntries(row ?? {}, compact).flatMap(entry => {
+    const lines = entry.text.split('\n').map((line, index) => ({
+      color: entry.color,
+      text: `${index === 0 ? `${entry.label} ` : '  '}${line}`,
+    }));
+    if (entry.truncated) {
+      lines.push({
+        color: MUTED,
+        text: `  [内容已截断：原始${entry.sourceLength}字符，仅显示前${entry.limit}字符]`,
+      });
+    }
+    return lines;
+  });
+}
+
+export function activityDetailPage(row, offset = 0, pageSize = TOOL_DETAIL_PAGE_SIZE) {
+  const allLines = activityDetailLines(row, false);
+  const size = Math.max(1, Number(pageSize) || TOOL_DETAIL_PAGE_SIZE);
+  const maxOffset = Math.max(0, allLines.length - size);
+  const safeOffset = Math.max(0, Math.min(Number(offset) || 0, maxOffset));
+  const lines = allLines.slice(safeOffset, safeOffset + size);
+  return {
+    end: Math.min(allLines.length, safeOffset + lines.length),
+    lines,
+    maxOffset,
+    offset: safeOffset,
+    total: allLines.length,
+  };
+}
+
+function ActivityDetails({row, compact = false, paginate = false, offset = 0}) {
+  if (paginate) {
+    const page = activityDetailPage(row, offset);
+    return (
+      <Box flexDirection="column" marginLeft={2}>
+        {page.total ? <Text color={MUTED}>详情内容 {page.offset + 1}-{page.end}/{page.total}</Text> : null}
+        {page.lines.map((line, index) => (
+          <Text key={`${page.offset + index}:${line.text}`} color={line.color}>{line.text}</Text>
+        ))}
+      </Box>
+    );
+  }
+  const argumentsValue = row.arguments ?? row.inputSummary ?? row.inputJson ?? row.input_json;
+  const outputValue = row.output ?? row.outputSummary ?? row.details?.output;
+  const output = safeJson(outputValue, compact ? 1200 : 10000);
+  const stdout = safeJson(row.stdout ?? row.details?.stdout, compact ? 1200 : 10000);
+  const stderr = safeJson(row.stderr ?? row.details?.stderr, compact ? 1200 : 10000);
   const errorMessage = safeJson(row.errorMessage, 1200);
   return (
     <Box flexDirection="column" marginLeft={2}>
-      {row.arguments ? <Text color={MUTED}>输入 {safeJson(row.arguments, compact ? 600 : 2400)}</Text> : null}
+      {argumentsValue ? <Text color={MUTED}>输入 {safeJson(argumentsValue, compact ? 600 : 2400)}</Text> : null}
       {stdout ? <Text color={MUTED}>stdout {stdout}</Text> : null}
       {stderr ? <Text color={ERROR}>stderr {stderr}</Text> : null}
       {output ? <Text color={row.status === 'failed' ? ERROR : MUTED}>输出 {output}</Text> : null}
@@ -766,7 +1133,7 @@ function ActivityDetails({row, compact = false}) {
   );
 }
 
-function QueuePreview({items, paused, hidden = false}) {
+function QueuePreview({items, paused, durable, hidden = false}) {
   if (hidden) return null;
   if (!items.length) return null;
   const ordered = orderedQueue(items);
@@ -774,7 +1141,7 @@ function QueuePreview({items, paused, hidden = false}) {
     <Box flexDirection="column" marginTop={1} paddingLeft={1} borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} borderColor={paused ? WARNING : ACCENT}>
       <Box justifyContent="space-between">
         <Text color={paused ? WARNING : PRIMARY}>{paused ? '待发送已暂停' : `接下来 ${items.length}`}</Text>
-        <Text color={MUTED}>Ctrl+T编辑队列</Text>
+        <Text color={durable ? MUTED : WARNING}>{durable ? '已保存 · Ctrl+T编辑' : '仅本次运行 · Ctrl+T编辑'}</Text>
       </Box>
       {ordered.slice(0, 3).map((item, index) => (
         <Text key={`${index}-${queuedPromptText(item)}`} color={MUTED} wrap="truncate-end">
@@ -789,7 +1156,7 @@ function QueuePreview({items, paused, hidden = false}) {
   );
 }
 
-function QueueManager({items, selected, paused}) {
+function QueueManager({items, selected, paused, durable}) {
   const ordered = orderedQueue(items);
   const visibleCount = Math.min(7, ordered.length || 1);
   const start = Math.max(0, Math.min(selected - 3, Math.max(0, ordered.length - visibleCount)));
@@ -797,7 +1164,7 @@ function QueueManager({items, selected, paused}) {
     <Box flexDirection="column" marginY={1} paddingLeft={1}>
       <Box justifyContent="space-between">
         <Text color={PRIMARY} bold>任务队列</Text>
-        <Text color={paused ? WARNING : MUTED}>{ordered.length}项 · {paused ? '已暂停' : '自动继续'}</Text>
+        <Text color={paused || !durable ? WARNING : MUTED}>{ordered.length}项 · {paused ? '已暂停' : '自动继续'} · {durable ? '已保存' : '仅本次运行'}</Text>
       </Box>
       {!ordered.length ? <Text color={MUTED}>队列为空，Esc返回输入</Text> : ordered.slice(start, start + visibleCount).map((item, offset) => {
         const index = start + offset;
@@ -873,29 +1240,33 @@ const TaskSummary = React.memo(function TaskSummary({
   usage = {},
   artifacts = [],
   references = [],
+  verifications = [],
   recoveryActions = [],
   runSummary = null,
   modelRetry = null,
-  now = Date.now(),
+  startedAt = 0,
+  liveClock = running,
   navigationActive = false,
   selectedNavigationKey = '',
 }) {
-  const spinner = useSpinner(running && !streaming, phase);
+  const now = useTaskClock(Boolean(liveClock), modelRetry?.retryAt);
+  const stablePhase = useStableActivityLabel(phase, running);
+  const spinner = useSpinner(running && !streaming, stablePhase);
   const {tracedRows, operations, planRows, rows} = taskSummaryModel(
     activities,
     traceSteps,
     artifacts,
     references,
+    verifications,
   );
-  const failed = rows.some(row => FAILURE_RUNTIME_STATUSES.has(row.status))
-    || /失败|错误/.test(String(phase ?? ''));
-  if (!running && !rows.length && !artifacts.length && !references.length && !failed) return null;
+  const outcome = taskOutcomeState({failure, phase, rows, runSummary, running});
+  const {childFailureCount, completedWithWarnings, failed, waiting} = outcome;
+  if (!running && !rows.length && !artifacts.length && !references.length && !verifications.length && !failed) return null;
   const protocolTotal = Math.max(0, Number(runSummary?.totalSteps) || 0);
   const localCompleted = rows.filter(row => ['success', 'succeeded', 'completed', 'cancelled'].includes(row.status)).length;
   const completed = protocolTotal
     ? Math.min(Math.max(0, Number(runSummary?.completedSteps) || 0), protocolTotal)
     : localCompleted;
-  const waiting = rows.some(row => row.status === 'waiting');
   const cancelling = runSummary?.status === 'cancelling';
   const estimatedTokens = tracedRows.reduce((total, row) => {
     if (row.kind !== 'model') return total;
@@ -911,13 +1282,17 @@ const TaskSummary = React.memo(function TaskSummary({
   const summaryElapsedMs = Number.isFinite(summaryStartedAt) && Number.isFinite(summaryFinishedAt)
     ? Math.max(0, summaryFinishedAt - summaryStartedAt)
     : null;
-  const visibleElapsedMs = !running && summaryElapsedMs !== null ? summaryElapsedMs : elapsedMs;
+  const liveElapsedMs = liveClock && Number(startedAt) > 0
+    ? Math.max(0, now - Number(startedAt))
+    : elapsedMs;
+  const visibleElapsedMs = !running && summaryElapsedMs !== null ? summaryElapsedMs : liveElapsedMs;
   const metrics = [
     formatTaskElapsed(visibleElapsedMs),
     formatTaskTokens(tokens),
     toolCount ? `${toolCount}次工具` : '',
     artifacts.length ? `${artifacts.length}个产物` : '',
     references.length ? `${references.length}个来源` : '',
+    verifications.length ? `验证${verifications.filter(row => row.status === 'passed').length}/${verifications.length}` : '',
     total ? `${completed}/${total}` : '',
   ].filter(Boolean).join(' · ');
   const retryRemainingSeconds = modelRetry
@@ -928,22 +1303,49 @@ const TaskSummary = React.memo(function TaskSummary({
       ? `${modelRetry.reason || '模型请求失败'}，${retryRemainingSeconds}秒后重试（${modelRetry.attempt}/${modelRetry.maxRetries}）`
       : `正在重新连接模型（${modelRetry.attempt}/${modelRetry.maxRetries}）`
     : '';
-  const stateLabel = cancelling ? '取消中' : modelRetry ? '等待重试' : waiting ? '等待确认' : running ? '执行中' : failed ? '失败' : '已完成';
-  const stateColor = cancelling ? WARNING : failed ? ERROR : modelRetry || waiting ? WARNING : running ? ACCENT : SUCCESS;
+  const activityState = runActivityPresentation({
+    running,
+    lastActivityAt: runSummary?.lastActivityAt || runSummary?.startedAt,
+    now,
+    protectedState: Boolean(cancelling || modelRetry || waiting),
+  });
+  const stateLabel = cancelling
+    ? '取消中'
+    : modelRetry
+    ? '等待重试'
+    : waiting
+      ? '等待确认'
+      : running
+        ? activityState?.label || '执行中'
+        : failed
+          ? '失败'
+          : completedWithWarnings
+            ? '完成，有警告'
+            : '已完成';
+  const stateColor = cancelling
+    ? WARNING
+    : failed
+    ? ERROR
+    : modelRetry || waiting || completedWithWarnings
+      ? WARNING
+      : activityState?.color || (running ? ACCENT : SUCCESS);
   const failureMessage = failed && failure?.message
-    ? userFacingErrorMessage(failure.message)
+    ? userFacingErrorMessage(failure.message, '执行失败。', failure.code)
     : '';
   const currentRow = [...rows].reverse().find(row => ['running', 'planning', 'waiting'].includes(row.status))
     ?? rows[rows.length - 1];
   const processLabel = cancelling
     ? '正在安全停止当前操作'
     : running
-      ? retryLabel || publicLabel(phase || currentRow?.title, '正在执行')
+      ? retryLabel || activityState?.detail || publicLabel(stablePhase || currentRow?.title, '正在执行')
     : failed
       ? failureMessage || '执行失败，可选择恢复操作'
+      : completedWithWarnings
+        ? `任务已完成，${childFailureCount}个工具调用未成功`
       : artifacts.length
       ? `已完成并保存${artifacts.length}个产物`
       : `已完成${completed}个步骤`;
+  const reviewHint = taskReviewHint({completedWithWarnings, expanded, failed});
   const availableRecoveryActions = new Set(
     recoveryActions.length ? recoveryActions : (failed ? ['retry', 'fix'] : []),
   );
@@ -954,7 +1356,7 @@ const TaskSummary = React.memo(function TaskSummary({
   ].filter(Boolean).join('  ');
   const detailControls = [
     navigationActive ? '↑↓选择 · Enter查看 · Esc返回' : 'Ctrl+T选择任务',
-    toolCount || references.length ? 'Ctrl+E运行详情' : '',
+    toolCount || references.length || verifications.length ? 'Ctrl+E运行详情' : '',
     artifacts.length ? 'Ctrl+G文件变更' : '',
   ].filter(Boolean).join(' · ');
   const taskTitle = publicLabel(String(runSummary?.headline || goal || '').replace(/\s+/g, ' ').trim(), '本次运行');
@@ -967,20 +1369,25 @@ const TaskSummary = React.memo(function TaskSummary({
     || shellPreview.cancelled
     || shellPreview.timedOut
   );
+  const compactSettled = !expanded
+    && !running
+    && !failed
+    && !waiting
+    && !completedWithWarnings;
 
   return (
     <Box flexDirection="column" marginTop={1} marginLeft={1} marginBottom={1}>
       <Box justifyContent="space-between">
         <Box>
-          <Text color={ACCENT}>{expanded ? '⌄' : '›'} </Text>
+          <Text color={compactSettled ? SUCCESS : ACCENT}>{compactSettled ? '✓' : expanded ? '⌄' : '›'} </Text>
           <Text color={PRIMARY} bold>{compactTitle}</Text>
           {metrics ? <Text color={MUTED}>  {metrics}</Text> : null}
         </Box>
         <Text color={stateColor} bold={running || failed}>{stateLabel}</Text>
       </Box>
-      <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text>
-      {failed && !expanded ? (
-        <Text color={ERROR}>  ↳ Ctrl+E查看错误与恢复操作</Text>
+      {!compactSettled ? <Text color={running ? PRIMARY : MUTED}>  {processLabel}</Text> : null}
+      {reviewHint ? (
+        <Text color={failed ? ERROR : WARNING}>  ↳ {reviewHint}</Text>
       ) : null}
       {showShellPreview ? (
         <Box
@@ -1082,6 +1489,27 @@ const TaskSummary = React.memo(function TaskSummary({
             );
           })}
           {artifacts.length > 5 ? <Text color={MUTED}>  另有{artifacts.length - 5}个产物</Text> : null}
+          {verifications.length ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={PRIMARY} bold>  验证 <Text color={MUTED}>{verifications.filter(row => row.status === 'passed').length}/{verifications.length}通过</Text></Text>
+              {verifications.slice(0, 5).map((verification, index) => {
+                const navigationKey = `verification:${verification.id || index}`;
+                const selected = navigationActive && selectedNavigationKey === navigationKey;
+                const passed = verification.status === 'passed';
+                return (
+                  <Text key={verification.id || index} color={selected ? PRIMARY : passed ? SUCCESS : ERROR} bold={selected} wrap="truncate-end">
+                    {selected ? '  › ' : passed ? '  ✓ ' : '  ✕ '}
+                    <Text color={PRIMARY}>{verification.label}</Text>
+                    <Text color={MUTED}>  {verification.tool}</Text>
+                    {verification.durationMs != null ? <Text color={MUTED}> · {formatTaskElapsed(verification.durationMs)}</Text> : null}
+                    <Text> · {verification.statusLabel}</Text>
+                    {verification.exitCode != null && verification.exitCode !== 0 ? <Text> · 退出码{verification.exitCode}</Text> : null}
+                  </Text>
+                );
+              })}
+              {verifications.length > 5 ? <Text color={MUTED}>    另有{verifications.length - 5}项验证</Text> : null}
+            </Box>
+          ) : null}
           {references.length ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={PRIMARY} bold>  来源 <Text color={MUTED}>{references.length}</Text></Text>
@@ -1108,7 +1536,7 @@ const TaskSummary = React.memo(function TaskSummary({
   );
 });
 
-function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice = 0}) {
+function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice = 0, offset = 0}) {
   const row = rows[selected];
   if (!row) return null;
   const state = statusSymbol(row.status, '·');
@@ -1123,7 +1551,7 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
         <Text color={PRIMARY} bold>{row.name}</Text>
         <Text color={MUTED}>  {row.status}</Text>
       </Box>
-      <ActivityDetails row={row} />
+      <ActivityDetails row={row} paginate offset={offset} />
       {failed && !running && recoveryItems.length ? (
         <Box marginTop={1}>
           <Text color={MUTED}>恢复  </Text>
@@ -1136,7 +1564,7 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
       ) : failed ? <Text color={MUTED}>当前任务结束后可恢复</Text> : null}
       <Text color={MUTED}>
         {failed && !running && recoveryItems.length ? '←→选择 · Enter执行  ' : ''}
-        ↑↓切换详情  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭
+        PgUp/PgDn翻页 · Home/End首尾  ↑↓切换详情  {hasReferences ? 'Tab查看来源  ' : ''}Ctrl+E或Esc关闭
       </Text>
     </Box>
   );
@@ -1144,7 +1572,11 @@ function ToolDetailPanel({rows, selected, running, hasReferences, recoveryChoice
 
 function RunRecoveryPanel({failure, failedStep, recoveryActions, selected = 0}) {
   const options = recoveryOptions({recoveryActions});
-  const reason = userFacingErrorMessage(failure?.message, 'Agent运行失败。');
+  const reason = userFacingErrorMessage(
+    failure?.message,
+    'Agent运行失败。',
+    failure?.code,
+  );
   const metadata = [
     failure?.code ? `错误码 ${publicIdentifier(failure.code, 'agent_run_failed', 100)}` : '',
     failedStep?.title ? `步骤 ${publicLabel(failedStep.title, '失败步骤', 120)}` : '',
@@ -1239,7 +1671,22 @@ function ReferenceDetailPanel({rows, selected, hasTools}) {
   );
 }
 
-function ChangeDetailPanel({artifacts, selected, patch, loading, confirming}) {
+const CHANGE_DIFF_PAGE_SIZE = 14;
+
+export function changeReviewArtifacts(artifacts = []) {
+  return (Array.isArray(artifacts) ? artifacts : []).filter(artifact => (
+    artifact?.path && (artifact.diffAvailable || artifact.operationId)
+  ));
+}
+
+export function changeReviewKey(artifact, index = 0) {
+  return artifact?.artifactId
+    || artifact?.operationId
+    || artifact?.path
+    || `change-${index}`;
+}
+
+function ChangeDetailPanel({artifacts, selected, patch, loading, confirming, reviewed = [], offset = 0}) {
   const artifact = artifacts[selected];
   if (!artifact) return null;
   const target = artifact.path || artifact.title || '文件变更';
@@ -1248,33 +1695,43 @@ function ChangeDetailPanel({artifacts, selected, patch, loading, confirming}) {
     artifact.removedLines ? `-${artifact.removedLines}` : '',
   ].filter(Boolean).join(' ');
   const allDiffRows = useMemo(() => buildDiffPresentation(patch), [patch]);
-  const diffRows = allDiffRows.slice(0, 14);
+  const maxOffset = Math.max(0, allDiffRows.length - CHANGE_DIFF_PAGE_SIZE);
+  const safeOffset = Math.max(0, Math.min(Number(offset) || 0, maxOffset));
+  const diffRows = allDiffRows.slice(safeOffset, safeOffset + CHANGE_DIFF_PAGE_SIZE);
+  const visibleEnd = Math.min(allDiffRows.length, safeOffset + diffRows.length);
+  const reviewedCount = artifacts.filter((item, index) => (
+    reviewed.includes(changeReviewKey(item, index))
+  )).length;
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1}>
-      <Text bold>文件变更 <Text color={MUTED}>{selected + 1}/{artifacts.length}</Text></Text>
+      <Text bold>
+        文件变更 <Text color={MUTED}>{selected + 1}/{artifacts.length} · 已查看 {reviewedCount}/{artifacts.length}</Text>
+      </Text>
       <Box>
         <Text color={artifact.reverted ? MUTED : PRIMARY} bold>{target}</Text>
         {changes ? <Text color={MUTED}>  {changes}</Text> : null}
         {artifact.reverted ? <Text color={SUCCESS}>  已撤销</Text> : null}
       </Box>
       {loading ? <Text color={MUTED}>正在读取差异…</Text> : null}
-      {!loading && !diffRows.length ? <Text color={MUTED}>按Enter查看diff</Text> : null}
+      {!loading && !diffRows.length ? <Text color={MUTED}>没有可显示的文本差异</Text> : null}
       {!loading ? diffRows.map((row, index) => {
         const color = row.kind === 'add' ? SUCCESS : row.kind === 'remove' ? ERROR : row.kind === 'hunk' ? ACCENT : MUTED;
         const lineNumber = row.kind === 'add' ? row.newLine : row.oldLine;
         return (
-          <Text key={`${index}:${row.oldLine}:${row.newLine}`} color={color} wrap="truncate-end">
+          <Text key={`${safeOffset + index}:${row.oldLine}:${row.newLine}`} color={color} wrap="truncate-end">
             <Text color={MUTED}>{lineNumber == null ? '     ' : String(lineNumber).padStart(4, ' ')} </Text>{row.text || ' '}
           </Text>
         );
       }) : null}
-      {!loading && allDiffRows.length > diffRows.length ? <Text color={MUTED}>另有{allDiffRows.length - diffRows.length}行</Text> : null}
+      {!loading && allDiffRows.length ? (
+        <Text color={MUTED}>差异行 {safeOffset + 1}-{visibleEnd}/{allDiffRows.length}</Text>
+      ) : null}
       {!artifact.reverted && artifact.operationId ? (
         <Text color={confirming ? WARNING : MUTED}>
           {confirming ? '再次按D确认安全撤销，Esc取消' : 'D撤销此文件'}
         </Text>
       ) : null}
-      <Text color={MUTED}>↑↓切换文件  Enter刷新diff  Ctrl+G或Esc关闭</Text>
+      <Text color={MUTED}>PgUp/PgDn滚动差异  Home/End首尾  ↑↓切换并加载  Enter刷新diff  Ctrl+G或Esc关闭</Text>
     </Box>
   );
 }
@@ -1306,11 +1763,53 @@ function CommandMenu({suggestions, selected}) {
   );
 }
 
-function PermissionPicker({selected}) {
+function PermissionPicker({
+  selected,
+  page = 'modes',
+  rules = emptyPermissionRules(),
+  ruleTab = 0,
+  ruleChoice = 0,
+  adding = false,
+  draft = '',
+}) {
+  if (page === 'rules') {
+    const behavior = PERMISSION_BEHAVIORS[ruleTab] ?? PERMISSION_BEHAVIORS[0];
+    const values = rules?.[behavior.id] ?? [];
+    return (
+      <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+        <Box justifyContent="space-between">
+          <Text bold>工具权限规则</Text>
+          <Text color={MUTED}>{permissionRuleCount(rules)}条 · 本次会话</Text>
+        </Box>
+        <Box>
+          {PERMISSION_BEHAVIORS.map((item, index) => (
+            <Text key={item.id} color={index === ruleTab ? ACCENT : MUTED} bold={index === ruleTab}>
+              {index === ruleTab ? '› ' : '  '}{item.label} {rules?.[item.id]?.length ?? 0}{'  '}
+            </Text>
+          ))}
+        </Box>
+        <Text color={MUTED}>{behavior.detail}</Text>
+        {adding ? (
+          <Box marginTop={1}>
+            <Text color={ACCENT}>添加到{behavior.label}  </Text>
+            <Text color={PRIMARY}>{draft || '工具名'}</Text>
+            <Text color={ACCENT}>█</Text>
+          </Box>
+        ) : values.length ? values.map((value, index) => (
+          <Text key={value} color={index === ruleChoice ? PRIMARY : MUTED} bold={index === ruleChoice}>
+            {index === ruleChoice ? '❯ ' : '  '}{value}
+          </Text>
+        )) : <Text color={MUTED}>当前分类没有规则，按A添加</Text>}
+        <Text color={MUTED}>
+          {adding ? 'Enter保存 · Esc取消' : '←→切换分类 · ↑↓选择 · A添加 · D删除 · Esc返回'}
+        </Text>
+      </Box>
+    );
+  }
+  const ruleItemSelected = selected === PERMISSION_MODES.length;
   return (
     <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
       <Text bold>权限模式</Text>
-      <Text color={MUTED}>仅影响本次会话，Shift+Tab可快速切换</Text>
       {PERMISSION_MODES.map((mode, index) => (
         <Box key={mode.id}>
           <Text
@@ -1322,7 +1821,13 @@ function PermissionPicker({selected}) {
           <Text color={MUTED}>  {mode.detail}</Text>
         </Box>
       ))}
-      <Text color={MUTED}>↑↓选择  Enter确认  Esc关闭</Text>
+      <Box>
+        <Text color={ruleItemSelected ? ACCENT : PRIMARY} bold={ruleItemSelected}>
+          {ruleItemSelected ? '❯ ' : '  '}工具规则
+        </Text>
+        <Text color={MUTED}>  Allow / Ask / Deny · {permissionRuleCount(rules)}条</Text>
+      </Box>
+      <Text color={MUTED}>↑↓选择 · Home/End首尾 · Enter确认 · R工具规则 · Shift+Tab快速切换 · Esc关闭</Text>
     </Box>
   );
 }
@@ -1398,9 +1903,94 @@ function QuestionPrompt({question, selected, custom, position = 1, total = 1}) {
 
 function workspaceLabel(workspace) {
   if (!workspace || workspace.remote) return '';
-  const branch = workspace.branch ? ` · ${workspace.branch}` : '';
-  const dirty = workspace.dirty ? ` · ${workspace.changedFiles ?? 0}个文件已修改` : '';
-  return `${workspace.cwd || workspace.projectRoot || ''}${branch}${dirty}`;
+  const git = workspaceGitSummary(workspace);
+  const legacyChanged = Math.max(0, Number(workspace.changedFiles) || 0);
+  const suffix = git.repository
+    ? git.label
+    : workspace.dirty && legacyChanged
+      ? `${legacyChanged}处改动`
+      : '';
+  return `${workspace.cwd || workspace.projectRoot || ''}${suffix ? ` · ${suffix}` : ''}`;
+}
+
+function projectInstructionSummary(workspace) {
+  const sources = Array.isArray(workspace?.projectInstructions?.sources)
+    ? workspace.projectInstructions.sources
+    : [];
+  const paths = sources
+    .map(item => publicLabel(item?.path, '', 120))
+    .filter(Boolean);
+  return {
+    count: paths.length,
+    paths,
+    label: paths.length ? `${paths.length}份项目指令` : '',
+  };
+}
+
+export function compactWorkspaceStatus(workspace) {
+  if (!workspace || workspace.remote) return '工作区';
+  const git = workspaceGitSummary(workspace);
+  const legacyChanged = Math.max(0, Number(workspace.changedFiles) || 0);
+  const workspaceState = git.repository
+    ? git.label
+    : [
+        workspaceDiagnosticName(workspace),
+        workspace.dirty && legacyChanged ? `${legacyChanged}处改动` : '',
+      ].filter(Boolean).join(' · ');
+  const instruction = projectInstructionSummary(workspace).label;
+  return [
+    workspaceState,
+    instruction,
+  ].filter(Boolean).join(' · ');
+}
+
+export function workspaceGitSummary(workspace) {
+  const source = workspace?.git && typeof workspace.git === 'object'
+    ? workspace.git
+    : {};
+  const repository = source.repository === true || Boolean(workspace?.branch);
+  if (!repository) {
+    return {repository: false, label: '非Git仓库', detail: '非Git仓库'};
+  }
+  const branch = publicLabel(source.branch || workspace?.branch, 'detached', 80);
+  const changed = Math.max(0, Number(source.changedFiles ?? workspace?.changedFiles) || 0);
+  const staged = Math.max(0, Number(source.stagedFiles) || 0);
+  const modified = Math.max(0, Number(source.modifiedFiles) || 0);
+  const untracked = Math.max(0, Number(source.untrackedFiles) || 0);
+  const conflicted = Math.max(0, Number(source.conflictedFiles) || 0);
+  const ahead = Math.max(0, Number(source.ahead) || 0);
+  const behind = Math.max(0, Number(source.behind) || 0);
+  const sync = [ahead ? `↑${ahead}` : '', behind ? `↓${behind}` : ''].filter(Boolean).join(' ');
+  const label = [
+    branch,
+    conflicted ? `${conflicted}个冲突` : changed ? `${changed}处改动` : '',
+    sync,
+  ].filter(Boolean).join(' · ');
+  const changes = [
+    staged ? `${staged}个已暂存` : '',
+    modified ? `${modified}个未暂存` : '',
+    untracked ? `${untracked}个未跟踪` : '',
+    conflicted ? `${conflicted}个冲突` : '',
+  ].filter(Boolean);
+  const upstream = publicLabel(source.upstream, '', 100);
+  const categorySummary = changes.join(' · ') || (changed ? `${changed}个文件已修改` : '工作树干净');
+  return {
+    repository: true,
+    branch,
+    changed,
+    staged,
+    modified,
+    untracked,
+    conflicted,
+    ahead,
+    behind,
+    label,
+    detail: [
+      [branch, sync].filter(Boolean).join(' · '),
+      upstream ? `跟踪${upstream}` : '未设置上游分支',
+      categorySummary,
+    ].join(' · '),
+  };
 }
 
 export function sessionTitleFromPrompt(value, fallback = '') {
@@ -1453,13 +2043,16 @@ export function buildTuiDiagnosticReport({
     40,
   );
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode)?.label || permissionMode;
+  const projectInstructions = projectInstructionSummary(workspace);
+  const git = workspaceGitSummary(workspace);
   return [
     'AgentLens脱敏诊断',
     `客户端: CLI ${publicLabel(version, 'development', 40)}`,
     `平台: ${process.platform} · Node ${process.versions.node}`,
     `时间: ${new Date(now).toISOString()}`,
     `模型: ${publicLabel(model, '未配置', 100)}${apiMode ? ` · ${publicLabel(apiMode, '', 40)}` : ''}`,
-    `工作区: ${workspaceDiagnosticName(workspace)}${workspace?.branch ? ` · ${publicLabel(workspace.branch, '', 80)}` : ''}${workspace?.dirty ? ` · ${Math.max(0, Number(workspace.changedFiles) || 0)}个文件已修改` : ''}`,
+    `工作区: ${workspaceDiagnosticName(workspace)} · ${git.detail}`,
+    `项目指令: ${projectInstructions.paths.length ? projectInstructions.paths.join('、') : '未发现'}`,
     `权限: ${publicLabel(permission, '询问', 40)}`,
     `状态: ${status}`,
     `运行ID: ${publicIdentifier(summary.runId || runId, '无', 160)}`,
@@ -1474,16 +2067,24 @@ export function buildTuiDiagnosticReport({
 function workspaceText(workspace) {
   if (!workspace || workspace.remote) return workspace?.message || '工作区信息不可用。';
   const warnings = Array.isArray(workspace.warnings) ? workspace.warnings.filter(Boolean) : [];
+  const projectInstructions = projectInstructionSummary(workspace);
+  const git = workspaceGitSummary(workspace);
   return [
     `项目根目录  ${workspace.projectRoot}`,
     `当前目录    ${workspace.cwd}`,
-    `Git         ${workspace.branch || '非Git仓库'}${workspace.dirty ? ` · ${workspace.changedFiles}个文件已修改` : ' · 干净'}`,
+    `Git         ${git.detail}`,
     `类型        ${workspace.workspaceKind || 'directory'}`,
+    `项目指令    ${projectInstructions.paths.length ? projectInstructions.paths.join('  ') : '未发现AGENTS.md或CLAUDE.md'}`,
     ...(warnings.length ? ['警告', ...warnings.map(item => `  ${item}`)] : []),
     '允许目录',
     ...(workspace.allowedDirectories ?? []).map(path => `  ${path}`),
     `保护        ${(workspace.protectedPatterns ?? []).join('  ')}`,
   ].join('\n');
+}
+
+export function workspaceExecutionBlock(workspace) {
+  if (!workspace || workspace.remote || workspace.workspaceKind !== 'home') return '';
+  return '当前工作区是HOME目录，任务未发送。输入/workspace <项目目录>切换后继续。';
 }
 
 function contextText(status) {
@@ -1513,7 +2114,10 @@ function contextIndicator(status) {
 }
 
 function formatSessionTime(value, now = Date.now()) {
-  const timestamp = Number(value) * 1000;
+  const numeric = Number(value);
+  const timestamp = Number.isFinite(numeric) && numeric > 0
+    ? numeric * 1000
+    : new Date(String(value ?? '').replace(' ', 'T')).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) return '时间未知';
   const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
   if (seconds < 60) return '刚刚';
@@ -1530,7 +2134,21 @@ function modelProtocolLabel(value) {
   return publicLabel(value, '兼容协议', 30);
 }
 
-const SessionPicker = React.memo(function SessionPicker({sessions, selected, query, loading, error, maxVisible = 6}) {
+function sessionIdentity(session) {
+  return String(session?.sessionId || session?.runId || '');
+}
+
+const SessionPicker = React.memo(function SessionPicker({
+  sessions,
+  selected,
+  query,
+  loading,
+  error,
+  scope = 'active',
+  deleteConfirmId = '',
+  deletingId = '',
+  maxVisible = 6,
+}) {
   const spinner = useSpinner(loading, '连接会话');
   const labels = {
     planning: ['规划中', ACCENT],
@@ -1548,17 +2166,20 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
   const start = Math.max(0, Math.min(selected - 2, Math.max(0, sessions.length - visibleCount)));
   const visible = sessions.slice(start, start + visibleCount);
   const active = sessions[selected];
+  const activeId = sessionIdentity(active);
   const activeStatus = labels[active?.status] ?? ['状态未知', MUTED];
+  const confirmingDelete = Boolean(activeId && activeId === deleteConfirmId);
+  const deleting = Boolean(activeId && activeId === deletingId);
   return (
     <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} paddingY={1} marginTop={1}>
       <Box justifyContent="space-between">
-        <Text bold>恢复会话{sessions.length ? <Text color={MUTED}>  {selected + 1}/{sessions.length}</Text> : null}</Text>
-        <Text color={MUTED}>{query ? `搜索：${query}` : '输入可筛选'}</Text>
+        <Text bold>{scope === 'archived' ? '已归档会话' : '恢复会话'}{sessions.length ? <Text color={MUTED}>  {selected + 1}/{sessions.length}</Text> : null}</Text>
+        <Text color={MUTED}>{query ? `搜索：${query}` : 'Tab切换范围'}</Text>
       </Box>
       {loading ? <Text color={MUTED}>{spinner} 正在读取当前工作区的会话…</Text> : null}
       {!loading && error ? <Text color={ERROR}>读取失败：{error}</Text> : null}
       {!loading && !error && !sessions.length ? (
-        <Text color={MUTED}>{query ? `没有匹配“${query}”的会话` : '当前工作区还没有历史会话'}</Text>
+        <Text color={MUTED}>{query ? `没有匹配“${query}”的会话` : scope === 'archived' ? '当前工作区没有已归档会话' : '当前工作区还没有历史会话'}</Text>
       ) : null}
       {!loading && !error ? visible.map((session, offset) => {
         const index = start + offset;
@@ -1567,7 +2188,7 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
         return (
           <Box key={session.runId} justifyContent="space-between">
             <Text color={selectedRow ? PRIMARY : MUTED} bold={selectedRow} wrap="truncate-end">
-              {selectedRow ? '❯ ' : '  '}{publicLabel(session.title, session.runId, 72)}
+              {selectedRow ? confirmingDelete ? '! ' : '❯ ' : '  '}{session.pinned ? '◆ ' : ''}{publicLabel(session.title, session.runId, 72)}
             </Text>
             <Text color={status[1]}>  {formatSessionTime(session.updatedAt)} · {status[0]}</Text>
           </Box>
@@ -1577,9 +2198,44 @@ const SessionPicker = React.memo(function SessionPicker({sessions, selected, que
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
           <Text color={activeStatus[1]}>{activeStatus[0]}  <Text color={MUTED}>{active.runId}</Text></Text>
           <Text color={MUTED} wrap="truncate-end">{publicLabel(active.answer || active.cwd, '尚无回答预览', 180)}</Text>
+          {confirmingDelete ? (
+            <Text color={ERROR} bold wrap="truncate-end">永久删除“{publicLabel(active.title, active.runId, 72)}”？再次按D确认，Esc取消</Text>
+          ) : deleting ? <Text color={WARNING}>正在永久删除会话…</Text> : null}
         </Box>
       ) : null}
-      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · 输入搜索 · Esc关闭</Text>
+      <Text color={confirmingDelete ? ERROR : MUTED}>
+        {confirmingDelete
+          ? '再次按D永久删除 · Esc取消'
+          : `${error ? 'R重试 · ' : ''}↑↓选择 · Enter恢复 · ${scope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · D永久删除 · Tab切换 · Esc关闭`}
+      </Text>
+    </Box>
+  );
+});
+
+const RewindPicker = React.memo(function RewindPicker({points, selected, loading, error, maxVisible = 7}) {
+  const spinner = useSpinner(loading, '读取历史消息');
+  const visibleCount = Math.max(1, Math.min(maxVisible, points.length || 1));
+  const start = Math.max(0, Math.min(selected - 2, Math.max(0, points.length - visibleCount)));
+  const visible = points.slice(start, start + visibleCount);
+  return (
+    <Box flexDirection="column" borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1} paddingY={1} marginTop={1}>
+      <Box justifyContent="space-between">
+        <Text bold>回到历史消息{points.length ? <Text color={MUTED}>  {selected + 1}/{points.length}</Text> : null}</Text>
+        <Text color={MUTED}>原会话与文件保持不变</Text>
+      </Box>
+      {loading ? <Text color={MUTED}>{spinner} 正在读取用户消息…</Text> : null}
+      {!loading && error ? <Text color={ERROR}>读取失败：{error}</Text> : null}
+      {!loading && !error && !points.length ? <Text color={MUTED}>当前会话还没有可回退的用户消息</Text> : null}
+      {!loading && !error ? visible.map((point, offset) => {
+        const index = start + offset;
+        const selectedRow = index === selected;
+        return (
+          <Text key={`${point.messageId ?? 'local'}-${point.messageIndex}`} color={selectedRow ? PRIMARY : MUTED} bold={selectedRow} wrap="truncate-end">
+            {selectedRow ? '❯ ' : '  '}{publicLabel(point.preview, '空消息', 160)}
+          </Text>
+        );
+      }) : null}
+      <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter从此继续 · Esc关闭</Text>
     </Box>
   );
 });
@@ -1618,7 +2274,7 @@ const ModelPicker = React.memo(function ModelPicker({models, selected, query, lo
       {!loading && !error && active ? (
         <Text color={MUTED} wrap="truncate-end">
           {'  '}{publicLabel(active.modelName, active.name, 100)} · {modelProtocolLabel(active.apiMode)}
-          {active.switchable === false ? ' · 采样参数由模型服务决定 · 运行knowflow configure修改' : ''}
+          {active.switchable === false ? ' · 采样参数由模型服务决定 · 运行agentlens configure修改' : ''}
         </Text>
       ) : null}
       <Text color={MUTED}>{error ? 'R重试 · ' : ''}↑↓选择 · Enter切换 · 输入搜索 · Esc关闭</Text>
@@ -1683,6 +2339,66 @@ const Welcome = React.memo(function Welcome({version, model, workspace}) {
   );
 });
 
+export function activeTaskAnchorMetrics({elapsedMs = 0, runProjection = null} = {}) {
+  const summary = runProjection?.runSummary ?? {};
+  const total = Math.max(0, Number(summary.totalSteps) || 0);
+  const completed = total
+    ? Math.min(Math.max(0, Number(summary.completedSteps) || 0), total)
+    : 0;
+  return [
+    formatTaskElapsed(elapsedMs),
+    formatTaskTokens(summary.totalTokens ?? runProjection?.usage?.totalTokens ?? runProjection?.usage?.estimatedTokens),
+    total ? `${completed}/${total}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+const ActiveTaskAnchor = React.memo(function ActiveTaskAnchor({
+  elapsedMs = 0,
+  goal,
+  liveClock = true,
+  runProjection = null,
+  startedAt = 0,
+  state = null,
+}) {
+  const now = useTaskClock(liveClock);
+  const label = publicLabel(goal, "", 180);
+  if (!label) return null;
+  const visibleElapsedMs = liveClock && Number(startedAt) > 0
+    ? Math.max(0, now - Number(startedAt))
+    : elapsedMs;
+  const activityState = runActivityPresentation({
+    running: liveClock,
+    lastActivityAt: runProjection?.runSummary?.lastActivityAt || runProjection?.runSummary?.startedAt,
+    now,
+    protectedState: Boolean(runProjection?.modelRetry),
+  });
+  const visibleState = activityState || state;
+  const metrics = activeTaskAnchorMetrics({elapsedMs: visibleElapsedMs, runProjection});
+  return (
+    <Box flexShrink={0} justifyContent="space-between" borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor={MUTED} paddingX={1}>
+      <Box flexShrink={1}>
+        <Text color={MUTED}>任务  </Text>
+        <Text color={PRIMARY} bold wrap="truncate-end">{label}</Text>
+      </Box>
+      <Text color={visibleState?.color ?? ACCENT} bold={visibleState?.label === '失败'}>
+        {metrics ? `${metrics}  ` : ''}{visibleState?.label ?? '运行中'}
+      </Text>
+    </Box>
+  );
+});
+
+const WorkspaceGuard = React.memo(function WorkspaceGuard({workspace}) {
+  const blocked = workspaceExecutionBlock(workspace);
+  if (!blocked) return null;
+  return (
+    <Box paddingX={1} marginTop={1}>
+      <Text color={WARNING} bold>未进入项目</Text>
+      <Text color={MUTED}> · 输入</Text>
+      <Text color={PRIMARY}>/workspace {'<项目目录>'}</Text>
+    </Box>
+  );
+});
+
 const TranscriptRow = React.memo(function TranscriptRow({
   item,
   taskExpanded = false,
@@ -1702,6 +2418,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
         usage={item.usage ?? {}}
         artifacts={item.artifacts ?? []}
         references={item.references ?? []}
+        verifications={item.verifications ?? []}
         recoveryActions={item.recoveryActions ?? []}
         runSummary={item.runSummary ?? null}
         failure={item.failure ?? null}
@@ -1713,34 +2430,27 @@ const TranscriptRow = React.memo(function TranscriptRow({
   if (item.role === 'delivery_summary') {
     const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
     const verifications = Array.isArray(item.verifications) ? item.verifications : [];
-    const added = artifacts.reduce((total, artifact) => total + Math.max(0, Number(artifact.addedLines) || 0), 0);
-    const removed = artifacts.reduce((total, artifact) => total + Math.max(0, Number(artifact.removedLines) || 0), 0);
-    const externalCount = artifacts.filter(artifact => /^https?:\/\//i.test(String(artifact.url || artifact.href || ''))).length;
-    const fileCount = artifacts.length - externalCount;
-    const revertedCount = artifacts.filter(artifact => artifact.reverted).length;
-    const failedVerification = verifications.some(row => row.status === 'failed');
-    const deliveryStateLabel = verifications.length
-      ? failedVerification ? '验证失败' : '验证通过'
-      : '未验证';
-    const deliveryStateColor = failedVerification
-      ? ERROR
-      : verifications.length ? SUCCESS : MUTED;
-    const summary = [
-      fileCount ? `${fileCount}个文件已更改` : '',
-      externalCount ? `${externalCount}个链接已生成` : '',
-      revertedCount ? `${revertedCount}项已撤销` : '',
-    ].filter(Boolean).join(' · ');
+    const delivery = buildTuiDeliveryPresentation({
+      artifacts,
+      verifications,
+      status: item.status,
+    });
+    const deliveryStateColor = {
+      error: ERROR,
+      success: SUCCESS,
+      warning: WARNING,
+    }[delivery.state.tone] || MUTED;
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1} marginLeft={1} borderStyle="single" borderLeft={false} borderRight={false} borderColor={MUTED} paddingY={1}>
         <Box justifyContent="space-between">
           <Box>
             <Text color={ACCENT}>⌁ </Text>
-            <Text color={PRIMARY} bold>{artifacts.length ? '本轮交付' : '本轮验收'}</Text>
-            {summary ? <Text color={MUTED}>  {summary}</Text> : null}
-            {added ? <Text color={SUCCESS}>  +{added}</Text> : null}
-            {removed ? <Text color={ERROR}>  -{removed}</Text> : null}
+            <Text color={PRIMARY} bold>{delivery.title}</Text>
+            {delivery.summary ? <Text color={MUTED}>  {delivery.summary}</Text> : null}
+            {delivery.added ? <Text color={SUCCESS}>  +{delivery.added}</Text> : null}
+            {delivery.removed ? <Text color={ERROR}>  -{delivery.removed}</Text> : null}
           </Box>
-          <Text color={deliveryStateColor} bold={failedVerification}>{deliveryStateLabel}</Text>
+          <Text color={deliveryStateColor} bold={delivery.state.tone === 'error'}>{delivery.state.label}</Text>
         </Box>
         {artifacts.slice(0, 4).map((artifact, index) => {
           const operation = artifact.reverted
@@ -1775,8 +2485,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
             ))}
           </Box>
         ) : null}
-        {failedVerification ? <Text color={ERROR}>  Ctrl+E查看失败步骤与恢复操作</Text> : null}
-        {artifacts.length ? <Text color={MUTED}>  Ctrl+G查看diff与安全撤销</Text> : null}
+        <Text color={delivery.state.tone === 'error' ? ERROR : MUTED}>  {delivery.actionHint}</Text>
       </Box>
     );
   }
@@ -1786,6 +2495,8 @@ const TranscriptRow = React.memo(function TranscriptRow({
       {item.role === 'user' ? <Text color={ACCENT} bold>› </Text> : null}
       {item.role === 'error' ? (
         <Text color={ERROR}>错误：{item.content}</Text>
+      ) : item.role === 'warning' ? (
+        <Text color={WARNING}>提醒：{item.content}</Text>
       ) : assistant ? (
         <MarkdownText>{item.content}</MarkdownText>
       ) : (
@@ -1858,7 +2569,7 @@ function capabilityText(section, status) {
       ...names.slice(0, 20).map(name => `✓ ${name}`),
       names.length > 20 ? `另有${names.length - 20}个工具` : '',
       `web_search  ${web.configured ? (web.enabled ? '已启用' : '已停用') : '未配置'} · 联网搜索`,
-      web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：knowflow tools configure web-search',
+      web.configured ? '使用/tool:web_search可定向调用，也可直接让Agent自主判断。' : '配置：agentlens tools configure web-search',
     ].filter(Boolean).join('\n');
   }
   if (section === 'mcp') {
@@ -1867,7 +2578,7 @@ function capabilityText(section, status) {
     return [
       `MCP  ${mcp.connected ?? 0}/${mcp.count ?? servers.length}已连接`,
       ...servers.map(item => `${item.status === 'connected' ? '✓' : '·'} ${item.name}  ${item.status}  ${(item.enabledTools ?? []).length}个工具`),
-      servers.length ? '管理：knowflow mcp list' : '添加：knowflow mcp add <名称> <URL> --auth oauth',
+      servers.length ? '管理：agentlens mcp list' : '添加：agentlens mcp add <名称> <URL> --auth oauth',
     ].join('\n');
   }
   if (section === 'skills') {
@@ -1876,7 +2587,7 @@ function capabilityText(section, status) {
     return [
       `Skills  ${skills.count ?? items.length}个可用`,
       ...items.map(item => `✓ ${item.name ?? item.slug}  ${item.version ?? ''}  [${item.sourceKind ?? 'local'}]`),
-      '安装：knowflow skills install <目录或SKILL.md>',
+      '安装：agentlens skills install <目录或SKILL.md>',
     ].join('\n');
   }
   const memory = value.memory ?? {};
@@ -1889,7 +2600,7 @@ function capabilityText(section, status) {
       return content ? `${index + 1}. ${content.slice(0, 96)}${content.length > 96 ? '…' : ''}` : '';
     }).filter(Boolean),
     memory.enabled && memory.configured && !memories.length ? '当前还没有长期记忆。' : '',
-    memory.configured ? '管理：knowflow memory list|enable|disable' : '配置：knowflow memory configure',
+    memory.configured ? '管理：agentlens memory list|enable|disable' : '配置：agentlens memory configure',
   ].filter(Boolean).join('\n');
 }
 
@@ -1943,6 +2654,8 @@ export function App({
   assumeYes = false,
   fullscreenEnabled = false,
   mouseEnabled = false,
+  startupAction = '',
+  localMode = true,
 }) {
   const {exit} = useApp();
   const {stdout} = useStdout();
@@ -1956,8 +2669,16 @@ export function App({
   const [sessionPicker, setSessionPicker] = useState(false);
   const [sessionChoice, setSessionChoice] = useState(0);
   const [sessionQuery, setSessionQuery] = useState('');
+  const [sessionScope, setSessionScope] = useState('active');
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState('');
+  const [sessionDeleteConfirmId, setSessionDeleteConfirmId] = useState('');
+  const [sessionDeletingId, setSessionDeletingId] = useState('');
+  const [rewindPoints, setRewindPoints] = useState([]);
+  const [rewindPicker, setRewindPicker] = useState(false);
+  const [rewindChoice, setRewindChoice] = useState(0);
+  const [rewindLoading, setRewindLoading] = useState(false);
+  const [rewindError, setRewindError] = useState('');
   const [models, setModels] = useState([]);
   const [recentModelIds, setRecentModelIds] = useState([]);
   const [modelPicker, setModelPicker] = useState(false);
@@ -1965,6 +2686,15 @@ export function App({
   const [modelQuery, setModelQuery] = useState('');
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState('');
+  const [localConfigOpen, setLocalConfigOpen] = useState(false);
+  const [localConfigLoading, setLocalConfigLoading] = useState(false);
+  const [localConfigSaving, setLocalConfigSaving] = useState(false);
+  const [localConfigError, setLocalConfigError] = useState('');
+  const [localConfigNotice, setLocalConfigNotice] = useState('');
+  const [localConfigRecommendation, setLocalConfigRecommendation] = useState(null);
+  const [localConfigChoice, setLocalConfigChoice] = useState(0);
+  const [localConfigCursor, setLocalConfigCursor] = useState(0);
+  const [localConfigDraft, setLocalConfigDraft] = useState(() => normalizeLocalModelConfig());
   const [reasoningEffort, setReasoningEffort] = useState('default');
   const [reasoningPicker, setReasoningPicker] = useState(false);
   const [reasoningChoice, setReasoningChoice] = useState(0);
@@ -1988,6 +2718,7 @@ export function App({
   const [cursorOffset, setCursorOffset] = useState(0);
   const cursorOffsetRef = useRef(0);
   const [dismissedInput, setDismissedInput] = useState('');
+  const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [workspacePaths, setWorkspacePaths] = useState([]);
   const [attachedPaths, setAttachedPaths] = useState([]);
@@ -2010,9 +2741,9 @@ export function App({
   const [taskStepDetailKey, setTaskStepDetailKey] = useState('');
   const runStartedAtRef = useRef(0);
   const [runElapsedMs, setRunElapsedMs] = useState(0);
-  const [runClock, setRunClock] = useState(() => Date.now());
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
+  const [toolDetailOffset, setToolDetailOffset] = useState(0);
   const [recoveryChoice, setRecoveryChoice] = useState(0);
   const recoveryChoiceRef = useRef(0);
   const updateRecoveryChoice = useCallback(next => {
@@ -2031,13 +2762,20 @@ export function App({
   const [changeDetailOpen, setChangeDetailOpen] = useState(false);
   const changeDetailOpenRef = useRef(false);
   const [changeDetailIndex, setChangeDetailIndex] = useState(0);
+  const changeDetailIndexRef = useRef(0);
+  const changeRequestPathRef = useRef('');
+  const changeRequestIdRef = useRef(0);
+  const activeChangeRequestIdRef = useRef('');
+  const [reviewedChangeIds, setReviewedChangeIds] = useState([]);
   const [changePatch, setChangePatch] = useState('');
+  const [changePatchOffset, setChangePatchOffset] = useState(0);
   const [changeLoading, setChangeLoading] = useState(false);
   const [changeConfirming, setChangeConfirming] = useState(false);
   const [transcriptMode, setTranscriptMode] = useState(false);
   const transcriptModeRef = useRef(false);
   const [transcriptSnapshot, setTranscriptSnapshot] = useState(null);
   const [running, setRunning] = useState(false);
+  const [terminalNotifications, setTerminalNotifications] = useState(() => terminalNotificationsEnabled());
   const [updating, setUpdating] = useState(false);
   const [restartRequired, setRestartRequired] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
@@ -2054,6 +2792,13 @@ export function App({
   const permissionRef = useRef(permissionMode);
   const [permissionPicker, setPermissionPicker] = useState(false);
   const [permissionChoice, setPermissionChoice] = useState(0);
+  const [permissionPage, setPermissionPage] = useState('modes');
+  const [permissionRules, setPermissionRules] = useState(emptyPermissionRules);
+  const permissionRulesRef = useRef(permissionRules);
+  const [permissionRuleTab, setPermissionRuleTab] = useState(0);
+  const [permissionRuleChoice, setPermissionRuleChoice] = useState(0);
+  const [permissionRuleAdding, setPermissionRuleAdding] = useState(false);
+  const [permissionRuleDraft, setPermissionRuleDraft] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTab, setHelpTab] = useState('shortcuts');
   const [helpQuery, setHelpQuery] = useState('');
@@ -2061,6 +2806,10 @@ export function App({
   const [queue, setQueue] = useState([]);
   const queueSequenceRef = useRef(0);
   const [queuePaused, setQueuePaused] = useState(false);
+  const [queueDurable, setQueueDurable] = useState(false);
+  const queueHydratedRef = useRef(false);
+  const queueSyncTimerRef = useRef(null);
+  const queuePersistedKeyRef = useRef('');
   const [queueManagerOpen, setQueueManagerOpen] = useState(false);
   const [queueManagerIndex, setQueueManagerIndex] = useState(0);
   const [lastQuestion, setLastQuestion] = useState('');
@@ -2090,6 +2839,9 @@ export function App({
   const lastTerminalInteractionAtRef = useRef(Date.now());
   const sessionApprovals = useRef(new Set());
   const requestCounter = useRef(0);
+  const startupActionRef = useRef(
+    ['resume', 'continue'].includes(String(startupAction)) ? String(startupAction) : '',
+  );
   useTerminalFeedback({
     ready,
     connecting: !ready && ['正在启动', '运行时已连接'].includes(phase),
@@ -2100,6 +2852,7 @@ export function App({
     runStatus: runProjection.runSummary?.status,
     lastInteractionAtRef: lastTerminalInteractionAtRef,
     contextLabel: workspace ? workspaceDiagnosticName(workspace) : '',
+    notificationsEnabled: terminalNotifications,
   });
   useEffect(() => {
     waitingInteractionsRef.current = waitingInteractions;
@@ -2117,11 +2870,31 @@ export function App({
       setSessionPicker(false);
       setSessionQuery('');
       setSessionError('');
+      setSessionDeleteConfirmId('');
+      setSessionDeletingId('');
+    }
+    if (keep !== 'rewind') {
+      setRewindPicker(false);
+      setRewindPoints([]);
+      setRewindChoice(0);
+      setRewindLoading(false);
+      setRewindError('');
     }
     if (keep !== 'models') {
       setModelPicker(false);
       setModelQuery('');
       setModelError('');
+    }
+    if (keep !== 'localConfig') {
+      setLocalConfigOpen(false);
+      setLocalConfigLoading(false);
+      setLocalConfigSaving(false);
+      setLocalConfigError('');
+      setLocalConfigNotice('');
+      setLocalConfigRecommendation(null);
+      setLocalConfigChoice(0);
+      setLocalConfigCursor(0);
+      setLocalConfigDraft(value => ({...value, apiKey: ''}));
     }
     if (keep !== 'reasoning') setReasoningPicker(false);
     if (keep !== 'permissions') setPermissionPicker(false);
@@ -2143,17 +2916,40 @@ export function App({
     if (keep !== 'queue') setQueueManagerOpen(false);
     if (keep !== 'tools') setToolDetailOpen(false);
     if (keep !== 'changes') {
+      changeDetailOpenRef.current = false;
       setChangeDetailOpen(false);
       setChangeConfirming(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!running) return undefined;
-    setRunClock(Date.now());
-    const timer = setInterval(() => setRunClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [running, runProjection.modelRetry?.retryAt]);
+  const markChangeReviewed = useCallback((artifact, index = 0) => {
+    const identifier = changeReviewKey(artifact, index);
+    setReviewedChangeIds(current => (
+      current.includes(identifier) ? current : [...current, identifier]
+    ));
+  }, []);
+
+  const openChangeReview = useCallback((artifacts, requestedIndex = 0) => {
+    const reviewArtifacts = changeReviewArtifacts(artifacts);
+    if (!reviewArtifacts.length) return false;
+    const nextIndex = Math.max(0, Math.min(reviewArtifacts.length - 1, requestedIndex));
+    const selected = reviewArtifacts[nextIndex];
+    closeTransientSurfaces('changes');
+    changeDetailOpenRef.current = true;
+    changeDetailIndexRef.current = nextIndex;
+    changeRequestPathRef.current = selected.path;
+    const requestId = `change-diff-${changeRequestIdRef.current + 1}`;
+    changeRequestIdRef.current += 1;
+    activeChangeRequestIdRef.current = requestId;
+    setChangeDetailIndex(nextIndex);
+    setChangePatch('');
+    setChangePatchOffset(0);
+    setChangeConfirming(false);
+    setChangeDetailOpen(true);
+    setChangeLoading(true);
+    client.send({type: 'workspace', action: 'diff', path: selected.path, requestId});
+    return true;
+  }, [client, closeTransientSurfaces]);
 
   useEffect(() => {
     pastedContentsRef.current = pastedContents;
@@ -2170,8 +2966,14 @@ export function App({
     changeDetailOpenRef.current = changeDetailOpen;
   }, [changeDetailOpen]);
   useEffect(() => {
+    changeDetailIndexRef.current = changeDetailIndex;
+  }, [changeDetailIndex]);
+  useEffect(() => {
     permissionRef.current = permissionMode;
   }, [permissionMode]);
+  useEffect(() => {
+    permissionRulesRef.current = permissionRules;
+  }, [permissionRules]);
   useEffect(() => {
     viewportSizeRef.current = {columns: stdout.columns, rows: stdout.rows};
   }, [stdout.columns, stdout.rows]);
@@ -2281,6 +3083,7 @@ export function App({
         usage: runProjectionRef.current.usage,
         artifacts: runProjectionRef.current.artifacts,
         references: runProjectionRef.current.references,
+        verifications,
         recoveryActions: runProjectionRef.current.recoveryActions,
         runSummary: runProjectionRef.current.runSummary,
         failure: runProjectionRef.current.error,
@@ -2300,6 +3103,7 @@ export function App({
         role: 'delivery_summary',
         artifacts: runProjectionRef.current.artifacts,
         verifications,
+        status: finalPhase,
       });
     }
     if (additions.length) setTranscript(items => [...items, ...additions]);
@@ -2327,6 +3131,7 @@ export function App({
           code: currentProjection.error?.code || 'turn_failed',
           message: message || currentProjection.error?.message || 'Agent运行失败。',
           retryable: currentProjection.error?.retryable !== false,
+          ...(currentProjection.error?.target ? {target: currentProjection.error.target} : {}),
         },
       } : {}),
       ...(currentSummary ? {
@@ -2463,7 +3268,7 @@ export function App({
         if (message.workspace) {
           setWorkspace(message.workspace);
           const warnings = Array.isArray(message.workspace.warnings) ? message.workspace.warnings.filter(Boolean) : [];
-          if (warnings.length) appendItem('error', warnings.join('\n'));
+          if (warnings.length) appendItem('warning', warnings.join('\n'));
         }
         setPhase('运行时已连接');
         return;
@@ -2493,6 +3298,19 @@ export function App({
           setRecentModelIds(current => [String(readyModelId), ...current.filter(id => id !== String(readyModelId))].slice(0, 5));
         }
         setHistory(Array.isArray(message.history) ? message.history : []);
+        const restoredQueue = orderedQueue(Array.isArray(message.queue) ? message.queue : []);
+        setQueue(restoredQueue);
+        setQueuePaused(Boolean(message.queuePaused));
+        setQueueDurable(message.queueDurable !== false);
+        queueSequenceRef.current = restoredQueue.reduce(
+          (maximum, item) => Math.max(maximum, Number(item?.sequence) || 0),
+          0,
+        );
+        queueHydratedRef.current = true;
+        queuePersistedKeyRef.current = JSON.stringify({items: restoredQueue, paused: Boolean(message.queuePaused)});
+        if (Number(message.queueRecovered) > 0) {
+          appendItem('warning', `已恢复${Number(message.queueRecovered)}个异常中断的任务，队列保持暂停，请确认后输入/continue。`);
+        }
         const recoverable = (message.sessions ?? []).some(session => !['completed', 'cancelled'].includes(session.status));
         const warnings = Array.isArray(message.workspace?.warnings) ? message.workspace.warnings.filter(Boolean) : [];
         setPhase(warnings.length ? '请确认工作区' : (recoverable ? '发现未完成会话 · /resume' : '就绪'));
@@ -2511,7 +3329,6 @@ export function App({
         if (eventName === 'run.started' || event.type === 'run_started') {
           const startedAt = Date.now();
           runStartedAtRef.current = startedAt;
-          setRunClock(startedAt);
           setRunElapsedMs(0);
           setTaskExpanded(true);
         } else if (eventName === 'usage.updated') {
@@ -2592,11 +3409,15 @@ export function App({
           );
         } else if (eventName === 'approval.required' || event.type === 'approval_required') {
           const mode = permissionRef.current;
+          const rule = permissionRuleBehavior(event.toolName, permissionRulesRef.current);
           const sessionAllowed = sessionApprovals.current.has(approvalKey(event));
           const autoEdit = mode === 'auto_edit'
             && event.risk === 'write'
             && !event.destructive;
-          if (mode === 'full_access' || autoEdit || sessionAllowed) {
+          if (rule === 'deny') {
+            client.send({type: 'approve', decision: 'deny'});
+            showComposerNotice(`${event.toolName ?? '该工具'}已被Deny规则拒绝`);
+          } else if (rule === 'allow' || (rule !== 'ask' && (mode === 'full_access' || autoEdit || sessionAllowed))) {
             client.send({type: 'approve', decision: 'allow_once'});
           } else {
             closeTransientSurfaces();
@@ -2614,7 +3435,6 @@ export function App({
           setWaitingInteractions(items => removeWaitingInteraction(items, 'question', event));
           setPhase(waitingInteractionsRef.current.length > 1 ? '还有待处理请求' : '继续执行');
         } else if (eventName === 'model.retrying' || event.type === 'model_retry') {
-          setRunClock(Date.now());
           const retryAttempt = Math.max(1, Number(event.retryAttempt || 1));
           const maxRetries = Math.max(retryAttempt, Number(event.maxRetries || retryAttempt));
           const retryReason = Number(event.statusCode || 0) === 429
@@ -2645,6 +3465,17 @@ export function App({
           });
           activitiesRef.current = nextActivities;
           setActivities(nextActivities);
+        }
+        return;
+      }
+      if (message.type === 'queue_saved' || message.type === 'queue_claimed') {
+        setQueueDurable(true);
+        return;
+      }
+      if (message.type === 'queue_failed') {
+        setQueueDurable(false);
+        if (message.action !== 'claim') {
+          appendItem('warning', message.message || '待发送任务无法持久保存，仅在本次运行中可用。');
         }
         return;
       }
@@ -2754,6 +3585,69 @@ export function App({
         setModelPicker(true);
         return;
       }
+      if (message.type === 'local_model_config') {
+        const next = normalizeLocalModelConfig(message.config);
+        closeTransientSurfaces('localConfig');
+        setLocalConfigDraft(next);
+        setLocalConfigChoice(0);
+        setLocalConfigCursor(next.baseUrl.length);
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigError('');
+        setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
+        setLocalConfigOpen(true);
+        setPhase('配置本地模型');
+        return;
+      }
+      if (message.type === 'local_model_config_testing') {
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice('正在测试模型连接…');
+        setLocalConfigRecommendation(null);
+        setPhase('正在测试模型连接');
+        return;
+      }
+      if (message.type === 'local_model_config_recommended') {
+        const recommendation = message.recommendation && typeof message.recommendation === 'object'
+          ? message.recommendation
+          : null;
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigError(message.message || '当前协议连接失败。');
+        setLocalConfigNotice('');
+        setLocalConfigRecommendation(recommendation);
+        setLocalConfigOpen(true);
+        setPhase('检测到可用协议');
+        return;
+      }
+      if (message.type === 'local_model_config_saved') {
+        const label = publicLabel(message.model, '默认模型', 120);
+        const nextModels = Array.isArray(message.models) ? message.models : [];
+        setModel(label);
+        setModels(nextModels);
+        setLocalConfigSaving(false);
+        setLocalConfigOpen(false);
+        setLocalConfigError('');
+        setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
+        setLocalConfigDraft(value => ({...value, apiKey: ''}));
+        appendItem('assistant', `模型连接可用，已保存${label}。从下一轮任务开始生效。`);
+        setPhase('就绪');
+        return;
+      }
+      if (message.type === 'local_model_config_failed') {
+        closeTransientSurfaces('localConfig');
+        setLocalConfigLoading(false);
+        setLocalConfigSaving(false);
+        setLocalConfigNotice('');
+        setLocalConfigRecommendation(null);
+        setLocalConfigError(message.message || '模型配置失败。');
+        setLocalConfigOpen(true);
+        setPhase('模型配置失败');
+        return;
+      }
       if (message.type === 'capability_failed') {
         appendItem('error', message.message ?? '读取能力状态失败。');
         return;
@@ -2776,6 +3670,7 @@ export function App({
         ).trim();
         setTranscript(messages.map((item, index) => ({
           id: `branch-${index}`,
+          messageId: item.id ?? null,
           role: item.role,
           content: String(item.content ?? ''),
         })));
@@ -2790,13 +3685,44 @@ export function App({
           ...current.filter(item => item.runId !== String(result.runId || '')),
         ].filter(item => item.runId));
         setTaskArchived(true);
+        const restoredQuestion = String(result.restoredQuestion || '').trim();
+        if (restoredQuestion) {
+          inputRef.current = restoredQuestion;
+          setInput(restoredQuestion);
+          cursorOffsetRef.current = restoredQuestion.length;
+          setCursorOffset(restoredQuestion.length);
+          pastedContentsRef.current = {};
+          setPastedContents({});
+          setComposerMode('prompt');
+          composerModeRef.current = 'prompt';
+        }
+        closeTransientSurfaces();
         appendItem('assistant', `已创建会话分支“${publicLabel(result.title, '新会话（分支）', 160)}”，后续任务不会改动原会话。`);
-        setPhase('分支已就绪');
+        setPhase(restoredQuestion ? '已回到历史消息' : '分支已就绪');
         return;
       }
       if (message.type === 'session_branch_failed') {
         appendItem('error', message.message ?? '创建会话分支失败。');
         setPhase('就绪');
+        return;
+      }
+      if (message.type === 'rewind_points') {
+        const points = Array.isArray(message.points) ? [...message.points].reverse() : [];
+        setRewindPoints(points);
+        setRewindChoice(0);
+        setRewindLoading(false);
+        setRewindError('');
+        closeTransientSurfaces('rewind');
+        setRewindPicker(true);
+        setPhase(points.length ? '选择回退位置' : '没有可回退的消息');
+        return;
+      }
+      if (message.type === 'rewind_points_failed') {
+        closeTransientSurfaces('rewind');
+        setRewindLoading(false);
+        setRewindError(message.message || '读取历史消息失败。');
+        setRewindPicker(true);
+        setPhase('读取回退位置失败');
         return;
       }
       if (message.type === 'session_renamed') {
@@ -2817,6 +3743,62 @@ export function App({
         setPhase('就绪');
         return;
       }
+      if (message.type === 'session_pinned') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const pinned = Boolean(result.pinned);
+        setSessions(current => current
+          .map(item => runId && item.runId === runId ? {...item, pinned} : item)
+          .sort((left, right) => (
+            Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
+            || Number(right.updatedAt || 0) - Number(left.updatedAt || 0)
+          )));
+        setSessionChoice(0);
+        setPhase(pinned ? '会话已置顶' : '已取消置顶');
+        return;
+      }
+      if (message.type === 'session_archived') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const archived = Boolean(result.archived);
+        setSessions(current => current.filter(item => !runId || item.runId !== runId));
+        setSessionChoice(0);
+        setSessionError('');
+        setPhase(archived ? '会话已归档' : '会话已恢复');
+        return;
+      }
+      if (message.type === 'session_deleted') {
+        const result = message.result ?? {};
+        const runId = String(result.runId || '');
+        const sessionId = String(result.sessionId || '');
+        setSessions(current => current.filter(item => (
+          (!runId || String(item.runId || '') !== runId)
+          && (!sessionId || String(item.sessionId || '') !== sessionId)
+        )));
+        setSessionChoice(0);
+        setSessionDeleteConfirmId('');
+        setSessionDeletingId('');
+        setSessionError('');
+        setPhase('会话已永久删除');
+        return;
+      }
+      if (message.type === 'session_delete_failed') {
+        setSessionDeletingId('');
+        setSessionDeleteConfirmId('');
+        setSessionError(message.message ?? '永久删除会话失败。');
+        setPhase('删除会话失败');
+        return;
+      }
+      if (message.type === 'session_archive_failed') {
+        setSessionError(message.message ?? '更新会话归档状态失败。');
+        setPhase('更新归档状态失败');
+        return;
+      }
+      if (message.type === 'session_pin_failed') {
+        setSessionError(message.message ?? '更新会话置顶状态失败。');
+        setPhase('更新置顶状态失败');
+        return;
+      }
       if (message.type === 'session_exported') {
         const result = message.result ?? {};
         appendItem('assistant', `已导出${Number(result.messageCount || 0)}条消息：${publicLabel(result.path, result.filename || '会话文件', 300)}`);
@@ -2835,9 +3817,24 @@ export function App({
       }
       if (message.type === 'turn_completed') {
         setRunRecoveryOpen(false);
+        if (
+          runProjectionRef.current.artifacts.length === 0
+          && Array.isArray(message.changes)
+          && message.changes.length
+        ) {
+          const projected = workspaceChangesToArtifactEvents(message.changes).reduce(
+            (current, event) => projectRunEvent(current, event),
+            runProjectionRef.current,
+          );
+          runProjectionRef.current = projected;
+          setRunProjection(projected);
+        }
         settleCurrentRun(message.cancelled ? 'cancelled' : 'completed');
-        const projectedArtifactCount = runProjectionRef.current.artifacts.length;
-        if (message.restored && restoreMessages(message.messages)) {
+        if (
+          message.restored
+          && Array.isArray(message.messages)
+          && restoreMessages(message.messages)
+        ) {
           lastTurnRequestRef.current = null;
         } else {
           lastAssistantAnswerRef.current = redact(
@@ -2850,10 +3847,6 @@ export function App({
           );
         }
         if (message.runId) setCurrentRunId(String(message.runId));
-        if (Array.isArray(message.changes) && message.changes.length && projectedArtifactCount === 0) {
-          const summary = message.changes.map(item => `${item.path} +${item.added ?? 0} -${item.removed ?? 0}`).join(' · ');
-          appendItem('assistant', `本轮修改  ${summary}  · /diff查看`);
-        }
         resetAssistantDraft();
         if (runStartedAtRef.current) {
           setRunElapsedMs(Date.now() - runStartedAtRef.current);
@@ -2889,7 +3882,11 @@ export function App({
           setPhase('正在切换到立即任务');
           return;
         }
-        const publicFailure = userFacingErrorMessage(message.message);
+        const publicFailure = userFacingErrorMessage(
+          message.message,
+          '执行失败。',
+          message.errorCode,
+        );
         if (assistantDraftRef.current.trim()) {
           lastAssistantAnswerRef.current = redact(
             assistantDraftRef.current,
@@ -2898,8 +3895,13 @@ export function App({
         }
         const failureProjection = projectRunEvent(runProjectionRef.current, {
           eventName: 'error.raised',
-          errorCode: message.errorCode || runProjectionRef.current.error?.code || 'turn_failed',
-          message: publicFailure,
+          error: {
+            code: message.errorCode || runProjectionRef.current.error?.code || 'turn_failed',
+            message: publicFailure,
+            retryable: !Array.isArray(message.recoveryActions)
+              || message.recoveryActions.includes('retry'),
+            ...(message.failureTarget ? {target: message.failureTarget} : {}),
+          },
           recoveryActions: Array.isArray(message.recoveryActions)
             ? message.recoveryActions
             : runProjectionRef.current.recoveryActions,
@@ -2976,8 +3978,17 @@ export function App({
         setTaskStepDetailKey('');
         setToolDetailOpen(false);
         setToolDetailIndex(0);
+        setReviewedChangeIds([]);
+        changeRequestPathRef.current = '';
         sessionApprovals.current.clear();
+        const clearedPermissionRules = emptyPermissionRules();
+        permissionRef.current = 'ask';
+        permissionRulesRef.current = clearedPermissionRules;
         setPermissionMode('ask');
+        setPermissionRules(clearedPermissionRules);
+        setPermissionPage('modes');
+        setPermissionRuleAdding(false);
+        setPermissionRuleDraft('');
         setCurrentRunId('');
         setCurrentSessionTitle('');
         activeRequestIdRef.current = '';
@@ -2999,8 +4010,17 @@ export function App({
         const result = message.result ?? {};
         if (message.action === 'diff') {
           if (changeDetailOpenRef.current) {
+            if (message.requestId && message.requestId !== activeChangeRequestIdRef.current) return;
+            const responsePath = result.files?.[0]?.path || '';
+            if (responsePath && responsePath !== changeRequestPathRef.current) return;
             setChangePatch(result.patch || '没有可显示的文本差异。');
+            setChangePatchOffset(0);
             setChangeLoading(false);
+            const reviewArtifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+            const reviewedIndex = reviewArtifacts.findIndex(artifact => (
+              artifact.path === changeRequestPathRef.current
+            ));
+            if (reviewedIndex >= 0) markChangeReviewed(reviewArtifacts[reviewedIndex], reviewedIndex);
           } else {
             const files = Array.isArray(result.files) ? result.files : [];
             appendItem('assistant', result.patch
@@ -3023,18 +4043,54 @@ export function App({
           setChangeConfirming(false);
           if (changeDetailOpenRef.current) {
             setChangePatch('该文件变更已安全撤销。');
+            setChangePatchOffset(0);
           } else appendItem('assistant', `已安全撤销 ${result.path}。`);
           if (result.workspace) setWorkspace(result.workspace);
         } else {
           setWorkspace(result);
+          if (message.action === 'switch') {
+            if (queueSyncTimerRef.current) {
+              clearTimeout(queueSyncTimerRef.current);
+              queueSyncTimerRef.current = null;
+            }
+            lastAssistantAnswerRef.current = '';
+            setAttachedPaths([]);
+            setSessions(Array.isArray(message.sessions) ? message.sessions : []);
+            setHistory(Array.isArray(message.history) ? message.history : []);
+            setHistoryIndex(-1);
+            const switchedQueue = orderedQueue(Array.isArray(message.queue) ? message.queue : []);
+            setQueue(switchedQueue);
+            setQueuePaused(Boolean(message.queuePaused));
+            setQueueDurable(message.queueDurable !== false);
+            queueSequenceRef.current = switchedQueue.reduce(
+              (maximum, item) => Math.max(maximum, Number(item?.sequence) || 0),
+              0,
+            );
+            queueHydratedRef.current = true;
+            queuePersistedKeyRef.current = JSON.stringify({items: switchedQueue, paused: Boolean(message.queuePaused)});
+            setPromptStash(null);
+            killBufferRef.current = '';
+            composerUndoRef.current = [];
+            setPastedContents({});
+            setChangeDetailOpen(false);
+            setChangeLoading(false);
+            setChangeConfirming(false);
+            setReviewedChangeIds([]);
+            changeRequestPathRef.current = '';
+            setChangePatch('');
+            setChangePatchOffset(0);
+            setPhase('工作区已切换');
+          }
           appendItem('assistant', message.action === 'status' ? workspaceText(result) : (result.message || workspaceText(result)));
         }
         return;
       }
       if (message.type === 'workspace_failed') {
         if (changeDetailOpenRef.current) {
+          if (message.requestId && message.requestId !== activeChangeRequestIdRef.current) return;
           setChangeLoading(false);
           setChangePatch(`操作失败：${message.message ?? '工作区操作失败。'}`);
+          setChangePatchOffset(0);
           setChangeConfirming(false);
         } else appendItem('error', message.message ?? '工作区操作失败。');
         return;
@@ -3046,6 +4102,8 @@ export function App({
         closeTransientSurfaces('sessions');
         setSessionLoading(false);
         setSessionError('');
+        setSessionDeleteConfirmId('');
+        setSessionDeletingId('');
         setSessionPicker(true);
         return;
       }
@@ -3071,13 +4129,13 @@ export function App({
         setUpdating(false);
         setRestartRequired(true);
         const nextVersion = message.nextVersion || '最新版';
-        appendItem('assistant', `AgentLens CLI已更新到v${nextVersion}。退出并重新运行knowflow chat后生效。`);
+        appendItem('assistant', `AgentLens CLI已更新到v${nextVersion}。退出并重新运行agentlens chat后生效。`);
         setPhase('更新完成 · 重启生效');
         return;
       }
       if (message.type === 'cli_update_failed') {
         setUpdating(false);
-        appendItem('error', `更新失败：${message.message || '请稍后重试，或在终端运行knowflow update。'}`);
+        appendItem('error', `更新失败：${message.message || '请稍后重试，或在终端运行agentlens update。'}`);
         setPhase('更新失败');
         return;
       }
@@ -3086,7 +4144,10 @@ export function App({
           ? `\n\nPython stderr：\n${message.stderr.join('\n')}`
           : '';
         const hint = message.hint ? `\n\n建议：${message.hint}` : '';
-        appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}`);
+        const recovery = message.type === 'startup_failed' && localMode
+          ? '\n\n输入/configure可在当前TUI内重新配置模型。'
+          : '';
+        appendItem('error', `${message.message ?? '运行时错误'}${stderr}${hint}${recovery}`);
         if (message.type === 'startup_failed') {
           setRunning(false);
           setCancelPending(false);
@@ -3109,7 +4170,27 @@ export function App({
       client.off('exit', onExit);
       client.close();
     };
-  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
+  }, [appendItem, archiveCurrentTurn, client, closeTransientSurfaces, localMode, markChangeReviewed, resetAssistantDraft, scheduleDraftFlush, settleCurrentRun]);
+
+  useEffect(() => {
+    if (!ready || !queueHydratedRef.current) return undefined;
+    const snapshotKey = JSON.stringify({items: orderedQueue(queue), paused: queuePaused});
+    if (snapshotKey === queuePersistedKeyRef.current) return undefined;
+    if (queueSyncTimerRef.current) clearTimeout(queueSyncTimerRef.current);
+    queueSyncTimerRef.current = setTimeout(() => {
+      const sent = client.send({
+        type: 'queue',
+        action: 'sync',
+        items: orderedQueue(queue),
+        paused: queuePaused,
+      });
+      if (sent) queuePersistedKeyRef.current = snapshotKey;
+      else setQueueDurable(false);
+    }, 80);
+    return () => {
+      if (queueSyncTimerRef.current) clearTimeout(queueSyncTimerRef.current);
+    };
+  }, [client, queue, queuePaused, ready]);
 
   useEffect(() => {
     if (running || approval || question || queueManagerOpen || queuePaused || !ready || queue.length === 0) return;
@@ -3134,6 +4215,7 @@ export function App({
     if (mode === 'prompt' && turnAttachmentPaths.length) {
       message.attachmentPaths = turnAttachmentPaths;
     }
+    client.send({type: 'queue', action: 'claim', itemId: next.id, requestId, item: next});
     if (!client.send(message)) {
       setQueue(orderedQueue(queue));
       setQueuePaused(true);
@@ -3144,6 +4226,7 @@ export function App({
     activeRequestIdRef.current = requestId;
     setQueue(remaining);
     setRunning(true);
+    setPhase(mode === 'shell' ? '正在执行命令' : '正在启动Agent');
     setCancelPending(false);
     setRunRecoveryOpen(false);
     const emptyActivities = new Map();
@@ -3160,12 +4243,13 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     const historyText = queuedPromptHistory(next);
     lastTurnRequestRef.current = turnRequestSnapshot(
@@ -3273,6 +4357,8 @@ export function App({
     taskNavigationOpen,
     queueManagerOpen,
     sessionPicker,
+    rewindPicker,
+    localConfigOpen,
     modelPicker,
     reasoningPicker,
     transcriptSearchOpen,
@@ -3282,6 +4368,24 @@ export function App({
     transcriptMode,
     suggestionsLength: suggestions.length,
   });
+  const suggestedFollowUp = useMemo(
+    () => running ? '' : nextPromptSuggestion({
+      ...runProjection,
+      terminal: taskArchived
+        ? (runProjection.error ? 'failed' : 'completed')
+        : '',
+    }),
+    [runProjection, running, taskArchived],
+  );
+  const followUpSuggestionKey = `${runProjection?.runSummary?.runId ?? currentRunId}:${suggestedFollowUp}`;
+  const followUpSuggestion = composerMode === 'prompt'
+    && interactionFocus === 'composer'
+    && !input
+    && !workspaceExecutionBlock(workspace)
+    && suggestedFollowUp
+    && dismissedFollowUpKey !== followUpSuggestionKey
+      ? suggestedFollowUp
+      : '';
 
   useEffect(() => setSelectedSuggestion(0), [input]);
   useEffect(() => setHistorySearchChoice(0), [historySearchQuery]);
@@ -3313,6 +4417,25 @@ export function App({
     if (composerNoticeTimerRef.current) clearTimeout(composerNoticeTimerRef.current);
     composerNoticeTimerRef.current = setTimeout(() => setComposerNotice(''), 2400);
   }, []);
+
+  const openRewindPicker = useCallback(() => {
+    closeTransientSurfaces('rewind');
+    setRewindPoints([]);
+    setRewindChoice(0);
+    setRewindLoading(true);
+    setRewindError('');
+    setRewindPicker(true);
+    setPhase('读取历史消息');
+    client.send({type: 'rewind_points'});
+  }, [client, closeTransientSurfaces]);
+
+  const handleEmptyEscape = useDoublePress(
+    pending => setComposerNotice(current => (
+      !pending && current === '再按一次Esc回到历史消息' ? '' : current
+    )),
+    openRewindPicker,
+    () => showComposerNotice('再按一次Esc回到历史消息'),
+  );
 
   const pushComposerUndo = useCallback(({coalesce = false} = {}) => {
     const now = Date.now();
@@ -3385,6 +4508,7 @@ export function App({
     const normalizedPriority = Object.hasOwn(QUEUE_PRIORITIES, priority) ? priority : 'next';
     queueSequenceRef.current += 1;
     const item = {
+      id: `queue-${Date.now()}-${queueSequenceRef.current}`,
       text,
       displayText,
       priority: normalizedPriority,
@@ -3450,11 +4574,17 @@ export function App({
     const publicDisplayText = mode === 'shell' ? `! ${displayText}` : displayText;
     if (!ready) {
       appendItem('error', '运行时尚未准备好。');
-      return;
+      return false;
+    }
+    const workspaceBlock = workspaceExecutionBlock(workspace);
+    if (workspaceBlock) {
+      appendItem('warning', workspaceBlock);
+      setPhase('未进入项目');
+      return false;
     }
     if (updating || restartRequired) {
-      appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行knowflow chat。');
-      return;
+      appendItem('error', updating ? 'CLI正在更新，请完成后重启AgentLens。' : 'CLI已更新，请退出并重新运行agentlens chat。');
+      return false;
     }
     if (running || approval || question || (queuePaused && !bypassQueuePause)) {
       enqueuePrompt(
@@ -3470,7 +4600,7 @@ export function App({
       setPhase(queuePaused
         ? `队列已暂停 · 待发送${queue.length + 1}个任务`
         : `已排队${queue.length + 1}个任务`);
-      return;
+      return true;
     }
     requestCounter.current += 1;
     const requestId = `turn-${requestCounter.current}`;
@@ -3500,13 +4630,14 @@ export function App({
       setQueuePaused(true);
       setPhase('运行时已断开 · 队列已暂停');
       appendItem('error', '任务尚未发送，已保留在队列中。输入/continue重试。');
-      return;
+      return true;
     }
     activeRequestIdRef.current = requestId;
     if (!currentRunId && !currentSessionTitle) {
       setCurrentSessionTitle(sessionTitleFromPrompt(publicDisplayText, '新会话'));
     }
     setRunning(true);
+    setPhase(mode === 'shell' ? '正在执行命令' : '正在启动Agent');
     setCancelPending(false);
     setRunRecoveryOpen(false);
     const emptyActivities = new Map();
@@ -3523,12 +4654,13 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setToolDetailIndex(0);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     lastTurnRequestRef.current = turnRequestSnapshot(text, displayText, {
       mode,
@@ -3542,9 +4674,10 @@ export function App({
     setHistoryIndex(-1);
     appendItem('user', userTurnDisplay(publicDisplayText, turnAttachmentPaths));
     if (mode === 'prompt') setAttachedPaths([]);
-  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating]);
+    return true;
+  }, [approval, appendItem, attachedPaths, client, currentRunId, currentSessionTitle, enqueuePrompt, permissionMode, question, queue.length, queuePaused, ready, reasoningEffort, resetAssistantDraft, restartRequired, running, updating, workspace]);
 
-  const resumeRun = useCallback((runId, title = '') => {
+  const resumeRun = useCallback((runId, title = '', sessionId = '', status = '') => {
     const identifier = String(runId ?? '').trim();
     if (!identifier || running || approval || question) return;
     requestCounter.current += 1;
@@ -3570,19 +4703,71 @@ export function App({
     setTaskNavigationOpen(false);
     setTaskStepDetailKey('');
     runStartedAtRef.current = Date.now();
-    setRunClock(runStartedAtRef.current);
     setRunElapsedMs(0);
     setToolDetailOpen(false);
     setChangeDetailOpen(false);
     setChangeConfirming(false);
+    setReviewedChangeIds([]);
+    changeRequestPathRef.current = '';
     resetAssistantDraft();
     setPhase('恢复会话');
     client.send({
       type: 'resume_session',
       requestId,
       runId: identifier,
+      ...(sessionId ? {sessionId: String(sessionId)} : {}),
+      ...(status ? {status: String(status)} : {}),
     });
   }, [approval, client, question, resetAssistantDraft, running, sessions]);
+
+  useEffect(() => {
+    if (!ready || !startupActionRef.current) return;
+    const action = startupActionRef.current;
+    startupActionRef.current = '';
+    if (action === 'resume') {
+      closeTransientSurfaces('sessions');
+      setSessionPicker(true);
+      setSessionLoading(true);
+      setSessionError('');
+      setSessionQuery('');
+      setSessionScope('active');
+      setSessionChoice(0);
+      client.send({type: 'sessions', limit: 100, archived: false});
+      return;
+    }
+    const latest = sessions[0];
+    if (!latest?.runId) {
+      appendItem('warning', '当前工作区还没有可继续的历史会话。');
+      setPhase('就绪');
+      return;
+    }
+    resumeRun(latest.runId, latest.title, latest.sessionId, latest.status);
+  }, [appendItem, client, closeTransientSurfaces, ready, resumeRun, sessions]);
+
+  const requestLocalConfiguration = useCallback(() => {
+    if (running || approval || question) {
+      appendItem('error', '请等待当前任务和确认操作结束后再修改模型配置。');
+      return;
+    }
+    if (!localMode) {
+      appendItem('assistant', '远程模式请到Web设置页管理模型配置。');
+      return;
+    }
+    closeTransientSurfaces('localConfig');
+    setLocalConfigOpen(true);
+    setLocalConfigLoading(true);
+    setLocalConfigSaving(false);
+    setLocalConfigError('');
+    setLocalConfigNotice('');
+    setLocalConfigRecommendation(null);
+    setLocalConfigChoice(0);
+    setPhase('读取本地模型配置');
+    if (!client.send({type: 'local_model_config', action: 'get'})) {
+      setLocalConfigLoading(false);
+      setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+      setPhase('模型配置失败');
+    }
+  }, [approval, appendItem, client, closeTransientSurfaces, localMode, question, running]);
 
   const executeInput = useCallback(raw => {
     const text = String(raw ?? '').trim();
@@ -3645,7 +4830,7 @@ export function App({
     } else if (command.value === '/model') {
       const [action, rawId] = args.trim().split(/\s+/, 2);
       if (action === 'config') {
-        appendItem('assistant', '本地模式运行knowflow configure修改模型；远程模式请到Web设置页管理模型配置。');
+        requestLocalConfiguration();
       } else if (action === 'use') {
         if (!rawId) appendItem('error', '用法：/model use <ID>');
         else {
@@ -3662,6 +4847,8 @@ export function App({
         setModelChoice(0);
         client.send({type: 'models', action: 'list'});
       } else appendItem('error', '用法：/model、/model use <ID>或/model config');
+    } else if (command.value === '/configure') {
+      requestLocalConfiguration();
     } else if (command.value === '/reasoning') {
       const value = args.trim().toLowerCase();
       if (!value) {
@@ -3699,7 +4886,11 @@ export function App({
         client.send({type: 'context', action: 'compact', instructions: args});
       }
     } else if (command.value === '/workspace') {
-      client.send({type: 'workspace', action: 'status'});
+      const target = args.trim();
+      if (!target) client.send({type: 'workspace', action: 'status'});
+      else if (running || approval || question) {
+        appendItem('error', '当前任务尚未结束，请先完成、拒绝或取消后再切换工作区。');
+      } else client.send({type: 'workspace', action: 'switch', path: target});
     } else if (command.value === '/attach') {
       const path = resolveWorkspaceAttachment(workspacePaths, args);
       if (workspace?.remote) {
@@ -3743,12 +4934,32 @@ export function App({
     } else if (command.value === '/cd') {
       client.send({type: 'workspace', action: 'cd', path: args});
     } else if (command.value === '/diff') {
-      client.send({type: 'workspace', action: 'diff', path: args});
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+      const requestedPath = args.trim();
+      const index = requestedPath
+        ? artifacts.findIndex(artifact => artifact.path === requestedPath)
+        : artifacts.findIndex(artifact => artifact?.path && !artifact.reverted);
+      if (!artifacts.length) {
+        appendItem('error', '本次运行没有文件变更。');
+      } else if (index < 0) {
+        appendItem('error', requestedPath
+          ? `本次运行中找不到文件变更：${requestedPath}`
+          : '本次运行没有可查看的文本差异。');
+      } else {
+        openChangeReview(artifacts, index);
+      }
     } else if (command.value === '/undo') {
-      client.send({type: 'workspace', action: 'undo'});
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+      const index = artifacts.findLastIndex(artifact => artifact?.operationId && !artifact.reverted);
+      if (index < 0) {
+        appendItem('error', '本次运行没有可安全撤销的文件修改。');
+      } else {
+        openChangeReview(artifacts, index);
+      }
     } else if (command.value === '/resume') {
       if (/^run_[A-Za-z0-9]+$/.test(args)) {
-        resumeRun(args, sessions.find(item => item.runId === args)?.title);
+        const session = sessions.find(item => item.runId === args);
+        resumeRun(args, session?.title, session?.sessionId, session?.status);
       }
       else {
         closeTransientSurfaces('sessions');
@@ -3756,8 +4967,9 @@ export function App({
         setSessionLoading(true);
         setSessionError('');
         setSessionQuery(args);
+        setSessionScope('active');
         setSessionChoice(0);
-        client.send({type: 'sessions', limit: 100});
+        client.send({type: 'sessions', limit: 100, archived: false});
       }
     } else if (command.value === '/rename') {
       if (!args.trim()) {
@@ -3774,6 +4986,12 @@ export function App({
       } else {
         setPhase('创建会话分支');
         client.send({type: 'branch_session', title: args});
+      }
+    } else if (command.value === '/rewind') {
+      if (running || approval || question) {
+        appendItem('error', '请等待当前任务和确认操作结束后再回退会话。');
+      } else {
+        openRewindPicker();
       }
     } else if (command.value === '/export') {
       if (running || approval || question) {
@@ -3823,6 +5041,17 @@ export function App({
       const selection = terminalCopySelection(
         lastAssistantAnswerRef.current || assistantDraftRef.current,
         args,
+        {
+          assistant: lastAssistantAnswerRef.current || assistantDraftRef.current,
+          toolRows: [...activitiesRef.current.values()],
+          traceRows: [...traceStepsRef.current.values()],
+          transcript: [
+            ...transcript,
+            ...(assistantDraftRef.current
+              ? [{role: 'assistant_chunk', content: assistantDraftRef.current}]
+              : []),
+          ],
+        },
       );
       if (!selection.ok) {
         appendItem('error', selection.message);
@@ -3847,22 +5076,44 @@ export function App({
         showComposerNotice('已切换到计划模式：只分析并制定计划，不执行修改');
       }
     } else if (command.value === '/permissions') {
-      setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
-      closeTransientSurfaces('permissions');
-      setPermissionPicker(true);
+      const [action, rawToolName] = args.trim().split(/\s+/, 2);
+      const behavior = String(action || '').toLowerCase();
+      if (behavior === 'rules') {
+        setPermissionPage('rules');
+        setPermissionRuleChoice(0);
+        setPermissionRuleAdding(false);
+        setPermissionRuleDraft('');
+        closeTransientSurfaces('permissions');
+        setPermissionPicker(true);
+      } else if (PERMISSION_BEHAVIORS.some(item => item.id === behavior)) {
+        const toolName = normalizePermissionRule(rawToolName);
+        if (!toolName) {
+          appendItem('error', '用法：/permissions allow|ask|deny <工具名>');
+        } else {
+          setPermissionRules(current => updatePermissionRules(current, behavior, toolName));
+          showComposerNotice(`${toolName}已设为${behavior.toUpperCase()}（本次会话）`);
+        }
+      } else if (behavior) {
+        appendItem('error', '用法：/permissions [rules | allow|ask|deny <工具名>]');
+      } else {
+        setPermissionPage('modes');
+        setPermissionChoice(Math.max(0, PERMISSION_MODES.findIndex(item => item.id === permissionMode)));
+        closeTransientSurfaces('permissions');
+        setPermissionPicker(true);
+      }
     } else if (['/tools', '/mcp', '/skills', '/memory'].includes(command.value)) {
       client.send({type: 'capabilities', section: command.value.slice(1)});
       setPhase(`读取${command.value.slice(1)}状态`);
     } else if (command.value === '/tools:configure') {
-      appendItem('assistant', '在另一个终端运行：knowflow tools configure web-search\nKey会隐藏输入并写入独立credentials.json。');
+      appendItem('assistant', '在另一个终端运行：agentlens tools configure web-search\nKey会隐藏输入并写入独立credentials.json。');
     } else if (command.value === '/mcp:add') {
-      appendItem('assistant', '添加OAuth MCP：knowflow mcp add <名称> <URL> --auth oauth\n添加后按提示运行knowflow mcp oauth <ID>。');
+      appendItem('assistant', '添加OAuth MCP：agentlens mcp add <名称> <URL> --auth oauth\n添加后按提示运行agentlens mcp oauth <ID>。');
     } else if (command.value === '/mcp:oauth') {
-      appendItem('assistant', '运行：knowflow mcp oauth <ID>\nCLI会打开浏览器并在本机回环地址接收OAuth回调。');
+      appendItem('assistant', '运行：agentlens mcp oauth <ID>\nCLI会打开浏览器并在本机回环地址接收OAuth回调。');
     } else if (command.value === '/skills:install') {
-      appendItem('assistant', '运行：knowflow skills install <目录或SKILL.md>');
+      appendItem('assistant', '运行：agentlens skills install <目录或SKILL.md>');
     } else if (command.value === '/memory:configure') {
-      appendItem('assistant', '运行：knowflow memory configure\n配置完成后运行knowflow memory enable。');
+      appendItem('assistant', '运行：agentlens memory configure\n配置完成后运行agentlens memory enable。');
     } else if (command.value === '/doctor') {
       client.send({type: 'doctor'});
       setPhase('检查SRT沙箱');
@@ -3884,6 +5135,19 @@ export function App({
         'assistant',
         `${report}\n\n${stdout?.isTTY ? '已发送终端剪贴板请求；若未生效，请选择上方内容复制。' : '当前终端不支持自动复制，请选择上方内容复制。'}`,
       );
+    } else if (command.value === '/notifications') {
+      const action = args.trim().toLowerCase() || 'status';
+      if (action === 'on') {
+        setTerminalNotifications(true);
+        appendItem('assistant', '终端任务提醒已开启（仅本次会话）。');
+      } else if (action === 'off') {
+        setTerminalNotifications(false);
+        appendItem('assistant', '终端任务提醒已关闭（仅本次会话）。');
+      } else if (action === 'status') {
+        appendItem('assistant', `终端任务提醒：${terminalNotifications ? '已开启' : '已关闭'}。用/notifications on或/notifications off切换。`);
+      } else {
+        appendItem('error', '用法：/notifications [on|off|status]');
+      }
     } else if (command.value === '/update') {
       if (running || approval || question) {
         appendItem('error', '请等待当前任务和确认操作结束后再更新CLI。');
@@ -3897,7 +5161,7 @@ export function App({
         if (!client.send({type: 'cli_update'})) {
           setUpdating(false);
           setPhase('更新请求未发送');
-          appendItem('error', '运行时已断开，更新请求未发送。请退出后在终端运行knowflow update。');
+          appendItem('error', '运行时已断开，更新请求未发送。请退出后在终端运行agentlens update。');
         }
       }
     } else if (command.value === '/version') {
@@ -4027,7 +5291,7 @@ export function App({
         });
       }
     }
-  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, updating, version, workspace, workspacePaths]);
+  }, [activeModel, approval, appendItem, attachedPaths, client, closeTransientSurfaces, commands, currentRunId, currentSessionTitle, enqueuePrompt, exit, lastFailedRunId, lastQuestion, loadComposerText, model, openChangeReview, openRewindPicker, permissionMode, pushComposerUndo, question, queue, reasoningEffort, reprioritizePrompt, requestImmediateQueueRun, requestLocalConfiguration, restartRequired, resumeRun, runProjection, running, sessions, showComposerNotice, startTurn, stdout, terminalNotifications, transcript, updating, version, workspace, workspacePaths]);
 
   const acceptSuggestion = useCallback(() => {
     const suggestion = suggestions[selectedSuggestion];
@@ -4048,6 +5312,17 @@ export function App({
     setDismissedInput(next);
   }, [fileMention, pushComposerUndo, selectedSuggestion, suggestions, updateComposer]);
 
+  const restorePromptStash = useCallback((notice = '草稿已恢复') => {
+    if (!promptStash) return false;
+    replacePastedContents(promptStash.pastedContents);
+    setComposerMode(promptStash.mode === 'shell' ? 'shell' : 'prompt');
+    setAttachedPaths(Array.isArray(promptStash.attachmentPaths) ? promptStash.attachmentPaths : []);
+    updateComposer(promptStash.text, promptStash.cursor);
+    setPromptStash(null);
+    showComposerNotice(notice);
+    return true;
+  }, [promptStash, replacePastedContents, showComposerNotice, updateComposer]);
+
   const submitComposer = useCallback(value => {
     const selected = suggestions[selectedSuggestion];
     if (selected && value.trim() !== selected.value) {
@@ -4056,21 +5331,41 @@ export function App({
     }
     const displayText = String(value ?? '').trim();
     const expandedText = expandPastedTextRefs(value, pastedContentsRef.current).trim();
+    const command = resolveCommand(expandedText, commands);
+    const slashInput = /^\//.test(expandedText);
+    if (expandedText && !command && !slashInput && workspaceExecutionBlock(workspace)) {
+      setPhase('未进入项目');
+      showComposerNotice('先指定项目目录，当前输入已保留');
+      return;
+    }
+    if (!expandedText) return;
+    if (command || slashInput) {
+      updateComposer('', 0);
+      replacePastedContents({});
+      clearComposerUndo();
+      setDismissedInput('');
+      historyDraftRef.current = '';
+      executeInput(expandedText);
+      return;
+    }
+    const accepted = composerMode === 'shell'
+      ? startTurn(expandedText, displayText || expandedText, {mode: 'shell'})
+      : startTurn(expandedText, displayText || expandedText);
+    if (!accepted) return;
     updateComposer('', 0);
     replacePastedContents({});
     clearComposerUndo();
     setDismissedInput('');
     historyDraftRef.current = '';
-    if (composerMode === 'shell') {
-      if (expandedText) startTurn(expandedText, displayText || expandedText, {mode: 'shell'});
-    } else if (resolveCommand(expandedText, commands) || /^\//.test(expandedText)) {
-      executeInput(expandedText);
-    } else if (expandedText) {
-      startTurn(expandedText, displayText || expandedText);
+    if (promptStash) {
+      restorePromptStash('草稿已自动恢复');
     }
-  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, replacePastedContents, selectedSuggestion, startTurn, suggestions, updateComposer]);
+  }, [acceptSuggestion, clearComposerUndo, commands, composerMode, executeInput, promptStash, replacePastedContents, restorePromptStash, selectedSuggestion, showComposerNotice, startTurn, suggestions, updateComposer, workspace]);
 
-  const toolRows = useMemo(() => [...activities.values()], [activities]);
+  const toolRows = useMemo(() => toolRowsForContext({
+    toolRows: [...activities.values()],
+    traceRows: [...traceSteps.values()],
+  }), [activities, traceSteps]);
   const detailRows = useMemo(() => {
     const hasFailedTool = toolRows.some(row => FAILURE_RUNTIME_STATUSES.has(row.status));
     if (!runProjection.error || hasFailedTool) return toolRows;
@@ -4084,6 +5379,16 @@ export function App({
       recoveryActions: runProjection.recoveryActions,
     }];
   }, [runProjection.error, runProjection.recoveryActions, toolRows]);
+  const toolDetailPage = useMemo(
+    () => activityDetailPage(detailRows[toolDetailIndex]),
+    [detailRows, toolDetailIndex],
+  );
+  useEffect(() => {
+    setToolDetailOffset(value => Math.min(value, toolDetailPage.maxOffset));
+  }, [toolDetailPage.maxOffset]);
+  useEffect(() => {
+    setToolDetailOffset(0);
+  }, [detailTab, toolDetailIndex, toolDetailOpen]);
   const taskNavigationItems = useMemo(() => taskSummaryModel(
     activities,
     traceSteps,
@@ -4102,16 +5407,13 @@ export function App({
     const item = taskNavigationItems[taskNavigationIndex];
     if (!item) return;
     if (item.type === 'artifact') {
-      const index = (runProjectionRef.current.artifacts || []).findIndex(artifact => (
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+      const index = artifacts.findIndex(artifact => (
         artifact.artifactId === item.row.artifactId
         || (artifact.path && artifact.path === item.row.path)
       ));
       if (index >= 0) {
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(index);
-        setChangePatch('');
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
+        openChangeReview(artifacts, index);
         return;
       }
     }
@@ -4145,7 +5447,7 @@ export function App({
     }
     closeTransientSurfaces('tasks');
     setTaskStepDetailKey(item.key);
-  }, [closeTransientSurfaces, taskNavigationIndex, taskNavigationItems, toolRows]);
+  }, [closeTransientSurfaces, openChangeReview, taskNavigationIndex, taskNavigationItems, toolRows]);
   const openToolDetails = useCallback(() => {
     const references = runProjectionRef.current.references || [];
     if (!detailRows.length && !references.length) {
@@ -4270,6 +5572,7 @@ export function App({
     isActive: !approval
       && !question
       && !sessionPicker
+      && !localConfigOpen
       && !modelPicker
       && !reasoningPicker
       && !permissionPicker
@@ -4283,6 +5586,27 @@ export function App({
       && !historySearchOpen
       && !transcriptMode,
   });
+
+  usePaste(rawText => {
+    if (!localConfigOpen || localConfigLoading || localConfigSaving) return;
+    const field = LOCAL_MODEL_CONFIG_FIELDS[localConfigChoice]?.id;
+    if (!['baseUrl', 'modelName', 'apiKey'].includes(field)) return;
+    const overrideKey = {baseUrl: 'base_url', modelName: 'model_name', apiKey: 'api_key'}[field];
+    if (localConfigDraft.overriddenFields?.[overrideKey]) {
+      setLocalConfigNotice(`${localConfigDraft.overriddenFields[overrideKey]}正在控制该字段`);
+      return;
+    }
+    const text = sanitizeComposerInput(rawText).replace(/[\r\n]/g, '').slice(0, 2_000);
+    if (!text) return;
+    const current = String(localConfigDraft[field] || '');
+    const cursor = Math.max(0, Math.min(localConfigCursor, current.length));
+    const value = (current.slice(0, cursor) + text + current.slice(cursor)).slice(0, 2_000);
+    setLocalConfigDraft(draft => ({...draft, [field]: value}));
+    setLocalConfigCursor(Math.min(2_000, cursor + text.length));
+    setLocalConfigError('');
+    setLocalConfigNotice('');
+    setLocalConfigRecommendation(null);
+  }, {isActive: localConfigOpen});
 
   useInput((character, key) => {
     lastTerminalInteractionAtRef.current = Date.now();
@@ -4347,6 +5671,102 @@ export function App({
       }
       return;
     }
+    if (interactionFocus === 'localConfig' && localConfigOpen) {
+      const fields = LOCAL_MODEL_CONFIG_FIELDS;
+      const field = fields[localConfigChoice]?.id || 'baseUrl';
+      const overrideKey = {
+        baseUrl: 'base_url',
+        modelName: 'model_name',
+        apiMode: 'api_mode',
+        apiKey: 'api_key',
+      }[field];
+      const lockedBy = overrideKey ? localConfigDraft.overriddenFields?.[overrideKey] : '';
+      const selectField = next => {
+        const index = (next + fields.length) % fields.length;
+        const nextField = fields[index]?.id;
+        setLocalConfigChoice(index);
+        setLocalConfigCursor(String(localConfigDraft[nextField] || '').length);
+        setLocalConfigNotice('');
+      };
+      if (key.escape) {
+        if (!localConfigSaving) closeTransientSurfaces();
+      } else if (localConfigLoading || localConfigSaving) {
+        return;
+      } else if (
+        localConfigRecommendation?.apiMode
+        && character.toLowerCase() === 'r'
+      ) {
+        const nextDraft = {
+          ...localConfigDraft,
+          apiMode: localConfigRecommendation.apiMode,
+        };
+        setLocalConfigDraft(nextDraft);
+        setLocalConfigRecommendation(null);
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice(`正在使用${localConfigRecommendation.label}重新检查…`);
+        setPhase('正在测试模型连接');
+        if (!client.send({
+          type: 'local_model_config',
+          action: 'test_and_save',
+          config: localModelConfigPayload(nextDraft),
+        })) {
+          setLocalConfigSaving(false);
+          setLocalConfigNotice('');
+          setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+          setPhase('模型配置失败');
+        }
+      } else if (key.upArrow || (key.tab && key.shift)) {
+        selectField(localConfigChoice - 1);
+      } else if (key.downArrow || key.tab) {
+        selectField(localConfigChoice + 1);
+      } else if (field === 'save' && key.return) {
+        setLocalConfigSaving(true);
+        setLocalConfigError('');
+        setLocalConfigNotice('正在测试模型连接…');
+        setPhase('正在测试模型连接');
+        if (!client.send({
+          type: 'local_model_config',
+          action: 'test_and_save',
+          config: localModelConfigPayload(localConfigDraft),
+        })) {
+          setLocalConfigSaving(false);
+          setLocalConfigNotice('');
+          setLocalConfigError('Python运行时不可用，请退出后重新运行agentlens。');
+          setPhase('模型配置失败');
+        }
+      } else if (field === 'apiMode' && (key.leftArrow || key.rightArrow)) {
+        if (lockedBy) setLocalConfigNotice(`${lockedBy}正在控制该字段`);
+        else {
+          setLocalConfigDraft(value => ({
+            ...value,
+            apiMode: value.apiMode === 'responses' ? 'chat_completions' : 'responses',
+          }));
+          setLocalConfigRecommendation(null);
+          setLocalConfigError('');
+        }
+      } else if (key.return) {
+        selectField(localConfigChoice + 1);
+      } else if (['baseUrl', 'modelName', 'apiKey'].includes(field)) {
+        if (lockedBy && (character || key.backspace || key.delete)) {
+          setLocalConfigNotice(`${lockedBy}正在控制该字段`);
+        } else {
+          const next = editLocalModelConfigText(
+            localConfigDraft[field],
+            localConfigCursor,
+            {character, key},
+          );
+          if (next.value !== localConfigDraft[field]) {
+            setLocalConfigDraft(value => ({...value, [field]: next.value}));
+            setLocalConfigRecommendation(null);
+            setLocalConfigError('');
+            setLocalConfigNotice('');
+          }
+          setLocalConfigCursor(next.cursor);
+        }
+      }
+      return;
+    }
     if (interactionFocus === 'help' && helpOpen) {
       if (key.escape) {
         setHelpOpen(false);
@@ -4377,29 +5797,111 @@ export function App({
     }
     if (interactionFocus === 'sessions' && sessionPicker) {
       if (key.escape) {
-        setSessionPicker(false);
-        setSessionQuery('');
-        setSessionError('');
+        if (sessionDeleteConfirmId) {
+          setSessionDeleteConfirmId('');
+          setPhase('选择会话');
+        } else if (!sessionDeletingId) {
+          setSessionPicker(false);
+          setSessionQuery('');
+          setSessionError('');
+        }
       } else if (sessionError && character.toLowerCase() === 'r') {
         setSessionLoading(true);
         setSessionError('');
-        client.send({type: 'sessions', limit: 100});
+        setSessionDeleteConfirmId('');
+        client.send({type: 'sessions', limit: 100, archived: sessionScope === 'archived'});
+      } else if (key.tab) {
+        const nextScope = sessionScope === 'active' ? 'archived' : 'active';
+        setSessionScope(nextScope);
+        setSessionChoice(0);
+        setSessionLoading(true);
+        setSessionError('');
+        setSessionDeleteConfirmId('');
+        client.send({type: 'sessions', limit: 100, archived: nextScope === 'archived'});
       } else if (key.upArrow && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
         setSessionChoice(value => (value + filteredSessions.length - 1) % filteredSessions.length);
       } else if (key.downArrow && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
         setSessionChoice(value => (value + 1) % filteredSessions.length);
-      } else if (key.return) {
+      } else if (String(character || '').toLowerCase() === 'p' && filteredSessions.length) {
+        if (sessionScope === 'archived') return;
+        setSessionDeleteConfirmId('');
         const selectedSession = filteredSessions[sessionChoice];
-        resumeRun(selectedSession?.runId, selectedSession?.title);
+        client.send({
+          type: 'session_pin',
+          runId: selectedSession?.runId,
+          ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
+          pinned: !Boolean(selectedSession?.pinned),
+        });
+        setPhase(selectedSession?.pinned ? '正在取消置顶' : '正在置顶会话');
+      } else if (String(character || '').toLowerCase() === 'a' && filteredSessions.length) {
+        setSessionDeleteConfirmId('');
+        const selectedSession = filteredSessions[sessionChoice];
+        client.send({
+          type: 'session_archive',
+          runId: selectedSession?.runId,
+          ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
+          archived: sessionScope !== 'archived',
+        });
+        setPhase(sessionScope === 'archived' ? '正在恢复会话' : '正在归档会话');
+      } else if (String(character || '').toLowerCase() === 'd' && filteredSessions.length && !sessionDeletingId) {
+        const selectedSession = filteredSessions[sessionChoice];
+        const identity = sessionIdentity(selectedSession);
+        if (identity && sessionDeleteConfirmId === identity) {
+          setSessionDeletingId(identity);
+          setSessionDeleteConfirmId('');
+          setSessionError('');
+          client.send({
+            type: 'session_delete',
+            runId: selectedSession?.runId,
+            ...(selectedSession?.sessionId ? {sessionId: selectedSession.sessionId} : {}),
+          });
+          setPhase('正在永久删除会话');
+        } else if (identity) {
+          setSessionDeleteConfirmId(identity);
+          setPhase('再次按D确认永久删除');
+        }
+      } else if (key.return) {
+        setSessionDeleteConfirmId('');
+        const selectedSession = filteredSessions[sessionChoice];
+        resumeRun(selectedSession?.runId, selectedSession?.title, selectedSession?.sessionId, selectedSession?.status);
       } else if (key.backspace || key.delete) {
+        setSessionDeleteConfirmId('');
         setSessionQuery(value => value.slice(0, -1));
         setSessionChoice(0);
       } else if (!key.ctrl && !key.meta && !key.tab) {
         const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
         if (text) {
+          setSessionDeleteConfirmId('');
           setSessionQuery(value => value + text);
           setSessionChoice(0);
         }
+      }
+      return;
+    }
+    if (interactionFocus === 'rewind' && rewindPicker) {
+      if (key.escape) {
+        closeTransientSurfaces();
+        setPhase('就绪');
+      } else if (rewindError && character.toLowerCase() === 'r') {
+        setRewindLoading(true);
+        setRewindError('');
+        client.send({type: 'rewind_points'});
+      } else if (key.upArrow && rewindPoints.length) {
+        setRewindChoice(value => (value + rewindPoints.length - 1) % rewindPoints.length);
+      } else if (key.downArrow && rewindPoints.length) {
+        setRewindChoice(value => (value + 1) % rewindPoints.length);
+      } else if (key.return && rewindPoints.length) {
+        const selected = rewindPoints[rewindChoice];
+        setRewindLoading(true);
+        setPhase('创建安全会话分支');
+        client.send({
+          type: 'branch_session',
+          title: '',
+          messageId: selected?.messageId ?? null,
+          messageIndex: selected?.messageIndex,
+        });
       }
       return;
     }
@@ -4422,7 +5924,7 @@ export function App({
           setModelPicker(false);
           setModelQuery('');
         } else if (selected?.switchable === false) {
-          setModelError('本地CLI只有当前配置；请运行knowflow configure修改模型。');
+          setModelError('本地CLI只有当前配置；输入/configure即可修改。');
         } else {
           setModelLoading(true);
           setModelError('');
@@ -4454,14 +5956,74 @@ export function App({
       return;
     }
     if (interactionFocus === 'permissions' && permissionPicker) {
-      if (key.upArrow) setPermissionChoice(value => (value + PERMISSION_MODES.length - 1) % PERMISSION_MODES.length);
-      else if (key.downArrow) setPermissionChoice(value => (value + 1) % PERMISSION_MODES.length);
-      else if (key.return) {
-        const nextMode = PERMISSION_MODES[permissionChoice];
-        setPermissionMode(nextMode.id);
-        setPermissionPicker(false);
-        showComposerNotice(`权限模式已切换为${nextMode.label}（仅本次会话）`);
-      } else if (key.escape) setPermissionPicker(false);
+      if (permissionPage === 'rules') {
+        const behavior = PERMISSION_BEHAVIORS[permissionRuleTab] ?? PERMISSION_BEHAVIORS[0];
+        const values = permissionRules?.[behavior.id] ?? [];
+        if (permissionRuleAdding) {
+          if (key.escape) {
+            setPermissionRuleAdding(false);
+            setPermissionRuleDraft('');
+          } else if (key.return) {
+            const toolName = normalizePermissionRule(permissionRuleDraft);
+            if (toolName) {
+              setPermissionRules(current => updatePermissionRules(current, behavior.id, toolName));
+              setPermissionRuleAdding(false);
+              setPermissionRuleDraft('');
+              setPermissionRuleChoice(0);
+              showComposerNotice(`${toolName}已设为${behavior.label}`);
+            } else {
+              showComposerNotice('工具名仅支持字母、数字、._:*/-');
+            }
+          } else if (key.backspace || key.delete) {
+            setPermissionRuleDraft(value => value.slice(0, -1));
+          } else if (!key.ctrl && !key.meta && !key.tab) {
+            const text = sanitizeComposerInput(character).replace(/\r?\n/g, '');
+            if (text) setPermissionRuleDraft(value => `${value}${text}`.slice(0, 120));
+          }
+        } else if (key.leftArrow || key.rightArrow || key.tab) {
+          const delta = key.leftArrow ? -1 : 1;
+          setPermissionRuleTab(value => (value + delta + PERMISSION_BEHAVIORS.length) % PERMISSION_BEHAVIORS.length);
+          setPermissionRuleChoice(0);
+        } else if (key.home && values.length) {
+          setPermissionRuleChoice(0);
+        } else if (key.end && values.length) {
+          setPermissionRuleChoice(values.length - 1);
+        } else if (key.upArrow && values.length) {
+          setPermissionRuleChoice(value => (value + values.length - 1) % values.length);
+        } else if (key.downArrow && values.length) {
+          setPermissionRuleChoice(value => (value + 1) % values.length);
+        } else if (character.toLowerCase() === 'a') {
+          setPermissionRuleAdding(true);
+          setPermissionRuleDraft('');
+        } else if (character.toLowerCase() === 'd' && values.length) {
+          const toolName = values[Math.min(permissionRuleChoice, values.length - 1)];
+          setPermissionRules(current => updatePermissionRules(current, behavior.id, toolName, true));
+          setPermissionRuleChoice(value => Math.max(0, Math.min(value, values.length - 2)));
+          showComposerNotice(`${toolName}规则已删除`);
+        } else if (key.escape) {
+          setPermissionPage('modes');
+          setPermissionChoice(PERMISSION_MODES.length);
+        }
+      } else {
+        const itemCount = PERMISSION_MODES.length + 1;
+        if (key.home) setPermissionChoice(0);
+        else if (key.end) setPermissionChoice(itemCount - 1);
+        else if (key.upArrow) setPermissionChoice(value => (value + itemCount - 1) % itemCount);
+        else if (key.downArrow) setPermissionChoice(value => (value + 1) % itemCount);
+        else if (character.toLowerCase() === 'r') {
+          setPermissionPage('rules');
+          setPermissionRuleChoice(0);
+        }
+        else if (key.return && permissionChoice === PERMISSION_MODES.length) {
+          setPermissionPage('rules');
+          setPermissionRuleChoice(0);
+        } else if (key.return) {
+          const nextMode = PERMISSION_MODES[permissionChoice];
+          setPermissionMode(nextMode.id);
+          setPermissionPicker(false);
+          showComposerNotice(`权限模式已切换为${nextMode.label}（仅本次会话）`);
+        } else if (key.escape) setPermissionPicker(false);
+      }
       return;
     }
     if (interactionFocus === 'taskStep' && taskStepDetailKey) {
@@ -4472,22 +6034,27 @@ export function App({
       return;
     }
     if (interactionFocus === 'changes' && changeDetailOpen) {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       const selected = artifacts[changeDetailIndex];
       if (key.escape || (key.ctrl && character === 'g')) {
+        changeDetailOpenRef.current = false;
         setChangeDetailOpen(false);
         setChangeConfirming(false);
       } else if (key.upArrow && artifacts.length) {
-        setChangeDetailIndex(value => (value + artifacts.length - 1) % artifacts.length);
-        setChangePatch('');
-        setChangeConfirming(false);
+        openChangeReview(artifacts, (changeDetailIndex + artifacts.length - 1) % artifacts.length);
       } else if (key.downArrow && artifacts.length) {
-        setChangeDetailIndex(value => (value + 1) % artifacts.length);
-        setChangePatch('');
-        setChangeConfirming(false);
+        openChangeReview(artifacts, (changeDetailIndex + 1) % artifacts.length);
+      } else if (key.pageUp) {
+        setChangePatchOffset(value => Math.max(0, value - CHANGE_DIFF_PAGE_SIZE));
+      } else if (key.pageDown) {
+        const maxOffset = Math.max(0, buildDiffPresentation(changePatch).length - CHANGE_DIFF_PAGE_SIZE);
+        setChangePatchOffset(value => Math.min(maxOffset, value + CHANGE_DIFF_PAGE_SIZE));
+      } else if (key.home) {
+        setChangePatchOffset(0);
+      } else if (key.end) {
+        setChangePatchOffset(Math.max(0, buildDiffPresentation(changePatch).length - CHANGE_DIFF_PAGE_SIZE));
       } else if (key.return && selected?.path) {
-        setChangeLoading(true);
-        client.send({type: 'workspace', action: 'diff', path: selected.path});
+        openChangeReview(artifacts, changeDetailIndex);
       } else if (character.toLowerCase() === 'd' && selected?.operationId && !selected.reverted && !running) {
         if (!changeConfirming) setChangeConfirming(true);
         else {
@@ -4506,6 +6073,7 @@ export function App({
       const references = runProjectionRef.current.references || [];
       const row = detailRows[toolDetailIndex];
       const recoveryItems = recoveryOptions(row);
+      const detailPage = activityDetailPage(row, toolDetailOffset);
       if (key.ctrl && character === 'c') {
         if (running) requestCancel();
         else setToolDetailOpen(false);
@@ -4521,6 +6089,14 @@ export function App({
         } else if (key.downArrow && references.length) {
           setReferenceDetailIndex(value => (value + 1) % references.length);
         }
+      } else if (key.pageUp) {
+        setToolDetailOffset(value => Math.max(0, value - TOOL_DETAIL_PAGE_SIZE));
+      } else if (key.pageDown) {
+        setToolDetailOffset(value => Math.min(detailPage.maxOffset, value + TOOL_DETAIL_PAGE_SIZE));
+      } else if (key.home) {
+        setToolDetailOffset(0);
+      } else if (key.end) {
+        setToolDetailOffset(detailPage.maxOffset);
       } else if (key.leftArrow && recoveryItems.length && !running) {
         updateRecoveryChoice(value => (value + recoveryItems.length - 1) % recoveryItems.length);
       } else if (key.rightArrow && recoveryItems.length && !running) {
@@ -4529,9 +6105,11 @@ export function App({
         recoverFailedTool(recoveryItems[Math.min(recoveryChoiceRef.current, recoveryItems.length - 1)].id);
       } else if (key.upArrow && detailRows.length) {
         setToolDetailIndex(value => (value + detailRows.length - 1) % detailRows.length);
+        setToolDetailOffset(0);
         updateRecoveryChoice(0);
       } else if (key.downArrow && detailRows.length) {
         setToolDetailIndex(value => (value + 1) % detailRows.length);
+        setToolDetailOffset(0);
         updateRecoveryChoice(0);
       } else if (character.toLowerCase() === 'r') recoverFailedTool('retry');
       else if (character.toLowerCase() === 'f') recoverFailedTool('fix');
@@ -4612,6 +6190,11 @@ export function App({
     }
     if (interactionFocus === 'taskNavigation' && taskNavigationOpen) {
       if (key.ctrl && character === 'c' && running) requestCancel();
+      else if (key.ctrl && character === 'g') {
+        const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
+        if (!artifacts.length) appendItem('error', '本次运行没有文件变更。');
+        else openChangeReview(artifacts, changeDetailIndexRef.current);
+      }
       else if (key.escape) setTaskNavigationOpen(false);
       else if (key.ctrl && character === 't') {
         setTaskNavigationOpen(false);
@@ -4683,15 +6266,9 @@ export function App({
       return;
     }
     if (key.ctrl && character === 'g') {
-      const artifacts = runProjectionRef.current.artifacts || [];
+      const artifacts = changeReviewArtifacts(runProjectionRef.current.artifacts);
       if (!artifacts.length) appendItem('error', '本次运行没有文件变更。');
-      else {
-        closeTransientSurfaces('changes');
-        setChangeDetailIndex(0);
-        setChangePatch('');
-        setChangeConfirming(false);
-        setChangeDetailOpen(true);
-      }
+      else openChangeReview(artifacts, changeDetailIndexRef.current);
       return;
     }
     if (interactionFocus === 'transcript' && transcriptModeRef.current) {
@@ -4731,24 +6308,22 @@ export function App({
       return;
     }
     if (key.ctrl && character === 's') {
-      if (inputRef.current) {
+      if (inputRef.current || attachedPaths.length) {
         setPromptStash({
           text: inputRef.current,
           cursor: cursorOffsetRef.current,
           pastedContents: pastedContentsRef.current,
           mode: composerModeRef.current,
+          attachmentPaths: [...attachedPaths],
         });
         pushComposerUndo();
         updateComposer('', 0);
         replacePastedContents({});
+        setAttachedPaths([]);
         setHistoryIndex(-1);
-        showComposerNotice('草稿已暂存，Ctrl+S恢复');
-      } else if (promptStash?.text) {
-        replacePastedContents(promptStash.pastedContents);
-        setComposerMode(promptStash.mode === 'shell' ? 'shell' : 'prompt');
-        updateComposer(promptStash.text, promptStash.cursor);
-        setPromptStash(null);
-        showComposerNotice('草稿已恢复');
+        showComposerNotice('草稿已暂存，发送当前输入后自动恢复');
+      } else if (promptStash) {
+        restorePromptStash();
       } else {
         showComposerNotice('没有可恢复的草稿');
       }
@@ -4804,6 +6379,13 @@ export function App({
       showComposerNotice(`权限模式：${nextMode.label}（仅本次会话）`);
       return;
     }
+    if (key.tab && followUpSuggestion) {
+      setDismissedFollowUpKey(followUpSuggestionKey);
+      pushComposerUndo();
+      updateComposer(followUpSuggestion);
+      showComposerNotice('已采纳建议，可继续编辑后发送');
+      return;
+    }
     if ((key.return && key.shift) || (key.ctrl && character === 'j')) {
       const value = inputRef.current;
       const cursor = cursorOffsetRef.current;
@@ -4843,6 +6425,11 @@ export function App({
         return;
       }
     }
+    if (key.escape && followUpSuggestion) {
+      setDismissedFollowUpKey(followUpSuggestionKey);
+      showComposerNotice('已忽略本次建议');
+      return;
+    }
     if (key.escape && !inputRef.current && queue.length) {
       const latest = [...queue].sort((left, right) => Number(right.sequence ?? 0) - Number(left.sequence ?? 0))[0];
       if (latest) {
@@ -4859,6 +6446,10 @@ export function App({
     if (key.escape && composerModeRef.current === 'shell' && !inputRef.current) {
       setComposerMode('prompt');
       showComposerNotice('已返回问答模式');
+      return;
+    }
+    if (key.escape && !inputRef.current && !running && !approval && !question) {
+      handleEmptyEscape();
       return;
     }
     if (!inputRef.current && history.length && key.upArrow) {
@@ -4978,6 +6569,7 @@ export function App({
   });
 
   const permission = PERMISSION_MODES.find(item => item.id === permissionMode) ?? PERMISSION_MODES[0];
+  const changeArtifacts = changeReviewArtifacts(runProjection.artifacts);
   const permissionColor = permissionMode === 'full_access'
     ? ERROR
     : permissionMode === 'auto_edit'
@@ -5000,30 +6592,31 @@ export function App({
           : {label: '就绪', color: MUTED};
   const frameHeight = Math.max(1, (stdout.rows ?? 24) - 1);
   const taskElapsedMs = runStartedAtRef.current
-    ? (running ? runClock - runStartedAtRef.current : runElapsedMs)
+    ? (running ? Date.now() - runStartedAtRef.current : runElapsedMs)
     : 0;
   const interactionHint = {
     question: `↑↓选择 · Enter确认${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     approval: `←→选择 · Enter确认 · Esc拒绝${waitingInteractions.length > 1 ? ` · 另有${waitingInteractions.length - 1}项` : ''}`,
     recovery: '←→选择 · Enter执行 · Esc返回输入',
-    changes: '↑↓选择 · Enter查看 · D撤销 · Esc返回',
-    toolDetail: '↑↓选择 · Tab切换 · Esc返回',
+    changes: '↑↓切换并加载 · Enter刷新 · D撤销 · Esc返回',
+    toolDetail: 'PgUp/PgDn翻页 · Home/End首尾 · ↑↓选择 · Tab切换 · Esc返回',
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
     queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
-    sessions: '↑↓选择 · Enter恢复 · Esc关闭',
+    sessions: `↑↓选择 · Enter恢复 · ${sessionScope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · D永久删除 · Tab切换 · Esc关闭`,
+    localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
     reasoning: '↑↓选择 · Enter确认 · Esc关闭',
     history: '输入筛选 · Enter使用 · Esc返回',
     transcriptSearch: '输入筛选 · ↑↓/Enter查找 · Esc关闭',
-    permissions: '↑↓选择 · Enter确认 · Esc关闭',
+    permissions: permissionPage === 'rules' ? '←→分类 · A添加 · D删除 · Esc返回' : '↑↓选择 · Enter确认 · Esc关闭',
     help: '输入搜索 · ←→分组 · Enter取用 · Esc关闭',
     transcript: '↑↓滚动 · PgUp/PgDn翻页 · Esc返回',
     commands: '↑↓选择 · Enter执行 · Tab/→补全 · Esc关闭',
     composer: composerMode === 'shell'
       ? 'Shell模式 · 命令在SRT沙箱中运行 · Esc返回问答'
       : updating ? '正在更新CLI，完成后请重启'
-      : restartRequired ? '更新完成，退出并重新运行knowflow chat'
+      : restartRequired ? '更新完成，退出并重新运行agentlens chat'
       : running ? '继续输入会加入队列' : '输入任务，/查看命令 · !进入Shell',
   }[interactionFocus];
   const interactionStatus = interactionFocus === 'composer' || interactionFocus === 'commands'
@@ -5050,11 +6643,12 @@ export function App({
           usage={runProjection.usage}
           artifacts={runProjection.artifacts}
           references={runProjection.references}
+          verifications={verificationRows([...traceSteps.values()], runProjection.verifications)}
           recoveryActions={runProjection.recoveryActions}
           runSummary={runProjection.runSummary}
           failure={runProjection.error}
           modelRetry={runProjection.modelRetry}
-          now={runClock}
+          startedAt={runStartedAtRef.current}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -5103,11 +6697,16 @@ export function App({
           usage={frozen.runProjection?.usage ?? {}}
           artifacts={frozen.runProjection?.artifacts ?? []}
           references={frozen.runProjection?.references ?? []}
+          verifications={verificationRows(
+            [...(frozen.traceSteps ?? new Map()).values()],
+            frozen.runProjection?.verifications,
+          )}
           recoveryActions={frozen.runProjection?.recoveryActions ?? []}
           runSummary={frozen.runProjection?.runSummary ?? null}
           failure={frozen.runProjection?.error ?? null}
           modelRetry={frozen.runProjection?.modelRetry ?? null}
-          now={runClock}
+          startedAt={runStartedAtRef.current}
+          liveClock={false}
           navigationActive={taskNavigationOpen}
           selectedNavigationKey={selectedTaskItem?.key}
         />
@@ -5128,8 +6727,17 @@ export function App({
     <>
       {approval ? <ApprovalPrompt approval={approval} selected={approvalChoice} position={1} total={waitingInteractions.length} /> : null}
       {question ? <QuestionPrompt question={question} selected={questionChoice} custom={questionCustom} position={1} total={waitingInteractions.length} /> : null}
-      {queueManagerOpen ? <QueueManager items={queue} selected={queueManagerIndex} paused={queuePaused} /> : null}
-      <QueuePreview items={queue} paused={queuePaused} hidden={queueManagerOpen} />
+      {queueManagerOpen ? <QueueManager items={queue} selected={queueManagerIndex} paused={queuePaused} durable={queueDurable} /> : null}
+      <QueuePreview items={queue} paused={queuePaused} durable={queueDurable} hidden={queueManagerOpen} />
+      {!fullscreenEnabled && running ? (
+        <ActiveTaskAnchor
+          elapsedMs={taskElapsedMs}
+          goal={lastQuestion}
+          runProjection={runProjection}
+          startedAt={runStartedAtRef.current}
+          state={runHeader}
+        />
+      ) : null}
       <RuntimeStatusLine
         approval={approval}
         cancelPending={cancelPending}
@@ -5151,11 +6759,13 @@ export function App({
         />
       ) : changeDetailOpen ? (
         <ChangeDetailPanel
-          artifacts={runProjection.artifacts || []}
+          artifacts={changeArtifacts}
           selected={changeDetailIndex}
           patch={changePatch}
+          offset={changePatchOffset}
           loading={changeLoading}
           confirming={changeConfirming}
+          reviewed={reviewedChangeIds}
         />
       ) : toolDetailOpen ? (
         detailTab === 'references' ? (
@@ -5171,6 +6781,7 @@ export function App({
             running={running}
             hasReferences={Boolean(runProjection.references?.length)}
             recoveryChoice={recoveryChoice}
+            offset={toolDetailOffset}
           />
         )
       ) : taskStepDetailKey ? (
@@ -5190,7 +6801,31 @@ export function App({
               query={sessionQuery}
               loading={sessionLoading}
               error={sessionError}
+              scope={sessionScope}
+              deleteConfirmId={sessionDeleteConfirmId}
+              deletingId={sessionDeletingId}
               maxVisible={Math.max(2, Math.min(6, (stdout.rows ?? 24) - 15))}
+            />
+          ) : null}
+          {rewindPicker ? (
+            <RewindPicker
+              points={rewindPoints}
+              selected={rewindChoice}
+              loading={rewindLoading}
+              error={rewindError}
+              maxVisible={Math.max(2, Math.min(7, (stdout.rows ?? 24) - 15))}
+            />
+          ) : null}
+          {localConfigOpen ? (
+            <LocalModelConfigPanel
+              draft={localConfigDraft}
+              selected={localConfigChoice}
+              cursor={localConfigCursor}
+              loading={localConfigLoading}
+              saving={localConfigSaving}
+              error={localConfigError}
+              notice={localConfigNotice}
+              recommendation={localConfigRecommendation}
             />
           ) : null}
           {modelPicker ? (
@@ -5218,7 +6853,17 @@ export function App({
               query={transcriptSearchQuery}
             />
           ) : null}
-          {permissionPicker ? <PermissionPicker selected={permissionChoice} /> : null}
+          {permissionPicker ? (
+            <PermissionPicker
+              selected={permissionChoice}
+              page={permissionPage}
+              rules={permissionRules}
+              ruleTab={permissionRuleTab}
+              ruleChoice={permissionRuleChoice}
+              adding={permissionRuleAdding}
+              draft={permissionRuleDraft}
+            />
+          ) : null}
           {helpOpen ? (
             <HelpBrowser
               items={filteredHelpCommands}
@@ -5240,7 +6885,22 @@ export function App({
             </Box>
           ) : null}
           {!question && attachedPaths.length ? <AttachmentTray paths={attachedPaths} /> : null}
-          {!question ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
+          {!question && promptStash ? (
+            <Box paddingLeft={1} flexShrink={0}>
+              <Text color={MUTED}>› 草稿已暂存，发送当前输入后自动恢复 · Ctrl+S立即恢复</Text>
+            </Box>
+          ) : null}
+          {!question ? <WorkspaceGuard workspace={workspace} /> : null}
+          {!question && followUpSuggestion ? (
+            <Box paddingX={1} justifyContent="space-between" flexShrink={0}>
+              <Text>
+                <Text color={MUTED}>下一步  </Text>
+                <Text color={PRIMARY}>{followUpSuggestion}</Text>
+              </Text>
+              {!narrow ? <Text color={MUTED}>Tab采纳 · Esc忽略</Text> : null}
+            </Box>
+          ) : null}
+          {!question && !localConfigOpen ? <Box flexDirection="column" marginTop={suggestions.length || permissionPicker || reasoningPicker || helpOpen || sessionPicker || rewindPicker || modelPicker || historySearchOpen || transcriptSearchOpen ? 0 : 1} borderStyle="round" borderLeft={false} borderRight={false} borderColor={ACCENT} paddingX={1} flexShrink={0}>
             <Box>
               <Text color={ACCENT}>{composerMode === 'shell' ? '! ' : '❯ '}</Text>
               <ComposerInput
@@ -5249,7 +6909,11 @@ export function App({
                 placeholder={interactionFocus === 'composer' || interactionFocus === 'commands'
                   ? (composerMode === 'shell'
                     ? (running ? '输入命令可加入队列' : '输入Shell命令')
-                    : (running ? '继续输入可加入队列' : '输入任务，/查看命令'))
+                    : (workspaceExecutionBlock(workspace)
+                      ? '先指定项目目录，/仍可用'
+                      : (running
+                        ? '继续输入可加入队列'
+                        : '输入任务，/查看命令')))
                   : `${INTERACTION_FOCUS_LABELS[interactionFocus]}正在接收按键`}
               />
             </Box>
@@ -5262,7 +6926,7 @@ export function App({
                 {!narrow ? (
                   <Text>
                     <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
-                    <Text color={MUTED}> · {model || '连接中'} · {workspace?.branch || '工作区'}</Text>
+                    <Text color={MUTED}> · {model || '连接中'} · {compactWorkspaceStatus(workspace)}</Text>
                   </Text>
                 ) : null}
               </Box>
@@ -5281,7 +6945,7 @@ export function App({
                 <Box justifyContent="space-between">
                   <Text>
                     <Text color={runHeader.color} bold={runHeader.label !== '就绪'}>{runHeader.label}</Text>
-                    <Text color={MUTED}> · {model || '连接中'} · {workspace?.branch || '工作区'}</Text>
+                    <Text color={MUTED}> · {model || '连接中'} · {compactWorkspaceStatus(workspace)}</Text>
                   </Text>
                   <Text color={MUTED}>{[contextIndicator(runProjection.context), `推理${REASONING_EFFORTS.find(item => item.id === reasoningEffort)?.label ?? '自动'}`].filter(Boolean).join(' · ')}</Text>
                 </Box>
@@ -5306,6 +6970,15 @@ export function App({
       <>
         {staticConversation}
         <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
+          {fullscreenEnabled && frozen.running ? (
+            <ActiveTaskAnchor
+              goal={frozen.goal ?? lastQuestion}
+              elapsedMs={frozen.elapsedMs ?? taskElapsedMs}
+              liveClock={false}
+              runProjection={frozen.runProjection ?? runProjection}
+              state={runHeader}
+            />
+          ) : null}
           <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
             {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
             <ScrollView
@@ -5345,6 +7018,15 @@ export function App({
 
   return (
     <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
+      {running ? (
+        <ActiveTaskAnchor
+          elapsedMs={taskElapsedMs}
+          goal={lastQuestion}
+          runProjection={runProjection}
+          startedAt={runStartedAtRef.current}
+          state={runHeader}
+        />
+      ) : null}
       <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
         {mouseEnabled ? <MouseWheelCapture targetRef={viewportRef} onWheel={handleWheel} /> : null}
         <ScrollView

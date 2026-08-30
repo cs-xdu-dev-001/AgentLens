@@ -81,6 +81,195 @@ class PromptHistoryStore:
         return True
 
 
+class PromptQueueStore:
+    """Crash-safe, workspace-scoped queue storage for the Ink client."""
+
+    def __init__(self, path: Path, *, limit: int = 20) -> None:
+        self.path = path.expanduser().resolve()
+        self.limit = max(1, int(limit))
+
+    @staticmethod
+    def _chmod(path: Path, mode: int) -> None:
+        if os.name != "nt":
+            path.chmod(mode)
+
+    @staticmethod
+    def _text(value: Any, limit: int) -> str:
+        return str(value or "").replace("\x00", "")[:limit]
+
+    def _normalize_item(self, value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        identifier = self._text(value.get("id"), 100).strip()
+        text = self._text(value.get("text"), 10_000).strip()
+        if not identifier or not text:
+            return None
+        priority = self._text(value.get("priority"), 16).lower()
+        if priority not in QUEUE_PRIORITIES:
+            priority = "next"
+        lifecycle = self._text(value.get("lifecycle"), 16).lower()
+        if lifecycle not in {"queued", "started"}:
+            lifecycle = "queued"
+        raw_paths = value.get("attachmentPaths")
+        attachment_paths = [
+            self._text(path, 1_000)
+            for path in (raw_paths if isinstance(raw_paths, list) else [])
+            if self._text(path, 1_000).strip()
+        ][:20]
+        try:
+            sequence = max(0, int(value.get("sequence") or 0))
+        except (TypeError, ValueError):
+            sequence = 0
+        return {
+            "id": identifier,
+            "text": text,
+            "displayText": self._text(value.get("displayText") or text, 10_000),
+            "priority": priority,
+            "sequence": sequence,
+            "mode": "shell" if value.get("mode") == "shell" else "prompt",
+            "reasoningEffort": self._text(
+                value.get("reasoningEffort") or "default", 40
+            ),
+            "permissionMode": self._text(
+                value.get("permissionMode") or "ask", 40
+            ),
+            "attachmentPaths": attachment_paths,
+            "lifecycle": lifecycle,
+            "requestId": self._text(value.get("requestId"), 100),
+        }
+
+    def _load(self) -> tuple[dict[str, Any], bool]:
+        fallback = {"version": 1, "paused": False, "items": []}
+        if not self.path.is_file():
+            return fallback, True
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return fallback, False
+        if not isinstance(raw, dict):
+            return fallback, False
+        items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for value in raw.get("items") if isinstance(raw.get("items"), list) else []:
+            item = self._normalize_item(value)
+            if item is None or item["id"] in seen:
+                continue
+            seen.add(item["id"])
+            items.append(item)
+            if len(items) >= self.limit:
+                break
+        return (
+            {
+                "version": 1,
+                "paused": bool(raw.get("paused")),
+                "items": items,
+            },
+            True,
+        )
+
+    def load(self) -> dict[str, Any]:
+        snapshot, _readable = self._load()
+        return snapshot
+
+    def save(self, snapshot: dict[str, Any]) -> bool:
+        items = [
+            item
+            for value in snapshot.get("items", [])
+            if (item := self._normalize_item(value)) is not None
+        ][: self.limit]
+        payload = {
+            "version": 1,
+            "paused": bool(snapshot.get("paused")),
+            "items": items,
+        }
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._chmod(self.path.parent, 0o700)
+            temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            self._chmod(temporary, 0o600)
+            temporary.replace(self.path)
+            self._chmod(self.path, 0o600)
+        except OSError:
+            return False
+        return True
+
+    def sync(self, items: Any, *, paused: bool) -> bool:
+        current = self.load()
+        started = [
+            item for item in current["items"] if item.get("lifecycle") == "started"
+        ]
+        incoming = items if isinstance(items, list) else []
+        started_ids = {item["id"] for item in started}
+        queued = [
+            item
+            for value in incoming
+            if (item := self._normalize_item(value)) is not None
+            and item["id"] not in started_ids
+        ]
+        return self.save({"paused": paused, "items": [*started, *queued]})
+
+    def claim(
+        self,
+        item_id: str,
+        request_id: str,
+        *,
+        fallback_item: Any = None,
+    ) -> bool:
+        snapshot = self.load()
+        matched = False
+        for item in snapshot["items"]:
+            if item["id"] != item_id:
+                continue
+            item["lifecycle"] = "started"
+            item["requestId"] = self._text(request_id, 100)
+            matched = True
+            break
+        if not matched:
+            item = self._normalize_item(fallback_item)
+            if item is not None and item["id"] == self._text(item_id, 100):
+                item["lifecycle"] = "started"
+                item["requestId"] = self._text(request_id, 100)
+                snapshot["items"].append(item)
+                matched = True
+        return matched and self.save(snapshot)
+
+    def resolve(self, request_id: str) -> bool:
+        normalized = self._text(request_id, 100)
+        if not normalized:
+            return True
+        snapshot = self.load()
+        remaining = [
+            item
+            for item in snapshot["items"]
+            if not (
+                item.get("lifecycle") == "started"
+                and item.get("requestId") == normalized
+            )
+        ]
+        if len(remaining) == len(snapshot["items"]):
+            return True
+        snapshot["items"] = remaining
+        return self.save(snapshot)
+
+    def restore(self) -> dict[str, Any]:
+        snapshot, durable = self._load()
+        recovered = 0
+        for item in snapshot["items"]:
+            if item.get("lifecycle") != "started":
+                continue
+            item["lifecycle"] = "queued"
+            item["requestId"] = ""
+            recovered += 1
+        if recovered:
+            snapshot["paused"] = True
+            durable = self.save(snapshot)
+        return {**snapshot, "recovered": recovered, "durable": durable}
+
+
 @dataclass
 class TuiSessionState:
     prompt_queue: list[QueuedPrompt] = field(default_factory=list)

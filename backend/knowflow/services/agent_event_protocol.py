@@ -8,7 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from .agent_trace import sanitize_trace_payload
-from .agent_failure import normalize_failure_code
+from .agent_failure import classify_agent_failure, normalize_failure_code
 
 
 AGENT_EVENT_SCHEMA_VERSION = 1
@@ -160,8 +160,13 @@ def public_run_summary_projection(event: dict[str, Any]) -> dict[str, Any] | Non
     for source_key, target_key in (
         ("startedAt", "startedAt"),
         ("finishedAt", "finishedAt"),
+        ("lastActivityAt", "lastActivityAt"),
     ):
-        value = _public_text(source.get(source_key), max_chars=80)
+        value = _public_text(
+            source.get(source_key)
+            or (event.get("occurredAt") if source_key == "lastActivityAt" else None),
+            max_chars=80,
+        )
         if value:
             summary[target_key] = value
     steps = source.get("steps")
@@ -498,9 +503,36 @@ def _error_payload(event: dict[str, Any], event_name: str) -> dict[str, Any] | N
     if message is None and is_error:
         message = event.get("message")
     message_text = _public_text(message or "Agent运行失败。")
-    inferred_code = normalize_failure_code(code=code or message_text)
+    event_source = event_name.split(".", 1)[0] or "agent"
+    inferred_failure = classify_agent_failure(
+        error=RuntimeError(message_text),
+        code=code,
+        source=event_source,
+    )
+    inferred_code = normalize_failure_code(
+        error=RuntimeError(message_text),
+        code=code,
+        source=event_source,
+    )
     code_text = _public_text(code or "agent_error", max_chars=100)
-    if code_text == "agent_error" and inferred_code != "agent_run_failed":
+    model_failure_codes = {
+        "model_authentication_failed",
+        "access_denied",
+        "not_found",
+        "protocol_unsupported",
+        "incompatible_parameters",
+        "upstream_unavailable",
+        "network_error",
+        "invalid_request",
+    }
+    if (
+        inferred_code != "agent_run_failed"
+        and (
+            code_text in {"agent_error", "agent_run_failed"}
+            or inferred_code in model_failure_codes
+            and code_text not in model_failure_codes
+        )
+    ):
         code_text = inferred_code
     if code_text == "rate_limited" or inferred_code == "rate_limited":
         code_text = "rate_limited"
@@ -517,10 +549,16 @@ def _error_payload(event: dict[str, Any], event_name: str) -> dict[str, Any] | N
         "retryable": bool(
             structured_error.get(
                 "retryable",
-                code_text not in non_retryable,
+                bool(inferred_failure["retryable"])
+                and code_text not in non_retryable,
             )
         ),
     }
+    target = structured_error.get("target")
+    if not target and code_text == inferred_failure["code"]:
+        target = inferred_failure.get("target")
+    if target in {"memory", "settings", "tools"}:
+        payload["target"] = target
     return payload
 
 
@@ -533,7 +571,11 @@ def _recovery_actions(
     if event_name == "tool.failed":
         return ["retry", "fix"] if error and error.get("retryable") else ["fix"]
     if event_name in {"step.failed", "error.raised"}:
-        return ["continue", "retry"] if error and error.get("retryable") else ["continue"]
+        return (
+            ["continue", "retry", "fix"]
+            if error and error.get("retryable")
+            else ["fix"]
+        )
     return []
 
 
@@ -594,7 +636,9 @@ def normalize_agent_event(
             if field in event:
                 event[field] = error["code"]
     actions = _recovery_actions(event_name, error)
-    if actions:
+    if error is not None or event_name == "approval.required":
+        event["recoveryActions"] = actions
+    elif actions:
         event.setdefault("recoveryActions", actions)
     if "durationMs" not in event and event.get("latencyMs") is not None:
         event["durationMs"] = event.get("latencyMs")
@@ -646,6 +690,7 @@ class AgentEventNormalizer:
         if not run_id:
             return None
         self.run_summary.setdefault("runId", run_id)
+        self.run_summary["lastActivityAt"] = str(event.get("occurredAt") or "")
         headline = _public_text(
             event.get("headline")
             or event.get("goalSummary")
@@ -766,10 +811,7 @@ class AgentEventNormalizer:
             sequence=self.sequence,
         )
         summary = self._update_run_summary(event)
-        if summary is not None and (
-            event["eventName"].startswith(("run.", "step.", "tool.", "artifact."))
-            or event["eventName"] == "usage.updated"
-        ):
+        if summary is not None:
             event["runSummary"] = summary
         if not self.run_id and event.get("runId"):
             self.run_id = str(event["runId"])

@@ -1,14 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPage } from "./components/ChatPage.jsx";
-import { KnowledgePage } from "./components/KnowledgePage.jsx";
-import { SkillsPage } from "./components/SkillsPage.jsx";
-import { MemoryPage } from "./components/MemoryPage.jsx";
-import { ToolsPage } from "./components/ToolsPage.jsx";
-import { SettingsPage } from "./components/SettingsPage.jsx";
-import { WorkbenchPage } from "./components/WorkbenchPage.jsx";
-import { CliDeviceAuthPage } from "./components/CliDeviceAuthPage.jsx";
 import { Toast } from "./components/Toast.jsx";
 import { AgentWindowFeedback } from "./components/AgentWindowFeedback.jsx";
 import { KnowFlowController } from "./components/KnowFlowController.jsx";
@@ -16,6 +9,55 @@ import { useAuth } from "./auth/AuthProvider.jsx";
 
 const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings", "cli-auth"]);
 const SIDEBAR_LAYOUT_VERSION = "20260522-chatgpt-sidebar";
+const pageModuleLoaders = Object.freeze({
+  knowledge: () => import("./components/KnowledgePage.jsx"),
+  skills: () => import("./components/SkillsPage.jsx"),
+  workspace: () => import("./components/WorkbenchPage.jsx"),
+  memory: () => import("./components/MemoryPage.jsx"),
+  tools: () => import("./components/ToolsPage.jsx"),
+  settings: () => import("./components/SettingsPage.jsx"),
+  "cli-auth": () => import("./components/CliDeviceAuthPage.jsx"),
+});
+
+function lazyNamed(page, exportName) {
+  return lazy(() => pageModuleLoaders[page]().then((module) => ({
+    default: module[exportName],
+  })));
+}
+
+const KnowledgePage = lazyNamed("knowledge", "KnowledgePage");
+const SkillsPage = lazyNamed("skills", "SkillsPage");
+const WorkbenchPage = lazyNamed("workspace", "WorkbenchPage");
+const MemoryPage = lazyNamed("memory", "MemoryPage");
+const ToolsPage = lazyNamed("tools", "ToolsPage");
+const SettingsPage = lazyNamed("settings", "SettingsPage");
+const CliDeviceAuthPage = lazyNamed("cli-auth", "CliDeviceAuthPage");
+
+function preloadPageModule(page) {
+  pageModuleLoaders[page]?.().catch(() => {
+    // Navigation still owns the visible recovery state if a speculative load fails.
+  });
+}
+
+function DeferredPage({ active, label, page, visited, children }) {
+  if (!active && !visited) return null;
+  return (
+    <Suspense
+      fallback={active ? (
+        <section
+          className={"page active deferred-page-loading"}
+          id={`page-${page}`}
+          aria-busy={"true"}
+          aria-live={"polite"}
+        >
+          <span>{`正在打开${label}`}</span>
+        </section>
+      ) : null}
+    >
+      {children}
+    </Suspense>
+  );
+}
 
 function readStoredBoolean(key, defaultValue) {
   if (typeof window === "undefined") return defaultValue;
@@ -78,6 +120,7 @@ function restoreWorkbenchOrigin(element) {
 function WorkbenchShell() {
   const { authenticated, loading } = useAuth();
   const [activePage, setActivePage] = useState(readInitialPage);
+  const [visitedPages, setVisitedPages] = useState(() => new Set(["chat", readInitialPage()]));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readInitialSidebarCollapsed);
   const [drawerCollapsed, setDrawerCollapsed] = useState(() => readStoredBoolean("knowflow.drawerCollapsed", true));
   const pendingWorkbenchFocusRef = useRef(false);
@@ -86,6 +129,15 @@ function WorkbenchShell() {
   const shellLocked = loading || !authenticated;
 
   drawerCollapsedRef.current = drawerCollapsed;
+
+  useEffect(() => {
+    setVisitedPages((current) => {
+      if (current.has(activePage)) return current;
+      const next = new Set(current);
+      next.add(activePage);
+      return next;
+    });
+  }, [activePage]);
 
   useEffect(() => {
     const handlePageEvent = (event) => {
@@ -106,19 +158,25 @@ function WorkbenchShell() {
     const handleWorkbenchShortcut = (event) => {
       if (event.repeat) return;
       const key = String(event.key || "").toLowerCase();
-      const webShortcut = event.altKey && event.key.toLowerCase() === "t"
+      const webShortcut = event.altKey && ["t", "e", "g"].includes(key)
         && !event.ctrlKey && !event.metaKey;
-      const desktopShortcut = event.ctrlKey && key === "t"
+      const desktopShortcut = event.ctrlKey && ["t", "e", "g"].includes(key)
         && !event.altKey && !event.metaKey;
       if (!webShortcut && !desktopShortcut) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')) return;
 
       const workbench = document.getElementById("evidence-drawer");
       const hasWorkbenchContent = workbench?.dataset.hasRun === "true";
-      if (drawerCollapsed && !hasWorkbenchContent) return;
+      const requestedTab = key === "g" ? "artifacts" : "trace";
+      const artifactCount = Number(workbench?.dataset.artifactCount || 0);
+      if (
+        (key === "t" && drawerCollapsed && !hasWorkbenchContent)
+        || (key !== "t" && !hasWorkbenchContent)
+        || (key === "g" && artifactCount < 1)
+      ) return;
 
       event.preventDefault();
-      const nextCollapsed = activePage === "chat" ? !drawerCollapsed : false;
+      const nextCollapsed = key === "t" && activePage === "chat" ? !drawerCollapsed : false;
       if (nextCollapsed) {
         const origin = drawerFocusOriginRef.current;
         drawerFocusOriginRef.current = null;
@@ -126,6 +184,9 @@ function WorkbenchShell() {
       } else {
         drawerFocusOriginRef.current = currentFocusOutsideWorkbench();
         pendingWorkbenchFocusRef.current = true;
+        window.dispatchEvent(new CustomEvent("knowflow:react-workbench-select-tab", {
+          detail: { activeTab: requestedTab },
+        }));
       }
       drawerCollapsedRef.current = nextCollapsed;
       writeStoredBoolean("knowflow.drawerCollapsed", nextCollapsed);
@@ -228,19 +289,37 @@ function WorkbenchShell() {
       <AuthScreen />
       {!shellLocked ? (
         <div className="app-shell" id="app-shell">
-          <Sidebar activePage={activePage} collapsed={sidebarCollapsed} />
+          <Sidebar
+            activePage={activePage}
+            collapsed={sidebarCollapsed}
+            onPageIntent={preloadPageModule}
+          />
           <main className="main-stage" id="main-stage" tabIndex={-1}>
             <ChatPage
               active={activePage === "chat"}
               drawerCollapsed={drawerCollapsed}
             />
-            <KnowledgePage active={activePage === "knowledge"} />
-            <SkillsPage active={activePage === "skills"} />
-            <WorkbenchPage active={activePage === "workspace"} />
-            <MemoryPage active={activePage === "memory"} />
-            <ToolsPage active={activePage === "tools"} />
-            <SettingsPage active={activePage === "settings"} />
-            <CliDeviceAuthPage active={activePage === "cli-auth"} />
+            <DeferredPage active={activePage === "knowledge"} visited={visitedPages.has("knowledge")} page={"knowledge"} label={"知识库"}>
+              <KnowledgePage active={activePage === "knowledge"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "skills"} visited={visitedPages.has("skills")} page={"skills"} label={"Skills"}>
+              <SkillsPage active={activePage === "skills"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "workspace"} visited={visitedPages.has("workspace")} page={"workspace"} label={"工作区"}>
+              <WorkbenchPage active={activePage === "workspace"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "memory"} visited={visitedPages.has("memory")} page={"memory"} label={"记忆"}>
+              <MemoryPage active={activePage === "memory"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "tools"} visited={visitedPages.has("tools")} page={"tools"} label={"工具与MCP"}>
+              <ToolsPage active={activePage === "tools"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "settings"} visited={visitedPages.has("settings")} page={"settings"} label={"模型设置"}>
+              <SettingsPage active={activePage === "settings"} />
+            </DeferredPage>
+            <DeferredPage active={activePage === "cli-auth"} visited={visitedPages.has("cli-auth")} page={"cli-auth"} label={"CLI授权"}>
+              <CliDeviceAuthPage active={activePage === "cli-auth"} />
+            </DeferredPage>
           </main>
         </div>
       ) : null}

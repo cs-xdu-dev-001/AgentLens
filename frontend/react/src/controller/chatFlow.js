@@ -145,6 +145,64 @@ export function reprioritizeQueuedChatRequest(queue, requestId, priority) {
   )));
 }
 
+const CHAT_QUEUE_STORAGE_PREFIX = "agentlens.chatQueue.v1";
+
+function browserSessionStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+export function chatQueueStorageKey(user) {
+  const identity = user?.id ?? user?.username ?? user?.email;
+  if (identity === undefined || identity === null || String(identity).trim() === "") {
+    return "";
+  }
+  return `${CHAT_QUEUE_STORAGE_PREFIX}:${encodeURIComponent(String(identity).slice(0, 240))}`;
+}
+
+export function normalizeStoredChatQueue(snapshot) {
+  const rawItems = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const items = [];
+  const seen = new Set();
+  for (const raw of rawItems) {
+    const id = String(raw?.id || "").slice(0, 100);
+    const question = String(raw?.question || "").replace(/\0/g, "").trim().slice(0, 10_000);
+    if (!id || !question || seen.has(id) || raw?.attachments?.length) continue;
+    seen.add(id);
+    items.push({
+      id,
+      question,
+      priority: queuedChatPriority(raw),
+      sequence: Math.max(0, Number(raw?.sequence) || 0),
+      skillId: raw?.skillId ?? null,
+      knowledgeBaseId: raw?.knowledgeBaseId ?? null,
+      chatModelConfigId: raw?.chatModelConfigId ?? null,
+      reasoningEffort: String(raw?.reasoningEffort || "default").slice(0, 40),
+      permissionMode: String(raw?.permissionMode || "ask").slice(0, 40),
+      attachments: [],
+    });
+    if (items.length >= 20) break;
+  }
+  return {
+    version: 1,
+    items: orderQueuedChatRequests(items),
+    paused: Boolean(snapshot?.paused),
+    blockedReason: String(snapshot?.blockedReason || "").slice(0, 40),
+  };
+}
+
+export function durableChatQueueItems(queue) {
+  return normalizeStoredChatQueue({
+    items: (Array.isArray(queue) ? queue : []).filter(
+      (item) => !item?.attachments?.length,
+    ),
+  }).items;
+}
+
 function queueBlockReasonFromProjection(projection) {
   const waitingQuestion = (projection?.questions || []).some(
     (item) => !item?.answered && (
@@ -164,6 +222,33 @@ function queueBlockReasonFromProjection(projection) {
 }
 
 const composerRecoveryActions = new Set(["continue", "retry", "fix"]);
+
+export function composerFollowUpSuggestion(projection = {}) {
+  const recoveryActions = new Set(
+    (Array.isArray(projection?.recoveryActions) ? projection.recoveryActions : [])
+      .map(String),
+  );
+  const runStatus = String(projection?.run?.status || "").toLowerCase();
+  const failed = Boolean(
+    projection?.error
+    || projection?.terminal === "failed"
+    || runStatus === "failed",
+  );
+  if (failed) {
+    if (recoveryActions.has("fix")) return "分析这个错误并继续完成任务";
+    if (recoveryActions.has("retry")) return "调整方案后重试本轮任务";
+    return "分析刚才失败的原因";
+  }
+  const completed = projection?.terminal === "completed" || runStatus === "completed";
+  if (!completed) return "";
+  if (Array.isArray(projection?.artifacts) && projection.artifacts.length) {
+    return "检查本次改动并运行相关验证";
+  }
+  if (Array.isArray(projection?.references) && projection.references.length) {
+    return "核对这些来源并总结关键结论";
+  }
+  return "";
+}
 
 function composerContextStatus(projection = {}) {
   const source = projection?.context || projection?.run?.context;
@@ -213,6 +298,7 @@ function composerRecoveryContext(projection = {}, context = {}) {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 160),
+    suggestedPrompt: composerFollowUpSuggestion(projection),
     context: composerContextStatus(projection),
   };
 }
@@ -334,6 +420,25 @@ export function shouldOpenRestoredRun(run) {
   return Boolean(run?.id && restoredRunOpenStatuses.has(run.status));
 }
 
+export function agentRunActionKey(detail = {}) {
+  return `${String(detail.messageId || "")}\u001f${String(detail.runId || "")}\u001f${String(detail.action || "")}`;
+}
+
+export function createAgentRunActionGuard() {
+  const inFlight = new Set();
+  return {
+    acquire(detail = {}) {
+      const key = agentRunActionKey(detail);
+      if (inFlight.has(key)) return null;
+      inFlight.add(key);
+      return key;
+    },
+    release(key) {
+      if (key) inFlight.delete(key);
+    },
+  };
+}
+
 export function createChatFlow({
   state,
   messageRetryRequests,
@@ -365,6 +470,7 @@ export function createChatFlow({
   let sessionSwitchController = null;
   let composerStateKey = "";
   let cancellingRunId = "";
+  const agentRunActionsInFlight = createAgentRunActionGuard();
 
   function publishAgentComposerState(detail = {}) {
     const next = {
@@ -383,6 +489,11 @@ export function createChatFlow({
         .replace(/[^A-Za-z0-9_.-]/g, "")
         .slice(0, 80),
       failedStepTitle: String(detail.failedStepTitle || "")
+        .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 160),
+      suggestedPrompt: String(detail.suggestedPrompt || "")
         .replace(/[\u0000-\u001f\u007f<>]/g, " ")
         .replace(/\s+/g, " ")
         .trim()
@@ -414,7 +525,35 @@ export function createChatFlow({
     ));
   }
 
-  function notifyChatQueue() {
+  function persistChatQueue() {
+    const key = chatQueueStorageKey(state.currentUser);
+    const storage = browserSessionStorage();
+    if (!key || !storage) {
+      state.chatQueueDurable = false;
+      return false;
+    }
+    try {
+      const durableItems = durableChatQueueItems(state.chatQueue);
+      if (!durableItems.length) {
+        storage.removeItem(key);
+      } else {
+        storage.setItem(key, JSON.stringify({
+          version: 1,
+          items: durableItems,
+          paused: state.chatQueuePaused,
+          blockedReason: state.chatQueueBlockReason,
+        }));
+      }
+      state.chatQueueDurable = durableItems.length === state.chatQueue.length;
+      return state.chatQueueDurable;
+    } catch {
+      state.chatQueueDurable = false;
+      return false;
+    }
+  }
+
+  function notifyChatQueue({ persist = true } = {}) {
+    if (persist) persistChatQueue();
     window.dispatchEvent(new CustomEvent("knowflow:react-chat-queue-updated", {
       detail: {
         items: orderQueuedChatRequests(state.chatQueue).map(
@@ -427,8 +566,49 @@ export function createChatFlow({
         ),
         paused: Boolean(state.chatQueuePaused),
         blockedReason: state.chatQueueBlockReason || "",
+        durable: Boolean(state.chatQueueDurable),
       },
     }));
+  }
+
+  function restoreQueuedChats() {
+    const key = chatQueueStorageKey(state.currentUser);
+    const storage = browserSessionStorage();
+    if (!key || !storage) {
+      state.chatQueueDurable = false;
+      notifyChatQueue({ persist: false });
+      return 0;
+    }
+    let snapshot;
+    try {
+      const raw = storage.getItem(key);
+      snapshot = raw ? normalizeStoredChatQueue(JSON.parse(raw)) : normalizeStoredChatQueue({});
+      if (raw) {
+        if (snapshot.items.length) storage.setItem(key, JSON.stringify(snapshot));
+        else storage.removeItem(key);
+      }
+      state.chatQueueDurable = true;
+    } catch {
+      try {
+        storage.removeItem(key);
+      } catch {
+        // Storage can become unavailable between reads (for example, privacy mode).
+      }
+      snapshot = normalizeStoredChatQueue({});
+      state.chatQueueDurable = false;
+    }
+    state.chatQueue = snapshot.items;
+    state.chatQueueSequence = snapshot.items.reduce(
+      (maximum, item) => Math.max(maximum, Number(item.sequence) || 0),
+      0,
+    );
+    state.chatQueuePaused = Boolean(snapshot.items.length);
+    state.chatQueueBlockReason = snapshot.items.length ? "restored" : "";
+    notifyChatQueue({ persist: false });
+    if (snapshot.items.length) {
+      toast(`已恢复${snapshot.items.length}条待发送任务，确认后继续发送`);
+    }
+    return snapshot.items.length;
   }
 
   function clearComposerDraft() {
@@ -567,11 +747,11 @@ export function createChatFlow({
     return true;
   }
 
-  function clearQueuedChats() {
+  function clearQueuedChats({ preserveStored = false } = {}) {
     state.chatQueue = [];
     state.chatQueuePaused = false;
     state.chatQueueBlockReason = "";
-    notifyChatQueue();
+    notifyChatQueue({ persist: !preserveStored });
   }
 
   function resumeQueuedChats() {
@@ -733,6 +913,7 @@ export function createChatFlow({
           toolCalls: Array.isArray(message.toolCalls) ? message.toolCalls : [],
           run: message.run || null,
           memoryActivity: message.memoryActivity || null,
+          sourceMessageId: message.id ?? null,
         },
       );
       if (
@@ -828,6 +1009,41 @@ export function createChatFlow({
     setSending(false);
     publishSessionSwitch("success", { sessionId: "" });
     publishAgentComposerState(composerAgentStateFromProjection());
+  }
+
+  async function rewindSessionAtMessage(messageId, question) {
+    const sourceSessionId = String(state.currentSessionId || "").trim();
+    const branchPoint = Number(messageId);
+    const restoredQuestion = String(question || "").trim();
+    if (!sourceSessionId || !Number.isInteger(branchPoint) || branchPoint <= 0) {
+      throw new Error("这条消息还没有可用的会话检查点，请刷新后重试。");
+    }
+    if (state.activeRunId) {
+      throw new Error("请等待当前Agent任务结束后再回到历史消息。");
+    }
+    const branch = await request(
+      `/api/sessions/${encodeURIComponent(sourceSessionId)}/branch`,
+      {
+        method: "POST",
+        body: { beforeMessageId: branchPoint },
+      },
+    );
+    const branchId = String(branch?.id || "").trim();
+    if (!branchId) throw new Error("服务器没有返回新的会话分支。");
+    const modelId = branch?.chat_model_config_id ?? null;
+    const opened = await continueSession(branchId, {
+      title: branch?.title || "新会话（回退）",
+      chatModelConfigId: modelId,
+    });
+    if (!opened) return null;
+    state.selectedChatModelConfigId = modelId;
+    notifyReactModelSelectionUpdated(modelId);
+    requestComposerReset({
+      focus: true,
+      question: String(branch?.restoredQuestion || restoredQuestion),
+    });
+    requestReactSessionsRefresh();
+    return branch;
   }
 
   function startNewChat() {
@@ -1435,6 +1651,8 @@ export function createChatFlow({
       || !["start", "replan", "resume", "restart", "cancel", "fix"].includes(action)
     ) return;
     if (action === "cancel" && cancellingRunId === runId) return;
+    const actionKey = agentRunActionsInFlight.acquire({ action, messageId, runId });
+    if (!actionKey) return;
     const ownsSendingState = action !== "fix" && !state.sending;
     if (action === "cancel") {
       cancellingRunId = runId;
@@ -1526,6 +1744,7 @@ export function createChatFlow({
       publishAgentRunActionState(detail, "failed", message);
       toast(message, 4200, "error");
     } finally {
+      agentRunActionsInFlight.release(actionKey);
       if (ownsSendingState) setSending(false);
     }
   }
@@ -1608,10 +1827,12 @@ export function createChatFlow({
     abortChatActivity,
     clearQueuedChats,
     continueSession,
+    rewindSessionAtMessage,
     removeQueuedChat,
     retrieveQueuedChat,
     reprioritizeQueuedChat,
     resumeQueuedChats,
+    restoreQueuedChats,
     retryAnswer,
     startNewChat,
     stopChatGeneration,

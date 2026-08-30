@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BACKEND_UNAVAILABLE_MESSAGE, normalizeErrorMessage } from "../api/errors.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
 
 export function AuthScreen() {
@@ -78,7 +79,7 @@ export function AuthScreen() {
 
   const handleCopyGithubCallback = async () => {
     try {
-      await navigator.clipboard.writeText(callbackUrl);
+      await copyTextToClipboard(callbackUrl);
       notifyLegacy("knowflow:react-toast", { message: "登录地址已复制" });
     } catch {
       notifyLegacy("knowflow:react-toast", { message: callbackUrl });

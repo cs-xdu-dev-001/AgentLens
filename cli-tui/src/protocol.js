@@ -4,7 +4,7 @@ import {createInterface} from 'node:readline';
 import stripAnsi from 'strip-ansi';
 import parseDiff from 'parse-diff';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 16;
 export const AGENT_EVENT_SCHEMA_VERSION = 1;
 
 export function buildDiffPresentation(value) {
@@ -171,6 +171,7 @@ function runSummaryProjection(event) {
     headline: redact(source.headline ?? '', 300),
     startedAt: sanitizeTerminalText(source.startedAt ?? '').slice(0, 80),
     finishedAt: sanitizeTerminalText(source.finishedAt ?? '').slice(0, 80),
+    lastActivityAt: sanitizeTerminalText(source.lastActivityAt ?? event?.occurredAt ?? '').slice(0, 80),
     completedSteps,
     totalSteps,
     progressPercent: totalSteps ? Math.min(100, Math.round((completedSteps / totalSteps) * 100)) : 0,
@@ -211,6 +212,30 @@ function safeWorkspaceArtifactPath(value) {
   if (!path || path.startsWith('/') || path.includes('\\') || path.includes(':')) return '';
   const parts = path.split('/');
   return parts.some(part => !part || part === '.' || part === '..') ? '' : parts.join('/');
+}
+
+export function workspaceChangesToArtifactEvents(changes = []) {
+  return (Array.isArray(changes) ? changes : []).flatMap((change, index) => {
+    if (!change || typeof change !== 'object') return [];
+    const path = safeWorkspaceArtifactPath(change.path);
+    if (!path) return [];
+    const operation = sanitizeTerminalText(change.operation).trim().toLowerCase();
+    const operationId = redact(change.operationId ?? '', 200).trim();
+    return [{
+      eventName: 'artifact.created',
+      artifactId: `file:${path}`,
+      artifactType: 'file',
+      title: path,
+      path,
+      ...(PROTOCOL_ARTIFACT_OPERATIONS.has(operation) ? {operation} : {}),
+      ...(operationId ? {operationId} : {}),
+      addedLines: Math.max(0, Number(change.addedLines ?? change.added) || 0),
+      removedLines: Math.max(0, Number(change.removedLines ?? change.removed) || 0),
+      diffAvailable: change.diffAvailable !== false,
+      reverted: Boolean(change.reverted),
+      sequence: Math.max(0, Number(change.sequence) || index + 1),
+    }];
+  });
 }
 
 function artifactProjection(event) {
@@ -422,10 +447,12 @@ export function projectRunEvent(current, event) {
     };
   }
   if (name === 'error.raised' || name === 'run.failed' || name === 'step.failed' || name === 'tool.failed') {
+    const target = sanitizeTerminalText(event?.error?.target ?? event?.failureTarget ?? '').slice(0, 40);
     next.error = {
       code: sanitizeTerminalText(event?.error?.code ?? event?.errorCode ?? event?.code ?? 'agent_error'),
       message: redact(event?.error?.message ?? event?.errorMessage ?? event?.message ?? 'Agent运行失败。', 1200),
       retryable: event?.error?.retryable !== false,
+      ...(target ? {target} : {}),
     };
   }
   if (name === 'run.completed' || name === 'run.cancelled') {
@@ -498,9 +525,21 @@ export function redact(value, limit = 500) {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
-export function userFacingErrorMessage(value, fallback = '执行失败。') {
+export function userFacingErrorMessage(value, fallback = '执行失败。', code = '') {
   const text = redact(value, 1200).trim();
   if (!text) return fallback;
+  const normalizedCode = String(code || '').trim().toLowerCase();
+  const codeMessages = {
+    model_authentication_failed: '模型认证失败，请检查API地址和API Key。',
+    access_denied: '模型服务拒绝访问，请检查Key分组、模型权限和接口协议。',
+    not_found: '接口或模型不存在，请确认API地址和模型名称。',
+    protocol_unsupported: '当前渠道不支持所选接口协议，请切换Responses API或Chat Completions。',
+    incompatible_parameters: '当前模型不接受采样参数，请清理temperature、top_p和max_tokens后重试。',
+    upstream_unavailable: '当前模型没有可用上游渠道，请检查模型名称和渠道权限。',
+    network_error: '模型服务连接失败，请检查网络、代理和API地址。',
+    invalid_request: '模型请求参数不兼容，请检查模型名、协议和渠道配置。',
+  };
+  if (codeMessages[normalizedCode]) return codeMessages[normalizedCode];
   if (/\b(?:http\s*)?429\b|rate[_ -]?limit|max\s+rpm/i.test(text)) {
     return '上游模型请求过于频繁（HTTP 429），自动重试后仍未恢复。';
   }
@@ -760,7 +799,7 @@ export class RuntimeClient extends EventEmitter {
           type: 'protocol_error',
           message: `Python运行时返回了非JSON事件：${redact(line, 300) || '空行'}`,
           stderr: [...this.stderr],
-          hint: '运行knowflow doctor --cli检查本地运行环境；如果刚更新过，请重新打开终端后再试。',
+          hint: '运行agentlens doctor --cli检查本地运行环境；如果刚更新过，请重新打开终端后再试。',
         });
       }
     });

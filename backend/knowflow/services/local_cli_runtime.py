@@ -16,6 +16,7 @@ from .agent_event_protocol import (
     AgentEventNormalizer,
     artifact_event_from_tool_execution,
 )
+from .agent_failure import classify_agent_failure
 from .agent_execution import AgentExecution, AgentEventSink
 from .agent_loop import ToolExecution, ToolRegistry
 from .agent_tooling import (
@@ -33,7 +34,16 @@ from .langgraph_agent_engine import (
     AgentRunCancelledError,
     LangGraphAgentEngine,
 )
-from .model_gateway import ModelGateway
+from .model_gateway import (
+    ModelGateway,
+    model_connection_diagnostic,
+    test_model_protocols,
+)
+from .project_instructions import (
+    active_project_instruction_root,
+    load_project_instructions,
+    project_instruction_system_message,
+)
 from .local_cli_extensions import LocalExtensionStore
 from .mcp_client import McpRunSessionPool
 from .mcp_config import MCP_MAX_EXPOSED_TOOLS
@@ -47,6 +57,7 @@ from .workspace_runtime import (
     SrtSandboxRunner,
     WorkspaceContext,
     WorkspaceRuntime,
+    WorkspaceRuntimeError,
     register_workspace_tools,
 )
 from .workspace_references import (
@@ -55,6 +66,20 @@ from .workspace_references import (
     workspace_reference_trace_title,
 )
 from .session_portability import unique_branch_title
+
+
+def _replace_with_retry(temporary: Path, destination: Path) -> None:
+    """Atomically replace a file, tolerating brief Windows scanner locks."""
+
+    attempts = 4 if os.name == "nt" else 1
+    for attempt in range(attempts):
+        try:
+            temporary.replace(destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.025 * (attempt + 1))
 
 
 LOCAL_USER_ID = 1
@@ -126,6 +151,14 @@ class LocalCliConfigError(ValueError):
 
 
 class LocalCliConfigStore:
+    ENVIRONMENT_OVERRIDES = {
+        "provider": "KNOWFLOW_PROVIDER",
+        "base_url": "KNOWFLOW_API_BASE",
+        "model_name": "KNOWFLOW_MODEL",
+        "api_mode": "KNOWFLOW_API_MODE",
+        "api_key": "KNOWFLOW_API_KEY",
+    }
+
     def __init__(self, root: Path | None = None) -> None:
         self.root = (root or local_config_dir()).expanduser().resolve()
         self.config_path = self.root / "config.json"
@@ -155,7 +188,7 @@ class LocalCliConfigStore:
             encoding="utf-8",
         )
         self._chmod(temporary, 0o600)
-        temporary.replace(path)
+        _replace_with_retry(temporary, path)
         self._chmod(path, 0o600)
 
     def load_public(self) -> dict[str, Any]:
@@ -189,18 +222,98 @@ class LocalCliConfigStore:
             "api_mode": str(public.get("api_mode") or "responses"),
             "api_key": str(credentials.get("api_key") or ""),
         }
-        overrides = {
-            "provider": "KNOWFLOW_PROVIDER",
-            "base_url": "KNOWFLOW_API_BASE",
-            "model_name": "KNOWFLOW_MODEL",
-            "api_mode": "KNOWFLOW_API_MODE",
-            "api_key": "KNOWFLOW_API_KEY",
-        }
-        for key, environment_name in overrides.items():
+        for key, environment_name in self.ENVIRONMENT_OVERRIDES.items():
             value = os.getenv(environment_name, "").strip()
             if value:
                 values[key] = value
         return values
+
+    def editable_snapshot(self) -> dict[str, Any]:
+        """Return effective local model settings without exposing the API key."""
+        values = self.load()
+        overridden = {
+            key: environment_name
+            for key, environment_name in self.ENVIRONMENT_OVERRIDES.items()
+            if os.getenv(environment_name, "").strip()
+        }
+        return {
+            "provider": values["provider"],
+            "base_url": values["base_url"],
+            "model_name": values["model_name"],
+            "api_mode": values["api_mode"],
+            "has_api_key": bool(values["api_key"]),
+            "overridden_fields": overridden,
+        }
+
+    def validate_editable(
+        self,
+        *,
+        provider: str,
+        base_url: str,
+        model_name: str,
+        api_mode: str,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
+        """Validate an interactive edit while respecting environment overrides."""
+        current = self.load()
+        candidate = {
+            "provider": provider,
+            "base_url": base_url,
+            "model_name": model_name,
+            "api_mode": api_mode,
+            "api_key": str(api_key or "").strip() or current["api_key"],
+        }
+        for field, environment_name in self.ENVIRONMENT_OVERRIDES.items():
+            override = os.getenv(environment_name, "").strip()
+            if not override:
+                continue
+            if (
+                field != "api_key"
+                and str(candidate[field]).strip() != str(current[field]).strip()
+            ):
+                raise LocalCliConfigError(
+                    f"{environment_name}正在覆盖{field}，请先在Shell中修改该环境变量。"
+                )
+            candidate[field] = current[field]
+        return validate_local_config(candidate)
+
+    def save_editable(
+        self,
+        *,
+        provider: str,
+        base_url: str,
+        model_name: str,
+        api_mode: str,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
+        """Save an interactive edit while respecting environment overrides."""
+        validated = self.validate_editable(
+            provider=provider,
+            base_url=base_url,
+            model_name=model_name,
+            api_mode=api_mode,
+            api_key=api_key,
+        )
+
+        overridden = {
+            field
+            for field, environment_name in self.ENVIRONMENT_OVERRIDES.items()
+            if os.getenv(environment_name, "").strip()
+        }
+
+        def update_public(value: dict[str, Any]) -> None:
+            for field in ("provider", "base_url", "model_name", "api_mode"):
+                if field not in overridden:
+                    value[field] = validated[field]
+
+        self.update_public(update_public)
+        if "api_key" not in overridden:
+
+            def update_credentials(value: dict[str, Any]) -> None:
+                value["api_key"] = validated["api_key"]
+
+            self.update_credentials(update_credentials)
+        return validated
 
     def save(
         self,
@@ -252,7 +365,7 @@ def validate_local_config(value: dict[str, Any]) -> dict[str, str]:
     ]
     if missing:
         raise LocalCliConfigError(
-            "本地模型配置不完整，请先运行knowflow configure。"
+            "本地模型配置不完整，请先运行agentlens configure。"
         )
     if config["api_mode"] not in {"responses", "chat_completions"}:
         raise LocalCliConfigError(
@@ -269,6 +382,54 @@ def validate_local_config(value: dict[str, Any]) -> dict[str, str]:
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise LocalCliConfigError("接口地址格式无效。")
     return config
+
+
+def normalize_local_api_mode(value: Any) -> str | None:
+    """Normalize the two public protocol choices without guessing typos."""
+    token = str(value or "").strip().lower().replace("-", "_")
+    return {
+        "1": "responses",
+        "response": "responses",
+        "responses": "responses",
+        "2": "chat_completions",
+        "chat": "chat_completions",
+        "chat_completion": "chat_completions",
+        "chat_completions": "chat_completions",
+    }.get(token)
+
+
+def explain_local_connection_error(detail: Any) -> str:
+    """Turn gateway failures into short, actionable BYOK diagnostics."""
+    original = str(detail or "模型服务拒绝连接。").strip()[:800]
+    code = model_connection_diagnostic("unavailable", original)["code"]
+    if code == "connection_failed" and "无可用渠道" in original:
+        code = "upstream_unavailable"
+    if code == "authentication_failed":
+        action = "认证失败（HTTP 401）。请检查API Key是否有效，以及Key是否属于当前中转站。"
+    elif code == "access_denied":
+        action = (
+            "上游拒绝访问（HTTP 403）。请检查Key分组权限、模型映射，"
+            "以及该模型是否开放当前接口协议。"
+        )
+    elif code == "not_found":
+        action = (
+            "接口或模型不存在（HTTP 404）。请确认API地址以/v1结尾、模型名精确匹配，"
+            "并检查中转站是否开放当前接口。"
+        )
+    elif code == "rate_limited":
+        action = "请求受到限流（HTTP 429）。请稍后重试，或检查Key的RPM与并发额度。"
+    elif code == "upstream_unavailable":
+        action = (
+            "当前模型没有可用上游渠道（HTTP 503）。请检查模型名称、渠道状态，"
+            "以及Key所属分组的模型权限。"
+        )
+    elif code == "protocol_unsupported":
+        action = "当前渠道不支持所选接口协议。请在Responses API与Chat Completions之间切换。"
+    elif code == "incompatible_parameters":
+        action = "当前模型不接受已有采样参数。请清空temperature、top_p和max_tokens后重试。"
+    else:
+        return original
+    return f"{action}\n原始错误：{original}"
 
 
 class _PlaintextCipher:
@@ -324,11 +485,19 @@ class LocalSessionStore:
             encoding="utf-8",
         )
         self._chmod(temporary, 0o600)
-        temporary.replace(path)
+        _replace_with_retry(temporary, path)
         self._chmod(path, 0o600)
         return payload
 
-    def list(self, limit: int = 20) -> list[dict[str, Any]]:
+    def delete(self, run_id: str) -> bool:
+        path = self._path(run_id)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
+    def list(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         sessions: list[dict[str, Any]] = []
         for path in self.root.glob("run_*.json"):
             payload = self.load(path.stem)
@@ -340,6 +509,8 @@ class LocalSessionStore:
                     for key in (
                         "runId",
                         "title",
+                        "pinned",
+                        "archived",
                         "status",
                         "updatedAt",
                         "projectRoot",
@@ -348,7 +519,18 @@ class LocalSessionStore:
                     )
                 }
             )
-        sessions.sort(key=lambda item: float(item.get("updatedAt") or 0), reverse=True)
+        sessions = [
+            session
+            for session in sessions
+            if bool(session.get("archived")) == bool(archived)
+        ]
+        sessions.sort(
+            key=lambda item: (
+                bool(item.get("pinned")),
+                float(item.get("updatedAt") or 0),
+            ),
+            reverse=True,
+        )
         return sessions[: max(1, min(100, int(limit)))]
 
 
@@ -394,10 +576,27 @@ def gateway_config(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_local_connection(value: dict[str, Any]) -> str:
-    status, detail = _gateway().test(gateway_config(value))
-    if status != "available":
+    result = probe_local_connection(value)
+    if result["status"] != "available":
+        detail = explain_local_connection_error(result["message"])
+        recommended = result.get("recommendedApiMode")
+        if recommended:
+            label = (
+                "Chat Completions"
+                if recommended == "chat_completions"
+                else "Responses API"
+            )
+            detail = f"{detail}\n已检测到{label}可用，可切换后保存。"
+        elif len(result.get("checkedProtocols") or []) > 1:
+            detail = f"{detail}\n已同时检查Responses API与Chat Completions，均不可用。"
         raise LocalCliConfigError(detail)
-    return detail
+    return str(result["message"])
+
+
+def probe_local_connection(value: dict[str, Any]) -> dict[str, Any]:
+    """Probe local BYOK protocols without mutating the saved configuration."""
+
+    return test_model_protocols(_gateway(), gateway_config(value))
 
 
 class LocalAgentRuntime:
@@ -415,13 +614,7 @@ class LocalAgentRuntime:
         if os.name != "nt":
             self.data_root.chmod(0o700)
         self.gateway = _gateway()
-        workspace_state = self.data_root / "workspace-state" / hashlib.sha256(
-            str(self.workspace_root).encode("utf-8")
-        ).hexdigest()[:16]
-        self.workspace = WorkspaceContext(
-            self.workspace_root,
-            state_root=workspace_state,
-        )
+        self.workspace = self._workspace_context(self.workspace_root)
         self.sessions = LocalSessionStore(self.data_root / "sessions")
         self.extensions = LocalExtensionStore(
             self.config_store,
@@ -439,6 +632,12 @@ class LocalAgentRuntime:
         )
         self._cancel_lock = Lock()
         self._cancel_events: dict[str, Event] = {}
+
+    def _workspace_context(self, root: Path) -> WorkspaceContext:
+        workspace_state = self.data_root / "workspace-state" / hashlib.sha256(
+            str(root).encode("utf-8")
+        ).hexdigest()[:16]
+        return WorkspaceContext(root, state_root=workspace_state)
 
     def cancel(self, run_id: str | None = None) -> bool:
         """Cancel interruptible tools now and stop at the next graph boundary."""
@@ -468,6 +667,36 @@ class LocalAgentRuntime:
 
     def workspace_status(self) -> dict[str, Any]:
         return self.workspace.status()
+
+    def workspace_switch_root(self, path: str) -> dict[str, Any]:
+        raw = str(path or "").strip()
+        if not raw:
+            raise WorkspaceRuntimeError(
+                "workspace_root_required",
+                "请输入要打开的项目目录。",
+            )
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            target = self.workspace.cwd / target
+        try:
+            target = target.resolve(strict=True)
+        except OSError as exc:
+            raise WorkspaceRuntimeError(
+                "workspace_root_missing",
+                "项目目录不存在，请检查路径后重试。",
+            ) from exc
+        if not target.is_dir():
+            raise WorkspaceRuntimeError(
+                "workspace_root_not_directory",
+                "工作区必须是一个目录。",
+            )
+        if target != self.workspace_root:
+            self.workspace_root = target
+            self.workspace = self._workspace_context(target)
+        return {
+            **self.workspace.status(),
+            "message": f"已切换工作区：{target}",
+        }
 
     def workspace_add_directory(self, path: str) -> dict[str, Any]:
         return self.workspace.add_directory(path)
@@ -502,11 +731,11 @@ class LocalAgentRuntime:
             ],
         }
 
-    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_sessions(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         project = str(self.workspace.project_root)
         return [
             session
-            for session in self.sessions.list(limit=limit * 3)
+            for session in self.sessions.list(limit=limit * 3, archived=archived)
             if str(session.get("projectRoot") or "") == project
         ][:limit]
 
@@ -525,7 +754,13 @@ class LocalAgentRuntime:
             self.workspace.change_directory(cwd)
         return session
 
-    def branch_session(self, run_id: str, title: str = "") -> dict[str, Any]:
+    def branch_session(
+        self,
+        run_id: str,
+        title: str = "",
+        *,
+        before_message_index: int | None = None,
+    ) -> dict[str, Any]:
         source = self.load_session(run_id)
         if str(source.get("status") or "") not in {"completed", "cancelled"}:
             raise ValueError("请等待当前运行结束后再创建分支。")
@@ -537,8 +772,34 @@ class LocalAgentRuntime:
             max_length=160,
         )
         branch_id = f"run_{uuid4().hex[:12]}"
-        messages = list(source.get("messages") or [])
-        context_messages = list(source.get("contextMessages") or messages)
+        source_messages = list(source.get("messages") or [])
+        restored_question = ""
+        if before_message_index is not None:
+            if (
+                isinstance(before_message_index, bool)
+                or before_message_index < 0
+                or before_message_index >= len(source_messages)
+                or source_messages[before_message_index].get("role") != "user"
+            ):
+                raise ValueError("所选用户消息不在当前会话中。")
+            restored_question = str(
+                source_messages[before_message_index].get("content") or ""
+            )
+            messages = source_messages[:before_message_index]
+            context_messages = list(messages)
+            compaction: dict[str, Any] = {}
+        else:
+            messages = source_messages
+            context_messages = list(source.get("contextMessages") or messages)
+            compaction = dict(source.get("compaction") or {})
+        latest_answer = next(
+            (
+                str(message.get("content") or "")
+                for message in reversed(messages)
+                if message.get("role") == "assistant"
+            ),
+            "",
+        )
         payload = self.sessions.save(
             branch_id,
             title=branch_title,
@@ -547,8 +808,10 @@ class LocalAgentRuntime:
             **self._session_workspace_fields(),
             messages=messages,
             contextMessages=context_messages,
-            compaction=dict(source.get("compaction") or {}),
-            answer=str(source.get("answer") or ""),
+            compaction=compaction,
+            answer=latest_answer,
+            restoredQuestion=restored_question,
+            rewindMessageIndex=before_message_index,
         )
         return payload
 
@@ -562,6 +825,57 @@ class LocalAgentRuntime:
         if not next_title:
             raise ValueError("请输入新的会话名称。")
         return self.sessions.save(run_id, title=next_title[:160])
+
+    def set_session_pinned(self, run_id: str, pinned: bool) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        if pinned and bool(session.get("archived")):
+            raise ValueError("Restore the session before pinning it.")
+        return self.sessions.save(run_id, pinned=bool(pinned))
+
+    def set_session_archived(self, run_id: str, archived: bool) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        if archived and str(session.get("status") or "") in {
+            "planning",
+            "waiting_start",
+            "running",
+            "waiting_approval",
+            "waiting_input",
+        }:
+            raise ValueError("Wait for the active run to finish before archiving this session.")
+        updates: dict[str, Any] = {"archived": bool(archived)}
+        if archived:
+            updates["pinned"] = False
+        return self.sessions.save(run_id, **updates)
+
+    def delete_session(self, run_id: str) -> dict[str, Any]:
+        session = self.sessions.load(run_id)
+        if session is None:
+            raise ValueError("Local session was not found.")
+        if str(session.get("projectRoot") or "") != str(self.workspace.project_root):
+            raise ValueError("This session belongs to a different workspace.")
+        active_statuses = {
+            "planning",
+            "waiting_start",
+            "running",
+            "waiting_approval",
+            "waiting_input",
+        }
+        with self._cancel_lock:
+            managed = run_id in self._cancel_events
+        if managed or str(session.get("status") or "") in active_statuses:
+            raise ValueError("请等待当前运行结束后再永久删除会话。")
+        self.engine.delete_checkpoints(LOCAL_USER_ID, [run_id])
+        if not self.sessions.delete(run_id):
+            raise ValueError("Local session was not found.")
+        return {"runId": run_id, "deleted": True}
 
     def _registry(
         self,
@@ -928,7 +1242,7 @@ class LocalAgentRuntime:
             cwd = project_root
             allowed_roots = [project_root]
         allowed = ", ".join(str(path) for path in allowed_roots)
-        return {
+        base = {
             "role": "system",
             "content": (
                 "You are AgentLens, a local Linux coding agent. Work only "
@@ -942,6 +1256,13 @@ class LocalAgentRuntime:
                 "ask_user_question with 2 to 4 concise options instead of guessing."
             ),
         }
+        instruction_root = active_project_instruction_root(cwd, allowed_roots)
+        project_message = project_instruction_system_message(
+            load_project_instructions(instruction_root, cwd)
+        )
+        if project_message is not None:
+            base["content"] = f"{base['content']}\n\n{project_message['content']}"
+        return base
 
     def run(
         self,
@@ -1311,10 +1632,15 @@ class LocalAgentRuntime:
                 events=events,
             )
         except Exception as exc:
+            failure = classify_agent_failure(exc)
             self.sessions.save(
                 identifier,
                 status="failed",
-                errorCode=type(exc).__name__,
+                errorCode=str(
+                    failure["code"]
+                    if failure["code"] != "agent_run_failed"
+                    else type(exc).__name__
+                ),
                 **self._session_workspace_fields(),
                 messages=transcript_messages,
                 contextMessages=messages,

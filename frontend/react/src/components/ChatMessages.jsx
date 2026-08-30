@@ -20,6 +20,7 @@ import {
 } from "./chatScrollState.js";
 import {
   activeAgentInteractionOwner,
+  buildAgentRunPresentation,
   pendingAgentInteractions,
 } from "./agentRunPresentation.js";
 
@@ -27,7 +28,58 @@ const actionEvents = {
   copy: "knowflow:react-message-copy",
   edit: "knowflow:react-message-edit",
   retry: "knowflow:react-message-retry",
+  rewind: "knowflow:react-message-rewind",
 };
+
+const ACTIVE_RUN_STATUSES = new Set([
+  "pending",
+  "planning",
+  "queued",
+  "running",
+  "started",
+  "waiting",
+  "waiting_approval",
+  "waiting_input",
+]);
+
+function compactTaskAnchorText(value, maxLength = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+export function activeTaskAnchor(messages = [], now = Date.now()) {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  let assistantIndex = -1;
+  for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
+    const message = safeMessages[index];
+    if (message?.role !== "assistant") continue;
+    const status = String(message.run?.status || "").toLowerCase();
+    if (message.thinking || message.streaming || ACTIVE_RUN_STATUSES.has(status)) {
+      assistantIndex = index;
+      break;
+    }
+  }
+  if (assistantIndex < 0) return null;
+  const assistantMessage = safeMessages[assistantIndex];
+  const presentation = buildAgentRunPresentation({
+    run: assistantMessage?.run || null,
+    trace: assistantMessage?.trace || [],
+    now,
+  });
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = safeMessages[index];
+    if (message?.role !== "user") continue;
+    const text = compactTaskAnchorText(message.rawContent);
+    return text ? {
+      assistantMessageId: String(assistantMessage?.id || ""),
+      messageId: String(message.id || ""),
+      presentation,
+      text,
+    } : null;
+  }
+  return null;
+}
 const MEMORY_ACTIVITY_MAX_POLLS = 240;
 
 function memoryOperations(activity) {
@@ -244,6 +296,7 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
     className: bubbleClassName,
     "data-raw-content": message.rawContent,
     "data-react-message-id": message.id,
+    "data-source-message-id": message.sourceMessageId || undefined,
     "aria-busy": message.thinking ? "true" : undefined,
   };
 
@@ -392,6 +445,19 @@ function MessageRow({
       />
       {message.role === "user" ? (
         <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
+          {message.sourceMessageId ? (
+            <button
+              type={"button"}
+              data-message-action={"rewind"}
+              aria-label={"从此处继续"}
+              title={"从此处继续（原会话和文件不变）"}
+            >
+              <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
+                <path d={"M9 14 4 9l5-5"}></path>
+                <path d={"M4 9h9a7 7 0 0 1 7 7v4"}></path>
+              </svg>
+            </button>
+          ) : null}
           <button
             type={"button"}
             data-message-action={"edit"}
@@ -435,6 +501,7 @@ function MessageRow({
 
 export function ChatMessages() {
   const messagesRef = useRef(null);
+  const messageStateRef = useRef([]);
   const searchInputRef = useRef(null);
   const nextMessageIdRef = useRef(1);
   const followOutputRef = useRef(true);
@@ -447,6 +514,8 @@ export function ChatMessages() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCursor, setSearchCursor] = useState(0);
+  const [taskClock, setTaskClock] = useState(() => Date.now());
+  messageStateRef.current = messages;
   const searchMatches = useMemo(
     () => transcriptSearchMatches(messages, searchQuery),
     [messages, searchQuery],
@@ -460,11 +529,31 @@ export function ChatMessages() {
     () => activeAgentInteractionOwner(messages),
     [messages],
   );
+  const currentTask = useMemo(
+    () => activeTaskAnchor(messages, taskClock),
+    [messages, taskClock],
+  );
+  const currentTaskId = currentTask?.assistantMessageId || "";
+  useEffect(() => {
+    if (!currentTaskId) return undefined;
+    setTaskClock(Date.now());
+    const timer = window.setInterval(() => setTaskClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [currentTaskId]);
   const pendingInteractionCount = interactionOwner
     ? interactionOwner.queuedCount + 1
     : 0;
   const findBubble = (messageId) =>
     messagesRef.current?.querySelector('[data-react-message-id="' + messageId + '"]') || null;
+  const revealCurrentTask = () => {
+    const row = findBubble(currentTask?.messageId)?.closest(".message-row");
+    if (!row) return;
+    setFollowOutput(false);
+    row.scrollIntoView({
+      block: "start",
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
   const setFollowOutput = (nextValue) => {
     const next = Boolean(nextValue);
     followOutputRef.current = next;
@@ -567,6 +656,7 @@ export function ChatMessages() {
       toolCalls: Array.isArray(payload.toolCalls) ? payload.toolCalls : [],
       run: payload.run || null,
       memoryActivity: payload.memoryActivity || null,
+      sourceMessageId: payload.sourceMessageId ?? null,
     };
   };
   const updateMessage = (messageId, updater) => {
@@ -628,13 +718,49 @@ export function ChatMessages() {
           detail: {
             bubble,
             messageId: bubble?.dataset.reactMessageId || "",
+            sourceMessageId: bubble?.dataset.sourceMessageId || "",
             rawContent: bubble?.dataset.rawContent || "",
           },
         }),
       );
     };
+    const handleMessageCommand = (event) => {
+      const detail = event.detail || {};
+      const action = String(detail.action || "");
+      if (!["copy", "edit", "retry", "rewind"].includes(action)) return;
+      if (action === "copy") {
+        const assistantMessage = [...messageStateRef.current].reverse().find((message) => (
+          message?.role === "assistant" && !message.thinking && !message.streaming
+        ));
+        if (!assistantMessage) {
+          detail.handled = false;
+          return;
+        }
+        const copyDetail = {
+          action,
+          args: String(detail.args || "").trim(),
+          assistantMessage,
+          messages: messageStateRef.current,
+          messageId: assistantMessage.id,
+          rawContent: assistantMessage.rawContent,
+        };
+        window.dispatchEvent(new CustomEvent(actionEvents.copy, { detail: copyDetail }));
+        detail.handled = true;
+        return;
+      }
+      const buttons = Array.from(
+        messagesNode.querySelectorAll(`[data-message-action="${action}"]`),
+      ).filter((button) => !button.disabled);
+      const button = buttons[buttons.length - 1];
+      detail.handled = Boolean(button);
+      if (button) button.click();
+    };
     messagesNode.addEventListener("click", handleMessageActionClick);
-    return () => messagesNode.removeEventListener("click", handleMessageActionClick);
+    window.addEventListener("knowflow:react-message-command", handleMessageCommand);
+    return () => {
+      messagesNode.removeEventListener("click", handleMessageActionClick);
+      window.removeEventListener("knowflow:react-message-command", handleMessageCommand);
+    };
   }, []);
 
   useEffect(() => {
@@ -891,6 +1017,34 @@ export function ChatMessages() {
         aria-busy={sessionSwitch?.status === "loading"}
         onScroll={handleMessagesScroll}
       >
+        {currentTask ? (
+          <button
+            className={"active-task-anchor"}
+            type={"button"}
+            onClick={revealCurrentTask}
+            aria-label={`回到当前任务：${currentTask.text}；${currentTask.presentation?.status?.label || "执行中"}`}
+            title={currentTask.text}
+            style={{
+              "--task-progress-scale": Math.max(
+                0,
+                Math.min(100, Number(currentTask.presentation?.progressPercent) || 0),
+              ) / 100,
+            }}
+          >
+            <strong>{"任务"}</strong>
+            <span className={"active-task-anchor-copy"}>{currentTask.text}</span>
+            {currentTask.presentation?.metrics ? (
+              <span className={"active-task-anchor-metrics"}>{currentTask.presentation.metrics}</span>
+            ) : null}
+            <span className={`active-task-anchor-state ${currentTask.presentation?.status?.className || "running"}`}>
+              {currentTask.presentation?.status?.label || "执行中"}
+            </span>
+            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M7 4h9v9"}></path>
+              <path d={"M16 4 5 15"}></path>
+            </svg>
+          </button>
+        ) : null}
         {sessionSwitch ? (
           <div
             className={`session-switch-state ${sessionSwitch.status}`}

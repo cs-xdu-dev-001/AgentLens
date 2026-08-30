@@ -7,17 +7,27 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {render} from 'ink-testing-library';
 import {
+  activeTaskAnchorMetrics,
   App,
+  activityDetailLines,
+  activityDetailPage,
+  buildTuiDeliveryPresentation,
   buildTuiDiagnosticReport,
+  changeReviewArtifacts,
+  changeReviewKey,
+  compactWorkspaceStatus,
   compactSessionHeaderLabel,
   expandPastedTextRefs,
   enqueueWaitingInteraction,
   formatPastedTextRef,
+  nextPromptSuggestion,
   pastedTextLineCount,
+  permissionRuleBehavior,
   rankModelOptions,
   resolveInteractionFocus,
   removeWaitingInteraction,
   resolveTerminalMode,
+  runActivityPresentation,
   retryTurnRequest,
   runtimeStatusFromEvent,
   sanitizeComposerInput,
@@ -28,13 +38,23 @@ import {
   shouldShowRuntimeStatus,
   shouldCollapsePaste,
   streamingPreview,
+  taskOutcomeState,
+  taskReviewHint,
   thinkingStateForPhase,
   transcriptSearchMatches,
   transcriptSearchText,
   turnRequestSnapshot,
+  updatePermissionRules,
+  workspaceExecutionBlock,
+  workspaceGitSummary,
 } from '../src/app.jsx';
 import {stableMarkdownBoundary} from '../src/markdown.jsx';
 import {createRunProjection, projectRunEvent} from '../src/protocol.js';
+import {
+  editLocalModelConfigText,
+  localModelConfigPayload,
+  normalizeLocalModelConfig,
+} from '../src/localModelConfig.jsx';
 import {
   sanitizeTerminalTitle,
   shouldNotifyTerminalTransition,
@@ -43,11 +63,31 @@ import {
   terminalClipboardSequence,
   terminalCopySelection,
   terminalNotificationSequence,
+  terminalNotificationsEnabled,
   terminalProgressSequence,
   terminalTitleSequence,
 } from '../src/terminalFeedback.js';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+
+test('delivery presentation distinguishes complete, partial, and unverified outcomes', () => {
+  assert.deepEqual(
+    buildTuiDeliveryPresentation({
+      artifacts: [{path: 'report.md', addedLines: 4}],
+      verifications: [{status: 'passed'}],
+      status: '已完成',
+    }).state,
+    {tone: 'success', label: '验证通过'},
+  );
+  const failed = buildTuiDeliveryPresentation({
+    artifacts: [{path: 'report.md'}],
+    status: '执行失败',
+  });
+  assert.equal(failed.title, '本轮结果');
+  assert.equal(failed.state.label, '运行失败');
+  assert.equal(failed.actionHint, 'Ctrl+T查看未完成步骤');
+  assert.equal(buildTuiDeliveryPresentation({artifacts: [{path: 'report.md'}]}).state.label, '待验证');
+});
 
 test('session titles are compact and redact credential-shaped text', () => {
   assert.equal(sessionTitleFromPrompt('  修复\n登录按钮  '), '修复 登录按钮');
@@ -60,6 +100,73 @@ test('session titles are compact and redact credential-shaped text', () => {
   assert.match(compactSessionHeaderLabel('检查当前工作区并给出一份非常详细的修复建议', 60), /…$/);
 });
 
+test('workspace status keeps branch and dirty state visible without exposing the full path', () => {
+  assert.equal(compactWorkspaceStatus({branch: 'main', dirty: false}), 'main');
+  assert.equal(
+    compactWorkspaceStatus({branch: 'feature/task-ui', dirty: true, changedFiles: 3}),
+    'feature/task-ui · 3处改动',
+  );
+  assert.equal(
+    compactWorkspaceStatus({cwd: '/srv/agentlens', dirty: true, changedFiles: 1}),
+    'agentlens · 1处改动',
+  );
+  assert.equal(
+    compactWorkspaceStatus({
+      branch: 'main',
+      dirty: false,
+      projectInstructions: {sources: [{path: 'AGENTS.md'}]},
+    }),
+    'main · 1份项目指令',
+  );
+  assert.deepEqual(
+    workspaceGitSummary({
+      git: {
+        repository: true,
+        branch: 'feature/git-awareness',
+        upstream: 'origin/feature/git-awareness',
+        changedFiles: 4,
+        stagedFiles: 1,
+        modifiedFiles: 2,
+        untrackedFiles: 1,
+        conflictedFiles: 0,
+        ahead: 2,
+        behind: 1,
+      },
+    }),
+    {
+      repository: true,
+      branch: 'feature/git-awareness',
+      changed: 4,
+      staged: 1,
+      modified: 2,
+      untracked: 1,
+      conflicted: 0,
+      ahead: 2,
+      behind: 1,
+      label: 'feature/git-awareness · 4处改动 · ↑2 ↓1',
+      detail: 'feature/git-awareness · ↑2 ↓1 · 跟踪origin/feature/git-awareness · 1个已暂存 · 2个未暂存 · 1个未跟踪',
+    },
+  );
+  assert.equal(
+    workspaceGitSummary({branch: 'main', dirty: true, changedFiles: 2}).detail,
+    'main · 未设置上游分支 · 2个文件已修改',
+  );
+});
+
+test('change review only includes reversible workspace files and keeps stable identities', () => {
+  const changes = changeReviewArtifacts([
+    {artifactId: 'file:a', path: 'src/a.py', diffAvailable: true},
+    {operationId: 'edit-b', path: 'src/b.py'},
+    {artifactId: 'reference:web', url: 'https://example.com'},
+    {artifactId: 'file:no-diff', path: 'README.md'},
+  ]);
+
+  assert.deepEqual(changes.map(change => change.path), ['src/a.py', 'src/b.py']);
+  assert.equal(changeReviewKey(changes[0], 0), 'file:a');
+  assert.equal(changeReviewKey(changes[1], 1), 'edit-b');
+  assert.equal(changeReviewKey({path: 'src/c.py'}, 2), 'src/c.py');
+});
+
 test('model catalog keeps the active and recent models first and tolerates fuzzy queries', () => {
   const models = [
     {id: 1, name: 'DeepSeek Chat', modelName: 'deepseek-chat', provider: 'deepseek'},
@@ -68,6 +175,165 @@ test('model catalog keeps the active and recent models first and tolerates fuzzy
   ];
   assert.deepEqual(rankModelOptions(models, ['3']).map(item => item.id), [2, 3, 1]);
   assert.equal(rankModelOptions(models, [], 'kimk')[0]?.id, 3);
+});
+
+test('local model configuration keeps secrets out of snapshots and edits text at the cursor', () => {
+  const snapshot = normalizeLocalModelConfig({
+    baseUrl: 'https://api.example.com/v1',
+    modelName: 'gpt-test',
+    apiMode: 'responses',
+    hasApiKey: true,
+  });
+  assert.equal(snapshot.apiKey, '');
+  assert.equal(snapshot.hasApiKey, true);
+  assert.deepEqual(
+    editLocalModelConfigText('gpt-test', 3, {character: 'X', key: {}}),
+    {value: 'gptX-test', cursor: 4},
+  );
+  assert.deepEqual(localModelConfigPayload({...snapshot, apiKey: ''}), {
+    provider: 'custom',
+    baseUrl: 'https://api.example.com/v1',
+    modelName: 'gpt-test',
+    apiMode: 'responses',
+  });
+});
+
+test('completed runs keep child tool failures as warnings instead of failing the whole turn', () => {
+  const completed = taskOutcomeState({
+    failure: {message: '旧的工具错误'},
+    phase: '工具执行失败',
+    rows: [
+      {status: 'success'},
+      {status: 'failed', repeatCount: 2},
+      {status: 'waiting'},
+    ],
+    runSummary: {status: 'completed'},
+    running: false,
+  });
+  assert.deepEqual(completed, {
+    childFailureCount: 2,
+    completedWithWarnings: true,
+    failed: false,
+    runStatus: 'completed',
+    waiting: false,
+  });
+
+  const failed = taskOutcomeState({
+    rows: [{status: 'failed'}],
+    running: false,
+  });
+  assert.equal(failed.failed, true);
+  assert.equal(failed.completedWithWarnings, false);
+  assert.equal(taskReviewHint({completedWithWarnings: true}), 'Ctrl+T查看未成功步骤 · Ctrl+E运行详情');
+  assert.equal(taskReviewHint({failed: true}), 'Ctrl+E查看错误与恢复操作');
+  assert.equal(taskReviewHint({completedWithWarnings: true, expanded: true}), '');
+});
+
+test('active task anchor reports live duration, token usage, and protocol progress', () => {
+  assert.equal(activeTaskAnchorMetrics({
+    elapsedMs: 4_200,
+    runProjection: {
+      runSummary: {completedSteps: 1, totalSteps: 3, totalTokens: 637},
+    },
+  }), '4s · ~637 tokens · 1/3');
+  assert.equal(activeTaskAnchorMetrics({elapsedMs: 0}), '0ms');
+});
+
+test('quiet runs distinguish slow progress from an actual failure', () => {
+  const base = Date.parse('2026-08-26T00:00:00Z');
+  assert.equal(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 10_000,
+  }), null);
+  assert.deepEqual(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 20_000,
+  }), {
+    color: '#d97757',
+    detail: '仍在运行，等待下一条进展',
+    label: '仍在运行',
+  });
+  assert.deepEqual(runActivityPresentation({
+    running: true,
+    lastActivityAt: new Date(base).toISOString(),
+    now: base + 50_000,
+  }), {
+    color: '#d9a441',
+    detail: '暂未收到新进展，任务仍在运行',
+    label: '等待响应',
+  });
+});
+
+test('home workspaces block execution while preserving remote and project workspaces', () => {
+  assert.match(
+    workspaceExecutionBlock({workspaceKind: 'home'}),
+    /\/workspace <项目目录>/,
+  );
+  assert.equal(workspaceExecutionBlock({workspaceKind: 'project'}), '');
+  assert.equal(workspaceExecutionBlock({remote: true, workspaceKind: 'home'}), '');
+});
+
+test('tool permission rules move tools between Allow, Ask, and Deny with safe precedence', () => {
+  let rules = {allow: [], ask: [], deny: []};
+  rules = updatePermissionRules(rules, 'allow', 'run_sandbox_command');
+  assert.equal(permissionRuleBehavior('RUN_SANDBOX_COMMAND', rules), 'allow');
+  rules = updatePermissionRules(rules, 'ask', 'run_sandbox_command');
+  assert.deepEqual(rules.allow, []);
+  assert.equal(permissionRuleBehavior('run_sandbox_command', rules), 'ask');
+  rules = updatePermissionRules(rules, 'deny', '*');
+  assert.equal(permissionRuleBehavior('write_workspace_file', rules), 'deny');
+  rules = updatePermissionRules(rules, 'deny', '*', true);
+  assert.equal(permissionRuleBehavior('write_workspace_file', rules), '');
+  assert.equal(updatePermissionRules(rules, 'allow', 'invalid tool name'), rules);
+});
+
+test('next prompt suggestions only appear for actionable completed or failed runs', () => {
+  assert.equal(nextPromptSuggestion({runSummary: {status: 'running'}}), '');
+  assert.equal(nextPromptSuggestion({
+    runSummary: {status: 'completed'},
+    artifacts: [{path: 'src/app.jsx'}],
+  }), '检查本次改动并运行相关验证');
+  assert.equal(nextPromptSuggestion({
+    runSummary: {status: 'completed'},
+    references: [{url: 'https://example.com'}],
+  }), '核对这些来源并总结关键结论');
+  assert.equal(nextPromptSuggestion({
+    error: {code: 'tool_failed'},
+    recoveryActions: ['retry', 'fix'],
+  }), '分析这个错误并继续完成任务');
+});
+
+test('Tab accepts the next prompt suggestion without submitting it immediately', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('修改首页');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      eventName: 'artifact.created',
+      artifactId: 'file:src/app.jsx',
+      artifactType: 'file',
+      path: 'src/app.jsx',
+      operation: 'write',
+    },
+  });
+  client.emit('message', {type: 'turn_completed', runId: 'run-follow-up', answer: '修改完成'});
+  await waitForFrame(view, /下一步\s+检查本次改动并运行相关验证/);
+  assert.match(view.lastFrame(), /Tab采纳 · Esc忽略/);
+
+  view.stdin.write('\t');
+  await waitForFrame(view, /已采纳建议，可继续编辑后发送/);
+  assert.equal(client.sent.filter(message => message.type === 'submit').length, 1);
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.filter(message => message.type === 'submit').at(-1)?.text, '检查本次改动并运行相关验证');
 });
 
 test('terminal feedback mirrors idle, running, waiting, and failed Agent states', () => {
@@ -108,6 +374,9 @@ test('terminal feedback mirrors idle, running, waiting, and failed Agent states'
   assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'ghostty', TERM_PROGRAM_VERSION: '1.2.0'}), true);
   assert.equal(supportsTerminalProgress({TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.6.5'}), false);
   assert.equal(terminalNotificationSequence({}, {}).charCodeAt(0), 7);
+  assert.equal(terminalNotificationsEnabled({}), true);
+  assert.equal(terminalNotificationsEnabled({KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS: '0'}), false);
+  assert.equal(terminalNotificationsEnabled({KNOWFLOW_CLI_TERMINAL_NOTIFICATIONS: '0', AGENTLENS_CLI_TERMINAL_NOTIFICATIONS: '1'}), true);
   assert.equal(shouldNotifyTerminalTransition({
     previousKind: 'running', nextKind: 'idle', runStatus: 'completed', lastInteractionAt: 1000, now: 8000,
   }), true);
@@ -155,6 +424,60 @@ test('copy selection returns the latest answer or a requested Markdown code bloc
   assert.match(terminalCopySelection(answer, 'code 3').message, /共有2个代码块/);
 });
 
+test('copy selection can export redacted tool output and the visible transcript', () => {
+  const tools = [
+    {
+      name: 'run_sandbox_command',
+      status: 'completed',
+      arguments: {command: 'printf token=sk-secret-value'},
+      stdout: 'token=sk-secret-value\nready',
+      elapsedSeconds: 0.4,
+    },
+    {name: 'read_workspace_file', status: 'failed', errorMessage: '读取失败'},
+  ];
+  const tool = terminalCopySelection('', 'tool 1', {toolRows: tools});
+  assert.equal(tool.ok, true);
+  assert.match(tool.text, /run_sandbox_command/);
+  assert.doesNotMatch(tool.text, /sk-secret-value/);
+  assert.match(terminalCopySelection('', 'tool all', {toolRows: tools}).text, /read_workspace_file/);
+  const traceOnly = terminalCopySelection('', 'tool 1', {
+    traceRows: [{
+      kind: 'sandbox',
+      name: 'run_sandbox_command',
+      status: 'completed',
+      inputSummary: {command: 'echo token=sk-trace-secret'},
+      outputSummary: {stdout: 'ready'},
+      durationMs: 1200,
+    }],
+  });
+  assert.equal(traceOnly.ok, true);
+  assert.match(traceOnly.text, /run_sandbox_command/);
+  assert.match(traceOnly.text, /ready/);
+  assert.doesNotMatch(traceOnly.text, /sk-trace-secret/);
+  const transcript = terminalCopySelection('', 'transcript', {
+    transcript: [
+      {role: 'user', content: '检查工作区'},
+      {role: 'assistant', content: '已完成 token=sk-secret-value'},
+    ],
+  });
+  assert.equal(transcript.ok, true);
+  assert.match(transcript.text, /检查工作区/);
+  assert.doesNotMatch(transcript.text, /sk-secret-value/);
+  const circular = {};
+  circular.self = circular;
+  const bounded = terminalCopySelection('', 'tool all', {
+    toolRows: Array.from({length: 20}, (_, index) => ({
+      name: `tool-${index}`,
+      status: 'completed',
+      output: index === 0 ? circular : 'x'.repeat(20_000),
+    })),
+  });
+  assert.equal(bounded.ok, true);
+  assert.ok(bounded.text.length <= 100_000);
+  assert.match(bounded.text, /内容已截断/);
+  assert.match(bounded.label, /已截断/);
+});
+
 test('retry request snapshots preserve mode, display text, and reasoning effort', () => {
   const snapshot = turnRequestSnapshot(
     '检查完整工作区',
@@ -190,6 +513,21 @@ test('run projection preserves the failed step and advertised recovery actions',
   assert.equal(projection.error.code, 'workspace_read_failed');
 });
 
+test('run projection preserves model recovery targets', () => {
+  const projection = projectRunEvent(createRunProjection(), {
+    eventName: 'error.raised',
+    error: {
+      code: 'incompatible_parameters',
+      message: '参数不兼容',
+      retryable: false,
+      target: 'settings',
+    },
+    recoveryActions: ['fix'],
+  });
+  assert.equal(projection.error.target, 'settings');
+  assert.deepEqual(projection.recoveryActions, ['fix']);
+});
+
 test('diagnostic report exposes support metadata without prompts, paths, or secrets', () => {
   const report = buildTuiDiagnosticReport({
     version: '0.22.0',
@@ -209,8 +547,9 @@ test('diagnostic report exposes support metadata without prompts, paths, or secr
     },
     now: 0,
   });
+  assert.match(report, /项目指令:/);
   assert.match(report, /AgentLens脱敏诊断/);
-  assert.match(report, /工作区: private-project · main · 2个文件已修改/);
+  assert.match(report, /工作区: private-project · main · 未设置上游分支 · 2个文件已修改/);
   assert.match(report, /进度: 2\/3/);
   assert.match(report, /错误码: upstream_error/);
   assert.doesNotMatch(report, /\/home\/alice|sk-do-not-copy|api_key/);
@@ -439,6 +778,23 @@ test('empty Escape retrieves the most recently queued prompt', async t => {
   assert.equal(client.sent.filter(item => item.type === 'submit').length, 1);
 });
 
+test('double Escape opens the rewind picker from an empty composer', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.54.1" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.match(view.lastFrame(), /再按一次Esc回到历史消息/);
+  assert.equal(client.sent.some(item => item.type === 'rewind_points'), false);
+
+  view.stdin.write('\u001b');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'rewind_points'});
+  assert.match(view.lastFrame(), /回到历史消息/);
+});
+
 test('now priority interrupts the active request and ignores its late terminal event', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);
@@ -522,7 +878,7 @@ class FakeClient extends EventEmitter {
   start() {
     const emitReady = () => this.emit('message', {
       type: 'ready',
-      protocolVersion: 11,
+      protocolVersion: 16,
       agentEventSchemaVersion: 1,
       model: 'deepseek-chat',
       commands: [{value: '/tool:read-file', description: '读取文件', source: 'tool'}],
@@ -684,7 +1040,8 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
     },
   });
   await tick();
-  assert.match(view.lastFrame(), /run_sandbox_command/);
+  assert.match(view.lastFrame(), /正在运行/);
+  assert.doesNotMatch(view.lastFrame(), /run_sandbox_command/);
   assert.match(view.lastFrame(), /0\.4s/);
   assert.match(view.lastFrame(), /实时输出/);
   assert.match(view.lastFrame(), /up 3 days/);
@@ -985,6 +1342,91 @@ test('Ink app searches and switches models from the composer', async () => {
   view.unmount();
 });
 
+test('Ink app configures the local model in place without exposing the API key', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.58.0" localMode />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'startup_failed',
+    message: 'Responses API connection failed: HTTP 403',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /输入\/configure可在当前TUI内重新配置模型/);
+
+  view.stdin.write('/configure');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'local_model_config', action: 'get'});
+
+  client.emit('message', {
+    type: 'local_model_config',
+    config: {
+      provider: 'custom',
+      baseUrl: 'https://api.example.com/v1',
+      modelName: 'gpt-5.6-sol',
+      apiMode: 'responses',
+      hasApiKey: false,
+      overriddenFields: {},
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /配置本地模型/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('sk-test-secret-123456789');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /sk-test-secret/);
+  assert.match(view.lastFrame(), /••••/);
+  view.stdin.write('\u001b[B');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  const request = client.sent.at(-1);
+  assert.equal(request.type, 'local_model_config');
+  assert.equal(request.action, 'test_and_save');
+  assert.equal(request.config.apiKey, 'sk-test-secret-123456789');
+
+  client.emit('message', {
+    type: 'local_model_config_failed',
+    action: 'test_and_save',
+    message: '上游拒绝访问（HTTP 403）。请检查Key分组权限。',
+  });
+  await tick();
+  assert.match(view.lastFrame(), /上游拒绝访问（HTTP 403）/);
+  assert.match(view.lastFrame(), /配置本地模型/);
+
+  client.emit('message', {
+    type: 'local_model_config_recommended',
+    message: 'Responses API连接失败。',
+    recommendation: {apiMode: 'chat_completions', label: 'Chat Completions'},
+  });
+  await tick();
+  assert.match(view.lastFrame(), /检测到Chat Completions可用/);
+  assert.match(view.lastFrame(), /R应用并保存/);
+  view.stdin.write('r');
+  await tick();
+  assert.equal(client.sent.at(-1).action, 'test_and_save');
+  assert.equal(client.sent.at(-1).config.apiMode, 'chat_completions');
+  assert.equal(client.sent.at(-1).config.apiKey, 'sk-test-secret-123456789');
+
+  client.emit('message', {
+    type: 'local_model_config_saved',
+    model: 'gpt-5.6-sol',
+    detail: '连接可用',
+    config: {},
+    models: [{id: 'local', name: 'gpt-5.6-sol', selected: true, switchable: false}],
+  });
+  await tick();
+  assert.match(view.lastFrame(), /已保存gpt-5\.6-sol/);
+  assert.doesNotMatch(view.lastFrame(), /配置本地模型/);
+});
+
 test('local model status explains protocol and provider-controlled sampling', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.2" />);
@@ -1172,6 +1614,60 @@ test('session approval reuses the exact tool grant and resets on a new session',
   assert.match(view.lastFrame(), /需要确认：write_workspace_file/);
 });
 
+test('permission rule editor auto-allows matching tools and keeps rule editing keyboard-first', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.45.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/permissions rules');
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /工具权限规则/);
+  assert.match(view.lastFrame(), /Allow 0/);
+
+  view.stdin.write('a');
+  await tick();
+  view.stdin.write('run_sandbox_command');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /run_sandbox_command/);
+  assert.match(view.lastFrame(), /Allow 1/);
+
+  const sentBeforeApproval = client.sent.length;
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      approvalId: 'permission-rule-allow',
+      serverName: 'workspace',
+      toolName: 'run_sandbox_command',
+      risk: 'execute',
+      destructive: true,
+    },
+  });
+  await tick();
+  assert.equal(client.sent.length, sentBeforeApproval + 1);
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+  assert.doesNotMatch(view.lastFrame(), /需要确认：run_sandbox_command/);
+
+  client.emit('message', {type: 'session_reset'});
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'approval_required',
+      approvalId: 'permission-rule-after-reset',
+      serverName: 'workspace',
+      toolName: 'run_sandbox_command',
+      risk: 'execute',
+      destructive: true,
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /需要确认：run_sandbox_command/);
+});
+
 test('approval and structured questions wait in arrival order without being overwritten', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);
@@ -1267,6 +1763,27 @@ test('Ink app searches prompt history, stashes drafts, and restores killed text'
   view.unmount();
 });
 
+test('Ink app auto-restores a stashed prompt after another task is submitted', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('稍后继续完善发布说明');
+  view.stdin.write('\x13');
+  await waitForFrame(view, /草稿已暂存，发送当前输入后自动恢复/);
+
+  view.stdin.write('先检查当前构建');
+  view.stdin.write('\r');
+  await tick();
+
+  assert.equal(client.sent.at(-1)?.type, 'submit');
+  assert.equal(client.sent.at(-1)?.text, '先检查当前构建');
+  assert.match(view.lastFrame(), /草稿已自动恢复/);
+  assert.match(view.lastFrame(), /稍后继续完善发布说明/);
+  assert.doesNotMatch(view.lastFrame(), /草稿已暂存，发送当前输入后自动恢复 · Ctrl\+S立即恢复/);
+});
+
 test('Ink app collapses multiline paste but submits the full content', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.0" />);
@@ -1318,7 +1835,7 @@ test('Ink app loads workspace history and clears it through the runtime', async 
   const client = new FakeClient();
   client.start = () => queueMicrotask(() => client.emit('message', {
     type: 'ready',
-    protocolVersion: 11,
+    protocolVersion: 16,
     agentEventSchemaVersion: 1,
     model: 'deepseek-chat',
     commands: [],
@@ -1370,6 +1887,51 @@ test('Ink app exposes queued follow-ups and lets users clear them', async () => 
   assert.doesNotMatch(view.lastFrame(), /接下来 1/);
   assert.match(view.lastFrame(), /待发送任务已清空/);
   view.unmount();
+});
+
+test('Ink app restores a durable runtime queue paused and claims it before execution', async t => {
+  const client = new FakeClient();
+  const restored = {
+    id: 'queue-restored',
+    text: '恢复后继续检查',
+    displayText: '恢复后继续检查',
+    priority: 'next',
+    sequence: 4,
+    mode: 'prompt',
+    reasoningEffort: 'high',
+    permissionMode: 'ask',
+    attachmentPaths: [],
+  };
+  client.start = () => queueMicrotask(() => client.emit('message', {
+    type: 'ready',
+    protocolVersion: 16,
+    agentEventSchemaVersion: 1,
+    model: 'deepseek-chat',
+    commands: [],
+    workspace: {projectRoot: '/workspace', cwd: '/workspace'},
+    sessions: [],
+    history: [],
+    queue: [restored],
+    queuePaused: true,
+    queueRecovered: 1,
+    models: [],
+  }));
+  const view = render(<App client={client} version="0.64.4" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /已恢复1个异常中断的任务/);
+  assert.match(view.lastFrame(), /恢复后继续检查/);
+  assert.match(view.lastFrame(), /已保存/);
+
+  view.stdin.write('/continue');
+  view.stdin.write('\r');
+  await waitForCondition(
+    () => client.sent.some(message => message.type === 'submit' && message.text === restored.text),
+    'restored prompt was not submitted',
+  );
+  const claim = client.sent.find(message => message.type === 'queue' && message.action === 'claim');
+  assert.equal(claim.itemId, restored.id);
+  assert.equal(claim.item.id, restored.id);
+  assert.ok(client.sent.indexOf(claim) < client.sent.findIndex(message => message.type === 'submit'));
 });
 
 test('queued follow-ups honor now, next and later priorities', async t => {
@@ -1735,34 +2297,29 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.match(view.lastFrame(), /example\.com\/report/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u0005');
+  await waitForFrame(view, /工具详情[\s\S]*web_fetch/);
+  view.stdin.write('\t');
   await waitForFrame(view, /引用来源[\s\S]*匹配度 91%/);
   assert.doesNotMatch(view.lastFrame(), /SECRET|private/);
   view.stdin.write('\u001b');
   await tick();
   view.stdin.write('\u0007');
-  await tick();
-  assert.match(view.lastFrame(), /文件变更/);
-  view.stdin.write('\u001b[B');
-  await tick();
-  view.stdin.write('\u001b[B');
-  await tick();
-  view.stdin.write('\r');
-  await tick();
-  assert.match(view.lastFrame(), /按Enter查看diff/);
-  view.stdin.write('\r');
-  await tick();
+  await waitForFrame(view, /文件变更[\s\S]*已查看 0\/1/);
+  assert.match(view.lastFrame(), /正在读取差异/);
   assert.deepEqual(client.sent.at(-1), {
     type: 'workspace',
     action: 'diff',
     path: 'reports/report.md',
+    requestId: 'change-diff-1',
   });
   client.emit('message', {
     type: 'workspace_result',
     action: 'diff',
     result: {patch: '+new line', files: [{path: 'reports/report.md', added: 1, removed: 0}]},
   });
-  await tick();
+  await waitForFrame(view, /\+new line/);
   assert.match(view.lastFrame(), /\+new line/);
+  assert.match(view.lastFrame(), /已查看 1\/1/);
   view.stdin.write('\u0007');
   await tick();
 
@@ -1834,7 +2391,9 @@ test('Ink app renders a live task summary and collapses it after completion', as
   const completedFrame = view.lastFrame();
   assert.match(completedFrame, /1\/1/);
   assert.match(completedFrame, /已完成/);
-  assert.match(completedFrame, /已完成并保存1个产物/);
+  assert.match(completedFrame, /✓ 检查服务状态/);
+  assert.match(completedFrame, /验证1\/1/);
+  assert.doesNotMatch(completedFrame, /已完成并保存1个产物/);
   assert.match(completedFrame, /本轮交付/);
   assert.match(completedFrame, /验证通过/);
   assert.match(completedFrame, /1个文件已更改/);
@@ -1851,6 +2410,106 @@ test('Ink app renders a live task summary and collapses it after completion', as
   assert.doesNotMatch(view.lastFrame(), /模型分析完成/);
   assert.match(view.lastFrame(), /已读取网页/);
   view.unmount();
+});
+
+test('final-only workspace changes render the same delivery card as artifact events', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('生成报告');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_completed',
+    runId: 'run-final-changes',
+    answer: '报告已生成。',
+    changes: [{
+      path: 'reports/final.md',
+      added: 8,
+      removed: 1,
+      operation: 'write',
+      operationId: 'change-final',
+      diffAvailable: true,
+    }],
+  });
+
+  await waitForFrame(view, /本轮交付/);
+  const frame = view.lastFrame();
+  assert.match(frame, /1个文件已更改/);
+  assert.match(frame, /已写入\s+reports\/final\.md\s+\+8 · -1/);
+  assert.doesNotMatch(frame, /本轮修改/);
+});
+
+test('/diff and /undo reuse the interactive change panel before mutating files', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.50.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('更新报告');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'turn_completed',
+    runId: 'run-command-changes',
+    answer: '报告已更新。',
+    changes: [{
+      path: 'reports/final.md',
+      added: 8,
+      removed: 1,
+      operation: 'edit',
+      operationId: 'change-final',
+      diffAvailable: true,
+    }],
+  });
+  await waitForFrame(view, /本轮交付/);
+
+  view.stdin.write('/diff');
+  view.stdin.write('\r');
+  await waitForFrame(view, /文件变更/);
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'diff',
+    path: 'reports/final.md',
+    requestId: 'change-diff-1',
+  });
+  assert.match(view.lastFrame(), /已查看 0\/1/);
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'diff',
+    result: {patch: Array.from({length: 30}, (_, index) => `+updated report ${index + 1}`).join('\n')},
+  });
+  await waitForFrame(view, /\+updated report 1/);
+  assert.match(view.lastFrame(), /已查看 1\/1/);
+  assert.match(view.lastFrame(), /差异行 1-14\/30/);
+  assert.doesNotMatch(view.lastFrame(), /\+updated report 20/);
+  view.stdin.write('\u001b[6~');
+  await waitForFrame(view, /\+updated report 20/);
+  assert.match(view.lastFrame(), /差异行 15-28\/30/);
+  assert.doesNotMatch(view.lastFrame(), /\+updated report 1(?:\D|$)/);
+  view.stdin.write('\u001b');
+  await tick();
+
+  const undoCount = () => client.sent.filter(message => (
+    message.type === 'workspace' && message.action === 'undo'
+  )).length;
+  view.stdin.write('/undo');
+  view.stdin.write('\r');
+  await waitForFrame(view, /D撤销此文件/);
+  assert.equal(undoCount(), 0);
+  view.stdin.write('d');
+  await waitForFrame(view, /再次按D确认安全撤销/);
+  assert.equal(undoCount(), 0);
+  view.stdin.write('d');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'undo',
+    operationId: 'change-final',
+    runId: 'run-command-changes',
+  });
 });
 
 test('Ink app counts down model rate-limit recovery and clears it on output', async t => {
@@ -1974,6 +2633,93 @@ test('Ctrl+T turns the task summary into a navigable view and opens the selected
   await tick();
   assert.doesNotMatch(view.lastFrame(), /任务步骤\s+1\/1/);
   view.unmount();
+});
+
+test('Ctrl+E opens trace-only tool details without legacy activity events', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查统一事件详情');
+  view.stdin.write('\r');
+  await tick();
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'agent_step',
+      stepId: 'step-trace-only',
+      kind: 'sandbox',
+      name: 'run_sandbox_command',
+      title: '运行项目检查',
+      status: 'completed',
+      inputSummary: {command: 'npm test -- --token sk-trace-secret'},
+      outputSummary: {stdout: '128项测试通过'},
+      durationMs: 1200,
+    },
+  });
+  await tick();
+
+  view.stdin.write('\u0005');
+  await tick();
+  const frame = view.lastFrame();
+  assert.match(frame, /工具详情/);
+  assert.match(frame, /run_sandbox_command/);
+  assert.match(frame, /128项测试通过/);
+  assert.doesNotMatch(frame, /sk-trace-secret/);
+  assert.doesNotMatch(frame, /本轮还没有工具调用/);
+});
+
+test('tool detail pages long output, preserves redaction, and exposes an explicit truncation marker', () => {
+  const lines = activityDetailLines({
+    status: 'completed',
+    output: `${'token=sk-long-secret-1234567890\n'}${'输出内容\n'.repeat(20_000)}`,
+  });
+  const page = activityDetailPage({
+    status: 'completed',
+    output: `${'token=sk-long-secret-1234567890\n'}${'输出内容\n'.repeat(20_000)}`,
+  });
+  const text = lines.map(line => line.text).join('\n');
+  assert.doesNotMatch(text, /sk-long-secret/);
+  assert.match(text, /内容已截断/);
+  assert.equal(page.offset, 0);
+  assert.equal(page.lines.length, 14);
+  assert.ok(page.total > page.lines.length);
+  assert.equal(activityDetailPage({output: 'one\ntwo'}, 999).offset, 0);
+});
+
+test('Ctrl+E paginates long tool output with PgUp/PgDn and Home/End', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('查看长工具输出');
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'tool_result',
+      toolCallId: 'call-long-output',
+      toolName: 'run_sandbox_command',
+      status: 'completed',
+      output: Array.from({length: 40}, (_, index) => `输出行${index + 1}`).join('\n'),
+    },
+  });
+  await tick();
+  view.stdin.write('\u0005');
+  await waitForFrame(view, /详情内容 1-14\//);
+  assert.match(view.lastFrame(), /输出行1/);
+  assert.doesNotMatch(view.lastFrame(), /输出行30/);
+
+  view.stdin.write('\u001b[6~');
+  await waitForFrame(view, /输出行20/);
+  assert.doesNotMatch(view.lastFrame(), /输出行1(?:\D|$)/);
+
+  view.stdin.write('\u001b[H');
+  await waitForFrame(view, /输出行1/);
+  view.stdin.write('\u001b[F');
+  await waitForFrame(view, /输出行40/);
 });
 
 test('Ctrl+T exposes failed verification and opens its matching tool details', async t => {
@@ -2104,6 +2850,23 @@ test('/bug copies a redacted local diagnostic without sending a model request', 
   assert.match(frame, /客户端: CLI 0.22.0/);
   assert.match(frame, /隐私: 已排除对话正文、工具输入输出、完整路径和凭据/);
   assert.match(frame, /已发送终端剪贴板请求|当前终端不支持自动复制/);
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  view.unmount();
+});
+
+test('/notifications controls terminal attention feedback without sending a model request', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.5" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('/notifications off');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒已关闭（仅本次会话）/);
+  view.stdin.write('/notifications status');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒：已关闭/);
+  view.stdin.write('/notifications on');
+  view.stdin.write('\r');
+  await waitForFrame(view, /终端任务提醒已开启（仅本次会话）/);
   assert.equal(client.sent.some(message => message.type === 'submit'), false);
   view.unmount();
 });
@@ -2276,6 +3039,19 @@ test('workspace commands and resume picker use the runtime as source of truth', 
     sessions: [{runId: 'run_restore', title: '恢复测试', status: 'failed'}],
   });
   await waitForFrame(view, /恢复测试[\s\S]*失败，可继续/);
+  assert.match(view.lastFrame(), /P置顶\/取消/);
+  view.stdin.write('p');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_pin',
+    runId: 'run_restore',
+    pinned: true,
+  });
+  client.emit('message', {
+    type: 'session_pinned',
+    result: {runId: 'run_restore', pinned: true},
+  });
+  await waitForFrame(view, /◆ 恢复测试/);
   view.stdin.write('\r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'resume_session');
@@ -2294,6 +3070,97 @@ test('workspace commands and resume picker use the runtime as source of truth', 
   await waitForFrame(view, /恢复前的问题[\s\S]*等待继续操作/);
   await waitForFrame(view, /会话 恢复测试/);
   view.unmount();
+});
+
+test('startup resume opens the picker and continue restores the latest workspace session', async t => {
+  const pickerClient = new FakeClient();
+  const picker = render(<App client={pickerClient} version="0.54.1" startupAction="resume" />);
+  t.after(() => picker.unmount());
+  await waitForCondition(
+    () => pickerClient.sent.some(message => message.type === 'sessions' && message.limit === 100),
+    'startup resume did not request the workspace session list',
+  );
+  assert.match(picker.lastFrame(), /正在读取当前工作区的会话/);
+
+  const continueClient = new FakeClient();
+  continueClient.start = () => queueMicrotask(() => continueClient.emit('message', {
+    type: 'ready',
+    protocolVersion: 16,
+    agentEventSchemaVersion: 1,
+    model: 'deepseek-chat',
+    commands: [],
+    workspace: {projectRoot: '/workspace', cwd: '/workspace', branch: 'main'},
+    sessions: [
+      {runId: 'run_latest', title: '最近会话', status: 'completed', updatedAt: Date.now() / 1000},
+      {runId: 'run_older', title: '更早会话', status: 'completed', updatedAt: Date.now() / 1000 - 60},
+    ],
+    history: [],
+    models: [],
+  }));
+  const continued = render(<App client={continueClient} version="0.54.1" startupAction="continue" />);
+  t.after(() => continued.unmount());
+  await waitForCondition(
+    () => continueClient.sent.some(message => message.type === 'resume_session'),
+    'startup continue did not restore the latest workspace session',
+  );
+  const request = continueClient.sent.find(message => message.type === 'resume_session');
+  assert.equal(request.runId, 'run_latest');
+  assert.match(continued.lastFrame(), /会话 最近会话/);
+});
+
+test('home workspace keeps the draft and prevents failed task cards', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'status',
+    result: {
+      projectRoot: '/home/tester',
+      cwd: '/home/tester',
+      allowedDirectories: ['/home/tester'],
+      protectedPatterns: ['.git', '.env*'],
+      workspaceKind: 'home',
+      warnings: ['当前工作区是HOME目录。'],
+    },
+  });
+  await waitForFrame(view, /未进入项目/);
+
+  view.stdin.write('检查当前服务器');
+  view.stdin.write('\r');
+  await tick();
+  assert.equal(client.sent.some(message => message.type === 'submit'), false);
+  assert.match(view.lastFrame(), /检查当前服务器/);
+  assert.match(view.lastFrame(), /先指定项目目录/);
+
+  view.stdin.write('\u0015');
+  view.stdin.write('/workspace /workspace/project');
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'switch',
+    path: '/workspace/project',
+  });
+  client.emit('message', {type: 'session_reset'});
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'switch',
+    history: ['新工作区历史'],
+    sessions: [{runId: 'run_project', title: '项目会话', status: 'completed'}],
+    result: {
+      projectRoot: '/workspace/project',
+      cwd: '/workspace/project',
+      allowedDirectories: ['/workspace/project'],
+      protectedPatterns: ['.git', '.env*'],
+      workspaceKind: 'project',
+      message: '已切换工作区：/workspace/project',
+    },
+  });
+  await waitForFrame(view, /已切换工作区/);
+  assert.doesNotMatch(view.lastFrame(), /未进入项目/);
 });
 
 test('session rename, branch and export commands stay inside the runtime protocol', async () => {
@@ -2346,6 +3213,53 @@ test('session rename, branch and export commands stay inside the runtime protoco
   view.unmount();
 });
 
+test('/rewind forks before a selected user message and restores its prompt', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.42.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/rewind');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'rewind_points'});
+  client.emit('message', {
+    type: 'rewind_points',
+    points: [
+      {messageId: null, messageIndex: 0, preview: '最早的问题'},
+      {messageId: null, messageIndex: 2, preview: '需要重新处理的问题'},
+    ],
+  });
+  await waitForFrame(view, /回到历史消息.*1\/2/);
+  assert.match(view.lastFrame(), /需要重新处理的问题/);
+
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'branch_session',
+    title: '',
+    messageId: null,
+    messageIndex: 2,
+  });
+  client.emit('message', {
+    type: 'session_branched',
+    result: {
+      runId: 'run_rewound',
+      title: '测试会话（分支）',
+      messageCount: 2,
+      messages: [
+        {role: 'user', content: '最早的问题'},
+        {role: 'assistant', content: '最早的回答'},
+      ],
+      restoredQuestion: '需要重新处理的问题',
+    },
+  });
+  await waitForFrame(view, /已回到历史消息/);
+  assert.match(view.lastFrame(), /需要重新处理的问题/);
+  assert.match(view.lastFrame(), /原会话/);
+  view.unmount();
+});
+
 test('resume picker filters sessions, previews context and retries loading in place', async () => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.17.0" />);
@@ -2373,6 +3287,30 @@ test('resume picker filters sessions, previews context and retries loading in pl
   assert.doesNotMatch(view.lastFrame(), /修复登录/);
   assert.match(view.lastFrame(), /部署门禁失败/);
 
+  view.stdin.write('\t');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {type: 'sessions', limit: 100, archived: true});
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [
+      {runId: 'run_archived', title: '归档部署', archived: true, status: 'completed', updatedAt: Date.now() / 1000 - 60},
+    ],
+  });
+  await waitForFrame(view, /归档部署/);
+  assert.match(view.lastFrame(), /A恢复/);
+  view.stdin.write('a');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_archive',
+    runId: 'run_archived',
+    archived: false,
+  });
+  client.emit('message', {
+    type: 'session_archived',
+    result: {runId: 'run_archived', archived: false, pinned: false},
+  });
+  await waitForFrame(view, /没有匹配“部署”的会话/);
+
   view.stdin.write('\u001b');
   await tick();
   view.stdin.write('/resume');
@@ -2384,6 +3322,59 @@ test('resume picker filters sessions, previews context and retries loading in pl
   view.stdin.write('r');
   await tick();
   assert.equal(client.sent.at(-1).type, 'sessions');
+  view.unmount();
+});
+
+test('resume picker requires a second D press before permanently deleting a session', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('/resume');
+  await tick();
+  view.stdin.write('\r');
+  await tick();
+  client.emit('message', {
+    type: 'session_list',
+    sessions: [
+      {runId: 'run_delete', title: '删除前确认', status: 'completed', updatedAt: Date.now() / 1000},
+    ],
+  });
+  await waitForFrame(view, /删除前确认/);
+  assert.match(view.lastFrame(), /D永久删除/);
+  const sentBeforeDelete = client.sent.length;
+
+  view.stdin.write('d');
+  await waitForFrame(view, /再次按D确认/);
+  assert.equal(client.sent.length, sentBeforeDelete);
+  view.stdin.write('\u001b');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /永久删除“删除前确认”/);
+
+  view.stdin.write('d');
+  await tick();
+  view.stdin.write('d');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'session_delete',
+    runId: 'run_delete',
+  });
+  client.emit('message', {
+    type: 'session_delete_failed',
+    message: 'checkpoint暂不可用',
+  });
+  await waitForFrame(view, /checkpoint暂不可用/);
+
+  view.stdin.write('d');
+  await tick();
+  view.stdin.write('d');
+  await tick();
+  client.emit('message', {
+    type: 'session_deleted',
+    result: {runId: 'run_delete', sessionId: '', deleted: true, current: false},
+  });
+  await waitForFrame(view, /当前工作区还没有历史会话/);
+  assert.doesNotMatch(view.lastFrame(), /删除前确认/);
   view.unmount();
 });
 
@@ -2419,6 +3410,48 @@ test('long markdown replies stay inside the terminal viewport without raw marker
   view.stdin.write('\u000f');
   await tick();
   assert.match(view.lastFrame(), /输入任务/);
+  view.unmount();
+});
+
+test('fullscreen mode pins the active task above output until the turn settles', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.52.0" fullscreenEnabled />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查当前项目并修复问题');
+  view.stdin.write('\r');
+  const activeFrame = await waitForFrame(view, /任务\s+检查当前项目并修复问题.*运行中/);
+  assert.match(activeFrame, /任务\s+检查当前项目并修复问题.*\d+(?:ms|s).*运行中/);
+
+  client.emit('message', {type: 'turn_completed', answer: '检查完成'});
+  await waitForFrame(view, /检查完成/);
+  assert.doesNotMatch(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
+  view.unmount();
+});
+
+test('native mode keeps a live task anchor in the dynamic controls while output grows', async () => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.52.0" />);
+  await waitForFrame(view, /deepseek-chat/);
+  view.stdin.write('检查当前项目并修复问题');
+  view.stdin.write('\r');
+  const activeFrame = await waitForFrame(view, /任务\s+检查当前项目并修复问题.*运行中/);
+  assert.match(activeFrame, /任务\s+检查当前项目并修复问题.*\d+(?:ms|s).*运行中/);
+
+  client.emit('message', {
+    type: 'agent_event',
+    event: {
+      type: 'text_delta',
+      text: Array.from({length: 40}, (_, index) => `输出行${index + 1}`).join('\n'),
+    },
+  });
+  await tick();
+  assert.match(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
+
+  client.emit('message', {type: 'turn_completed', answer: '检查完成'});
+  await tick();
+  await tick();
+  assert.match(view.lastFrame(), /就绪/);
+  assert.doesNotMatch(view.lastFrame(), /任务\s+检查当前项目并修复问题.*运行中/);
   view.unmount();
 });
 

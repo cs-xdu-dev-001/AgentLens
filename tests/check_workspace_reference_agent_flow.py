@@ -58,6 +58,11 @@ def main() -> None:
             "web-only workspace evidence",
             overwrite=False,
         )
+        workspace.write_text(
+            "AGENTS.md",
+            "Reply with a concise verification summary.",
+            overwrite=False,
+        )
         gateway = Gateway()
         originals = {
             "WORKSPACE_DIR": extensions.WORKSPACE_DIR,
@@ -95,6 +100,14 @@ def main() -> None:
         "User question: 总结 @README.md"
     )
     assert "web-only workspace evidence" in gateway.messages[-2]["content"]
+    project_messages = [
+        message
+        for message in gateway.messages
+        if message.get("role") == "system"
+        and "Project instructions: AGENTS.md" in str(message.get("content") or "")
+    ]
+    assert len(project_messages) == 1
+    assert "Reply with a concise verification summary." in project_messages[0]["content"]
     visible = runtime.fetch_one(
         """
         SELECT content FROM chat_message

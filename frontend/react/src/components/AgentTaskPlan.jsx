@@ -56,12 +56,44 @@ export function AgentTaskPlan({
   const [focusedStepId, setFocusedStepId] = useState(
     current?.id || steps[0]?.id || "",
   );
+  const [actionState, setActionState] = useState({
+    action: "",
+    message: "",
+    status: "idle",
+  });
   const planTreeRef = useRef(null);
   const pendingTraceFocusRef = useRef(false);
   const focusedStepIdRef = useRef(focusedStepId);
   const preferredPlanStepIdRef = useRef("");
   const userSelectedRef = useRef(false);
   const runIdRef = useRef(run?.id || "");
+
+  useEffect(() => {
+    setActionState({ action: "", message: "", status: "idle" });
+  }, [run?.id, run?.status]);
+
+  useEffect(() => {
+    function handleActionState(event) {
+      const detail = event.detail || {};
+      if (
+        String(detail.runId || "") !== String(run?.id || "")
+        || String(detail.messageId || "") !== String(messageId || "")
+      ) return;
+      setActionState({
+        action: detail.action || "",
+        message: detail.message || "",
+        status: detail.status || "idle",
+      });
+    }
+    window.addEventListener(
+      "knowflow:react-agent-run-action-state",
+      handleActionState,
+    );
+    return () => window.removeEventListener(
+      "knowflow:react-agent-run-action-state",
+      handleActionState,
+    );
+  }, [messageId, run?.id]);
 
   const selectedTrace = useMemo(
     () => traceForPlanStep(trace, selectedStepId),
@@ -164,6 +196,12 @@ export function AgentTaskPlan({
   if (!run?.id || !steps.length) return null;
 
   const active = isActiveRun(run);
+  const cancelPending = active
+    && actionState.action === "cancel"
+    && actionState.status === "pending";
+  const cancelFailed = active
+    && actionState.action === "cancel"
+    && actionState.status === "failed";
   const handlePlanStepKeyDown = (event, step) => {
     if (event.key === "Escape" && selectedStepId) {
       event.preventDefault();
@@ -315,12 +353,28 @@ export function AgentTaskPlan({
         {active && run.status !== "cancelling" && showCancelAction ? (
           <button
             type={"button"}
-            onClick={() => dispatchAction(run, "cancel", messageId)}
+            disabled={cancelPending}
+            aria-busy={cancelPending}
+            aria-label={cancelPending ? "正在停止任务" : "停止任务"}
+            onClick={() => {
+              if (cancelPending) return;
+              setActionState({ action: "cancel", message: "", status: "pending" });
+              dispatchAction(run, "cancel", messageId);
+            }}
           >
-            {"停止任务"}
+            {cancelPending ? "正在停止…" : cancelFailed ? "重试停止" : "停止任务"}
           </button>
         ) : null}
       </div>
+      {actionState.status !== "idle" && actionState.action === "cancel" ? (
+        <p
+          className={`agent-task-action-feedback ${actionState.status}`}
+          role={actionState.status === "failed" ? "alert" : "status"}
+          aria-live={"polite"}
+        >
+          {cancelPending ? "正在停止任务…" : actionState.message}
+        </p>
+      ) : null}
     </section>
   );
 }

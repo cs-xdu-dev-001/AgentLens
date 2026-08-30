@@ -34,6 +34,7 @@ def require_in_order(text: str, needles: tuple[str, ...], label: str) -> None:
 def main() -> None:
     picker = "frontend/react/src/components/SkillPicker.jsx"
     slash_picker = "frontend/react/src/components/ComposerSlashPicker.jsx"
+    command_help = "frontend/react/src/components/ComposerCommandHelp.jsx"
     commands = "frontend/react/src/components/composerCommands.js"
     composer = "frontend/react/src/components/ChatComposerForm.jsx"
     styles = "frontend/styles.css"
@@ -72,6 +73,22 @@ def main() -> None:
     ]:
         require(slash_picker, needle, label)
     for needle, label in [
+        ("export function ComposerCommandHelp", "dedicated command help browser"),
+        ('{ id: "shortcuts", label: "快捷键" }', "shortcut help tab"),
+        ('{ id: "commands", label: "内置命令" }', "command help tab"),
+        ('{ id: "skills", label: "Skills" }', "Skills help tab"),
+        ('placeholder={"搜索命令、快捷键或Skills"}', "help search input"),
+        ('role={"tablist"}', "accessible help tabs"),
+        ('id={"composer-help-listbox"}', "stable help list id"),
+        ('event.key === "ArrowLeft" || event.key === "ArrowRight"', "keyboard tab switching"),
+        ('event.target === searchRef.current && query', "search caret keeps horizontal arrows"),
+        ('event.key === "ArrowDown" || event.key === "ArrowUp"', "keyboard help navigation"),
+        ('event.key === "Enter"', "keyboard command take action"),
+        ('event.key === "Escape"', "keyboard help dismissal"),
+        ('{"←→切换分组 · ↑↓选择 · Enter取用 · Esc关闭"}', "help keyboard instructions"),
+    ]:
+        require(command_help, needle, label)
+    for needle, label in [
         ("export const WEB_COMPOSER_COMMANDS", "Web command catalog"),
         ('value: "/help"', "help command"),
         ('value: "/new"', "new session command"),
@@ -79,6 +96,7 @@ def main() -> None:
         ('value: "/rename"', "rename session command"),
         ('value: "/branch"', "branch session command"),
         ('value: "/export"', "export session command"),
+        ('value: "/compact"', "compact session context command"),
         ('value: "/model"', "model command"),
         ('value: "/reasoning"', "reasoning command"),
         ('value: "/status"', "status command"),
@@ -100,6 +118,7 @@ def main() -> None:
         "pickerQuery",
         "activeIndex",
         "slashRange",
+        "commandHelpOpen",
     ):
         require(composer, state, f"{state} state")
     for needle, label in [
@@ -139,6 +158,11 @@ def main() -> None:
         ("pickerOpen && activeIndex >= 0 && slashOptions[activeIndex]", "active option aria guard"),
         ("aria-activedescendant={activeOptionId}", "textarea active descendant"),
         ('detail: { page: "skills" }', "event-driven Skills navigation"),
+        ("<ComposerCommandHelp", "command help rendering"),
+        ('commands={helpCommands}', "help command catalog stays independent from slash filtering"),
+        ("setCommandHelpOpen(true);", "help command opens dedicated browser"),
+        ("takeHelpCommand", "help command take action"),
+        ("takeHelpSkill", "help Skill take action"),
     ]:
         require(composer, needle, label)
     if composer_text.count(".detail.skillId = selectedSkill?.id ?? null") < 2:
@@ -231,7 +255,7 @@ def main() -> None:
         (':root[data-theme="mono-dark"] .skill-picker', "dark picker surface"),
     ]:
         require(styles, needle, label)
-    for path in (picker, slash_picker, commands, composer):
+    for path in (picker, slash_picker, command_help, commands, composer):
         forbid(path, "dangerouslySetInnerHTML", "unsafe HTML rendering")
         forbid(path, "stats-card", "statistics card")
 

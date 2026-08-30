@@ -1,0 +1,84 @@
+site_name: AgentLens
+site_description: 可自行部署、过程可见的AI Agent与知识库
+site_url: https://cs-xdu-dev-001.github.io/AgentLens/
+repo_url: https://github.com/cs-xdu-dev-001/AgentLens
+repo_name: cs-xdu-dev-001/AgentLens
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: zh
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.action.edit
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: 切换到浅色模式
+
+nav:
+  - 首页: index.md
+  - 使用指南: usage.md
+  - 系统架构: architecture.md
+  - 开发者指南:
+      - Agent事件协议: agent-event-protocol.md
+      - 联网搜索循环: langgraph-web-search-loop.md
+      - MCP写操作审批: langgraph-mcp-write-approval.md
+      - Skills与任务计划: langgraph-skills-and-planning.md
+      - 长期记忆生命周期: langgraph-memory-lifecycle.md
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+exclude_docs: |
+  api-debug.md
+  superpowers/
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cs-xdu-dev-001/AgentLens
+      name: AgentLens GitHub仓库
+
+copyright: Copyright &copy; AgentLens contributors

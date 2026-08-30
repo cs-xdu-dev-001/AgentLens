@@ -8,6 +8,7 @@ import { safeAgentText } from "../controller/agentEvents.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
 
 const sessionGroupLabels = [
+  ["pinned", "已置顶"],
   ["active", "进行中"],
   ["failed", "需要处理"],
   ["today", "今天"],
@@ -33,15 +34,27 @@ const runStatusLabels = {
   completed: "已完成",
 };
 
-const sessionMenuItems = [
+const sessionMenuItems = (pinned, archived) => [
   { action: "continue", icon: "message", label: "继续" },
+  ...(archived
+    ? [{ action: "archive", icon: "archive", label: "恢复到任务" }]
+    : [{ action: "pin", icon: "pin", label: pinned ? "取消置顶" : "置顶" }]),
   { action: "branch", icon: "branch", label: "创建分支" },
   { action: "export", icon: "download", label: "导出对话" },
   { action: "rename", icon: "pencil", label: "重命名" },
+  ...(!archived ? [{ action: "archive", icon: "archive", label: "归档" }] : []),
   { action: "delete", icon: "trash", label: "删除", danger: true, divider: true },
 ];
 
 function SessionMenuIcon({ type }) {
+  if (type === "pin") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"m14 4 6 6-3 1-4 4-1 5-2-2-4 4-1-1 4-4-2-2 5-1 4-4 1-3Z"} />
+      </svg>
+    );
+  }
+
   if (type === "branch") {
     return (
       <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
@@ -78,6 +91,15 @@ function SessionMenuIcon({ type }) {
         <path d={"M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"} />
         <path d={"M7 7l.8 12.1A2 2 0 0 0 9.8 21h4.4a2 2 0 0 0 2-1.9L17 7"} />
         <path d={"M10 11v6M14 11v6"} />
+      </svg>
+    );
+  }
+
+  if (type === "archive") {
+    return (
+      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
+        <path d={"M4 6h16v3H4V6Z"} />
+        <path d={"M6 9v10h12V9M9 13h6"} />
       </svg>
     );
   }
@@ -150,7 +172,8 @@ function SidebarToolIcon({ type }) {
   );
 }
 
-function SessionMenuPopover({ anchor, onAction, sessionId }) {
+function SessionMenuPopover({ anchor, onAction, session }) {
+  const sessionId = session?.id;
   if (!anchor || !sessionId || typeof document === "undefined") return null;
 
   return createPortal(
@@ -161,7 +184,7 @@ function SessionMenuPopover({ anchor, onAction, sessionId }) {
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      {sessionMenuItems.map((item) => (
+      {sessionMenuItems(Boolean(session.is_pinned), Boolean(session.is_archived)).map((item) => (
         <div className={item.divider ? "session-menu-group danger-group" : "session-menu-group"} key={item.action}>
           {item.divider ? <div className={"session-menu-divider"} /> : null}
           <button className={item.danger ? "session-menu-item danger" : "session-menu-item"} role={"menuitem"} type={"button"} onClick={() => onAction(item.action, sessionId)}>
@@ -177,10 +200,108 @@ function SessionMenuPopover({ anchor, onAction, sessionId }) {
   );
 }
 
+function SessionDeleteDialog({ session, deleting, onCancel, onConfirm }) {
+  const dialogRef = useRef(null);
+  const cancelRef = useRef(null);
+  const returnFocusRef = useRef(null);
+  const sessionId = session?.id;
+  const title = sessionTitle(session || {});
+  const runStatus = String(session?.latest_run?.status || "");
+  const active = activeRunStatuses.has(runStatus);
+
+  useEffect(() => {
+    if (!sessionId || typeof document === "undefined") return undefined;
+    returnFocusRef.current = document.activeElement;
+    const frame = window.requestAnimationFrame(() => cancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const previous = returnFocusRef.current;
+      window.requestAnimationFrame(() => {
+        const trigger = [...document.querySelectorAll(".session-menu-button")]
+          .find((button) => button.dataset.sessionId === sessionId);
+        const previousIsUsable = previous instanceof HTMLElement
+          && previous !== document.body
+          && previous !== document.documentElement
+          && previous.offsetParent !== null
+          && document.contains(previous);
+        if (previousIsUsable) previous.focus();
+        else if (trigger instanceof HTMLElement && trigger.offsetParent !== null) trigger.focus();
+        else if (document.getElementById("new-chat-btn") instanceof HTMLElement) {
+          document.getElementById("new-chat-btn").focus();
+        } else document.getElementById("sidebar-session-search")?.focus();
+      });
+    };
+  }, [sessionId]);
+
+  if (!sessionId || typeof document === "undefined") return null;
+
+  const handleDialogKeyDown = (event) => {
+    if (event.key === "Escape" && !deleting) {
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...(dialogRef.current?.querySelectorAll("button:not([disabled])") || [])];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  return createPortal(
+    <div
+      className={"modal-backdrop session-delete-backdrop"}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !deleting) onCancel();
+      }}
+    >
+      <section
+        className={"modal-panel session-delete-dialog"}
+        role={"alertdialog"}
+        aria-modal={"true"}
+        aria-labelledby={"session-delete-title"}
+        aria-describedby={"session-delete-description"}
+        ref={dialogRef}
+        onKeyDown={handleDialogKeyDown}
+      >
+        <div className={"session-delete-body"}>
+          <span className={"session-delete-mark"} aria-hidden={"true"}>×</span>
+          <div>
+            <h2 id={"session-delete-title"}>{"永久删除会话？"}</h2>
+            <p id={"session-delete-description"}>
+              {`“${title}”的消息、运行记录和检查点都会被删除，且无法恢复。只想隐藏时，请改用归档。`}
+            </p>
+            {active ? <p className={"session-delete-active"}>{"当前任务会先停止，再执行删除。"}</p> : null}
+          </div>
+        </div>
+        <div className={"modal-actions session-delete-actions"}>
+          <button ref={cancelRef} type={"button"} disabled={deleting} onClick={onCancel}>{"取消"}</button>
+          <button className={"session-delete-confirm"} type={"button"} disabled={deleting} onClick={onConfirm}>
+            {deleting ? "正在删除" : active ? "停止并永久删除" : "永久删除"}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function groupSessions(sessions) {
-  const groups = { active: [], failed: [], today: [], recent: [], earlier: [] };
+  const groups = { pinned: [], active: [], failed: [], today: [], recent: [], earlier: [] };
   const now = new Date();
   sessions.forEach((session) => {
+    if (Boolean(session.is_pinned)) {
+      groups.pinned.push(session);
+      return;
+    }
     const runStatus = String(session.latest_run?.status || "");
     if (activeRunStatuses.has(runStatus)) {
       groups.active.push(session);
@@ -255,36 +376,46 @@ function SessionHistory() {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [switchingSessionId, setSwitchingSessionId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sessionScope, setSessionScope] = useState("active");
   const [openMenuSessionId, setOpenMenuSessionId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [deleteTargetSessionId, setDeleteTargetSessionId] = useState(null);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
   const historyRef = useRef(null);
   const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
   const sessionLoadSequenceRef = useRef(0);
   const sessionOwnerRef = useRef(userId);
   sessionOwnerRef.current = userId;
+  const sessionScopeRef = useRef("active");
+  const sessionRequestRef = useRef(0);
 
   const loadSessions = useCallback(async () => {
     const sequence = sessionLoadSequenceRef.current + 1;
     sessionLoadSequenceRef.current = sequence;
     if (!authenticated) {
+      sessionRequestRef.current += 1;
       setSessions([]);
       setCurrentSessionId(null);
       setLoadingSessions(false);
       setSessionLoadFailed(false);
       return [];
     }
+    const requestId = ++sessionRequestRef.current;
+    const scope = sessionScopeRef.current;
     setLoadingSessions(true);
     try {
-      const nextSessions = await sessionApi.list();
+      const nextSessions = await sessionApi.list({ archived: scope === "archived" });
+      const sessionList = Array.isArray(nextSessions) ? nextSessions : [];
       if (
         sequence !== sessionLoadSequenceRef.current
         || userId !== sessionOwnerRef.current
+        || requestId !== sessionRequestRef.current
+        || scope !== sessionScopeRef.current
       ) return [];
-      const sessionList = Array.isArray(nextSessions) ? nextSessions : [];
       setSessions(sessionList);
       setSessionLoadFailed(false);
       return sessionList;
@@ -292,6 +423,8 @@ function SessionHistory() {
       if (
         sequence !== sessionLoadSequenceRef.current
         || userId !== sessionOwnerRef.current
+        || requestId !== sessionRequestRef.current
+        || scope !== sessionScopeRef.current
       ) return [];
       setSessionLoadFailed(true);
       notifyError(error, "刷新会话失败");
@@ -300,13 +433,17 @@ function SessionHistory() {
       if (
         sequence === sessionLoadSequenceRef.current
         && userId === sessionOwnerRef.current
-      ) setLoadingSessions(false);
+        && requestId === sessionRequestRef.current
+        && scope === sessionScopeRef.current
+      ) {
+        setLoadingSessions(false);
+      }
     }
   }, [authenticated, userId]);
 
   useEffect(() => {
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, sessionScope]);
 
   useEffect(() => {
     const handleSessionReloadRequest = (event) => {
@@ -376,6 +513,33 @@ function SessionHistory() {
   }, [currentSessionId, sessions]);
 
   useEffect(() => {
+    let cancelled = false;
+    window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+      detail: { status: "idle", message: "" },
+    }));
+    if (!currentSessionId) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: null },
+      }));
+      return undefined;
+    }
+    sessionApi.context(currentSessionId).then((status) => {
+      if (cancelled) return;
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status },
+      }));
+    }).catch(() => {
+      if (cancelled) return;
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: null },
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId]);
+
+  useEffect(() => {
     const closeMenu = (event) => {
       if (!historyRef.current?.contains(event.target)) {
         setOpenMenuSessionId(null);
@@ -389,6 +553,17 @@ function SessionHistory() {
   const handleSessionSearch = (event) => {
     const query = event.target.value || "";
     setSearchQuery(query);
+  };
+
+  const handleSessionScopeChange = (scope) => {
+    if (scope === sessionScope) return;
+    sessionScopeRef.current = scope;
+    sessionRequestRef.current += 1;
+    setOpenMenuSessionId(null);
+    setMenuAnchor(null);
+    setSessions([]);
+    setLoadingSessions(true);
+    setSessionScope(scope);
   };
 
   const handleSessionContinue = (sessionId) => {
@@ -460,16 +635,48 @@ function SessionHistory() {
   };
 
   const handleSessionDelete = async (sessionId) => {
+    if (!sessionId || deletingSessionId) return;
     try {
+      setDeletingSessionId(sessionId);
       await sessionApi.delete(sessionId);
       if (currentSessionId === sessionId) {
         setCurrentSessionId(null);
         window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
       }
+      setDeleteTargetSessionId(null);
       notifyToast("会话已删除");
       await loadSessions();
     } catch (error) {
       notifyError(error, "删除失败");
+    } finally {
+      setDeletingSessionId(null);
+    }
+  };
+
+  const handleSessionPin = async (sessionId) => {
+    const session = sessions.find((item) => item.id === sessionId);
+    const pinned = !Boolean(session?.is_pinned);
+    try {
+      await sessionApi.setPinned(sessionId, pinned);
+      notifyToast(pinned ? "会话已置顶" : "已取消置顶");
+      await loadSessions();
+    } catch (error) {
+      notifyError(error, pinned ? "置顶失败" : "取消置顶失败");
+    }
+  };
+
+  const handleSessionArchive = async (sessionId) => {
+    const restoring = sessionScope === "archived";
+    try {
+      await sessionApi.setArchived(sessionId, !restoring);
+      if (!restoring && currentSessionId === sessionId) {
+        setCurrentSessionId(null);
+        window.dispatchEvent(new CustomEvent("knowflow:react-new-chat"));
+      }
+      notifyToast(restoring ? "会话已恢复" : "会话已归档");
+      await loadSessions();
+    } catch (error) {
+      notifyError(error, restoring ? "恢复失败" : "归档失败");
     }
   };
 
@@ -513,6 +720,31 @@ function SessionHistory() {
     }
   };
 
+  const handleSessionCompact = async (sessionId, instructions = "") => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+      detail: { status: "running", message: "正在整理早期对话，完整记录不会删除" },
+    }));
+    try {
+      const result = await sessionApi.compactContext(sessionId, instructions);
+      const compacted = Boolean(result?.compacted);
+      const message = compacted
+        ? `上下文已压缩：${Number(result?.metadata?.originalTokens || 0).toLocaleString()} → ${Number(result?.metadata?.compactedTokens || 0).toLocaleString()} tokens`
+        : "当前会话还没有足够的早期对话可压缩";
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-status-updated", {
+        detail: { status: result?.status || null },
+      }));
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+        detail: { status: compacted ? "success" : "idle", message },
+      }));
+      notifyToast(message);
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-context-compact-state", {
+        detail: { status: "error", message: error?.message || "上下文压缩失败，原对话保持不变" },
+      }));
+      notifyError(error, "上下文压缩失败，原对话保持不变");
+    }
+  };
+
   const handleSessionAction = (action, sessionId) => {
     setOpenMenuSessionId(null);
     setMenuAnchor(null);
@@ -524,6 +756,10 @@ function SessionHistory() {
       startSessionRename(sessionId);
       return;
     }
+    if (action === "pin") {
+      handleSessionPin(sessionId);
+      return;
+    }
     if (action === "branch") {
       handleSessionBranch(sessionId);
       return;
@@ -532,8 +768,12 @@ function SessionHistory() {
       handleSessionExport(sessionId);
       return;
     }
+    if (action === "archive") {
+      handleSessionArchive(sessionId);
+      return;
+    }
     if (action === "delete") {
-      handleSessionDelete(sessionId);
+      setDeleteTargetSessionId(sessionId);
     }
   };
 
@@ -563,6 +803,7 @@ function SessionHistory() {
         return;
       }
       if (action === "export") handleSessionExport(currentSessionId);
+      if (action === "compact") handleSessionCompact(currentSessionId, args);
     };
     window.addEventListener("knowflow:react-session-command", handleSessionCommand);
     return () => window.removeEventListener("knowflow:react-session-command", handleSessionCommand);
@@ -579,7 +820,7 @@ function SessionHistory() {
 
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 214;
-    const menuHeight = 218;
+    const menuHeight = 330;
     const left = Math.max(12, Math.min(rect.right + 8, window.innerWidth - menuWidth - 12));
     const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - menuHeight - 12));
     setOpenMenuSessionId(sessionId);
@@ -608,6 +849,10 @@ function SessionHistory() {
 
   return (
     <section className={"chat-history-shell"} ref={historyRef}>
+      <div className={"session-scope-tabs"} role={"tablist"} aria-label={"任务范围"}>
+        <button type={"button"} role={"tab"} aria-selected={sessionScope === "active"} className={sessionScope === "active" ? "active" : ""} onClick={() => handleSessionScopeChange("active")}>{"任务"}</button>
+        <button type={"button"} role={"tab"} aria-selected={sessionScope === "archived"} className={sessionScope === "archived" ? "active" : ""} onClick={() => handleSessionScopeChange("archived")}>{"已归档"}</button>
+      </div>
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
           <span>{"搜索任务"}</span>
@@ -667,7 +912,10 @@ function SessionHistory() {
                             onClick={() => handleSessionAction("continue", session.id)}
                           >
                             <span className={"session-title-row"}>
-                              <span className={"session-title"}>{sessionTitle(session)}</span>
+                              <span className={"session-title"}>
+                                {session.is_pinned ? <span className={"session-pin-mark"} aria-label={"已置顶"}>◆</span> : null}
+                                {sessionTitle(session)}
+                              </span>
                               {age ? <time>{age}</time> : null}
                             </span>
                             {run ? (
@@ -688,7 +936,7 @@ function SessionHistory() {
                               </span>
                             ) : null}
                           </button>
-                          <button className={"session-menu-button"} type={"button"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
+                          <button className={"session-menu-button"} type={"button"} data-session-id={session.id} aria-label={"会话操作"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
                             <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
                               <circle cx={"6"} cy={"12"} r={"1.7"} />
                               <circle cx={"12"} cy={"12"} r={"1.7"} />
@@ -703,10 +951,22 @@ function SessionHistory() {
               </section>
             ))
         ) : (
-          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : "新任务会显示在这里"}</p>
+          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : sessionScope === "archived" ? "归档的任务会显示在这里" : "新任务会显示在这里"}</p>
         )}
       </div>
-      <SessionMenuPopover anchor={menuAnchor} sessionId={openMenuSessionId} onAction={handleSessionAction} />
+      <SessionMenuPopover
+        anchor={menuAnchor}
+        session={sessions.find((item) => item.id === openMenuSessionId)}
+        onAction={handleSessionAction}
+      />
+      <SessionDeleteDialog
+        session={sessions.find((item) => item.id === deleteTargetSessionId)}
+        deleting={Boolean(deletingSessionId)}
+        onCancel={() => {
+          if (!deletingSessionId) setDeleteTargetSessionId(null);
+        }}
+        onConfirm={() => handleSessionDelete(deleteTargetSessionId)}
+      />
     </section>
   );
 }
@@ -748,6 +1008,11 @@ function UserMenu() {
     }
   };
 
+  const handleDiagnosticCopy = () => {
+    setMenuOpen(false);
+    window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"));
+  };
+
   return (
     <div className={menuOpen ? "user-menu open" : "user-menu"} id={"user-menu"} ref={menuRef}>
       <button className={"user-menu-button"} id={"user-menu-btn"} type={"button"} onClick={handleUserMenuToggle}>
@@ -760,7 +1025,10 @@ function UserMenu() {
         </span>
       </button>
       <div className={"user-popover"} id={"user-popover"}>
-        <button id={"logout-btn"} type={"button"} onClick={handleLogout} disabled={loggingOut}>
+        <button id={"diagnostic-copy-btn"} type={"button"} onClick={handleDiagnosticCopy}>
+          {"复制脱敏诊断"}
+        </button>
+        <button className={"danger"} id={"logout-btn"} type={"button"} onClick={handleLogout} disabled={loggingOut}>
           {loggingOut ? "正在退出..." : "退出登录"}
         </button>
       </div>
@@ -818,7 +1086,7 @@ function RuntimeStatus() {
   );
 }
 
-export function Sidebar({ activePage = "chat", collapsed = false }) {
+export function Sidebar({ activePage = "chat", collapsed = false, onPageIntent = null }) {
   const sidebarClassName = collapsed ? "sidebar collapsed" : "sidebar";
   const sidebarToggleLabel = collapsed ? "展开侧边栏" : "收起侧边栏";
   const handlePageChange = (page) => {
@@ -885,6 +1153,8 @@ export function Sidebar({ activePage = "chat", collapsed = false }) {
               data-page={tool.page}
               type={"button"}
               aria-label={tool.label}
+              onMouseEnter={() => onPageIntent?.(tool.page)}
+              onFocus={() => onPageIntent?.(tool.page)}
               onClick={() => handlePageChange(tool.page)}
             >
               <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>

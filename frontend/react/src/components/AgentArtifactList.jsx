@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { mergeAgentArtifactUpdate } from "../controller/agentEvents.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import { publishReactAgentArtifactsUpdated } from "../controller/messageEvents.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { AgentDiffView } from "./AgentDiffView.jsx";
@@ -56,8 +57,42 @@ export function AgentArtifactList({
 }) {
   const [selectedId, setSelectedId] = useState("");
   const [diffs, setDiffs] = useState({});
+  const [diffErrors, setDiffErrors] = useState({});
   const [loadingId, setLoadingId] = useState("");
   const [confirmId, setConfirmId] = useState("");
+  const [reviewedIds, setReviewedIds] = useState([]);
+  const [lastReviewId, setLastReviewId] = useState("");
+  const listRef = useRef(null);
+  const detailRef = useRef(null);
+  const reviewLauncherRef = useRef(null);
+  const diffRequestRef = useRef(0);
+
+  const reviewableArtifacts = artifacts
+    .map((artifact, index) => ({
+      artifact,
+      identifier: artifactIdentifier(artifact, index),
+    }))
+    .filter(({ artifact }) => {
+      const target = artifactTarget(artifact);
+      return !/^https?:\/\//i.test(target)
+        && Boolean(artifact.diffAvailable || artifact.operationId);
+    });
+  const reviewedCount = reviewableArtifacts.filter(({ identifier }) => (
+    reviewedIds.includes(identifier)
+  )).length;
+  const activeReviewIndex = reviewableArtifacts.findIndex(({ identifier }) => (
+    identifier === selectedId
+  ));
+
+  const focusReviewDetail = () => {
+    window.requestAnimationFrame(() => detailRef.current?.focus());
+  };
+
+  const markReviewed = (identifier) => {
+    setReviewedIds((current) => (
+      current.includes(identifier) ? current : [...current, identifier]
+    ));
+  };
 
   const handleArtifact = async (artifact) => {
     const target = artifactTarget(artifact);
@@ -68,42 +103,98 @@ export function AgentArtifactList({
       return;
     }
     try {
-      await navigator.clipboard.writeText(target);
+      await copyTextToClipboard(target);
       notifyToast("产物路径已复制");
     } catch (error) {
       notifyError(error, "复制产物路径失败");
     }
   };
 
-  const toggleDiff = async (artifact, identifier) => {
-    if (selectedId === identifier) {
-      setSelectedId("");
-      setConfirmId("");
+  const openDiff = async (artifact, identifier) => {
+    const requestId = diffRequestRef.current + 1;
+    diffRequestRef.current = requestId;
+    setSelectedId(identifier);
+    setLastReviewId(identifier);
+    setConfirmId("");
+    focusReviewDetail();
+    if (diffs[identifier]) {
+      markReviewed(identifier);
+      setLoadingId("");
       return;
     }
-    setSelectedId(identifier);
-    setConfirmId("");
-    if (diffs[identifier]) return;
     if (!artifact.diffAvailable || !runId || !artifact.path) {
+      setLoadingId("");
+      setDiffErrors((current) => ({ ...current, [identifier]: "" }));
       setDiffs((current) => ({
         ...current,
         [identifier]: "该变更没有可显示的文本差异。",
       }));
+      markReviewed(identifier);
       return;
     }
     setLoadingId(identifier);
+    setDiffErrors((current) => ({ ...current, [identifier]: "" }));
     try {
       const result = await workspaceApi.diff({ runId, path: artifact.path });
+      if (diffRequestRef.current !== requestId) return;
       setDiffs((current) => ({
         ...current,
         [identifier]: result?.patch || "没有可显示的文本差异。",
       }));
+      markReviewed(identifier);
     } catch (error) {
+      if (diffRequestRef.current !== requestId) return;
       notifyError(error, "读取文件差异失败");
-      setDiffs((current) => ({ ...current, [identifier]: "文件差异暂不可用。" }));
+      setDiffErrors((current) => ({ ...current, [identifier]: "文件差异暂不可用。" }));
     } finally {
-      setLoadingId("");
+      if (diffRequestRef.current === requestId) setLoadingId("");
     }
+  };
+
+  const closeReview = (focusId = selectedId) => {
+    setSelectedId("");
+    setConfirmId("");
+    window.requestAnimationFrame(() => {
+      if (reviewLauncherRef.current) {
+        reviewLauncherRef.current.focus();
+        return;
+      }
+      const button = Array.from(
+        listRef.current?.querySelectorAll("button[data-workbench-item-id]") || [],
+      ).find((item) => item.dataset.workbenchItemId === focusId);
+      button?.focus();
+    });
+  };
+
+  const toggleDiff = async (artifact, identifier) => {
+    if (selectedId === identifier) {
+      closeReview(identifier);
+      return;
+    }
+    await openDiff(artifact, identifier);
+  };
+
+  const navigateReview = (direction) => {
+    if (!reviewableArtifacts.length) return;
+    const currentIndex = activeReviewIndex >= 0
+      ? activeReviewIndex
+      : Math.max(0, reviewableArtifacts.findIndex(({ identifier }) => identifier === lastReviewId));
+    const nextIndex = Math.max(
+      0,
+      Math.min(reviewableArtifacts.length - 1, currentIndex + direction),
+    );
+    if (nextIndex === currentIndex && activeReviewIndex >= 0) return;
+    const next = reviewableArtifacts[nextIndex];
+    void openDiff(next.artifact, next.identifier);
+  };
+
+  const resumeReview = () => {
+    const rememberedIndex = reviewableArtifacts.findIndex(({ identifier }) => identifier === lastReviewId);
+    const firstUnreviewedIndex = reviewableArtifacts.findIndex(({ identifier }) => !reviewedIds.includes(identifier));
+    const next = reviewableArtifacts[
+      rememberedIndex >= 0 ? rememberedIndex : Math.max(0, firstUnreviewedIndex)
+    ];
+    if (next) void openDiff(next.artifact, next.identifier);
   };
 
   const undoChange = async (artifact, identifier) => {
@@ -137,7 +228,28 @@ export function AgentArtifactList({
   }
 
   return (
-    <div className={`agent-artifact-list${compact ? " compact" : ""}`} aria-label={"运行产物"}>
+    <div
+      ref={listRef}
+      className={`agent-artifact-list${compact ? " compact" : ""}`}
+      aria-label={"运行产物"}
+    >
+      {reviewableArtifacts.length > 1 ? (
+        <div className={"agent-artifact-review-toolbar"}>
+          <div className={"agent-artifact-review-summary"}>
+            <strong>{"变更审阅"}</strong>
+            <span aria-live={"polite"}>{`${reviewedCount}/${reviewableArtifacts.length}已查看`}</span>
+          </div>
+          <button
+            ref={reviewLauncherRef}
+            type={"button"}
+            onClick={selectedId ? closeReview : resumeReview}
+          >
+            {selectedId
+              ? "收起审阅"
+              : (lastReviewId ? "返回审阅" : "开始审阅")}
+          </button>
+        </div>
+      ) : null}
       {artifacts.map((artifact, index) => {
         const target = artifactTarget(artifact);
         const displayTarget = artifactDisplayTarget(artifact);
@@ -151,6 +263,18 @@ export function AgentArtifactList({
             className={`agent-artifact-row${artifact.reverted ? " is-reverted" : ""}`}
             key={identifier}
             onKeyDown={(event) => {
+              if (selected && event.key === "ArrowLeft") {
+                event.preventDefault();
+                event.stopPropagation();
+                navigateReview(-1);
+                return;
+              }
+              if (selected && event.key === "ArrowRight") {
+                event.preventDefault();
+                event.stopPropagation();
+                navigateReview(1);
+                return;
+              }
               if (event.key !== "Escape" || (!selected && confirmId !== identifier)) return;
               event.preventDefault();
               event.stopPropagation();
@@ -158,11 +282,7 @@ export function AgentArtifactList({
                 setConfirmId("");
                 return;
               }
-              const row = event.currentTarget;
-              setSelectedId("");
-              window.requestAnimationFrame(() => {
-                row.querySelector("button[aria-expanded]")?.focus();
-              });
+              closeReview(identifier);
             }}
           >
             <span className={"agent-artifact-kind"}>{artifactLabel(artifact)}</span>
@@ -196,11 +316,48 @@ export function AgentArtifactList({
               ) : null}
             </div>
             {selected ? (
-              <div className={"agent-artifact-detail"}>
-                <AgentDiffView patch={diffs[identifier]} loading={loadingId === identifier} />
+              <div
+                ref={detailRef}
+                className={"agent-artifact-detail"}
+                tabIndex={-1}
+                aria-label={`变更审阅 ${activeReviewIndex + 1}/${reviewableArtifacts.length}`}
+                aria-keyshortcuts={"ArrowLeft ArrowRight Escape"}
+              >
+                {reviewableArtifacts.length > 1 ? (
+                  <div className={"agent-artifact-review-head"}>
+                    <div>
+                      <strong>{`变更 ${activeReviewIndex + 1}/${reviewableArtifacts.length}`}</strong>
+                      <span>{`${reviewedCount}/${reviewableArtifacts.length}已查看`}</span>
+                    </div>
+                    <div className={"agent-artifact-review-nav"}>
+                      <button
+                        type={"button"}
+                        disabled={activeReviewIndex <= 0}
+                        onClick={() => navigateReview(-1)}
+                      >
+                        {"上一个"}
+                      </button>
+                      <button
+                        type={"button"}
+                        disabled={activeReviewIndex >= reviewableArtifacts.length - 1}
+                        onClick={() => navigateReview(1)}
+                      >
+                        {"下一个"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <AgentDiffView
+                  patch={diffs[identifier] || diffErrors[identifier]}
+                  loading={loadingId === identifier}
+                />
                 {!artifact.reverted && artifact.operationId && ["completed", "failed", "cancelled"].includes(runStatus) ? (
                   <div className={"agent-artifact-undo"}>
-                    <button type={"button"} onClick={() => undoChange(artifact, identifier)}>
+                    <button
+                      type={"button"}
+                      disabled={loadingId === identifier}
+                      onClick={() => undoChange(artifact, identifier)}
+                    >
                       {confirmId === identifier ? "确认安全撤销" : "撤销此文件"}
                     </button>
                     {confirmId === identifier ? (

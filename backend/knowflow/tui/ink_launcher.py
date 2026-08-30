@@ -42,7 +42,12 @@ def _entry_path() -> Path | None:
     return path if path.is_file() else None
 
 
-def run_ink_tui(backend: Any, *, assume_yes: bool = False) -> bool:
+def run_ink_tui(
+    backend: Any,
+    *,
+    assume_yes: bool = False,
+    startup_action: str = "",
+) -> bool:
     """Run the bundled React/Ink UI, returning False when it is unavailable."""
 
     if not sys.platform.startswith("linux") and not os.getenv(
@@ -64,6 +69,9 @@ def run_ink_tui(backend: Any, *, assume_yes: bool = False) -> bool:
         "skillId": getattr(backend, "skill_id", None),
         "assumeYes": bool(assume_yes),
         "workspaceRoot": str(workspace_root) if workspace_root is not None else "",
+        "startupAction": (
+            startup_action if startup_action in {"resume", "continue"} else ""
+        ),
     }
     environment = dict(os.environ)
     environment.update(

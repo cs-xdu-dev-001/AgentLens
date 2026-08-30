@@ -312,7 +312,7 @@ def main() -> None:
             version = conn.exec_driver_sql(
                 "SELECT MAX(version) FROM schema_version"
             ).scalar()
-        assert version == CURRENT_SCHEMA_VERSION == 12
+        assert version == CURRENT_SCHEMA_VERSION == 15
         database.engine.dispose()
 
     schema = (ROOT / "backend" / "knowflow" / "db_schema.py").read_text(

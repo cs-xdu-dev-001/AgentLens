@@ -12,11 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from knowflow.services.local_cli_runtime import (  # noqa: E402
+    explain_local_connection_error,
     gateway_config,
     LocalAgentRuntime,
     LocalCliConfigError,
     LocalCliConfigStore,
     local_cli_max_tool_rounds,
+    normalize_local_api_mode,
     validate_local_config,
 )
 from knowflow.services.agent_trace import sanitize_trace_value  # noqa: E402
@@ -28,12 +30,49 @@ from knowflow.services.langgraph_agent_engine import (  # noqa: E402
 from knowflow.services.workspace_runtime import (  # noqa: E402
     SandboxCommandResult,
     WorkspaceRuntime,
+    WorkspaceRuntimeError,
     register_workspace_tools,
 )
 from knowflow.tui.state import PromptHistoryStore, TuiSessionState  # noqa: E402
 
 
 def main() -> None:
+    assert normalize_local_api_mode("1") == "responses"
+    assert normalize_local_api_mode("responses") == "responses"
+    assert normalize_local_api_mode("2") == "chat_completions"
+    assert normalize_local_api_mode("chat-completions") == "chat_completions"
+    assert normalize_local_api_mode("respinses") is None
+
+    if os.name == "nt":
+        original_replace = Path.replace
+        replace_attempts = 0
+
+        def flaky_replace(source: Path, target: Path) -> Path:
+            nonlocal replace_attempts
+            replace_attempts += 1
+            if replace_attempts < 3:
+                raise PermissionError("synthetic scanner lock")
+            return original_replace(source, target)
+
+        with TemporaryDirectory() as retry_directory:
+            retry_store = LocalCliConfigStore(Path(retry_directory))
+            with patch.object(Path, "replace", new=flaky_replace):
+                retry_store.update_public(lambda value: value.update({"model_name": "test"}))
+            assert retry_store.load_public()["model_name"] == "test"
+            assert replace_attempts == 3
+    forbidden = explain_local_connection_error(
+        "Responses API connection failed: HTTP 403: upstream_error"
+    )
+    assert "上游拒绝访问" in forbidden and "Key分组权限" in forbidden
+    unavailable = explain_local_connection_error(
+        "Chat Completions connection failed: HTTP 503: 无可用渠道"
+    )
+    assert "没有可用上游渠道" in unavailable and "模型权限" in unavailable
+    unsupported = explain_local_connection_error(
+        "Responses API connection failed: protocol not supported"
+    )
+    assert "不支持所选接口协议" in unsupported and "Chat Completions" in unsupported
+
     sanitized = sanitize_trace_value(
         {
             "command": "curl --token cli-secret https://example.test",
@@ -71,6 +110,31 @@ def main() -> None:
     ]
 
     with TemporaryDirectory() as folder:
+        root = Path(folder)
+        initial = root / "initial"
+        target = root / "project"
+        initial.mkdir()
+        target.mkdir()
+        runtime = LocalAgentRuntime(
+            workspace_root=initial,
+            data_root=root / "data",
+        )
+        initial_state_root = runtime.workspace.state_root
+        switched = runtime.workspace_switch_root(str(target))
+        assert switched["projectRoot"] == str(target.resolve())
+        assert switched["cwd"] == str(target.resolve())
+        assert switched["allowedDirectories"] == [str(target.resolve())]
+        assert switched["workspaceKind"] != "home"
+        assert runtime.workspace.state_root != initial_state_root
+        assert "已切换工作区" in switched["message"]
+        try:
+            runtime.workspace_switch_root(str(root / "missing"))
+        except WorkspaceRuntimeError as exc:
+            assert exc.code == "workspace_root_missing"
+        else:
+            raise AssertionError("missing workspace root unexpectedly accepted")
+
+    with TemporaryDirectory() as folder:
         store = LocalCliConfigStore(Path(folder) / "config")
         store.save(
             provider="custom",
@@ -103,6 +167,46 @@ def main() -> None:
             loaded = store.load()
         assert loaded["model_name"] == "environment-model"
         assert loaded["api_key"] == "environment-secret"
+
+        snapshot = store.editable_snapshot()
+        assert snapshot["has_api_key"] is True
+        assert "api_key" not in snapshot
+        assert snapshot["overridden_fields"] == {}
+        updated = store.save_editable(
+            provider="custom",
+            base_url="https://next-gateway.example/v1/",
+            model_name="next-agent-model",
+            api_mode="chat_completions",
+        )
+        assert updated["api_key"] == "secret-value"
+        assert store.load()["model_name"] == "next-agent-model"
+        assert "secret-value" not in json.dumps(
+            store.editable_snapshot(),
+            ensure_ascii=False,
+        )
+        with patch.dict(
+            os.environ,
+            {"KNOWFLOW_MODEL": "environment-model"},
+        ):
+            store.save_editable(
+                provider="custom",
+                base_url="https://third-gateway.example/v1",
+                model_name="environment-model",
+                api_mode="chat_completions",
+            )
+            try:
+                store.save_editable(
+                    provider="custom",
+                    base_url="https://next-gateway.example/v1",
+                    model_name="attempted-change",
+                    api_mode="chat_completions",
+                )
+            except LocalCliConfigError as exc:
+                assert "KNOWFLOW_MODEL" in str(exc)
+            else:
+                raise AssertionError("environment-overridden model was editable")
+        assert store.load()["model_name"] == "next-agent-model"
+        assert store.load()["base_url"] == "https://third-gateway.example/v1"
 
     try:
         validate_local_config(
@@ -222,6 +326,65 @@ def main() -> None:
         renamed = runtime.rename_session(stored[0]["runId"], "  发布 复盘  ")
         assert renamed["title"] == "发布 复盘"
         assert runtime.load_session(stored[0]["runId"])["title"] == "发布 复盘"
+        runtime.set_session_pinned(stored[0]["runId"], True)
+        archived = runtime.set_session_archived(stored[0]["runId"], True)
+        assert archived["archived"] is True
+        assert archived["pinned"] is False
+        assert not runtime.list_sessions()
+        assert runtime.list_sessions(archived=True)[0]["runId"] == stored[0]["runId"]
+        restored = runtime.set_session_archived(stored[0]["runId"], False)
+        assert restored["archived"] is False
+        assert runtime.list_sessions()[0]["runId"] == stored[0]["runId"]
+        deleted = runtime.delete_session(stored[0]["runId"])
+        assert deleted == {"runId": stored[0]["runId"], "deleted": True}
+        assert runtime.sessions.load(stored[0]["runId"]) is None
+        assert not runtime.list_sessions()
+        runtime.sessions.save(
+            "run_activedelete",
+            title="仍在执行",
+            status="running",
+            messages=[],
+            **runtime._session_workspace_fields(),
+        )
+        try:
+            runtime.delete_session("run_activedelete")
+        except ValueError as exc:
+            assert "结束后" in str(exc)
+        else:
+            raise AssertionError("active local sessions must not be deleted")
+        assert runtime.sessions.load("run_activedelete") is not None
+        runtime.sessions.save(
+            "run_rewindsource",
+            title="回退来源",
+            status="completed",
+            messages=[
+                {"role": "user", "content": "第一个问题"},
+                {"role": "assistant", "content": "第一个回答"},
+                {"role": "user", "content": "需要重新处理的问题"},
+                {"role": "assistant", "content": "应被丢弃的回答"},
+            ],
+            contextMessages=[
+                {"role": "user", "content": "第一个问题"},
+                {"role": "assistant", "content": "第一个回答"},
+                {"role": "user", "content": "需要重新处理的问题"},
+                {"role": "assistant", "content": "应被丢弃的回答"},
+            ],
+            compaction={"summary": "不应带入新分支"},
+            answer="应被丢弃的回答",
+            **runtime._session_workspace_fields(),
+        )
+        rewound = runtime.branch_session(
+            "run_rewindsource",
+            before_message_index=2,
+        )
+        assert rewound["restoredQuestion"] == "需要重新处理的问题"
+        assert rewound["messages"] == [
+            {"role": "user", "content": "第一个问题"},
+            {"role": "assistant", "content": "第一个回答"},
+        ]
+        assert rewound["contextMessages"] == rewound["messages"]
+        assert rewound["compaction"] == {}
+        assert rewound["answer"] == "第一个回答"
         assert runtime.workspace_status()["cwd"] == str((root / "workspace").resolve())
         extra = root / "extra-workspace"
         extra.mkdir()

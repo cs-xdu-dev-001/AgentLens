@@ -87,7 +87,7 @@ def main() -> None:
         "created_at",
         "updated_at",
     }, columns
-    assert CURRENT_SCHEMA_VERSION == 12
+    assert CURRENT_SCHEMA_VERSION == 15
 
     requirements = (BACKEND / "requirements.txt").read_text(encoding="utf-8")
     assert "mem0ai==2.0.14" in requirements

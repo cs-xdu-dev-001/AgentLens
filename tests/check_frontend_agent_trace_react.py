@@ -440,6 +440,8 @@ def check_workspace_sandbox_renderer_fixture() -> None:
     script = f"""
 import {{
   traceKindLabel,
+  traceCopyText,
+  redactTraceDetail,
   traceStepFields,
   traceStepReason,
   traceStepTitle,
@@ -485,6 +487,20 @@ const referenceStep = {{
   }},
 }};
 const referenceFields = traceStepFields(referenceStep);
+const longStep = {{
+  kind: "sandbox",
+  name: "run_sandbox_command",
+  status: "success",
+  inputSummary: {{ command: "node inspect.js" }},
+  outputSummary: {{
+    exit_code: 0,
+    stdout: "输出开头 · " + "x".repeat(400) + " · 输出末尾",
+    stderr: "token=sk-test-secret-value-1234567890",
+  }},
+}};
+const longFields = traceStepFields(longStep);
+const stdoutField = longFields.find((field) => field.label === "标准输出");
+const stderrField = longFields.find((field) => field.label === "错误输出");
 const readable = {{
   kindLabel: traceKindLabel("workspace"),
   sandboxLabel: traceKindLabel("sandbox"),
@@ -497,7 +513,16 @@ const readable = {{
   referenceTitle: traceStepTitle(referenceStep),
   referenceReason: traceStepReason(referenceStep),
 }};
-console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, readable }}));
+const expandable = {{
+  compact: stdoutField?.value,
+  full: stdoutField?.fullValue,
+  truncated: stdoutField?.truncated,
+  hardTruncated: stdoutField?.hardTruncated,
+  redacted: stderrField?.fullValue,
+  copied: traceCopyText(longStep),
+  ansi: redactTraceDetail("\\u001b[31m红色\\u001b[0m\\n下一行"),
+}};
+console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, readable, expandable }}));
 """
     completed = subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -528,6 +553,15 @@ console.log(JSON.stringify({{ workspaceFields, sandboxFields, referenceFields, r
         {"label": "已读取", "value": "README.md、src/main.py"},
         {"label": "已跳过", "value": "1"},
     ]
+    expandable = result["expandable"]
+    assert expandable["truncated"] is True
+    assert expandable["hardTruncated"] is False
+    assert expandable["compact"].endswith("…")
+    assert expandable["full"].endswith("输出末尾")
+    assert "sk-test-secret" not in expandable["redacted"]
+    assert "[已隐藏]" in expandable["redacted"]
+    assert "输出末尾" in expandable["copied"]
+    assert expandable["ansi"] == "红色\n下一行"
     assert result["readable"] == {
         "kindLabel": "WORKSPACE",
         "sandboxLabel": "SANDBOX",
@@ -548,7 +582,7 @@ def check_agent_run_presentation_fixture() -> None:
         / "agentRunPresentation.js"
     ).as_uri()
     script = f"""
-import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentToolOutputPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, verificationTraceStepId }} from {json.dumps(module_path)};
+import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentToolOutputPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, shouldAutoExpandAgentTrace, verificationTraceStepId }} from {json.dumps(module_path)};
 const completed = buildAgentRunPresentation({{
   now: Date.parse("2026-08-12T00:00:03Z"),
   run: {{
@@ -602,6 +636,25 @@ const retrying = buildAgentRunPresentation({{
     status: "running",
   }}],
 }});
+const quiet = buildAgentRunPresentation({{
+  now: Date.parse("2026-08-12T00:01:00Z"),
+  run: {{
+    id: "run-quiet",
+    status: "running",
+    runSummary: {{
+      runId: "run-quiet",
+      status: "running",
+      startedAt: "2026-08-12T00:00:00Z",
+      lastActivityAt: "2026-08-12T00:00:10Z",
+    }},
+  }},
+  trace: [{{
+    stepId: "model-quiet",
+    kind: "model",
+    name: "model_completion",
+    status: "running",
+  }}],
+}});
 const compacted = buildAgentRunPresentation({{
   run: {{
     id: "run_compacted",
@@ -615,6 +668,19 @@ const compacted = buildAgentRunPresentation({{
     {{ stepId: "search-1", kind: "tool", name: "web_search", status: "success", durationMs: 100 }},
     {{ stepId: "search-2", kind: "tool", name: "web_search", status: "success", durationMs: 200 }},
     {{ stepId: "search-3", kind: "tool", name: "web_search", status: "success", durationMs: 300 }},
+  ],
+}});
+const completedWithWarning = buildAgentRunPresentation({{
+  run: {{
+    id: "run-warning",
+    status: "completed",
+    goalSummary: "完成联网调研",
+  }},
+  trace: [
+    {{ stepId: "root-warning", kind: "agent", name: "agent_run", status: "success" }},
+    {{ stepId: "fetch-warning", kind: "tool", name: "web_fetch", status: "failed", errorCode: "unsupported_content" }},
+    {{ stepId: "search-warning", kind: "tool", name: "web_search", status: "success" }},
+    {{ stepId: "answer-warning", kind: "model", name: "model_completion", status: "success" }},
   ],
 }});
 const targeted = [
@@ -726,6 +792,10 @@ console.log(JSON.stringify({{
     processSummary: retrying.processSummary,
     status: retrying.status,
   }},
+  quiet: {{
+    processSummary: quiet.processSummary,
+    status: quiet.status,
+  }},
   compacted: {{
     headline: compacted.headline,
     processSummary: compacted.processSummary,
@@ -735,6 +805,16 @@ console.log(JSON.stringify({{
       durationMs: row.durationMs,
     }})),
     toolCalls: compacted.toolCalls,
+  }},
+  completedWithWarning: {{
+    active: completedWithWarning.active,
+    autoExpanded: shouldAutoExpandAgentTrace(
+      completedWithWarning.active,
+      completedWithWarning.status.className,
+    ),
+    failedOperationCount: completedWithWarning.failedOperationCount,
+    processSummary: completedWithWarning.processSummary,
+    status: completedWithWarning.status,
   }},
   targeted: targeted.map((row) => ({{ ...row, title: row.title, outcome: row.outcome }})),
   planned: {{
@@ -796,6 +876,15 @@ console.log(JSON.stringify({{
             "label": "等待重试",
         },
     }
+    assert result["quiet"] == {
+        "processSummary": "暂未收到新进展，任务仍在运行",
+        "status": {
+            "className": "waiting",
+            "detail": "暂未收到新进展，任务仍在运行",
+            "freshness": "等待上游",
+            "label": "等待响应",
+        },
+    }
     assert result["compacted"] == {
         "headline": "调研最新模型趋势",
         "processSummary": "已完成并保存1个产物",
@@ -807,6 +896,18 @@ console.log(JSON.stringify({{
             },
         ],
         "toolCalls": 3,
+    }
+    assert result["completedWithWarning"] == {
+        "active": False,
+        "autoExpanded": True,
+        "failedOperationCount": 1,
+        "processSummary": "任务已完成，1个工具调用未成功",
+        "status": {
+            "className": "warning",
+            "detail": "任务已完成，1个工具调用未成功",
+            "freshness": "已保存",
+            "label": "完成，有警告",
+        },
     }
     targeted = result["targeted"]
     assert [
@@ -971,8 +1072,12 @@ def check_trace_keyboard_navigation_fixture() -> None:
         / "frontend/react/src/components/agentTraceNavigation.js"
     ).resolve().as_uri()
     script = f"""
-import {{ matchesFocusScope, nextTraceStepId, resolveTreeSelectionId }} from {json.dumps(module_url)};
+import {{ matchesFocusScope, nextTraceStepId, resolveTreeSelectionId, visibleTraceWindow }} from {json.dumps(module_url)};
 const ids = ["planning", "tool-failed", "answer"];
+const rows = Array.from({{ length: 9 }}, (_, index) => ({{ id: `step-${{index + 1}}` }}));
+const activeWindow = visibleTraceWindow(rows, "step-6", 5);
+const lastWindow = visibleTraceWindow(rows, "step-9", 5);
+const missingWindow = visibleTraceWindow(rows, "missing", 5);
 console.log(JSON.stringify({{
   down: nextTraceStepId(ids, "tool-failed", "ArrowDown"),
   wrapDown: nextTraceStepId(ids, "answer", "ArrowDown"),
@@ -986,6 +1091,21 @@ console.log(JSON.stringify({{
   removed: resolveTreeSelectionId(ids, "removed", "answer", true),
   scoped: matchesFocusScope("workbench", "workbench"),
   foreignScope: matchesFocusScope("message", "workbench"),
+  activeWindow: {{
+    ids: activeWindow.rows.map((item) => item.id),
+    before: activeWindow.hiddenBefore,
+    after: activeWindow.hiddenAfter,
+  }},
+  lastWindow: {{
+    ids: lastWindow.rows.map((item) => item.id),
+    before: lastWindow.hiddenBefore,
+    after: lastWindow.hiddenAfter,
+  }},
+  missingWindow: {{
+    ids: missingWindow.rows.map((item) => item.id),
+    before: missingWindow.hiddenBefore,
+    after: missingWindow.hiddenAfter,
+  }},
 }}));
 """
     result = subprocess.run(
@@ -1010,6 +1130,21 @@ console.log(JSON.stringify({{
         "removed": "answer",
         "scoped": True,
         "foreignScope": False,
+        "activeWindow": {
+            "ids": ["step-4", "step-5", "step-6", "step-7", "step-8"],
+            "before": 3,
+            "after": 1,
+        },
+        "lastWindow": {
+            "ids": ["step-5", "step-6", "step-7", "step-8", "step-9"],
+            "before": 4,
+            "after": 0,
+        },
+        "missingWindow": {
+            "ids": ["step-1", "step-2", "step-3", "step-4", "step-5"],
+            "before": 0,
+            "after": 4,
+        },
     }
 
 
@@ -1176,6 +1311,12 @@ def main() -> None:
         "复制详情",
         "管理长期记忆",
         "查看恢复操作",
+        "field.fullValue",
+        "field.truncated",
+        "agent-trace-field-toggle",
+        "aria-expanded={expandedFields.has(field.label)}",
+        "收起",
+        "展开",
     ):
         require(detail, token, f"interactive detail {token}")
     for token in (
@@ -1183,6 +1324,8 @@ def main() -> None:
         "traceStepFields",
         "traceCopyText",
         "traceStepTarget",
+        "redactTraceDetail",
+        "TRACE_DETAIL_LIMIT",
     ):
         require(
             presentation,
@@ -1294,8 +1437,13 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        'aria-keyshortcuts={"1"}',
-        "run workbench announces numbered tab shortcuts",
+        'aria-keyshortcuts={"Alt+E 1"}',
+        "run workbench announces global and numbered trace shortcuts",
+    )
+    require(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        'aria-keyshortcuts={"Alt+G 4"}',
+        "run workbench announces global and numbered artifact shortcuts",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
@@ -1369,6 +1517,86 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentArtifactList.jsx",
+        'strong>{"变更审阅"}</strong>',
+        "sequential change review entry",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "reviewedIds",
+        "change review progress state",
+    )
+    artifact_source = read(
+        "frontend/react/src/components/AgentArtifactList.jsx"
+    )
+    open_diff_start = artifact_source.index("const openDiff = async")
+    cached_diff_start = artifact_source.index(
+        "if (diffs[identifier])",
+        open_diff_start,
+    )
+    request_start = artifact_source.index(
+        "await workspaceApi.diff",
+        cached_diff_start,
+    )
+    request_failure_start = artifact_source.index(
+        "} catch (error) {",
+        request_start,
+    )
+    request_finally_start = artifact_source.index(
+        "} finally {",
+        request_failure_start,
+    )
+    assert "markReviewed(identifier)" not in artifact_source[
+        open_diff_start:cached_diff_start
+    ], "opening a diff must not mark it reviewed before content is available"
+    assert "markReviewed(identifier)" in artifact_source[
+        request_start:request_failure_start
+    ], "a successful diff response must mark the artifact reviewed"
+    assert "markReviewed(identifier)" not in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must remain unreviewed"
+    assert "setDiffs" not in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must not enter the successful diff cache"
+    assert "setDiffErrors" in artifact_source[
+        request_failure_start:request_finally_start
+    ], "a failed diff response must remain visible without becoming reviewed"
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'event.key === "ArrowLeft"',
+        "previous change keyboard navigation",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'event.key === "ArrowRight"',
+        "next change keyboard navigation",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        'aria-keyshortcuts={"ArrowLeft ArrowRight Escape"}',
+        "change review keyboard contract",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "if (diffRequestRef.current !== requestId) return;",
+        "stale diff responses cannot replace the active review",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        "disabled={loadingId === identifier}",
+        "undo requests cannot be submitted twice",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-artifact-review-toolbar",
+        "change review styles live in the authoritative stylesheet",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-artifact-review-nav button:disabled",
+        "change review navigation exposes disabled controls",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
         "publishReactAgentArtifactsUpdated",
         "artifact undo broadcasts its final state",
     )
@@ -1404,13 +1632,23 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "rows.slice(0, 5)",
-        "concise inline task rows",
+        "visibleTraceWindow",
+        "active-centered concise inline task rows",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
         "agent-task-capsule-summary",
         "readable inline task summary",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        'status.className === "success" && !expanded',
+        "completed run compaction",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-task-capsule.settled:not(.expanded)",
+        "completed run visual handoff",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
@@ -1568,9 +1806,24 @@ def main() -> None:
         "workbench focus event scope",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "本轮交付",
         "post-answer delivery summary",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "运行时间线",
+        "run capsule uses one chronological information hierarchy",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        "agent-task-capsule-outcomes",
+        "run timeline summarizes changes, verification, and evidence inline",
+    )
+    require(
+        "frontend/react/src/components/AgentTraceStrip.jsx",
+        'handleOpen("evidence")',
+        "run timeline deep links to evidence",
     )
     require(
         "frontend/react/src/components/AgentDeliveryCard.jsx",
@@ -1603,22 +1856,27 @@ def main() -> None:
         "failed verification is disclosed automatically",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         'label: "验证通过"',
         "delivery summary exposes verification success",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
-        'label: "未验证"',
+        "frontend/react/src/components/agentRunPresentation.js",
+        'label: "待验证"',
         "delivery summary distinguishes missing verification",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
+        'title: partial ? "本轮结果"',
+        "delivery summary distinguishes partial runs from delivered work",
+    )
+    require(
+        "frontend/react/src/components/agentRunPresentation.js",
         "查看失败步骤与恢复操作",
         "failed delivery deep links to recovery context",
     )
     require(
-        "frontend/react/src/components/AgentDeliveryCard.jsx",
+        "frontend/react/src/components/agentRunPresentation.js",
         "项已撤销",
         "delivery summary reports reverted changes",
     )
@@ -1636,6 +1894,41 @@ def main() -> None:
         "frontend/react/src/components/ChatMessages.jsx",
         "AgentEvidenceStrip",
         "assistant evidence strip placement",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "export function activeTaskAnchor",
+        "active task selection remains independently testable",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        'className={"active-task-anchor"}',
+        "active task anchor is rendered in the conversation viewport",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "currentTask.presentation?.metrics",
+        "active task anchor surfaces live duration, token, tool, and progress metrics",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "active-task-anchor-state",
+        "active task anchor exposes the live run state",
+    )
+    require(
+        "frontend/react/src/components/ChatMessages.jsx",
+        "scrollIntoView",
+        "active task anchor returns to the originating prompt",
+    )
+    require(
+        "frontend/styles.css",
+        ".active-task-anchor",
+        "active task anchor has a stable visual treatment",
+    )
+    require(
+        "frontend/styles.css",
+        ".agent-task-capsule-outcomes",
+        "run outcome summary has a compact shared visual treatment",
     )
     require(
         "frontend/react/src/components/AgentEvidenceStrip.jsx",

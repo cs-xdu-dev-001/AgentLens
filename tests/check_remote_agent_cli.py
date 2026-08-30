@@ -373,6 +373,10 @@ def main() -> None:
     assert fake.calls[-3][1].endswith("/api/agent/runs/run_retry")
     assert fake.calls[-2][0] == "POST"
     assert fake.calls[-1][2]["params"] == {"afterSequence": 20}
+    fake.responses.append(FakeResponse({"code": 0, "data": True}))
+    assert client.delete_session("s1") is True
+    assert fake.calls[-1][0] == "DELETE"
+    assert fake.calls[-1][1].endswith("/api/sessions/s1")
 
     cancelled_execution = RemoteAgentClient._collect(
         iter(

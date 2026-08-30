@@ -38,7 +38,9 @@ jobs:
 
       - name: Check CLI entry point
         shell: pwsh
-        run: knowflow --help
+        run: |
+          agentlens --help
+          knowflow --help
 
       - name: Build and test Ink CLI
         working-directory: cli-tui
@@ -54,11 +56,13 @@ jobs:
         run: |
           set -euo pipefail
           python -m build backend
-          cli_venv="${RUNNER_TEMP}/knowflow-cli-smoke"
+          cli_venv="${RUNNER_TEMP}/agentlens-cli-smoke"
           python -m venv "${cli_venv}"
           "${cli_venv}/bin/python" -m pip install --disable-pip-version-check backend/dist/*.whl
+          "${cli_venv}/bin/agentlens" --help >/dev/null
           "${cli_venv}/bin/knowflow" --help >/dev/null
           package_version="$(python -c 'import tomllib; print(tomllib.load(open("backend/pyproject.toml", "rb"))["project"]["version"])')"
+          test "$("${cli_venv}/bin/agentlens" --version)" = "${package_version}"
           test "$("${cli_venv}/bin/knowflow" --version)" = "${package_version}"
           "${cli_venv}/bin/python" - <<'PY'
           import sys
@@ -105,8 +109,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bundle="${RUNNER_TEMP}/knowflow-ai-linux"
-          archive="knowflow-ai-linux-${GITHUB_SHA}.tar.gz"
+          bundle="${RUNNER_TEMP}/agentlens-linux"
+          archive="agentlens-linux-${GITHUB_SHA}.tar.gz"
           mkdir -p "${bundle}/frontend"
           git archive --format=tar "${GITHUB_SHA}" backend deploy README.md README_EN.md \
             | tar -xf - -C "${bundle}"
@@ -142,10 +146,10 @@ jobs:
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: knowflow-ai-linux-${{ github.sha }}
+          name: agentlens-linux-${{ github.sha }}
           path: |
-            knowflow-ai-linux-${{ github.sha }}.tar.gz
-            knowflow-ai-linux-${{ github.sha }}.tar.gz.sha256
+            agentlens-linux-${{ github.sha }}.tar.gz
+            agentlens-linux-${{ github.sha }}.tar.gz.sha256
             bundle-contents.txt
           compression-level: 0
           retention-days: 14

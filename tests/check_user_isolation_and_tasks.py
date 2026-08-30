@@ -169,6 +169,25 @@ def main() -> None:
         f"/api/sessions/{branch_data['id']}/messages"
     ).status_code == 404
 
+    source_messages = alice.get(
+        f"/api/sessions/{session_id}/messages"
+    ).json()["data"]
+    rewind_target = next(
+        message for message in source_messages if message["role"] == "user"
+    )
+    rewound = alice.post(
+        f"/api/sessions/{session_id}/branch",
+        json={"beforeMessageId": rewind_target["id"]},
+    )
+    assert rewound.status_code == 200, rewound.text
+    rewind_data = rewound.json()["data"]
+    assert rewind_data["restoredQuestion"] == rewind_target["content"], rewind_data
+    assert rewind_data["rewindMessageId"] == rewind_target["id"], rewind_data
+    rewound_messages = alice.get(
+        f"/api/sessions/{rewind_data['id']}/messages"
+    ).json()["data"]
+    assert len(rewound_messages) == source_messages.index(rewind_target), rewound_messages
+
     sync_task = alice.post(
         "/api/sync/tasks",
         json={"sourceType": "github", "sourceUrl": "https://example.invalid/repo", "targetType": "knowledge_base"},

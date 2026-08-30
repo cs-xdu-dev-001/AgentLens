@@ -2828,9 +2828,57 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-radius: 999px;
   color: var(--muted);
   background: var(--control-bg);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
 }
 .workspace-runtime-strip span.ready { color: var(--success); }
+.workspace-runtime-strip span.warning { color: var(--warning); }
+.workspace-runtime-strip span.danger { color: var(--danger); }
+
+.workspace-boundary-card {
+  margin: 4px 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-bg) 94%, var(--control-bg));
+}
+.workspace-boundary-head,
+.workspace-boundary-grid {
+  display: flex;
+  align-items: center;
+}
+.workspace-boundary-head {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.workspace-boundary-head strong { font-size: 15px; }
+.workspace-boundary-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.workspace-boundary-head span.ready { color: var(--success); }
+.workspace-boundary-head span.warning { color: var(--warning); }
+.workspace-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.workspace-boundary-grid div { min-width: 0; }
+.workspace-boundary-grid span,
+.workspace-boundary-grid strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-boundary-grid span {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.workspace-boundary-grid strong { font-size: 13px; }
 
 .workspace-breadcrumb {
   min-height: 44px;
@@ -2867,6 +2915,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .workspace-browser { padding: 24px 18px 48px; }
   .workspace-browser-header { align-items: flex-start; }
   .workspace-runtime-strip { flex-wrap: wrap; }
+  .workspace-boundary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3152,10 +3201,75 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-weight: 680;
 }
 
-.model-config-connection-result span:last-child {
+.model-config-connection-summary,
+.model-config-connection-action {
+  display: block;
   overflow-wrap: anywhere;
   color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.model-config-connection-action {
+  color: var(--text);
+}
+
+.model-config-connection-technical {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.model-config-connection-technical-toggle {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.model-config-protocol-switch {
+  width: fit-content;
+  min-height: 34px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--inverse-bg);
+  border-radius: 10px;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.model-config-protocol-switch:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.model-config-protocol-attempts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 4px;
+  color: var(--muted);
   font-size: 13px;
+}
+
+.model-config-protocol-attempts [data-status="available"] {
+  color: var(--success);
+}
+
+.model-config-connection-technical code {
+  display: block;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
 }
 
 .model-config-connection-result[data-status="success"] .model-config-connection-dot {

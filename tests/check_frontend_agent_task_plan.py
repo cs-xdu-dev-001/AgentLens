@@ -125,6 +125,13 @@ console.log(JSON.stringify({
         ("preferredPlanStepIdRef", "stable plan focus event subscription"),
         ("matchesFocusScope", "plan focus event isolation"),
         ("focusScope", "plan focus scope propagation"),
+        ("knowflow:react-agent-run-action-state", "durable task action state listener"),
+        ("cancelPending", "cancel pending feedback state"),
+        ("正在停止…", "cancel pending label"),
+        ("重试停止", "cancel failure recovery label"),
+        ('aria-busy={cancelPending}', "cancel pending accessibility state"),
+        ('disabled={cancelPending}', "cancel pending disabled state"),
+        ("agent-task-action-feedback", "cancel action feedback region"),
     ):
         require(component, token, label)
 
@@ -172,8 +179,8 @@ console.log(JSON.stringify({
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
-        "执行过程",
-        "inline run process heading",
+        "运行时间线",
+        "inline chronological run heading",
     )
     require(
         "frontend/react/src/components/AgentTraceStrip.jsx",
@@ -204,6 +211,11 @@ console.log(JSON.stringify({
         "frontend/react/src/controller/chatFlow.js",
         "agentRunApi.cancel",
         "durable stop action",
+    )
+    require(
+        "frontend/react/src/controller/chatFlow.js",
+        "createAgentRunActionGuard",
+        "duplicate action guard",
     )
     require(
         "frontend/react/src/controller/chatFlow.js",

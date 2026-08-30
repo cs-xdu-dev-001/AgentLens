@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 app = typer.Typer(
-    name="knowflow",
+    name="agentlens",
     help="AgentLens Linux Agent CLI",
     no_args_is_help=True,
 )
@@ -55,8 +55,23 @@ error_console = Console(stderr=True)
 profile_store = RemoteProfileStore()
 
 DEFAULT_CLI_PACKAGE_SPEC = (
-    "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/KnowFlow-AI.git#subdirectory=backend"
+    "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/AgentLens.git#subdirectory=backend"
 )
+
+
+def _prompt_local_api_mode(current: str) -> str:
+    from .services.local_cli_runtime import normalize_local_api_mode
+
+    default_choice = "2" if current == "chat_completions" else "1"
+    console.print("接口协议")
+    console.print("  [bold cyan]1[/bold cyan]  Responses API（推荐，适合新模型）")
+    console.print("  [bold cyan]2[/bold cyan]  Chat Completions（兼容传统中转站）")
+    while True:
+        selected = typer.prompt("选择", default=default_choice)
+        normalized = normalize_local_api_mode(selected)
+        if normalized:
+            return normalized
+        error_console.print("[red]请输入1或2；也可输入responses或chat_completions。[/red]")
 
 
 def _version_callback(value: bool) -> None:
@@ -136,13 +151,13 @@ def _remote_client(
         requested = normalize_server_url(requested)
         if not profile or profile.get("server") != requested:
             raise typer.BadParameter(
-                "该服务器尚未登录，请先执行knowflow auth login。"
+                "该服务器尚未登录，请先执行agentlens auth login。"
             )
     elif profile:
         requested = str(profile["server"])
     if not requested:
         raise typer.BadParameter(
-            "尚未登录远程服务器，请先执行knowflow auth login <服务器地址>；"
+            "尚未登录远程服务器，请先执行agentlens auth login <服务器地址>；"
             "本地直连请显式使用--local。"
         )
     if not profile or not profile.get("token"):
@@ -415,7 +430,9 @@ def configure(
     from .services.local_cli_runtime import (
         LocalCliConfigError,
         LocalCliConfigStore,
-        test_local_connection,
+        explain_local_connection_error,
+        normalize_local_api_mode,
+        probe_local_connection,
         validate_local_config,
     )
 
@@ -432,10 +449,17 @@ def configure(
     resolved_provider = (
         provider or current.get("provider") or "custom"
     )
-    resolved_mode = api_mode or typer.prompt(
-        "接口协议",
-        default=current.get("api_mode") or "responses",
-    )
+    if api_mode is None:
+        resolved_mode = _prompt_local_api_mode(
+            str(current.get("api_mode") or "responses")
+        )
+    else:
+        resolved_mode = normalize_local_api_mode(api_mode)
+        if resolved_mode is None:
+            error_console.print(
+                "[red]配置失败：--api-mode必须是responses或chat_completions。[/red]"
+            )
+            raise typer.Exit(2)
     resolved_key = api_key or typer.prompt(
         "API Key",
         hide_input=True,
@@ -452,7 +476,43 @@ def configure(
         validated = validate_local_config(candidate)
         if not skip_test:
             with console.status("正在检查模型连接..."):
-                detail = test_local_connection(validated)
+                result = probe_local_connection(validated)
+            if result["status"] != "available":
+                recommended = result.get("recommendedApiMode")
+                if not recommended:
+                    suffix = (
+                        "\n已同时检查Responses API与Chat Completions，均不可用。"
+                        if len(result.get("checkedProtocols") or []) > 1
+                        else ""
+                    )
+                    raise LocalCliConfigError(
+                        explain_local_connection_error(result["message"])
+                        + suffix
+                    )
+                label = (
+                    "Chat Completions"
+                    if recommended == "chat_completions"
+                    else "Responses API"
+                )
+                console.print(
+                    f"[yellow]当前协议连接失败，但已检测到{label}可用。[/yellow]"
+                )
+                if not sys.stdin.isatty() or not typer.confirm(
+                    f"改用{label}并保存",
+                    default=True,
+                ):
+                    raise LocalCliConfigError(
+                        explain_local_connection_error(result["message"])
+                        + f"\n已检测到{label}可用，请改用--api-mode {recommended}。"
+                    )
+                validated["api_mode"] = recommended
+                detail = next(
+                    str(item.get("message") or "连接可用")
+                    for item in result["checkedProtocols"]
+                    if item.get("apiMode") == recommended
+                )
+            else:
+                detail = str(result["message"])
             console.print(f"[green]{detail}[/green]")
         store.save(**validated)
     except LocalCliConfigError as exc:
@@ -487,7 +547,7 @@ def update() -> None:
             "请重新运行官网安装命令。[/red]"
         )
         raise typer.Exit(result.returncode or 1)
-    console.print("[green]更新完成。[/green]请重新运行knowflow。")
+    console.print("[green]更新完成。[/green]请重新运行agentlens。")
 
 
 @auth_app.command("login")
@@ -832,14 +892,33 @@ def run_task(
 
 @app.command()
 def resume(
-    run_id: str = typer.Argument(..., help="Interrupted run ID."),
+    run_id: str | None = typer.Argument(
+        None,
+        help="Interrupted run ID. Omit it to choose a previous conversation.",
+    ),
     user_id: int | None = typer.Option(None, "--user-id"),
     json_events: bool = typer.Option(False, "--events", "--json"),
     assume_yes: bool = typer.Option(False, "--yes"),
     server: str | None = typer.Option(None, "--server"),
     local: bool = typer.Option(False, "--local"),
 ) -> None:
-    """Resume an interrupted or approval-paused Agent run."""
+    """Resume a previous conversation or an interrupted Agent run."""
+    if run_id is None:
+        chat(
+            user_id=user_id,
+            model_id=None,
+            skill_id=None,
+            tools=True,
+            assume_yes=assume_yes,
+            server=server,
+            local=local,
+            remote_mode=False,
+            plain=False,
+            workspace=None,
+            resume_session=True,
+            continue_session=False,
+        )
+        return
     renderer = EventRenderer(json_events=json_events)
     try:
         remote = _remote_client(server, local=local)
@@ -992,8 +1071,22 @@ def chat(
         "-w",
         help="Set the local workspace root for this Agent session.",
     ),
+    resume_session: bool = typer.Option(
+        False,
+        "--resume",
+        help="Open the conversation picker after the TUI starts.",
+    ),
+    continue_session: bool = typer.Option(
+        False,
+        "--continue",
+        help="Continue the most recent conversation in this workspace.",
+    ),
 ) -> None:
     """Start an interactive Agent conversation."""
+    if resume_session and continue_session:
+        raise typer.BadParameter("--resume和--continue不能同时使用。")
+    if plain and (resume_session or continue_session):
+        raise typer.BadParameter("--resume和--continue需要全屏TUI。")
     if workspace is not None and (server or remote_mode):
         raise typer.BadParameter("--workspace仅适用于本地模式。")
     if workspace is not None:
@@ -1028,6 +1121,9 @@ def chat(
                 skill_id=skill_id,
             ),
             assume_yes=assume_yes,
+            startup_action=(
+                "continue" if continue_session else "resume" if resume_session else ""
+            ),
         )
         return
     history_path = Path.home() / ".knowflow" / "cli-history"
@@ -1042,12 +1138,12 @@ def chat(
     current_model_id = model_id
     conversation: list[dict[str, Any]] = []
     console.print(
-        "[dim]输入/exit退出，/new开始新会话。模型配置使用knowflow configure。[/dim]"
+        "[dim]输入/exit退出，/new开始新会话。模型配置使用agentlens configure。[/dim]"
     )
     with nullcontext():
         while True:
             try:
-                question = session.prompt("knowflow> ").strip()
+                question = session.prompt("agentlens> ").strip()
             except (EOFError, KeyboardInterrupt):
                 break
             if not question:
@@ -1062,7 +1158,7 @@ def chat(
             if question.startswith("/model"):
                 if remote is None:
                     console.print(
-                        "[dim]本地模型由knowflow configure管理。[/dim]"
+                        "[dim]本地模型由agentlens configure管理。[/dim]"
                     )
                     continue
                 parts = question.split(maxsplit=1)
@@ -1443,9 +1539,9 @@ def add_mcp(
         raise typer.Exit(1) from exc
     console.print(f"已添加MCP：{item['name']}（ID {item['id']}）")
     if normalized == "oauth":
-        console.print(f"下一步：knowflow mcp oauth {item['id']}")
+        console.print(f"下一步：agentlens mcp oauth {item['id']}")
     else:
-        console.print(f"下一步：knowflow mcp connect {item['id']}")
+        console.print(f"下一步：agentlens mcp connect {item['id']}")
 
 
 @mcp_app.command("connect")
@@ -1625,7 +1721,7 @@ def configure_memory(
             "embedder_api_key": resolved_embed_key,
         },
     )
-    console.print("Mem0配置已保存，运行knowflow memory enable启用。")
+    console.print("Mem0配置已保存，运行agentlens memory enable启用。")
 
 
 @memory_app.command("enable")

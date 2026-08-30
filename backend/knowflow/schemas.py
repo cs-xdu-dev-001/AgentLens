@@ -94,9 +94,25 @@ class SessionUpdate(BaseModel):
     title: str = Field(min_length=1)
 
 
+class SessionPinUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pinned: bool
+
+
+class SessionArchiveUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archived: bool
+
+
 class SessionBranchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, max_length=255)
+    beforeMessageId: int | None = Field(default=None, gt=0)
+
+
+class SessionContextCompactIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instructions: str = Field(default="", max_length=2000)
 
 
 class SyncTaskIn(BaseModel):

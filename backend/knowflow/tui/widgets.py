@@ -152,7 +152,7 @@ def tool_error_presentation(code: Any, message: Any) -> tuple[str, str]:
         "tool_timeout": ("命令执行超时", "缩小任务或提高命令超时时间后重试。"),
         "sandbox_runtime_unavailable": (
             "SRT不可用",
-            "运行knowflow doctor --cli检查SRT及Linux沙箱依赖。",
+            "运行agentlens doctor --cli检查SRT及Linux沙箱依赖。",
         ),
     }
     if normalized in known:

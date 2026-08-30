@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
+import { safeAgentText } from "../controller/agentEvents.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 
 
 function parentPath(path) {
@@ -51,6 +53,7 @@ export function WorkbenchPage({ active = false }) {
       await workspaceApi.upload(target, file, false);
       notifyToast("文件已加入工作区");
       await load(path);
+      window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated"));
     } catch (error) {
       notifyError(error, "上传失败");
     }
@@ -62,12 +65,26 @@ export function WorkbenchPage({ active = false }) {
       await workspaceApi.delete(entry.path);
       notifyToast("文件已删除");
       await load(path);
+      window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated"));
     } catch (error) {
       notifyError(error, "删除失败");
     }
   };
 
   const crumbs = path.split("/").filter(Boolean);
+  const projectInstructionPaths = Array.isArray(status?.projectInstructions?.sources)
+    ? status.projectInstructions.sources
+      .map((item) => safeAgentText(item?.path, 120))
+      .filter(Boolean)
+    : [];
+  const git = workspaceGitPresentation(status);
+  const gitStateClass = git.state === "conflict"
+    ? "danger"
+    : git.state === "behind"
+      ? "warning"
+      : git.state === "ready"
+        ? "ready"
+        : "";
 
   return (
     <section className={active ? "page active" : "page"} id="page-workspace">
@@ -82,9 +99,39 @@ export function WorkbenchPage({ active = false }) {
         </header>
 
         <div className="workspace-runtime-strip" role="status">
-          <span className={status?.enabled ? "ready" : ""}>{status?.enabled ? "工作区已启用" : "工作区未启用"}</span>
+          <span className={status?.enabled && status?.isolation === "user" ? "ready" : ""}>{status?.enabled && status?.isolation === "user" ? "隔离工作区已启用" : "工作区隔离状态未知"}</span>
+          <span className={gitStateClass} title={git.title}>{git.repository ? `Git：${git.label}` : "未检测到Git仓库"}</span>
+          <span className={status?.protectedPatterns?.length ? "ready" : ""}>{status?.protectedPatterns?.length ? "敏感路径受保护" : "敏感路径保护未知"}</span>
           <span className={status?.sandboxReady ? "ready" : ""}>{status?.sandboxReady ? "Linux沙箱可用" : "命令执行未启用"}</span>
+          <span className={projectInstructionPaths.length ? "ready" : ""} title={projectInstructionPaths.join("、")}>{projectInstructionPaths.length ? `项目指令：${projectInstructionPaths.join("、")}` : "未发现项目指令"}</span>
         </div>
+
+        <section className="workspace-boundary-card" aria-label="Agent可见范围">
+          <div className="workspace-boundary-head">
+            <strong>Agent可见范围</strong>
+            <span className={status?.enabled ? "ready" : "warning"}>
+              {status?.scopeLabel || (status?.enabled ? "当前用户隔离工作区" : "工作区已关闭")}
+            </span>
+          </div>
+          <div className="workspace-boundary-grid">
+            <div>
+              <span>工作目录</span>
+              <strong>{status?.cwdLabel || "工作区根目录"}</strong>
+            </div>
+            <div>
+              <span>工作区类型</span>
+              <strong>{({ project: "项目", directory: "目录", home: "HOME" }[status?.workspaceKind] || "受控目录")}</strong>
+            </div>
+            <div>
+              <span>允许目录</span>
+              <strong>{`${Math.max(0, Number(status?.allowedDirectoryCount) || 0)}个`}</strong>
+            </div>
+            <div>
+              <span>保护规则</span>
+              <strong>{status?.protectedPatterns?.length ? status.protectedPatterns.join(" · ") : "未知"}</strong>
+            </div>
+          </div>
+        </section>
 
         <nav className="workspace-breadcrumb" aria-label="工作区路径">
           <button type="button" onClick={() => load("")}>工作区</button>

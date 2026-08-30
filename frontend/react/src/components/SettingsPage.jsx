@@ -6,7 +6,7 @@ import { ModelConfigForm } from "./ModelConfigForm.jsx";
 import { ModelListPanel } from "./ModelListPanel.jsx";
 import { SettingsHeader } from "./SettingsHeader.jsx";
 import { notifyError, notifyToast } from "./errorFeedback.js";
-import { connectionResultStatus } from "./modelConnectionState.js";
+import { connectionResultPresentation, connectionResultStatus } from "./modelConnectionState.js";
 
 
 const defaultModelFormValues = {
@@ -327,13 +327,16 @@ export function SettingsPage({ active = false }) {
         recoveredLegacySampling,
       );
       const connectionAvailable = connectionResultStatus(result) === "success";
-      setConnectionResult({
+      const nextResult = {
+        ...result,
         modelId,
         status: connectionAvailable ? "success" : "error",
         message,
         latencyMs: Date.now() - startedAt,
-      });
-      notifyToast(message, {
+      };
+      setConnectionResult(nextResult);
+      const presentation = connectionResultPresentation(nextResult);
+      notifyToast(connectionAvailable ? message : `${presentation.title}：${presentation.action}`, {
         duration: connectionAvailable ? 2400 : 4200,
         tone: connectionAvailable ? "neutral" : "error",
       });
@@ -343,10 +346,30 @@ export function SettingsPage({ active = false }) {
       setConnectionResult({
         modelId,
         status: "error",
+        code: "connection_failed",
         message: error?.message || "检查模型失败",
         latencyMs: Date.now() - startedAt,
       });
       notifyError(error, "检查模型失败");
+    } finally {
+      setBusyModelId(null);
+    }
+  };
+
+  const handleProtocolApply = async (modelId, apiMode) => {
+    const normalizedMode = normalizeApiMode(apiMode);
+    setBusyModelId(modelId);
+    try {
+      await modelConfigApi.update(modelId, { apiMode: normalizedMode });
+      setConnectionResult(null);
+      await loadModels(modelId);
+      requestModelOptionsRefresh();
+      notifyToast(
+        `已改用${normalizedMode === "responses" ? "Responses API" : "Chat Completions"}，正在重新检查`,
+      );
+      await handleModelTest(modelId);
+    } catch (error) {
+      notifyError(error, "切换接口协议失败");
     } finally {
       setBusyModelId(null);
     }
@@ -423,6 +446,7 @@ export function SettingsPage({ active = false }) {
                 onDeleteModel={handleDeleteModel}
                 onModelEdit={handleModelEdit}
                 onModelTest={handleModelTest}
+                onProtocolApply={handleProtocolApply}
                 onSetDefaultModel={handleSetDefaultModel}
               />
             )}

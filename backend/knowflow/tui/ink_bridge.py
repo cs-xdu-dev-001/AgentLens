@@ -15,22 +15,26 @@ from ..services.agent_event_protocol import (
     AGENT_EVENT_SCHEMA_VERSION,
     normalize_agent_event,
 )
+from ..services.agent_failure import classify_agent_failure
 from ..services.agent_execution import AgentExecution
 from ..services.agent_trace import sanitize_trace_value
 from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
 from ..services.local_cli_runtime import local_data_dir
 from .backend import TuiBackend
-from .state import PromptHistoryStore
+from .state import PromptHistoryStore, PromptQueueStore
 
 
-PROTOCOL_VERSION = 11
+PROTOCOL_VERSION = 16
 
 
 def _history_scope(backend: TuiBackend) -> str:
     """Keep prompt history local and isolated to the active workspace/server."""
     remote_client = getattr(backend, "remote_client", None)
     if remote_client is not None:
-        source = f"remote:{remote_client.server}"
+        token_fingerprint = sha256(
+            str(getattr(remote_client, "token", "") or "anonymous").encode("utf-8")
+        ).hexdigest()[:24]
+        source = f"remote:{remote_client.server}:{token_fingerprint}"
     else:
         status = backend.workspace_status()
         root = str(status.get("projectRoot") or status.get("cwd") or Path.cwd())
@@ -49,7 +53,10 @@ def _public_session(value: dict[str, Any]) -> dict[str, Any]:
     """Bound session summaries before they cross the terminal protocol."""
     return {
         "runId": str(value.get("runId") or "")[:80],
+        "sessionId": str(value.get("sessionId") or "")[:80],
         "title": str(sanitize_trace_value(value.get("title"), max_chars=160) or ""),
+        "pinned": bool(value.get("pinned") or value.get("is_pinned")),
+        "archived": bool(value.get("archived") or value.get("is_archived")),
         "status": str(value.get("status") or "")[:40],
         "updatedAt": value.get("updatedAt"),
         "cwd": str(sanitize_trace_value(value.get("cwd"), max_chars=240) or ""),
@@ -79,6 +86,7 @@ class InkRuntimeBridge:
         self.output_stream = output_stream
         self._write_lock = Lock()
         self._state_lock = Lock()
+        self._queue_lock = Lock()
         self._running = False
         self._stopping = False
         self._worker_thread: Thread | None = None
@@ -93,6 +101,9 @@ class InkRuntimeBridge:
         self._updating_cli = False
         self.history_store = PromptHistoryStore(
             local_data_dir() / "history" / f"{_history_scope(backend)}.jsonl"
+        )
+        self.queue_store = PromptQueueStore(
+            local_data_dir() / "queues" / f"{_history_scope(backend)}.json"
         )
 
     def send(self, payload: dict[str, Any]) -> None:
@@ -111,9 +122,25 @@ class InkRuntimeBridge:
         with self._state_lock:
             return (
                 self._running
+                or self._pending is not None
                 or self._cancel_thread is not None
                 or self._stopping
             )
+
+    def _set_running(self, value: bool) -> bool:
+        with self._state_lock:
+            if value:
+                if (
+                    self._running
+                    or self._pending is not None
+                    or self._stopping
+                    or self._cancel_thread is not None
+                ):
+                    return False
+                self._running = True
+                return True
+            self._running = False
+            return True
 
     def _agent_event(self, event: dict[str, Any]) -> None:
         event = normalize_agent_event(event, run_id=self._run_id or None)
@@ -348,15 +375,29 @@ class InkRuntimeBridge:
         return list(files) if isinstance(files, list) else []
 
     def _execute(self, callback: Any) -> None:
+        request_id = self._request_id
         while True:
+            terminal = False
             try:
                 with redirect_stdout(sys.stderr):
                     execution = callback()
                 self._complete(execution)
+                terminal = (
+                    not execution.paused
+                    or self._cancel_requested
+                    or self._stopping
+                )
             except Exception as exc:
+                terminal = True
                 message = self._public_error(exc)
-                error_code = str(type(exc).__name__ or "turn_failed")[:80]
-                recovery_actions = (
+                failure = classify_agent_failure(exc)
+                error_code = str(
+                    failure["code"]
+                    if failure["code"] != "agent_run_failed"
+                    else type(exc).__name__
+                    or "turn_failed"
+                )[:80]
+                recovery_actions = ["fix"] if not failure["retryable"] else (
                     ["continue", "retry", "fix"]
                     if self._run_id
                     else ["retry", "fix"]
@@ -366,6 +407,7 @@ class InkRuntimeBridge:
                         "type": "error",
                         "errorCode": error_code,
                         "message": message,
+                        "target": failure.get("target"),
                         "recoveryActions": recovery_actions,
                     }
                 )
@@ -376,6 +418,7 @@ class InkRuntimeBridge:
                         "runId": self._run_id,
                         "message": message,
                         "errorCode": error_code,
+                        "failureTarget": failure.get("target"),
                         "recoveryActions": recovery_actions,
                     }
                 )
@@ -415,6 +458,17 @@ class InkRuntimeBridge:
                     if self._worker_thread is current_thread():
                         self._worker_thread = None
                     self._running = False
+            if terminal and next_callback is None:
+                with self._queue_lock:
+                    persisted = self.queue_store.resolve(request_id)
+                if not persisted:
+                    self.send(
+                        {
+                            "type": "queue_failed",
+                            "action": "resolve",
+                            "message": "任务已结束，但本地队列回执无法保存。",
+                        }
+                    )
             if next_callback is None:
                 return
             callback = next_callback
@@ -533,6 +587,60 @@ class InkRuntimeBridge:
             }
         )
 
+    def _queue(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "sync")
+        if action == "sync":
+            with self._queue_lock:
+                saved = self.queue_store.sync(
+                    message.get("items"),
+                    paused=bool(message.get("paused")),
+                )
+                snapshot = self.queue_store.load() if saved else None
+            self.send(
+                {
+                    "type": "queue_saved" if saved else "queue_failed",
+                    "action": action,
+                    "count": len(snapshot["items"]) if snapshot else 0,
+                    "paused": bool(snapshot["paused"]) if snapshot else False,
+                    "message": (
+                        "待发送任务已保存。"
+                        if saved
+                        else "待发送任务无法保存，仅在本次运行中可用。"
+                    ),
+                }
+            )
+            return
+        if action == "claim":
+            item_id = str(message.get("itemId") or "")[:100]
+            request_id = str(message.get("requestId") or "")[:100]
+            with self._queue_lock:
+                saved = self.queue_store.claim(
+                    item_id,
+                    request_id,
+                    fallback_item=message.get("item"),
+                )
+            self.send(
+                {
+                    "type": "queue_claimed" if saved else "queue_failed",
+                    "action": action,
+                    "itemId": item_id,
+                    "requestId": request_id,
+                    "message": (
+                        "任务已由运行时领取。"
+                        if saved
+                        else "任务领取状态无法保存，本次执行仍会继续。"
+                    ),
+                }
+            )
+            return
+        self.send(
+            {
+                "type": "queue_failed",
+                "action": action,
+                "message": "未知队列操作。",
+            }
+        )
+
     def _approve(self, message: dict[str, Any]) -> None:
         decision = str(message.get("decision") or "deny")
         if decision not in {"allow_once", "allow_session", "deny"}:
@@ -630,7 +738,7 @@ class InkRuntimeBridge:
                 if result.returncode != 0:
                     raise RuntimeError(
                         f"pipx更新失败（退出码{result.returncode}）。"
-                        "请退出后在终端运行knowflow update查看详情。"
+                        "请退出后在终端运行agentlens update查看详情。"
                     )
                 self.send(
                     {
@@ -655,12 +763,32 @@ class InkRuntimeBridge:
 
     def _workspace(self, message: dict[str, Any]) -> None:
         action = str(message.get("action") or "status")
-        if action in {"add", "cd", "undo"} and self._runtime_busy():
-            self.send({"type": "busy", "message": "请等待当前任务结束后再修改工作区。"})
+        request_id = str(message.get("requestId") or "").strip()
+        if action in {"switch", "add", "cd", "undo"} and self._runtime_busy():
+            if action == "switch":
+                self.send(
+                    {
+                        "type": "workspace_failed",
+                        "action": action,
+                        "requestId": request_id,
+                        "message": "当前任务尚未结束，请先完成、拒绝或取消后再切换工作区。",
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "busy",
+                        "message": "请等待当前任务结束后再修改工作区。",
+                    }
+                )
             return
         try:
             if action == "status":
                 result = self.backend.workspace_status()
+            elif action == "switch":
+                result = self.backend.workspace_switch_root(
+                    str(message.get("path") or "")
+                )
             elif action == "add":
                 result = self.backend.workspace_add_directory(str(message.get("path") or ""))
             elif action == "cd":
@@ -679,17 +807,42 @@ class InkRuntimeBridge:
                 {
                     "type": "workspace_failed",
                     "action": action,
+                    "requestId": request_id,
                     "message": self._public_error(exc),
                 }
             )
         else:
-            self.send(
-                {
-                    "type": "workspace_result",
-                    "action": action,
-                    "result": _public_value(result, max_chars=100_000),
-                }
-            )
+            payload = {
+                "type": "workspace_result",
+                "action": action,
+                "requestId": request_id,
+                "result": _public_value(result, max_chars=100_000),
+            }
+            if action == "switch":
+                self._request_id = ""
+                self._run_id = ""
+                self.history_store = PromptHistoryStore(
+                    local_data_dir()
+                    / "history"
+                    / f"{_history_scope(self.backend)}.jsonl"
+                )
+                self.queue_store = PromptQueueStore(
+                    local_data_dir()
+                    / "queues"
+                    / f"{_history_scope(self.backend)}.json"
+                )
+                with self._queue_lock:
+                    queue_snapshot = self.queue_store.restore()
+                payload["history"] = _public_history(self.history_store.load())
+                payload["queue"] = queue_snapshot["items"]
+                payload["queuePaused"] = bool(queue_snapshot["paused"])
+                payload["queueRecovered"] = int(queue_snapshot["recovered"])
+                payload["queueDurable"] = bool(queue_snapshot["durable"])
+                payload["sessions"] = _public_sessions(
+                    self.backend.list_sessions(limit=8)
+                )
+                self.send({"type": "session_reset"})
+            self.send(payload)
 
     def _resume_session(self, message: dict[str, Any]) -> None:
         run_id = str(message.get("runId") or "")
@@ -703,14 +856,40 @@ class InkRuntimeBridge:
         self._run_id = run_id
         self._pending = None
         self._queued_decision = None
-        self._start(lambda: self.backend.restore_session(run_id, self._agent_event))
+        session_id = str(message.get("sessionId") or "")
+        status = str(message.get("status") or "")
+        if session_id or status:
+            callback = lambda: self.backend.restore_session(
+                run_id,
+                self._agent_event,
+                session_id=session_id,
+                status=status,
+            )
+        else:
+            callback = lambda: self.backend.restore_session(
+                run_id,
+                self._agent_event,
+            )
+        self._start(callback)
 
     def _branch_session(self, message: dict[str, Any]) -> None:
         if self._runtime_busy():
             self.send({"type": "busy", "message": "请等待当前任务结束后再创建分支。"})
             return
         try:
-            result = self.backend.branch_session(str(message.get("title") or ""))
+            result = self.backend.branch_session(
+                str(message.get("title") or ""),
+                before_message_id=(
+                    int(message["messageId"])
+                    if message.get("messageId") is not None
+                    else None
+                ),
+                before_message_index=(
+                    int(message["messageIndex"])
+                    if message.get("messageIndex") is not None
+                    else None
+                ),
+            )
         except Exception as exc:
             self.send(
                 {
@@ -723,6 +902,27 @@ class InkRuntimeBridge:
                 {
                     "type": "session_branched",
                     "result": _public_value(result, max_chars=200_000),
+                }
+            )
+
+    def _rewind_points(self) -> None:
+        if self._running:
+            self.send({"type": "busy", "message": "请等待当前任务结束后再回退会话。"})
+            return
+        try:
+            points = self.backend.rewind_points()
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "rewind_points_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "rewind_points",
+                    "points": _public_value(points, max_chars=100_000),
                 }
             )
 
@@ -746,6 +946,84 @@ class InkRuntimeBridge:
                     "result": _public_value(result, max_chars=4_000),
                 }
             )
+
+    def _pin_session(self, message: dict[str, Any]) -> None:
+        try:
+            result = self.backend.set_session_pinned(
+                bool(message.get("pinned")),
+                str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_pin_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_pinned",
+                    "result": _public_value(result, max_chars=4_000),
+                }
+            )
+
+    def _archive_session(self, message: dict[str, Any]) -> None:
+        try:
+            result = self.backend.set_session_archived(
+                bool(message.get("archived")),
+                str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_archive_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            self.send(
+                {
+                    "type": "session_archived",
+                    "result": _public_value(result, max_chars=4_000),
+                }
+            )
+
+    def _delete_session(self, message: dict[str, Any]) -> None:
+        if self._running:
+            self.send(
+                {
+                    "type": "busy",
+                    "message": "请先取消当前任务，再永久删除会话。",
+                }
+            )
+            return
+        try:
+            result = self.backend.delete_session(
+                str(message.get("runId") or ""),
+                str(message.get("sessionId") or ""),
+            )
+        except Exception as exc:
+            self.send(
+                {
+                    "type": "session_delete_failed",
+                    "message": self._public_error(exc),
+                }
+            )
+        else:
+            public_result = _public_value(result, max_chars=4_000)
+            self.send(
+                {
+                    "type": "session_deleted",
+                    "result": public_result,
+                }
+            )
+            if bool(result.get("current")):
+                self._request_id = ""
+                self._run_id = ""
+                self.send({"type": "session_reset"})
 
     def _export_session(self, message: dict[str, Any]) -> None:
         if self._runtime_busy():
@@ -858,6 +1136,85 @@ class InkRuntimeBridge:
                 }
             )
 
+    def _local_model_config(self, message: dict[str, Any]) -> None:
+        action = str(message.get("action") or "get")
+        if action == "get":
+            try:
+                config = self.backend.local_model_configuration()
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "local_model_config_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            else:
+                self.send(
+                    {
+                        "type": "local_model_config",
+                        "config": _public_value(config, max_chars=4_000),
+                    }
+                )
+            return
+        if action != "test_and_save":
+            self.send(
+                {
+                    "type": "local_model_config_failed",
+                    "action": action,
+                    "message": "未知本地模型配置操作。",
+                }
+            )
+            return
+        if not self._set_running(True):
+            self.send(
+                {
+                    "type": "local_model_config_failed",
+                    "action": action,
+                    "message": "请等待当前任务结束后再修改模型配置。",
+                }
+            )
+            return
+        raw = message.get("config")
+        candidate = dict(raw) if isinstance(raw, dict) else {}
+        self.send({"type": "local_model_config_testing"})
+
+        def test_and_save() -> None:
+            try:
+                with redirect_stdout(sys.stderr):
+                    result = self.backend.configure_local_model(candidate)
+                if result.get("saved") is False:
+                    self.send(
+                        {
+                            "type": "local_model_config_recommended",
+                            **_public_value(result, max_chars=8_000),
+                        }
+                    )
+                else:
+                    self.send(
+                        {
+                            "type": "local_model_config_saved",
+                            **_public_value(result, max_chars=8_000),
+                            "models": _public_value(
+                                self.backend.model_catalog(),
+                                max_chars=20_000,
+                            ),
+                        }
+                    )
+            except Exception as exc:
+                self.send(
+                    {
+                        "type": "local_model_config_failed",
+                        "action": action,
+                        "message": self._public_error(exc),
+                    }
+                )
+            finally:
+                candidate.clear()
+                self._set_running(False)
+
+        Thread(target=test_and_save, daemon=True).start()
+
     def handle(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "")
         if message_type == "submit":
@@ -910,7 +1267,10 @@ class InkRuntimeBridge:
             self._workspace(message)
         elif message_type == "sessions":
             try:
-                sessions = self.backend.list_sessions(limit=int(message.get("limit") or 20))
+                sessions = self.backend.list_sessions(
+                    limit=int(message.get("limit") or 20),
+                    archived=bool(message.get("archived")),
+                )
             except Exception as exc:
                 self.send({"type": "sessions_failed", "message": self._public_error(exc)})
             else:
@@ -919,16 +1279,28 @@ class InkRuntimeBridge:
             self._resume_session(message)
         elif message_type == "branch_session":
             self._branch_session(message)
+        elif message_type == "rewind_points":
+            self._rewind_points()
         elif message_type == "rename_session":
             self._rename_session(message)
+        elif message_type == "session_pin":
+            self._pin_session(message)
+        elif message_type == "session_archive":
+            self._archive_session(message)
+        elif message_type == "session_delete":
+            self._delete_session(message)
         elif message_type == "export_session":
             self._export_session(message)
         elif message_type == "context":
             self._context(message)
         elif message_type == "history":
             self._history(message)
+        elif message_type == "queue":
+            self._queue(message)
         elif message_type == "models":
             self._models(message)
+        elif message_type == "local_model_config":
+            self._local_model_config(message)
         elif message_type == "shutdown":
             self._shutdown()
         else:
@@ -936,6 +1308,8 @@ class InkRuntimeBridge:
 
     def run(self) -> None:
         workspace = _public_value(self.backend.workspace_status(), max_chars=20_000)
+        with self._queue_lock:
+            queue_snapshot = self.queue_store.restore()
         try:
             models = _public_value(self.backend.model_catalog(), max_chars=20_000)
         except Exception:
@@ -960,6 +1334,10 @@ class InkRuntimeBridge:
                 "workspace": workspace,
                 "sessions": _public_sessions(self.backend.list_sessions(limit=8)),
                 "history": _public_history(self.history_store.load()),
+                "queue": queue_snapshot["items"],
+                "queuePaused": bool(queue_snapshot["paused"]),
+                "queueRecovered": int(queue_snapshot["recovered"]),
+                "queueDurable": bool(queue_snapshot["durable"]),
                 "models": models,
             }
         )
@@ -1018,7 +1396,7 @@ def _backend(config: dict[str, Any]) -> TuiBackend:
             else ""
         )
         if not token:
-            raise RuntimeError("远程登录已失效，请重新运行knowflow auth login。")
+            raise RuntimeError("远程登录已失效，请重新运行agentlens auth login。")
         remote = RemoteAgentClient(server, token=token)
         local_agent = None
     else:

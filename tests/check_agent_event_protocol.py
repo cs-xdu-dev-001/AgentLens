@@ -53,6 +53,15 @@ def main() -> None:
     assert "org-" not in json.dumps(rate_limited)
     assert "ak-" not in json.dumps(rate_limited)
 
+    parameter_error = normalize_agent_event({
+        "type": "error",
+        "errorCode": "ResponsesProtocolError",
+        "message": "HTTP 400: invalid temperature: only 1 is allowed for this model",
+    })
+    assert parameter_error["error"]["code"] == "incompatible_parameters"
+    assert parameter_error["error"]["target"] == "settings"
+    assert parameter_error["recoveryActions"] == ["fix"]
+
     snapshot = normalize_agent_event({
         "type": "run_snapshot",
         "run": {
@@ -71,6 +80,7 @@ def main() -> None:
         "status": "running",
         "headline": "检查 [REDACTED]",
         "startedAt": "2026-08-13T10:00:00+00:00",
+        "lastActivityAt": snapshot["occurredAt"],
         "totalSteps": 2,
         "completedSteps": 1,
         "progressPercent": 50,
@@ -303,6 +313,7 @@ def main() -> None:
     )
     assert structured_failure["normalizedStatus"] == "failed"
     assert structured_failure["error"]["retryable"] is False
+    assert structured_failure["recoveryActions"] == ["fix"]
 
     stream = AgentEventNormalizer("run_stream")
     first = stream({
@@ -331,6 +342,9 @@ def main() -> None:
         "usage": {"input_tokens": 20, "output_tokens": 30},
     })
     assert usage_updated["runSummary"]["totalTokens"] == 50
+    message_updated = stream({"type": "answer", "content": "正在继续分析"})
+    assert message_updated["eventName"] == "message.delta"
+    assert message_updated["runSummary"]["lastActivityAt"] == message_updated["occurredAt"]
     artifact_updated = stream({
         "type": "reference",
         "url": "https://example.com/news?token=SECRET_VALUE",
@@ -366,6 +380,7 @@ def main() -> None:
         agentEventName as tuiAgentEventName,
         createRunProjection,
         projectRunEvent,
+        userFacingErrorMessage,
       } from './cli-tui/src/protocol.js';
       import {mergeToolCall} from './frontend/react/src/controller/chatFlow.js';
       import {buildAgentRunPresentation} from './frontend/react/src/components/agentRunPresentation.js';
@@ -381,6 +396,12 @@ def main() -> None:
       if (rateLimitError.code !== 'rate_limited') process.exit(67);
       if (!rateLimitError.message.includes('请求过于频繁')) process.exit(68);
       if (/org-|ak-/.test(JSON.stringify(rateLimitError))) process.exit(69);
+      const parameterMessage = userFacingErrorMessage(
+        'ResponsesProtocolError',
+        '执行失败。',
+        'incompatible_parameters',
+      );
+      if (!parameterMessage.includes('清理temperature')) process.exit(70);
       const calls = mergeToolCall(
         [{toolCallId: 'call_1', status: 'running'}],
         {toolCallId: 'call_1', normalizedStatus: 'completed', output: 'ok'},

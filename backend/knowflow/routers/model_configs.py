@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from ..runtime import *
+from ..services.model_gateway import test_model_protocols
 
 router = APIRouter()
 
@@ -116,9 +117,10 @@ def test_model_config(config_id: int, request: Request) -> dict[str, Any]:
     config = fetch_one("SELECT * FROM model_config WHERE id=:id AND user_id=:user_id", {"id": config_id, "user_id": user_id})
     if not config:
         raise HTTPException(status_code=404, detail="Model configuration not found.")
-    status, message = gateway.test(config)
+    result = test_model_protocols(gateway, config)
+    status = result["status"]
     execute("UPDATE model_config SET status=:status, updated_at=:updated_at WHERE id=:id AND user_id=:user_id", {"status": status, "updated_at": now_str(), "id": config_id, "user_id": user_id})
-    return api_success({"status": status, "message": message})
+    return api_success(result)
 
 
 @router.post("/api/model-configs/{config_id}/default", tags=MODEL_TAGS, summary="Set the default model")

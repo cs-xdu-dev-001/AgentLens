@@ -263,6 +263,20 @@ class AgentRunStore:
             conn.execute(
                 text(
                     """
+                    UPDATE chat_session
+                    SET is_archived=0, updated_at=:updated_at
+                    WHERE id=:session_id AND user_id=:user_id
+                    """
+                ),
+                {
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "updated_at": now,
+                },
+            )
+            conn.execute(
+                text(
+                    """
                     INSERT INTO agent_run(
                       id, user_id, session_id, user_message_id,
                       assistant_message_id,

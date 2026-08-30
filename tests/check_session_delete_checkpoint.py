@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.base import empty_checkpoint
+from sqlalchemy import event
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +109,25 @@ def main() -> None:
         trigger_mode="auto",
         run_id="run_checkpoint_alice",
     )
+    alice_message_id = runtime.save_message(
+        alice_session,
+        "assistant",
+        "Alice answer with retrieval metadata",
+    )
+    alice_retrieval_id = runtime.execute(
+        """
+        INSERT INTO retrieval_run(
+          user_id, knowledge_base_id, message_id, query, status
+        ) VALUES (
+          :user_id, 1, :message_id, :query, 'success'
+        )
+        """,
+        {
+            "user_id": alice_id,
+            "message_id": alice_message_id,
+            "query": "private deleted session query",
+        },
+    )
     bob_run = runtime.agent_runs.create_run(
         user_id=bob_id,
         session_id=bob_session,
@@ -185,6 +205,10 @@ def main() -> None:
         "SELECT id FROM agent_run_event WHERE run_id=:run_id",
         {"run_id": bob_run["id"]},
     ) is not None
+    assert runtime.fetch_one(
+        "SELECT id FROM retrieval_run WHERE id=:id",
+        {"id": alice_retrieval_id},
+    ) is None
 
     retry_session = runtime.ensure_session(
         "session-checkpoint-retry", None, None, alice_id
@@ -231,6 +255,51 @@ def main() -> None:
         {"id": retry_run["id"]},
     ) is not None
     assert has_checkpoint(store, alice_id, retry_run["id"])
+
+    atomic_session = runtime.ensure_session(
+        "session-delete-atomic", None, None, alice_id
+    )
+    atomic_message_id = runtime.save_message(
+        atomic_session,
+        "user",
+        "Keep this message when deletion rolls back",
+    )
+    atomic_tool_call_id = runtime.execute(
+        """
+        INSERT INTO agent_tool_call(session_id, tool_name, status)
+        VALUES (:session_id, 'read_workspace_file', 'success')
+        """,
+        {"session_id": atomic_session},
+    )
+
+    def fail_mid_transaction(
+        _conn, _cursor, statement, _parameters, _context, _executemany
+    ):
+        if "DELETE FROM chat_message" in statement:
+            raise RuntimeError("simulated database failure")
+
+    event.listen(runtime.db.engine, "before_cursor_execute", fail_mid_transaction)
+    try:
+        atomic_delete = alice.delete(f"/api/sessions/{atomic_session}")
+    finally:
+        event.remove(
+            runtime.db.engine,
+            "before_cursor_execute",
+            fail_mid_transaction,
+        )
+    assert atomic_delete.status_code == 500, atomic_delete.text
+    assert runtime.fetch_one(
+        "SELECT id FROM chat_session WHERE id=:id",
+        {"id": atomic_session},
+    ) is not None
+    assert runtime.fetch_one(
+        "SELECT id FROM chat_message WHERE id=:id",
+        {"id": atomic_message_id},
+    ) is not None
+    assert runtime.fetch_one(
+        "SELECT id FROM agent_tool_call WHERE id=:id",
+        {"id": atomic_tool_call_id},
+    ) is not None
 
     active_session = runtime.ensure_session(
         "session-checkpoint-active", None, None, alice_id

@@ -43,6 +43,7 @@ finally:
 assert result.exit_code == 0, result.output
 assert "当前版本" in result.output
 assert "更新完成" in result.output
+assert "重新运行agentlens" in result.output
 assert calls == [
     [
         "/opt/pipx/bin/pipx",
@@ -52,9 +53,12 @@ assert calls == [
     ]
 ]
 
-help_result = runner.invoke(cli.app, ["--help"])
-assert help_result.exit_code == 0, help_result.output
-assert "update" in help_result.output
-assert "更新AgentLens CLI到最新版" in help_result.output
+for program_name in ("agentlens", "knowflow"):
+    help_result = runner.invoke(cli.app, ["--help"], prog_name=program_name)
+    assert help_result.exit_code == 0, help_result.output
+    assert "Usage" in help_result.output
+    assert program_name in help_result.output
+    assert "update" in help_result.output
+    assert "更新AgentLens CLI到最新版" in help_result.output
 
 print("cli update checks passed")

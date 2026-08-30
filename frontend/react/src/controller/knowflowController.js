@@ -294,6 +294,7 @@ function bindEvents() {
     removeQueuedChat: chatFlow.removeQueuedChat,
     retrieveQueuedChat: chatFlow.retrieveQueuedChat,
     reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
+    restoreQueuedChats: chatFlow.restoreQueuedChats,
     renderActiveSession,
     renderCurrentUser: authFlow.renderCurrentUser,
     requestComposerReset,
@@ -303,6 +304,7 @@ function bindEvents() {
     resolveKnowledgeBaseId: catalogSync.resolveKnowledgeBaseId,
     restoreActiveSession,
     retryAnswer: chatFlow.retryAnswer,
+    rewindSessionAtMessage: chatFlow.rewindSessionAtMessage,
     resumeQueuedChats: chatFlow.resumeQueuedChats,
     showAppScreen: authFlow.showAppScreen,
     showAuthScreen: authFlow.showAuthScreen,
@@ -322,6 +324,7 @@ async function bootstrap() {
   renderAttachmentTray();
   const authenticated = await authFlow.checkAuth();
   if (authenticated) {
+    chatFlow.restoreQueuedChats();
     await catalogSync.refresh();
     await restoreActiveSession();
   }

@@ -15,10 +15,13 @@ def main() -> None:
         "frontend/react/src/components/AppErrorBoundary.jsx": "重新打开AgentLens",
         "frontend/react/src/components/Sidebar.jsx": "AgentLens",
         "cli-tui/src/app.jsx": "AgentLens",
+        "backend/knowflow/cli.py": 'name="agentlens"',
         "backend/knowflow/app.py": 'title="AgentLens API"',
         "backend/knowflow/tui/app.py": 'TITLE = "AgentLens"',
         "README.md": "# AgentLens",
         "README_EN.md": "# AgentLens",
+        "frontend/package.json": '"name": "agentlens-frontend"',
+        "cli-tui/package.json": '"name": "@agentlens/tui"',
     }
     for relative_path, required in visible_surfaces.items():
         source = read(relative_path)
@@ -29,9 +32,14 @@ def main() -> None:
     assert "KNOWFLOW AI" not in read("frontend/react/src/components/AppErrorBoundary.jsx")
 
     compatibility_surfaces = {
-        "backend/pyproject.toml": ['name = "knowflow-ai"', 'knowflow = "knowflow.cli:main"'],
-        "README.md": ["knowflow update", "`KNOWFLOW_*`"],
-        "install.sh": ["knowflow-ai", "knowflow configure"],
+        "backend/pyproject.toml": [
+            'name = "knowflow-ai"',
+            'agentlens = "knowflow.cli:main"',
+            'knowflow = "knowflow.cli:main"',
+        ],
+        "README.md": ["`agentlens`", "knowflow update", "`KNOWFLOW_*`"],
+        "install.sh": ["knowflow-ai", "agentlens configure", "旧版knowflow命令"],
+        ".github/workflows/ci.yml": ["agentlens --help", "knowflow --help", "agentlens-linux-${GITHUB_SHA}.tar.gz"],
     }
     for relative_path, required_values in compatibility_surfaces.items():
         source = read(relative_path)
