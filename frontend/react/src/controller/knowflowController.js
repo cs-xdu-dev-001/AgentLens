@@ -296,6 +296,7 @@ function bindEvents() {
     reprioritizeQueuedChat: chatFlow.reprioritizeQueuedChat,
     restoreQueuedChats: chatFlow.restoreQueuedChats,
     renderActiveSession,
+    renderAttachmentTray,
     renderCurrentUser: authFlow.renderCurrentUser,
     requestComposerReset,
     requestComposerMenuClose,

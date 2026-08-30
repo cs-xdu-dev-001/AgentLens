@@ -25,6 +25,7 @@ export function bindReactControllerEvents({
   reprioritizeQueuedChat,
   restoreQueuedChats,
   renderActiveSession,
+  renderAttachmentTray,
   renderCurrentUser,
   requestComposerReset,
   requestComposerMenuClose,

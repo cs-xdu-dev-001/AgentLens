@@ -77,6 +77,8 @@ Set-Location ..
 
 命令面板与聊天框的`/`菜单共用命令目录和运行状态过滤。已有弹窗打开时不抢占快捷键；手机端选择`/resume`会打开历史会话抽屉。
 
+未发送的文本和已选Skill会按登录用户与会话自动保存在本机；刷新或切回会话后自动恢复，成功发送后清除。附件只在当前页面的会话切换间暂存，不写入浏览器持久存储；刷新后需重新选择，避免恢复已失效的文件引用。
+
 ## 本地运行文档站
 
 PowerShell：
@@ -133,9 +135,10 @@ npm run build
 
 ```powershell
 node frontend/test/browser/commandPalette.mjs
+node frontend/test/browser/composerDraftPersistence.mjs
 ```
 
-测试会拦截API并使用模拟数据，不修改真实用户数据。截图保存在`tmp/command-palette/`；可用`AGENTLENS_TEST_URL`和`AGENTLENS_TEST_ARTIFACTS`覆盖服务地址与截图目录。
+两项测试都会拦截API并使用模拟数据，不修改真实用户数据。命令面板截图保存在`tmp/command-palette/`；可用`AGENTLENS_TEST_URL`和`AGENTLENS_TEST_ARTIFACTS`覆盖服务地址与截图目录。
 
 ## 常见错误
 

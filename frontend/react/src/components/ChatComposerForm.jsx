@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
+import { useAuth } from "../auth/AuthProvider.jsx";
+import {
+  readComposerDraft,
+  writeComposerDraft,
+} from "../controller/composerDraftPersistence.js";
+import { readActiveSessionPreference } from "../controller/sessionPersistence.js";
 import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
 import { CommandPalette } from "./CommandPalette.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
@@ -59,11 +65,26 @@ async function collectWorkspaceMentionPaths() {
   return Array.isArray(index?.paths) ? index.paths : [];
 }
 
+function initialComposerDraft(user) {
+  const preference = readActiveSessionPreference(user);
+  const sessionId = preference.kind === "session" ? preference.sessionId : "";
+  const stored = readComposerDraft(user, sessionId);
+  return {
+    sessionId,
+    draft: stored.kind === "draft" ? stored.draft : { question: "", skill: null },
+  };
+}
+
 export function ChatComposerForm() {
+  const { user } = useAuth();
+  const draftOwnerId = valueOf(user?.id);
+  const initialDraftRef = useRef(null);
+  if (!initialDraftRef.current) initialDraftRef.current = initialComposerDraft(user);
+  const initialDraft = initialDraftRef.current.draft;
   const [attachments, setAttachments] = useState([]);
   const [availableSkills, setAvailableSkills] = useState([]);
   const [skillsStatus, setSkillsStatus] = useState("idle");
-  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [selectedSkill, setSelectedSkill] = useState(initialDraft.skill);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -77,7 +98,7 @@ export function ChatComposerForm() {
   const [mentionActiveIndex, setMentionActiveIndex] = useState(-1);
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialDraft.question);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [sending, setSending] = useState(false);
   const [queuedChats, setQueuedChats] = useState([]);
@@ -102,6 +123,19 @@ export function ChatComposerForm() {
   const promptStashRef = useRef(null);
   const pendingStashRestoreRef = useRef(false);
   const lastEmptyEscapeAtRef = useRef(0);
+  const sessionSwitchingRef = useRef(false);
+  const draftContextRef = useRef({
+    userId: draftOwnerId,
+    sessionId: initialDraftRef.current.sessionId,
+  });
+  const draftWriteTimerRef = useRef(null);
+  const transientDraftsRef = useRef(new Map());
+  const questionRef = useRef(question);
+  const selectedSkillRef = useRef(selectedSkill);
+  const attachmentsRef = useRef(attachments);
+  questionRef.current = question;
+  selectedSkillRef.current = selectedSkill;
+  attachmentsRef.current = attachments;
 
   const resizeTextarea = (node = textareaRef.current) => {
     if (!node) return;
@@ -132,6 +166,75 @@ export function ChatComposerForm() {
   const updatePromptStash = useCallback((value) => {
     promptStashRef.current = value;
     setPromptStash(value);
+  }, []);
+
+  const flushComposerDraft = useCallback(() => {
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+      draftWriteTimerRef.current = null;
+    }
+    const context = draftContextRef.current;
+    if (!context.userId) return false;
+    return writeComposerDraft(
+      { id: context.userId },
+      context.sessionId,
+      { question: questionRef.current, skill: selectedSkillRef.current },
+    );
+  }, []);
+
+  const restoreSessionDraft = useCallback((sessionId) => {
+    const nextSessionId = valueOf(sessionId).trim();
+    const current = draftContextRef.current;
+    if (!current.userId || nextSessionId === current.sessionId) return;
+    flushComposerDraft();
+    transientDraftsRef.current.set(current.sessionId, {
+      draft: {
+        question: questionRef.current,
+        skill: selectedSkillRef.current,
+      },
+      attachments: attachmentsRef.current.map((attachment) => ({ ...attachment })),
+      promptStash: promptStashRef.current,
+    });
+
+    const transient = transientDraftsRef.current.get(nextSessionId);
+    const stored = readComposerDraft({ id: current.userId }, nextSessionId);
+    const nextDraft = transient?.draft
+      || (stored.kind === "draft" ? stored.draft : null)
+      || { question: "", skill: null };
+    const nextAttachments = (transient?.attachments || [])
+      .map((attachment) => ({ ...attachment }));
+    draftContextRef.current = { ...current, sessionId: nextSessionId };
+    questionRef.current = nextDraft.question;
+    selectedSkillRef.current = nextDraft.skill;
+    attachmentsRef.current = nextAttachments;
+    setQuestion(nextDraft.question);
+    setSelectedSkill(nextDraft.skill);
+    updatePromptStash(transient?.promptStash || null);
+    window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+      detail: { attachments: nextAttachments },
+    }));
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => resizeTextarea());
+  }, [closeMentionPicker, closeSkillPicker, flushComposerDraft, updatePromptStash]);
+
+  const adoptCreatedSession = useCallback((sessionId) => {
+    const nextSessionId = valueOf(sessionId).trim();
+    const current = draftContextRef.current;
+    if (!current.userId || current.sessionId || !nextSessionId) return false;
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+      draftWriteTimerRef.current = null;
+    }
+    writeComposerDraft({ id: current.userId }, "", null);
+    transientDraftsRef.current.delete("");
+    draftContextRef.current = { ...current, sessionId: nextSessionId };
+    writeComposerDraft(
+      { id: current.userId },
+      nextSessionId,
+      { question: questionRef.current, skill: selectedSkillRef.current },
+    );
+    return true;
   }, []);
 
   const restorePromptStash = useCallback(() => {
@@ -231,15 +334,81 @@ export function ChatComposerForm() {
 
   useEffect(() => {
     mountedRef.current = true;
+    const resizeFrame = window.requestAnimationFrame(() => resizeTextarea());
     return () => {
+      window.cancelAnimationFrame(resizeFrame);
       mountedRef.current = false;
       requestGenerationRef.current += 1;
     };
   }, []);
 
   useEffect(() => {
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+    }
+    draftWriteTimerRef.current = window.setTimeout(() => {
+      draftWriteTimerRef.current = null;
+      flushComposerDraft();
+    }, 240);
+    return () => {
+      if (draftWriteTimerRef.current !== null) {
+        window.clearTimeout(draftWriteTimerRef.current);
+        draftWriteTimerRef.current = null;
+      }
+    };
+  }, [flushComposerDraft, question, selectedSkill]);
+
+  useEffect(() => {
+    const current = draftContextRef.current;
+    if (current.userId === draftOwnerId) return;
+    flushComposerDraft();
+    transientDraftsRef.current.clear();
+    const nextInitial = initialComposerDraft({ id: draftOwnerId });
+    const nextDraft = nextInitial.draft;
+    draftContextRef.current = {
+      userId: draftOwnerId,
+      sessionId: nextInitial.sessionId,
+    };
+    questionRef.current = nextDraft.question;
+    selectedSkillRef.current = nextDraft.skill;
+    attachmentsRef.current = [];
+    setQuestion(nextDraft.question);
+    setSelectedSkill(nextDraft.skill);
+    updatePromptStash(null);
+    window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
+      detail: { attachments: [] },
+    }));
+    closeSkillPicker();
+    closeMentionPicker();
+    window.requestAnimationFrame(() => resizeTextarea());
+  }, [
+    closeMentionPicker,
+    closeSkillPicker,
+    draftOwnerId,
+    flushComposerDraft,
+    updatePromptStash,
+  ]);
+
+  useEffect(() => {
+    const handlePageHide = () => flushComposerDraft();
+    const handleActiveSession = (event) => {
+      const sessionId = event.detail?.sessionId || "";
+      if (!sessionSwitchingRef.current && adoptCreatedSession(sessionId)) return;
+      restoreSessionDraft(sessionId);
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("knowflow:react-active-session-updated", handleActiveSession);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("knowflow:react-active-session-updated", handleActiveSession);
+      flushComposerDraft();
+    };
+  }, [adoptCreatedSession, flushComposerDraft, restoreSessionDraft]);
+
+  useEffect(() => {
     const handleSessionSwitchState = (event) => {
       const loading = event.detail?.status === "loading";
+      sessionSwitchingRef.current = loading;
       if (loading) clearApprovalSessionGrants();
       setSwitchingSession(loading);
     };
@@ -251,6 +420,20 @@ export function ChatComposerForm() {
     pickerOpenRef.current = pickerOpen;
     if (pickerOpen && !skillsLoadedRef.current) loadAvailableSkills();
   }, [loadAvailableSkills, pickerOpen]);
+
+  useEffect(() => {
+    if (!selectedSkill) return;
+    if (skillsStatus === "idle") {
+      loadAvailableSkills();
+      return;
+    }
+    if (
+      skillsStatus === "ready"
+      && !availableSkills.some((skill) => skill.id === selectedSkill.id)
+    ) {
+      setSelectedSkill(null);
+    }
+  }, [availableSkills, loadAvailableSkills, selectedSkill, skillsStatus]);
 
   useEffect(() => {
     const stale = Date.now() - mentionsLoadedAtRef.current >= 5_000;
@@ -290,6 +473,8 @@ export function ChatComposerForm() {
       if (pendingStashRestoreRef.current && !nextQuestion && stashed) {
         pendingStashRestoreRef.current = false;
         updatePromptStash(null);
+        questionRef.current = stashed.question;
+        selectedSkillRef.current = stashed.skill || null;
         setQuestion(stashed.question);
         setSelectedSkill(stashed.skill || null);
         closeSkillPicker();
@@ -311,12 +496,21 @@ export function ChatComposerForm() {
         });
         return;
       }
+      const nextSkill = nextSkillId === null
+        ? null
+        : availableSkills.find((skill) => String(skill.id) === String(nextSkillId)) || null;
+      questionRef.current = nextQuestion;
+      selectedSkillRef.current = nextSkill;
+      if (!nextQuestion && !nextSkill) {
+        transientDraftsRef.current.delete(draftContextRef.current.sessionId);
+        writeComposerDraft(
+          { id: draftContextRef.current.userId },
+          draftContextRef.current.sessionId,
+          null,
+        );
+      }
       setQuestion(nextQuestion);
-      setSelectedSkill(
-        nextSkillId === null
-          ? null
-          : availableSkills.find((skill) => String(skill.id) === String(nextSkillId)) || null,
-      );
+      setSelectedSkill(nextSkill);
       closeSkillPicker();
       closeMentionPicker();
       window.requestAnimationFrame(() => {

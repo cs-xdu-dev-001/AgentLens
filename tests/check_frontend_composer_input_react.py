@@ -35,6 +35,8 @@ def main() -> None:
     require("frontend/react/src/components/ChatComposerForm.jsx", "草稿已暂存，发送当前输入后自动恢复", "prompt stash status")
     require("frontend/react/src/components/ChatComposerForm.jsx", "pendingStashRestoreRef", "accepted-submit stash restoration guard")
     require("frontend/react/src/controller/bridgeBindings.js", "knowflow:react-attachments-replace", "stashed attachment restoration bridge")
+    require("frontend/react/src/controller/bridgeBindings.js", "renderAttachmentTray,", "attachment tray bridge dependency")
+    require("frontend/react/src/controller/knowflowController.js", "renderAttachmentTray,", "attachment tray bridge injection")
     require("frontend/react/src/styles.css", ".composer-stash-notice", "prompt stash presentation")
 
     for needle, label in [
