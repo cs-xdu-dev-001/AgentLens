@@ -573,6 +573,12 @@ class ApprovalScreen(ModalScreen[str]):
                 yield Button("本次会话允许", id="allow-session")
                 yield Button("拒绝", id="deny")
 
+    def on_mount(self) -> None:
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
     @on(Button.Pressed)
     def handle_button(self, event: Button.Pressed) -> None:
         decision = {
@@ -589,6 +595,62 @@ class ApprovalScreen(ModalScreen[str]):
 
     def action_allow_session(self) -> None:
         self.dismiss("allow_session")
+
+
+class WorkspaceUndoScreen(ModalScreen[dict[str, str] | None]):
+    BINDINGS = [
+        Binding("enter", "confirm", "确认撤销", show=False),
+        Binding("escape", "cancel", "取消", show=False),
+    ]
+
+    def __init__(self, path: str, operation_id: str, run_id: str) -> None:
+        self.path = redact_public_detail(path or "未命名文件", limit=500) or "未命名文件"
+        self.operation_id = str(operation_id or "").strip()[:200]
+        self.run_id = str(run_id or "").strip()[:200]
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Container(id="workspace-undo-dialog"):
+            yield Static("撤销文件变更", classes="approval-title")
+            yield Static(
+                f"将把{self.path}恢复到这次Agent操作之前。",
+                classes="approval-body",
+            )
+            yield Static(
+                f"操作：{self.operation_id}",
+                classes="approval-detail",
+            )
+            with Horizontal(classes="approval-actions"):
+                yield Button(
+                    "确认撤销",
+                    id="workspace-undo-confirm",
+                    variant="warning",
+                )
+                yield Button("取消", id="workspace-undo-cancel")
+
+    def on_mount(self) -> None:
+        self.set_class(self.size.width < 64, "narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    @on(Button.Pressed)
+    def handle_button(self, event: Button.Pressed) -> None:
+        if str(event.button.id or "") == "workspace-undo-confirm":
+            self.action_confirm()
+        else:
+            self.action_cancel()
+
+    def action_confirm(self) -> None:
+        self.dismiss(
+            {
+                "operationId": self.operation_id,
+                "runId": self.run_id,
+            }
+        )
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class QuestionScreen(ModalScreen[dict[str, Any] | None]):
@@ -866,6 +928,8 @@ class KnowFlowTui(App[None]):
             "/memory": self._cmd_memory,
             "/status": self._cmd_status,
             "/doctor": self._cmd_doctor,
+            "/diff": self._cmd_diff,
+            "/undo": self._cmd_undo,
             "/permissions": self._cmd_permissions,
             "/tasks": self._cmd_tasks,
             "/history": self._cmd_history,
@@ -1534,6 +1598,137 @@ class KnowFlowTui(App[None]):
             display_question=prompt.display_text,
         )
         return True
+
+    async def _cmd_diff(self, args: list[str]) -> bool:
+        path = " ".join(args).strip() or None
+        transcript = self.query_one(TranscriptView)
+        running_snapshot = self.running
+        try:
+            result = await asyncio.to_thread(self.backend.workspace_diff, path)
+        except Exception as exc:
+            await transcript.add_recovery(
+                "无法读取文件变更",
+                redact_public_detail(exc, limit=240),
+                "确认当前会话已运行文件操作后重试 /diff。",
+                error=True,
+            )
+            return True
+        files = [
+            item
+            for item in list(result.get("files") or [])
+            if isinstance(item, dict)
+        ]
+        if not files:
+            await transcript.add_notice(
+                (
+                    "任务仍在执行；当前Diff快照还没有文件变更。"
+                    if running_snapshot
+                    else f"{path}没有可审阅的文件变更。"
+                    if path
+                    else "当前Agent运行没有文件变更。"
+                )
+            )
+            return True
+        if running_snapshot:
+            await transcript.add_notice(
+                "任务仍在执行；以下是当前Diff快照，完成后再次运行 /diff 查看最终结果。"
+            )
+        await transcript.add_workspace_diff(result)
+        return True
+
+    async def _cmd_undo(self, args: list[str]) -> bool:
+        transcript = self.query_one(TranscriptView)
+        if self.running:
+            await transcript.add_notice(
+                "当前任务仍在执行；结束或取消后才能撤销文件变更。",
+                error=True,
+            )
+            return True
+        if len(args) > 1:
+            await transcript.add_notice(
+                "使用示例：/undo [operation-id]",
+                error=True,
+            )
+            return True
+        operation_id = str(args[0] if args else "").strip()
+        try:
+            result = await asyncio.to_thread(self.backend.workspace_diff)
+        except Exception as exc:
+            await transcript.add_recovery(
+                "无法准备撤销",
+                redact_public_detail(exc, limit=240),
+                "运行 /diff 查看当前会话的可撤销项。",
+                error=True,
+            )
+            return True
+        files = [
+            item
+            for item in list(result.get("files") or [])
+            if (
+                isinstance(item, dict)
+                and item.get("operationId")
+                and not item.get("reverted")
+            )
+        ]
+        target = (
+            next(
+                (
+                    item
+                    for item in files
+                    if str(item.get("operationId") or "") == operation_id
+                ),
+                None,
+            )
+            if operation_id
+            else (files[-1] if files else None)
+        )
+        if target is None:
+            await transcript.add_notice(
+                (
+                    f"未找到变更{redact_public_detail(operation_id, limit=120)}；"
+                    "先运行 /diff 查看可撤销项。"
+                    if operation_id
+                    else "当前Agent运行没有可撤销的文件变更。"
+                ),
+                error=bool(operation_id),
+            )
+            return True
+        self.push_screen(
+            WorkspaceUndoScreen(
+                str(target.get("path") or "未命名文件"),
+                str(target.get("operationId") or ""),
+                str(result.get("runId") or ""),
+            ),
+            self._on_workspace_undo_result,
+        )
+        return True
+
+    async def _on_workspace_undo_result(
+        self,
+        selection: dict[str, str] | None,
+    ) -> None:
+        self.query_one(Composer).focus()
+        if not selection:
+            return
+        transcript = self.query_one(TranscriptView)
+        try:
+            result = await asyncio.to_thread(
+                self.backend.workspace_undo,
+                selection.get("operationId") or None,
+                selection.get("runId") or None,
+            )
+        except Exception as exc:
+            await transcript.add_recovery(
+                "文件变更未撤销",
+                redact_public_detail(exc, limit=240),
+                "文件保持不变；运行 /diff 刷新后再试。",
+                error=True,
+            )
+            return
+        path = redact_public_detail(result.get("path") or "文件", limit=500) or "文件"
+        await transcript.add_notice(
+            f"已撤销{path}的这次Agent变更。运行 /diff 查看剩余变更。"
+        )
 
     async def _cmd_history(self, args: list[str]) -> bool:
         part = args[0].lower().strip() if args else "search"

@@ -407,6 +407,7 @@ def main() -> None:
         (project / "multi.md").write_text("old\n", encoding="utf-8")
         workspace.edit_text("multi.md", "old", "middle", replace_all=False)
         workspace.edit_text("multi.md", "middle", "final", replace_all=False)
+        assert context.diff()["files"][-1]["path"] == "multi.md"
         report_change = context.changes("run_workspace")[-1]
         reverted = context.undo_file(
             operation_id=report_change["id"],

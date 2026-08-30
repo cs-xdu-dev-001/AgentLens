@@ -484,19 +484,149 @@ class TuiBackend:
             raise RuntimeError("远程模式不能修改服务器工作目录。")
         return dict(self.local_agent.workspace_change_directory(path))
 
-    def workspace_diff(self, path: str | None = None) -> dict[str, Any]:
+    def workspace_diff(
+        self,
+        path: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        def nonnegative_integer(value: Any) -> int:
+            try:
+                return max(0, int(value or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        target_run_id = str(run_id or self.current_run_id or "").strip()
+        if not target_run_id:
+            raise RuntimeError("当前会话还没有可审阅的Agent运行。")
         if self.remote_client is not None:
-            raise RuntimeError("远程模式暂不支持本地Diff视图。")
-        return dict(self.local_agent.workspace_diff(path))
+            params = {"run_id": target_run_id}
+            if path:
+                params["path"] = path
+            value = self.remote_client.request(
+                "GET",
+                "/api/workspace/changes",
+                params=params,
+            )
+        else:
+            if self.local_agent is None:
+                raise RuntimeError("本地Agent尚未初始化。")
+            value = self.local_agent.workspace_diff(
+                path,
+                run_id=target_run_id,
+            )
+        result = dict(value) if isinstance(value, dict) else {}
+        raw_files = [
+            raw
+            for raw in list(result.get("files") or [])
+            if isinstance(raw, dict)
+        ]
+        total_added = sum(nonnegative_integer(raw.get("added")) for raw in raw_files)
+        total_removed = sum(nonnegative_integer(raw.get("removed")) for raw in raw_files)
+        files: list[dict[str, Any]] = []
+        for raw in raw_files[-200:]:
+            files.append(
+                {
+                    "path": sanitize_trace_value(raw.get("path"), max_chars=500) or "",
+                    "added": nonnegative_integer(raw.get("added")),
+                    "removed": nonnegative_integer(raw.get("removed")),
+                    "operation": sanitize_trace_value(
+                        raw.get("operation"),
+                        max_chars=80,
+                    ) or "",
+                    "operationId": sanitize_trace_value(
+                        raw.get("operationId"),
+                        max_chars=200,
+                    ) or "",
+                    "diffAvailable": bool(raw.get("diffAvailable")),
+                    "reverted": bool(raw.get("reverted")),
+                }
+            )
+        total_files = max(
+            len(raw_files),
+            nonnegative_integer(result.get("totalFiles")),
+        )
+        raw_patch = str(result.get("patch") or "")
+        return {
+            "runId": sanitize_trace_value(
+                result.get("runId") or target_run_id,
+                max_chars=200,
+            ) or target_run_id,
+            "files": files,
+            "totalFiles": total_files,
+            "totalAdded": max(
+                total_added,
+                nonnegative_integer(result.get("totalAdded")),
+            ),
+            "totalRemoved": max(
+                total_removed,
+                nonnegative_integer(result.get("totalRemoved")),
+            ),
+            "filesTruncated": bool(result.get("filesTruncated"))
+            or total_files > len(files),
+            "patch": sanitize_trace_value(
+                raw_patch,
+                max_chars=100_000,
+            ) or "",
+            "patchTruncated": bool(result.get("patchTruncated"))
+            or len(raw_patch) > 100_000,
+        }
 
     def workspace_undo(
         self,
         operation_id: str | None = None,
         run_id: str | None = None,
     ) -> dict[str, Any]:
+        target_run_id = str(run_id or self.current_run_id or "").strip()
+        if not target_run_id:
+            raise RuntimeError("当前会话还没有可撤销的Agent运行。")
+        target_operation_id = str(operation_id or "").strip()
+        if not target_operation_id:
+            files = self.workspace_diff(run_id=target_run_id).get("files") or []
+            target = next(
+                (
+                    item
+                    for item in reversed(files)
+                    if (
+                        isinstance(item, dict)
+                        and item.get("operationId")
+                        and not item.get("reverted")
+                    )
+                ),
+                None,
+            )
+            target_operation_id = str((target or {}).get("operationId") or "")
+        if not target_operation_id:
+            raise RuntimeError("当前运行没有可撤销的文件变更。")
         if self.remote_client is not None:
-            raise RuntimeError("远程模式暂不支持本地文件撤销。")
-        return dict(self.local_agent.workspace_undo(operation_id, run_id))
+            value = self.remote_client.request(
+                "POST",
+                "/api/workspace/changes/undo",
+                body={
+                    "runId": target_run_id,
+                    "operationId": target_operation_id,
+                },
+            )
+        else:
+            if self.local_agent is None:
+                raise RuntimeError("本地Agent尚未初始化。")
+            value = self.local_agent.workspace_undo(
+                target_operation_id,
+                target_run_id,
+            )
+        result = dict(value) if isinstance(value, dict) else {}
+        return {
+            **result,
+            "path": sanitize_trace_value(result.get("path"), max_chars=500) or "",
+            "operationId": sanitize_trace_value(
+                result.get("operationId") or target_operation_id,
+                max_chars=200,
+            ) or target_operation_id,
+            "runId": sanitize_trace_value(
+                result.get("runId") or target_run_id,
+                max_chars=200,
+            ) or target_run_id,
+            "reverted": bool(result.get("reverted", True)),
+        }
 
     def list_sessions(self, limit: int = 20, *, archived: bool = False) -> list[dict[str, Any]]:
         if self.remote_client is not None:

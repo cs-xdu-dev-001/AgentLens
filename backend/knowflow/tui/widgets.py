@@ -81,6 +81,19 @@ def redact_public_detail(value: Any, *, limit: int = 180) -> str:
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
 
 
+def redact_public_multiline(value: Any, *, limit: int = 100_000) -> str:
+    """Redact secrets while retaining unified-diff line structure."""
+    text = str(value or "")
+    text = OPENAI_KEY_PATTERN.sub("[已隐藏]", text)
+    text = ACCOUNT_IDENTIFIER_PATTERN.sub(r"\1[已隐藏]", text)
+    text = BEARER_PATTERN.sub("Bearer [已隐藏]", text)
+    text = JWT_PATTERN.sub("[已隐藏]", text)
+    text = CLI_SECRET_PATTERN.sub(r"\1[已隐藏]", text)
+    text = SENSITIVE_VALUE_PATTERN.sub(r"\1[已隐藏]", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
 TOOL_VERBS = {
     "list_workspace": "浏览",
     "list_workspace_files": "浏览",
@@ -775,6 +788,116 @@ class RunActivity(Vertical):
         self.set_class(cancelled, "cancelled")
 
 
+class WorkspaceDiffBlock(Static):
+    """Bounded, semantic unified-diff presentation for the transcript."""
+
+    MAX_FILES = 100
+    MAX_LINES = 500
+    MAX_LINE_CHARS = 4_000
+    MAX_PATCH_CHARS = 100_000
+
+    def __init__(self, result: dict[str, Any], **kwargs) -> None:
+        self.result = dict(result or {})
+        rendered = self._render_result(self.result)
+        self.plain_text = rendered.plain
+        super().__init__(rendered, classes="workspace-diff", **kwargs)
+
+    @classmethod
+    def _render_result(cls, result: dict[str, Any]) -> Text:
+        def nonnegative_integer(value: Any) -> int:
+            try:
+                return max(0, int(value or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        all_files = [
+            item
+            for item in list(result.get("files") or [])
+            if isinstance(item, dict)
+        ]
+        files = all_files[-cls.MAX_FILES :]
+        added = max(
+            sum(nonnegative_integer(item.get("added")) for item in all_files),
+            nonnegative_integer(result.get("totalAdded")),
+        )
+        removed = max(
+            sum(nonnegative_integer(item.get("removed")) for item in all_files),
+            nonnegative_integer(result.get("totalRemoved")),
+        )
+        total_files = max(
+            len(all_files),
+            nonnegative_integer(result.get("totalFiles")),
+        )
+        value = Text()
+        value.append("变更审阅", style="bold")
+        value.append(
+            (
+                f"  展示最近{len(files)}/共{total_files}个文件"
+                if total_files > len(files)
+                else f"  {len(files)}个文件"
+            ),
+            style="dim",
+        )
+        value.append(f"  +{added}", style="green")
+        value.append(f"  −{removed}", style="red")
+        for item in files:
+            path = redact_public_detail(item.get("path") or "未命名文件", limit=500)
+            operation_id = redact_public_detail(
+                item.get("operationId") or "",
+                limit=200,
+            )
+            value.append("\n")
+            value.append(path or "未命名文件", style="bold")
+            value.append(f"  +{nonnegative_integer(item.get('added'))}", style="green")
+            value.append(f"  −{nonnegative_integer(item.get('removed'))}", style="red")
+            if item.get("reverted"):
+                value.append("  已撤销", style="dim")
+            elif operation_id:
+                value.append(f"  /undo {operation_id}", style=ACCENT)
+        if total_files > len(files):
+            value.append(
+                f"\n…还有{total_files - len(files)}个较早文件未逐项展示；"
+                "可用 /diff <路径> 精确查看。",
+                style="dim",
+            )
+
+        raw_patch = str(result.get("patch") or "")
+        patch_truncated = bool(result.get("patchTruncated")) or (
+            len(raw_patch) > cls.MAX_PATCH_CHARS
+        )
+        patch = redact_public_multiline(raw_patch, limit=cls.MAX_PATCH_CHARS)
+        lines = patch.splitlines()
+        if lines:
+            value.append("\n")
+        for line in lines[: cls.MAX_LINES]:
+            safe_line = (
+                line
+                if len(line) <= cls.MAX_LINE_CHARS
+                else f"{line[: cls.MAX_LINE_CHARS]}…（本行已截断）"
+            )
+            if safe_line.startswith(("--- ", "+++ ", "diff --git ")):
+                style = "bold"
+            elif safe_line.startswith("@@"):
+                style = ACCENT
+            elif safe_line.startswith("+"):
+                style = "green"
+            elif safe_line.startswith("-"):
+                style = "red"
+            else:
+                style = "dim"
+            value.append(f"\n{safe_line}", style=style)
+        if len(lines) > cls.MAX_LINES:
+            value.append(
+                f"\n…Diff过长，仅展示前{cls.MAX_LINES}行。",
+                style="dim",
+            )
+        if patch_truncated:
+            value.append("\n…原始Diff超过100000字符，末尾已截断。", style="dim")
+        elif files and not lines:
+            value.append("\n没有可显示的文本Diff。", style="dim")
+        return value
+
+
 class TranscriptView(VerticalScroll):
     """Conversation transcript with one mutable streaming response."""
 
@@ -844,6 +967,11 @@ class TranscriptView(VerticalScroll):
             return Static(
                 RichMarkdown(content),
                 classes="message assistant-message archived-message",
+            )
+        if kind == "workspace_diff":
+            return Static(
+                content,
+                classes="workspace-diff archived-message",
             )
         return Static(
             content,
@@ -983,6 +1111,16 @@ class TranscriptView(VerticalScroll):
         )
         await self.mount(widget)
         await self._register_block(widget, "notice", content, error)
+        self.scroll_end(animate=False)
+
+    async def add_workspace_diff(self, result: dict[str, Any]) -> None:
+        widget = WorkspaceDiffBlock(result)
+        await self.mount(widget)
+        await self._register_block(
+            widget,
+            "workspace_diff",
+            widget.plain_text,
+        )
         self.scroll_end(animate=False)
 
     async def add_recovery(

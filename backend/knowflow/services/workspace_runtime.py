@@ -505,13 +505,19 @@ class WorkspaceContext:
             records = [item for item in records if item.get("displayPath") == path]
         latest: dict[str, dict[str, Any]] = {}
         first: dict[str, dict[str, Any]] = {}
-        for record in records:
+        latest_order: dict[str, int] = {}
+        for index, record in enumerate(records):
             key = str(record.get("path") or "")
             first.setdefault(key, record)
             latest[key] = record
+            latest_order[key] = index
         chunks: list[str] = []
         files: list[dict[str, Any]] = []
-        for key, record in latest.items():
+        ordered_changes = sorted(
+            latest.items(),
+            key=lambda item: latest_order[item[0]],
+        )
+        for key, record in ordered_changes:
             target = Path(key)
             resolved = target.resolve(strict=False)
             if target.is_symlink() or not self.contains(resolved):
@@ -557,10 +563,12 @@ class WorkspaceContext:
             )
             if patch:
                 chunks.append(patch)
+        combined_patch = "\n".join(chunks)
         return {
             "runId": run_id or self.current_run_id,
             "files": files,
-            "patch": "\n".join(chunks)[:100_000],
+            "patch": combined_patch[:100_000],
+            "patchTruncated": len(combined_patch) > 100_000,
         }
 
     def undo(

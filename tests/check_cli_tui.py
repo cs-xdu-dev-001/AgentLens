@@ -23,6 +23,7 @@ from knowflow.tui.app import (  # noqa: E402
     PermissionRuleScreen,
     QuestionScreen,
     QueueManagerScreen,
+    WorkspaceUndoScreen,
 )
 from knowflow.tui.backend import TuiBackend  # noqa: E402
 from knowflow.tui.commands import (  # noqa: E402
@@ -37,6 +38,7 @@ from knowflow.tui.widgets import (  # noqa: E402
     Composer,
     HistorySearchBar,
     QueuePreview,
+    WorkspaceDiffBlock,
     redact_public_detail,
 )
 
@@ -48,6 +50,8 @@ class FakeBackend:
     def __init__(self) -> None:
         self.questions: list[str] = []
         self.reset_count = 0
+        self.diff_paths: list[str | None] = []
+        self.undo_calls: list[tuple[str | None, str | None]] = []
 
     def run(self, question, event_sink):
         self.questions.append(question)
@@ -161,6 +165,40 @@ class FakeBackend:
                 "detail": "SRT隔离执行成功",
             },
         ]
+
+    def workspace_diff(self, path=None):
+        self.diff_paths.append(path)
+        return {
+            "runId": "run_tui",
+            "files": [
+                {
+                    "path": "README.md",
+                    "added": 2,
+                    "removed": 1,
+                    "operation": "edit",
+                    "operationId": "edit_readme",
+                    "diffAvailable": True,
+                    "reverted": bool(self.undo_calls),
+                }
+            ],
+            "patch": (
+                "--- a/README.md\n"
+                "+++ b/README.md\n"
+                "@@ -1 +1,2 @@\n"
+                "-old\n"
+                "+new\n"
+                "+api_key=sk-tui-secret\n"
+            ),
+        }
+
+    def workspace_undo(self, operation_id=None, run_id=None):
+        self.undo_calls.append((operation_id, run_id))
+        return {
+            "path": "README.md",
+            "operationId": operation_id,
+            "runId": run_id,
+            "reverted": True,
+        }
 
     def capability_status(self):
         return {
@@ -488,6 +526,11 @@ class ToolFailureBackend(FakeBackend):
         )
 
 
+class WorkspaceFailureBackend(FakeBackend):
+    def workspace_diff(self, path=None):
+        raise RuntimeError("Diff服务暂时不可用；token=workspace-secret")
+
+
 def exercise_command_matching() -> None:
     dynamic = [
         SlashCommand(
@@ -505,8 +548,35 @@ def exercise_command_matching() -> None:
     assert match_commands("/read", commands)[0].value == "/tool:read-workspace-file"
     assert canonical_command("/?", commands) == "/help"
     assert canonical_command("/allowed-tools", commands) == "/permissions"
+    assert match_commands("/dif", commands)[0].value == "/diff"
+    assert match_commands("/und", commands)[0].value == "/undo"
     recently_used = match_commands("/", commands, {"/status": 3})
     assert recently_used[0].value == "/status"
+
+
+def exercise_workspace_diff_boundaries() -> None:
+    files = [
+        {
+            "path": f"src/file-{index}.py",
+            "added": 1,
+            "removed": 2,
+            "operationId": f"edit-{index}",
+            "reverted": index == 200,
+        }
+        for index in range(201)
+    ]
+    rendered = WorkspaceDiffBlock._render_result(
+        {
+            "files": files,
+            "patch": "+" + ("x" * 4_100),
+        }
+    ).plain
+    assert "展示最近100/共201个文件" in rendered
+    assert "+201" in rendered and "−402" in rendered
+    assert "还有101个较早文件未逐项展示" in rendered
+    assert "src/file-200.py" in rendered and "src/file-0.py" not in rendered
+    assert "已撤销" in rendered and "/undo edit-200" not in rendered
+    assert "（本行已截断）" in rendered
 
 
 async def exercise_tui() -> None:
@@ -623,6 +693,51 @@ async def exercise_tui() -> None:
         await pilot.pause(0.05)
         assert composer.text == "hello"
         composer.clear()
+
+        composer.load_text("/diff")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        diff = list(app.query(WorkspaceDiffBlock))[-1]
+        rendered_diff = str(diff.render())
+        assert "变更审阅" in rendered_diff
+        assert "README.md" in rendered_diff
+        assert "+2" in rendered_diff
+        assert "−1" in rendered_diff
+        assert "/undo edit_readme" in rendered_diff
+        assert "sk-tui-secret" not in rendered_diff
+        assert "[已隐藏]" in rendered_diff
+
+        app.running = True
+        composer.load_text("/diff")
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert any(
+            "当前Diff快照" in str(item.render())
+            for item in app.query(".notice")
+        )
+        app.running = False
+
+        composer.load_text("/undo")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert isinstance(app.screen, WorkspaceUndoScreen)
+        assert "README.md" in str(app.screen.query_one(".approval-body").render())
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert backend.undo_calls[-1] == ("edit_readme", "run_tui")
+        assert any(
+            "已撤销README.md" in str(item.render())
+            for item in app.query(".notice")
+        )
+        composer.load_text("/undo")
+        await pilot.press("enter")
+        await pilot.pause(0.1)
+        assert not isinstance(app.screen, WorkspaceUndoScreen)
+        assert backend.undo_calls == [("edit_readme", "run_tui")]
+        assert any(
+            "没有可撤销的文件变更" in str(item.render())
+            for item in app.query(".notice")
+        )
 
         composer.load_text("/doctor")
         await pilot.press("enter")
@@ -846,7 +961,8 @@ async def exercise_tool_failure_feedback() -> None:
 
 
 async def exercise_narrow_command_menu() -> None:
-    app = KnowFlowTui(FakeBackend(), assume_yes=False)
+    backend = FakeBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
     async with app.run_test(size=(48, 20)) as pilot:
         app.query_one(Composer).load_text("/")
         menu = app.query_one(CommandMenu)
@@ -860,6 +976,39 @@ async def exercise_narrow_command_menu() -> None:
             f"region={menu.region}, screen={app.screen.size}"
         )
         assert app.screen.has_class("narrow")
+        await pilot.press("escape")
+        app.query_one(Composer).load_text("/diff")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        diff = app.query_one(WorkspaceDiffBlock)
+        assert 0 < diff.size.width <= 48
+        app.query_one(Composer).load_text("/undo")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert isinstance(app.screen, WorkspaceUndoScreen)
+        assert app.screen.has_class("narrow")
+        dialog = app.screen.query_one("#workspace-undo-dialog")
+        assert 0 < dialog.size.width <= 48
+        confirm = app.screen.query_one("#workspace-undo-confirm")
+        cancel = app.screen.query_one("#workspace-undo-cancel")
+        assert confirm.region.y < cancel.region.y
+        await pilot.press("escape")
+        await pilot.pause(0.05)
+        assert backend.undo_calls == []
+
+
+async def exercise_workspace_failure_recovery() -> None:
+    app = KnowFlowTui(WorkspaceFailureBackend(), assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one(Composer).load_text("/diff")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        recovery = app.query_one(".error-recovery")
+        rendered = str(recovery.render())
+        assert "无法读取文件变更" in rendered
+        assert "确认当前会话已运行文件操作" in rendered
+        assert "workspace-secret" not in rendered
+        assert "[已隐藏]" in rendered
 
 
 async def exercise_approval() -> None:
@@ -1307,6 +1456,7 @@ def main() -> None:
     class FakeRemoteClient:
         def __init__(self):
             self.calls = []
+            self.request_details = []
             self.resumed = []
             self.session_rows = [
                 {
@@ -1335,8 +1485,31 @@ def main() -> None:
                 ]
             }
 
-        def request(self, method, path):
+        def request(self, method, path, *, body=None, params=None):
             self.calls.append((method, path))
+            self.request_details.append((method, path, body, params))
+            if path == "/api/workspace/changes":
+                return {
+                    "runId": (params or {}).get("run_id"),
+                    "files": [
+                        {
+                            "path": "src/app.py",
+                            "added": 1,
+                            "removed": 0,
+                            "operation": "edit",
+                            "operationId": "edit_remote",
+                            "diffAvailable": True,
+                        }
+                    ],
+                    "patch": "+token=remote-secret-value\n",
+                }
+            if path == "/api/workspace/changes/undo":
+                return {
+                    "path": "src/app.py",
+                    "operationId": (body or {}).get("operationId"),
+                    "runId": (body or {}).get("runId"),
+                    "reverted": True,
+                }
             if path.endswith("/messages"):
                 return [
                     {"role": "user", "content": "普通对话"},
@@ -1444,6 +1617,24 @@ def main() -> None:
         ("POST", "/api/agent/runs/run_cancel/cancel")
     ]
     assert not tui_backend.cancel(None)
+    tui_backend.current_run_id = "run_workspace"
+    remote_diff = tui_backend.workspace_diff("src/app.py")
+    assert remote_diff["files"][0]["operationId"] == "edit_remote"
+    assert "remote-secret-value" not in remote_diff["patch"]
+    assert remote_client.request_details[-1] == (
+        "GET",
+        "/api/workspace/changes",
+        None,
+        {"run_id": "run_workspace", "path": "src/app.py"},
+    )
+    remote_undo = tui_backend.workspace_undo("edit_remote", "run_workspace")
+    assert remote_undo["reverted"] is True
+    assert remote_client.request_details[-1] == (
+        "POST",
+        "/api/workspace/changes/undo",
+        {"runId": "run_workspace", "operationId": "edit_remote"},
+        None,
+    )
     remote_sessions = tui_backend.list_sessions()
     remote_run_session = next(
         item for item in remote_sessions if item["sessionId"] == "session_remote"
@@ -1512,6 +1703,8 @@ def main() -> None:
     class FakeLocalAgent:
         def __init__(self):
             self.cancelled = []
+            self.diff_calls = []
+            self.undo_calls = []
 
         def cancel(self, run_id=None):
             self.cancelled.append(run_id)
@@ -1519,6 +1712,32 @@ def main() -> None:
 
         def delete_session(self, run_id):
             return {"runId": run_id, "deleted": True}
+
+        def workspace_diff(self, path=None, run_id=None):
+            self.diff_calls.append((path, run_id))
+            return {
+                "runId": run_id,
+                "files": [
+                    {
+                        "path": "local.py",
+                        "added": 1,
+                        "removed": 1,
+                        "operationId": "edit_local",
+                        "diffAvailable": True,
+                        "reverted": bool(self.undo_calls),
+                    }
+                ],
+                "patch": "-before\n+after\n",
+            }
+
+        def workspace_undo(self, operation_id=None, run_id=None):
+            self.undo_calls.append((operation_id, run_id))
+            return {
+                "path": "local.py",
+                "operationId": operation_id,
+                "runId": run_id,
+                "reverted": True,
+            }
 
     local_agent = FakeLocalAgent()
     local_backend = TuiBackend(
@@ -1537,9 +1756,21 @@ def main() -> None:
         "deleted": True,
         "current": True,
     }
+    local_backend.current_run_id = "run_local_changes"
+    assert local_backend.workspace_diff()["runId"] == "run_local_changes"
+    assert local_agent.diff_calls[-1] == (None, "run_local_changes")
+    assert local_backend.workspace_undo()["operationId"] == "edit_local"
+    assert local_agent.undo_calls[-1] == ("edit_local", "run_local_changes")
+    try:
+        local_backend.workspace_undo()
+    except RuntimeError as exc:
+        assert "没有可撤销" in str(exc)
+    else:
+        raise AssertionError("reverted workspace change must not be selected again")
     original_data_home = os.environ.get("XDG_DATA_HOME")
     with TemporaryDirectory() as data_home:
         os.environ["XDG_DATA_HOME"] = data_home
+        exercise_workspace_diff_boundaries()
         asyncio.run(exercise_tui())
         asyncio.run(exercise_remote_streaming())
         asyncio.run(exercise_live_status())
@@ -1548,6 +1779,7 @@ def main() -> None:
         asyncio.run(exercise_stream_failure_recovery())
         asyncio.run(exercise_tool_failure_feedback())
         asyncio.run(exercise_narrow_command_menu())
+        asyncio.run(exercise_workspace_failure_recovery())
         asyncio.run(exercise_approval())
         asyncio.run(exercise_question())
         asyncio.run(exercise_permission_modes())

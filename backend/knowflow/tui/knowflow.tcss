@@ -120,6 +120,14 @@ Screen {
     color: $error;
 }
 
+.workspace-diff {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    margin-bottom: 1;
+    border-top: solid #555555;
+}
+
 .recovery-notice {
     width: 100%;
     height: auto;
@@ -296,6 +304,10 @@ Screen.narrow #bottom-pane {
     padding: 0 1 1 1;
 }
 
+Screen.narrow .workspace-diff {
+    padding: 1;
+}
+
 Screen.narrow #command-menu {
     max-height: 8;
 }
@@ -459,12 +471,14 @@ Screen.narrow .queue-manager-footer {
     height: auto;
 }
 
-ApprovalScreen {
+ApprovalScreen,
+WorkspaceUndoScreen {
     align: center middle;
     background: $background 65%;
 }
 
-#approval-dialog {
+#approval-dialog,
+#workspace-undo-dialog {
     width: 58;
     max-width: 100%;
     height: auto;
@@ -501,7 +515,8 @@ ApprovalScreen {
     margin-left: 1;
 }
 
-Screen.narrow #approval-dialog {
+Screen.narrow #approval-dialog,
+Screen.narrow #workspace-undo-dialog {
     width: 100%;
     padding: 1;
 }

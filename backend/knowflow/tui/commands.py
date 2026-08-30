@@ -80,6 +80,18 @@ COMMANDS = (
     SlashCommand("/mcp", "查看MCP服务器", immediate=True),
     SlashCommand("/memory", "查看最近长期记忆", immediate=True),
     SlashCommand("/history", "搜索或清空输入历史", argument_hint="[search <关键词> | clear]"),
+    SlashCommand(
+        "/diff",
+        "审阅当前Agent运行产生的文件变更",
+        argument_hint="[路径]",
+        immediate=True,
+    ),
+    SlashCommand(
+        "/undo",
+        "撤销当前运行的一项文件变更",
+        argument_hint="[operation-id]",
+        immediate=True,
+    ),
     SlashCommand("/update", "更新AgentLens CLI到最新版", immediate=True),
     SlashCommand("/about", "查看执行环境与会话上下文", immediate=True),
     SlashCommand("/version", "显示CLI与协议版本", immediate=True),

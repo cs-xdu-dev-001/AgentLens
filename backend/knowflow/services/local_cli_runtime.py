@@ -704,8 +704,12 @@ class LocalAgentRuntime:
     def workspace_change_directory(self, path: str) -> dict[str, Any]:
         return self.workspace.change_directory(path)
 
-    def workspace_diff(self, path: str | None = None) -> dict[str, Any]:
-        return self.workspace.diff(path or None)
+    def workspace_diff(
+        self,
+        path: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.workspace.diff(path or None, run_id=run_id)
 
     def workspace_undo(
         self,
