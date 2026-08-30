@@ -1143,41 +1143,91 @@ function UserMenu() {
 function RuntimeStatus() {
   const [runtime, setRuntime] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const requestRef = useRef(0);
 
-  const loadRuntime = useCallback(async () => {
+  const loadRuntime = useCallback(async ({ silent = false } = {}) => {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    if (!silent) setChecking(true);
     try {
       const nextRuntime = await runtimeApi.get();
+      if (requestId !== requestRef.current) return;
       setRuntime(nextRuntime || null);
       setFailed(false);
     } catch (error) {
+      if (requestId !== requestRef.current) return;
       setRuntime(null);
       setFailed(true);
+    } finally {
+      if (requestId === requestRef.current) setChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    loadRuntime();
+    const browserOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+    if (browserOffline) {
+      setFailed(true);
+      setChecking(false);
+      return;
+    }
+    void loadRuntime();
   }, [loadRuntime]);
 
   useEffect(() => {
-    window.addEventListener("knowflow:react-refresh", loadRuntime);
+    const handleRuntimeEvent = () => {
+      void loadRuntime();
+    };
+    const handleOnline = () => {
+      void loadRuntime();
+    };
+    const handleOffline = () => {
+      requestRef.current += 1;
+      setRuntime(null);
+      setFailed(true);
+      setChecking(false);
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) void loadRuntime({ silent: true });
+    };
+    const poll = window.setInterval(() => {
+      const browserOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      if (!document.hidden && !browserOffline) void loadRuntime({ silent: true });
+    }, 30_000);
+    window.addEventListener("knowflow:react-refresh", handleRuntimeEvent);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.removeEventListener("knowflow:react-refresh", loadRuntime);
+      requestRef.current += 1;
+      window.clearInterval(poll);
+      window.removeEventListener("knowflow:react-refresh", handleRuntimeEvent);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loadRuntime]);
 
   if (failed) {
     return (
-      <div className={"runtime-card"} id={"runtime-box"}>
-        {"离线"}
+      <div className={"runtime-card runtime-card-offline"} id={"runtime-box"} aria-live={"polite"}>
+        <strong>{"离线"}</strong>
+        <button
+          className={"runtime-retry-button"}
+          type={"button"}
+          onClick={() => loadRuntime()}
+          disabled={checking}
+        >
+          {checking ? "检查中..." : "重试"}
+        </button>
       </div>
     );
   }
 
   if (!runtime) {
     return (
-      <div className={"runtime-card"} id={"runtime-box"}>
-        {"连接中..."}
+      <div className={"runtime-card"} id={"runtime-box"} aria-live={"polite"}>
+        <strong>{"连接中..."}</strong>
       </div>
     );
   }

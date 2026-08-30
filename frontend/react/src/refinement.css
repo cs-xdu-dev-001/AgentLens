@@ -3683,6 +3683,26 @@ body.sidebar-collapsed .sidebar {
   content: "";
 }
 
+.sidebar .runtime-card-offline strong {
+  color: var(--danger);
+}
+
+.sidebar .runtime-retry-button {
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  color: var(--text-soft);
+  background: var(--rail-panel);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sidebar .runtime-retry-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--rail-hover);
+}
+
 @media (min-width: 761px) {
   #page-chat.chat-empty .chat-topbar {
     height: 56px !important;
