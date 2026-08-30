@@ -245,7 +245,6 @@ export function composerCommandSuggestions(
     usage = {},
   } = {},
 ) {
-  const normalized = String(query || "").trim().toLocaleLowerCase();
   const recoverable = new Set(Array.isArray(recoveryActions) ? recoveryActions : []);
   const available = WEB_COMPOSER_COMMANDS.filter((command) => {
     if (command.when === "sending" && !sending) return false;
@@ -254,6 +253,12 @@ export function composerCommandSuggestions(
     if (command.when === "fix" && !recoverable.has("fix")) return false;
     return true;
   });
+  return searchComposerCommands(available, query, usage);
+}
+
+// The global palette and slash menu share one catalog and ranking policy.
+export function searchComposerCommands(available, query, usage = {}) {
+  const normalized = String(query || "").trim().replace(/^\//, "").toLocaleLowerCase();
   if (!normalized) {
     return [...available].sort((left, right) => (
       (Number(usage[right.value]) || 0) - (Number(usage[left.value]) || 0)

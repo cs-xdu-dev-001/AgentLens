@@ -7,6 +7,7 @@ const HELP_TABS = Object.freeze([
 ]);
 
 const WEB_SHORTCUTS = Object.freeze([
+  { value: "Ctrl/⌘+K", label: "命令面板", description: "从任意页面搜索并执行现有命令" },
   { value: "Alt+T", label: "打开运行面板", description: "查看当前任务状态和恢复操作" },
   { value: "Alt+E", label: "查看运行过程", description: "直达步骤、工具调用和错误详情" },
   { value: "Alt+G", label: "查看文件变更", description: "直达本轮新增、修改和删除内容" },

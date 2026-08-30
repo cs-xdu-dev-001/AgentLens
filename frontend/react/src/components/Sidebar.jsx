@@ -1318,6 +1318,23 @@ export function Sidebar({
           <path d={"M8 9h8M8 13h5"} />
         </svg>
       </button>
+      <button
+        className={"sidebar-tool command-palette-trigger"}
+        type={"button"}
+        aria-label={"打开命令面板"}
+        aria-keyshortcuts={"Control+k Meta+k"}
+        aria-haspopup={"dialog"}
+        title={"命令面板（Ctrl/⌘+K）"}
+        onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
+      >
+        <span className={"nav-icon"}>
+          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+            <path d={"m5 7 5 5-5 5M13 17h6"} />
+          </svg>
+        </span>
+        <span>{"命令面板"}</span>
+        <kbd>{"Ctrl/⌘ K"}</kbd>
+      </button>
       <SessionHistory
         mobileOpen={mobileHistoryOpen}
         onMobileClose={onMobileHistoryClose}

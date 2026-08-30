@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
+import { CommandPalette } from "./CommandPalette.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
@@ -24,6 +25,7 @@ import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
 const doubleEscapeWindowMs = 800;
+const pageActions = new Set(["knowledge", "workspace", "tools", "skills", "memory", "settings"]);
 const queuePriorityLabels = Object.freeze({ now: "立即", next: "接下来", later: "稍后" });
 const queueBlockLabels = Object.freeze({
   approval: "等待权限确认",
@@ -583,14 +585,6 @@ export function ChatComposerForm() {
       ...current,
       [command.value]: (Number(current[command.value]) || 0) + 1,
     }));
-    const pageActions = new Set([
-      "knowledge",
-      "workspace",
-      "tools",
-      "skills",
-      "memory",
-      "settings",
-    ]);
     if (pageActions.has(command.action)) {
       window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
         detail: { page: command.action },
@@ -1130,6 +1124,26 @@ export function ChatComposerForm() {
         : idleAgentState;
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
+      <CommandPalette
+        commands={helpCommands}
+        disabled={switchingSession}
+        onCommand={(command) => {
+          closeCommandHelp(false);
+          closeSkillPicker();
+          closeMentionPicker();
+          setMenuOpen(false);
+          if (!pageActions.has(command.action)) {
+            window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page: "chat" } }));
+          }
+          if (command.action === "session-rename") {
+            window.dispatchEvent(new CustomEvent("knowflow:react-sidebar-open"));
+          }
+          runComposerCommand(command);
+          if (pageActions.has(command.action)) {
+            window.requestAnimationFrame(() => document.getElementById("main-stage")?.focus());
+          }
+        }}
+      />
       {commandHelpOpen ? (
         <ComposerCommandHelp
           commands={helpCommands}

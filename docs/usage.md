@@ -71,6 +71,12 @@ Set-Location ..
 
 `backend/.env`只用于本机，不得提交。生产密钥也不要写进README、命令行或Issue。
 
+### Web键盘操作
+
+在任意页面按`Ctrl+K`（macOS为`⌘+K`），或点击侧栏“命令面板”，可用中文名称、英文命令或别名搜索。`↑↓`选择，`Enter`执行，`Esc`返回原位置并保留输入选区。搜索和页面切换不会发送草稿；新建会话、编辑上一问题等命令仍执行各自明确的操作。
+
+命令面板与聊天框的`/`菜单共用命令目录和运行状态过滤。已有弹窗打开时不抢占快捷键；手机端选择`/resume`会打开历史会话抽屉。
+
 ## 本地运行文档站
 
 PowerShell：
@@ -105,7 +111,7 @@ Windows把命令中的`.venv-docs/bin/python`替换为`.venv-docs\Scripts\python
 Get-ChildItem tests -Filter "check_*.py" |
   Sort-Object Name |
   ForEach-Object {
-    python $_.FullName
+    py -3 $_.FullName
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   }
 ```
@@ -122,6 +128,14 @@ npm ci
 npm test
 npm run build
 ```
+
+命令面板浏览器回归需要已启动的Web开发服务及可导入的Playwright（也可通过`NODE_PATH`指定安装目录）：
+
+```powershell
+node frontend/test/browser/commandPalette.mjs
+```
+
+测试会拦截API并使用模拟数据，不修改真实用户数据。截图保存在`tmp/command-palette/`；可用`AGENTLENS_TEST_URL`和`AGENTLENS_TEST_ARTIFACTS`覆盖服务地址与截图目录。
 
 ## 常见错误
 

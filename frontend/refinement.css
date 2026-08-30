@@ -3594,6 +3594,151 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 }
 
+/* Global commands reuse the slash catalog; the native dialog owns focus. */
+.command-palette {
+  width: min(580px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: min(16vh, 120px) auto auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--kf-radius-panel);
+  color: var(--text);
+  background: var(--panel-bg);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.command-palette::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.command-palette[open] {
+  animation: command-palette-enter 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.command-palette-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.command-palette-search svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.command-palette-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  box-shadow: none;
+}
+
+.command-palette-search input::placeholder {
+  color: var(--text-soft);
+}
+
+.command-palette-search button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.command-palette-list {
+  max-height: min(360px, 48dvh);
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.command-palette-option {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  font-size: 14px;
+}
+
+.command-palette-option code {
+  flex-shrink: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.command-palette-option[aria-selected="true"],
+.command-palette-search button:hover {
+  background: var(--control-bg-hover);
+}
+
+.command-palette-footer {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--control-border);
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.command-palette-footer kbd {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.command-palette-trigger kbd {
+  margin-left: auto;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+body.sidebar-collapsed .command-palette-trigger kbd {
+  display: none;
+}
+
+@keyframes command-palette-enter {
+  from { transform: translateY(-6px); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette[open] { animation: none; }
+}
+
+@media (max-width: 760px) {
+  .command-palette { margin-top: 12px; }
+  .command-palette-footer kbd,
+  .command-palette-trigger kbd { display: none; }
+}
+
 /* AgentLens refinement: agent client parity */
 :root,
 :root[data-theme="mono-light"] {

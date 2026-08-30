@@ -246,6 +246,7 @@ function WorkbenchShell() {
     const openSidebar = () => {
       writeStoredBoolean("knowflow.sidebarCollapsed", false);
       setSidebarCollapsed(false);
+      if (window.innerWidth <= 760) setMobileHistoryOpen(true);
     };
     const toggleDrawer = (event) => {
       const next = !drawerCollapsedRef.current;
