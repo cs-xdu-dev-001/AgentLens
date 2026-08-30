@@ -6,10 +6,20 @@ import { AgentRecoveryPanel } from "./AgentRecoveryPanel.jsx";
 import { AgentTraceView } from "./AgentTraceView.jsx";
 import { AgentTaskPlan } from "./AgentTaskPlan.jsx";
 import { AgentArtifactList } from "./AgentArtifactList.jsx";
-import { agentWorkbenchDefaultTab } from "./agentRunPresentation.js";
+import {
+  agentWorkbenchDefaultTab,
+  buildAgentToolOutputPresentation,
+} from "./agentRunPresentation.js";
 import { evidenceReferenceLabel } from "./agentEvidencePresentation.js";
 
 const toolLabels = {
+  activate_skill: "启用Skill",
+  list_workspace: "查看工作区",
+  read_workspace_file: "读取文件",
+  run_sandbox_command: "运行命令",
+  tool_search: "查找工具",
+  web_fetch: "读取网页",
+  write_workspace_file: "更新文件",
   knowledge_search: "知识库检索",
   session_memory_search: "会话记忆",
   web_search: "网络搜索",
@@ -23,7 +33,7 @@ const qualityLabels = {
   no_match: "无匹配",
 };
 
-const workbenchTabs = ["trace", "evidence", "artifacts"];
+const workbenchTabs = ["trace", "output", "evidence", "artifacts"];
 const workbenchItemSelector = "[data-workbench-item]";
 
 function visibleWorkbenchItems(panel) {
@@ -66,30 +76,6 @@ function formatScore(value) {
   return Number.isFinite(score) ? score.toFixed(3) : "0.000";
 }
 
-function safePreview(value, limit = 140) {
-  if (value == null || value === "") return "";
-  const text = typeof value === "string"
-    ? value.trim()
-    : JSON.stringify(value, null, 2);
-  const normalized = String(text || "").trim();
-  if (!normalized) return "";
-  return normalized.length > limit
-    ? `${normalized.slice(0, limit)}…`
-    : normalized;
-}
-
-function toolCallStatusLabel(status) {
-  const value = String(status || "").trim();
-  return ({
-    success: "已完成",
-    completed: "已完成",
-    failed: "失败",
-    error: "失败",
-    running: "运行中",
-    waiting: "等待中",
-  }[value] || value || "已记录");
-}
-
 function QualityMetric({ label, value }) {
   return (
     <span className={"quality-metric"}>
@@ -99,80 +85,164 @@ function QualityMetric({ label, value }) {
   );
 }
 
-function ToolCallTimeline({ focusStepId = "", toolCalls = [] }) {
-  if (!toolCalls.length) return null;
+function formatOutputSize(lines, bytes) {
+  const parts = [];
+  if (lines) parts.push(`${lines}行`);
+  if (bytes) parts.push(bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`);
+  return parts.join(" · ");
+}
+
+function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
+  const presentations = toolCalls.map(buildAgentToolOutputPresentation);
+  const initialId = presentations.some((item) => item.id === focusStepId)
+    ? focusStepId
+    : presentations.at(-1)?.id || "";
+  const [selectedId, setSelectedId] = useState(initialId);
+  const [autoFollow, setAutoFollow] = useState(true);
+  const [copyState, setCopyState] = useState("idle");
+  const scrollRef = useRef(null);
+  const copyTimerRef = useRef(null);
+  const selected = presentations.find((item) => item.id === selectedId)
+    || presentations.at(-1)
+    || null;
+
+  useEffect(() => {
+    if (!presentations.length) {
+      setSelectedId("");
+      return;
+    }
+    if (!presentations.some((item) => item.id === selectedId)) {
+      setSelectedId(initialId);
+    }
+  }, [initialId, presentations.length, selectedId]);
+
+  useEffect(() => {
+    if (!autoFollow || !scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [autoFollow, selected?.copyText]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+  }, []);
+
+  const copyOutput = async () => {
+    if (!selected?.copyText) return;
+    try {
+      await navigator.clipboard.writeText(selected.copyText);
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      setCopyState("copied");
+      copyTimerRef.current = window.setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopyState("idle");
+      }, 1_600);
+    } catch {
+      setCopyState("error");
+    }
+  };
+
   return (
-    <section className={"agent-tool-fallback"} aria-label={"工具执行记录"}>
-      <div className={"section-label"}>{"工具"}</div>
-      <div className={"timeline"} id={"tool-timeline-mini"}>
-        {toolCalls.map((call, index) => {
-          const identifier = String(call.toolCallId || call.id || `${index}`);
-          const name = call.toolName || call.tool_name || call.name || "knowledge_search";
-          const input = call.arguments || call.inputJson || call.input_json || "";
-          const output = call.output || call.outputText || call.output_text || call.content || "";
-          const latency = call.durationMs ?? call.latencyMs ?? call.latency_ms ?? 0;
-          const status = call.status || call.normalizedStatus || "";
-          const errorMessage = call.errorMessage || call.error_message || call.error?.message || "";
-          const inputPreview = safePreview(input);
-          const outputPreview = safePreview(output);
-          return (
-            <details
-              className={"timeline-item timeline-item-expandable"}
-              key={`${identifier}:${focusStepId === identifier}`}
-              defaultOpen={focusStepId === identifier}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape" || !event.currentTarget.open) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const disclosure = event.currentTarget;
-                disclosure.open = false;
-                disclosure.querySelector("summary")?.focus();
-              }}
-            >
-              <summary
-                className={"timeline-summary"}
-                data-workbench-item={"tool"}
-                data-workbench-item-id={identifier}
-                tabIndex={index === 0 ? 0 : -1}
-              >
-                <div className={"timeline-dot"}></div>
-                <div className={"timeline-summary-copy"}>
-                  <h4>{toolLabels[name] || name}</h4>
-                  <p>
-                    {toolCallStatusLabel(status)}
-                    {latency ? ` · ${latency}ms` : ""}
-                    {inputPreview ? ` · ${inputPreview}` : ""}
-                  </p>
-                </div>
-                <div className={"timeline-summary-meta"}>
-                  {outputPreview ? <span>{outputPreview}</span> : null}
-                  <span aria-hidden={"true"}>{"⌄"}</span>
-                </div>
-              </summary>
-              <div className={"timeline-body"}>
-                {input ? (
-                  <div className={"timeline-body-section"}>
-                    <span>{"公开输入"}</span>
-                    <pre>{typeof input === "string" ? input : JSON.stringify(input, null, 2)}</pre>
-                  </div>
-                ) : null}
-                {output ? (
-                  <div className={"timeline-body-section"}>
-                    <span>{"结果摘要"}</span>
-                    <pre>{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>
-                  </div>
-                ) : null}
-                {errorMessage ? (
-                  <div className={"timeline-body-section"}>
-                    <span>{"错误信息"}</span>
-                    <p>{String(errorMessage)}</p>
-                  </div>
-                ) : null}
+    <section className={"agent-tool-output"} aria-label={"工具输出"}>
+      {presentations.length ? (
+        <>
+          <div
+            className={"agent-tool-output-list"}
+            id={"tool-timeline-mini"}
+            aria-label={"执行记录"}
+            role={"group"}
+          >
+            {presentations.map((item, index) => {
+              const active = item.id === selected?.id;
+              const meta = [
+                item.latencyMs != null ? `${item.latencyMs}ms` : "",
+                formatOutputSize(item.totalLines, item.totalBytes),
+              ].filter(Boolean).join(" · ");
+              return (
+                <button
+                  className={`agent-tool-output-call ${active ? "is-active" : ""}`}
+                  data-workbench-item={"tool"}
+                  data-workbench-item-id={item.id}
+                  key={item.id}
+                  type={"button"}
+                  tabIndex={active ? 0 : -1}
+                  aria-pressed={active}
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <span className={`agent-tool-output-status ${item.statusTone}`} aria-hidden={"true"}></span>
+                  <span className={"agent-tool-output-call-copy"}>
+                    <strong>{toolLabels[item.name] || item.name}</strong>
+                    <small>{item.statusLabel}{meta ? ` · ${meta}` : ""}</small>
+                  </span>
+                  <span className={"agent-tool-output-chevron"} aria-hidden={"true"}>{"›"}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className={"agent-tool-console"} aria-live={selected?.active ? "polite" : "off"}>
+            <div className={"agent-tool-console-header"}>
+              <div>
+                <strong>{toolLabels[selected?.name] || selected?.name}</strong>
+                <span className={`agent-tool-console-state ${selected?.statusTone || "muted"}`}>
+                  {selected?.statusLabel}
+                </span>
               </div>
-            </details>
-          );
-        })}
-      </div>
+              <div className={"agent-tool-console-actions"}>
+                <button
+                  type={"button"}
+                  className={autoFollow ? "is-active" : ""}
+                  aria-pressed={autoFollow}
+                  onClick={() => setAutoFollow((value) => !value)}
+                >
+                  {"跟随"}
+                </button>
+                <button
+                  type={"button"}
+                  disabled={!selected?.copyText}
+                  onClick={copyOutput}
+                >
+                  {copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制"}
+                </button>
+              </div>
+            </div>
+            {selected?.command ? (
+              <div className={"agent-tool-console-command"}>
+                <span aria-hidden={"true"}>{"$"}</span>
+                <code>{selected.command}</code>
+              </div>
+            ) : null}
+            <div
+              className={"agent-tool-console-scroll"}
+              ref={scrollRef}
+              onScroll={(event) => {
+                const target = event.currentTarget;
+                const atEnd = target.scrollHeight - target.scrollTop - target.clientHeight < 24;
+                if (!atEnd && autoFollow) setAutoFollow(false);
+              }}
+              tabIndex={0}
+            >
+              {selected?.sections.length ? selected.sections.map((section) => (
+                <div className={`agent-tool-console-section ${section.tone}`} key={section.key}>
+                  <span>{section.label}</span>
+                  <pre>{section.text}</pre>
+                </div>
+              )) : (
+                <div className={"agent-tool-console-empty"}>
+                  <span>{selected?.active ? "等待输出" : "没有可显示的输出"}</span>
+                  {selected?.active ? <i aria-hidden={"true"}></i> : null}
+                </div>
+              )}
+            </div>
+            <div className={"agent-tool-console-footer"}>
+              <span>{formatOutputSize(selected?.totalLines, selected?.totalBytes) || "0行 · 0B"}</span>
+              {selected?.exitCode != null ? <span>{`退出码 ${selected.exitCode}`}</span> : null}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className={"agent-tool-output-empty"}>
+          <strong>{"还没有工具输出"}</strong>
+          <span>{"等待Agent输出。"}</span>
+        </div>
+      )}
     </section>
   );
 }
@@ -194,6 +264,7 @@ export function ChatEvidenceDrawer() {
   const traceRef = useRef([]);
   const runRef = useRef(null);
   const referencesRef = useRef([]);
+  const toolCallsRef = useRef([]);
   const manualTabRef = useRef(false);
 
   const publishFocusStep = useCallback((stepId) => {
@@ -218,6 +289,7 @@ export function ChatEvidenceDrawer() {
 
   activeTabRef.current = activeTab;
   traceRef.current = trace;
+  toolCallsRef.current = toolCalls;
 
   const handleTabKeyDown = (event) => {
     if (event.key === "ArrowDown") {
@@ -273,7 +345,11 @@ export function ChatEvidenceDrawer() {
           ?.focus();
       });
     };
-    const selectLifecycleTab = (nextRun, nextReferences = referencesRef.current) => {
+    const selectLifecycleTab = (
+      nextRun,
+      nextReferences = referencesRef.current,
+      nextToolCalls = toolCallsRef.current,
+    ) => {
       if (manualTabRef.current) return;
       const runArtifacts = Array.isArray(nextRun?.artifacts)
         ? nextRun.artifacts
@@ -288,6 +364,7 @@ export function ChatEvidenceDrawer() {
         run: nextRun,
         artifacts: deliveryArtifacts,
         references: nextReferences.length ? nextReferences : embeddedReferences,
+        toolCalls: nextToolCalls,
       }));
     };
     const handleReferencesUpdated = (event) => {
@@ -305,7 +382,12 @@ export function ChatEvidenceDrawer() {
         && messageIdRef.current
         && eventMessageId !== messageIdRef.current
       ) return;
-      setToolCalls(Array.isArray(event.detail?.toolCalls) ? event.detail.toolCalls : []);
+      const nextToolCalls = Array.isArray(event.detail?.toolCalls)
+        ? event.detail.toolCalls
+        : [];
+      toolCallsRef.current = nextToolCalls;
+      setToolCalls(nextToolCalls);
+      selectLifecycleTab(runRef.current, referencesRef.current, nextToolCalls);
     };
     const handleRagQualityUpdated = (event) => {
       setRagQuality(event.detail?.ragQuality || null);
@@ -321,6 +403,7 @@ export function ChatEvidenceDrawer() {
         setMessageId(eventMessageId);
         setApprovals([]);
         setToolCalls([]);
+        toolCallsRef.current = [];
         setRun(null);
         runRef.current = null;
         referencesRef.current = [];
@@ -347,11 +430,11 @@ export function ChatEvidenceDrawer() {
           ? event.detail.approvals
           : [],
       );
-      setToolCalls(
-        Array.isArray(event.detail?.toolCalls)
-          ? event.detail.toolCalls
-          : [],
-      );
+      const nextToolCalls = Array.isArray(event.detail?.toolCalls)
+        ? event.detail.toolCalls
+        : [];
+      toolCallsRef.current = nextToolCalls;
+      setToolCalls(nextToolCalls);
       const nextRun = event.detail?.run || null;
       runRef.current = nextRun;
       setRun(nextRun);
@@ -371,10 +454,10 @@ export function ChatEvidenceDrawer() {
       setFocusStepId(String(event.detail?.focusStepId || ""));
       const requestedTab = event.detail?.activeTab;
       manualTabRef.current = false;
-      if (["trace", "evidence", "artifacts"].includes(requestedTab)) {
+      if (["trace", "output", "evidence", "artifacts"].includes(requestedTab)) {
         selectTab(requestedTab, { manual: true });
       } else {
-        selectLifecycleTab(nextRun, nextReferences);
+        selectLifecycleTab(nextRun, nextReferences, nextToolCalls);
       }
     };
     const handleAgentRunUpdated = (event) => {
@@ -390,6 +473,7 @@ export function ChatEvidenceDrawer() {
           setTrace([]);
           setApprovals([]);
           setToolCalls([]);
+          toolCallsRef.current = [];
           setFocusStepId("");
           referencesRef.current = [];
           setReferences([]);
@@ -497,7 +581,7 @@ export function ChatEvidenceDrawer() {
       && !event.ctrlKey
       && !event.metaKey
       && !event.shiftKey
-      && ["1", "2", "3"].includes(event.key)
+      && ["1", "2", "3", "4"].includes(event.key)
     ) {
       const nextTab = workbenchTabs[Number(event.key) - 1];
       event.preventDefault();
@@ -519,9 +603,6 @@ export function ChatEvidenceDrawer() {
   const artifacts = Array.isArray(run?.artifacts)
     ? run.artifacts.filter((artifact) => artifact?.artifactType !== "reference")
     : [];
-  const traceHasToolRows = trace.some((step) => (
-    ["tool", "mcp", "sandbox", "workspace"].includes(step?.kind)
-  ));
   const hasWorkbenchContent = Boolean(
     run
     || trace.length
@@ -572,11 +653,24 @@ export function ChatEvidenceDrawer() {
           {`过程 ${trace.length}`}
         </button>
         <button
+          id={"agent-output-tab"}
+          data-workbench-tab={"output"}
+          type={"button"}
+          role={"tab"}
+          aria-keyshortcuts={"2"}
+          aria-selected={activeTab === "output"}
+          aria-controls={"agent-output-panel"}
+          tabIndex={activeTab === "output" ? 0 : -1}
+          onClick={() => selectTab("output", { manual: true })}
+        >
+          {`输出 ${toolCalls.length}`}
+        </button>
+        <button
           id={"agent-evidence-tab"}
           data-workbench-tab={"evidence"}
           type={"button"}
           role={"tab"}
-          aria-keyshortcuts={"2"}
+          aria-keyshortcuts={"3"}
           aria-selected={activeTab === "evidence"}
           aria-controls={"agent-evidence-panel"}
           tabIndex={activeTab === "evidence" ? 0 : -1}
@@ -589,7 +683,7 @@ export function ChatEvidenceDrawer() {
           data-workbench-tab={"artifacts"}
           type={"button"}
           role={"tab"}
-          aria-keyshortcuts={"3"}
+          aria-keyshortcuts={"4"}
           aria-selected={activeTab === "artifacts"}
           aria-controls={"agent-artifacts-panel"}
           tabIndex={activeTab === "artifacts" ? 0 : -1}
@@ -642,12 +736,16 @@ export function ChatEvidenceDrawer() {
               focusScope={"workbench"}
             />
           ) : null}
-          {!traceHasToolRows ? (
-            <ToolCallTimeline
-              focusStepId={focusStepId}
-              toolCalls={toolCalls}
-            />
-          ) : null}
+        </div>
+      ) : activeTab === "output" ? (
+        <div
+          className={"drawer-section agent-output-section"}
+          id={"agent-output-panel"}
+          role={"tabpanel"}
+          aria-labelledby={"agent-output-tab"}
+          tabIndex={0}
+        >
+          <ToolOutputPanel focusStepId={focusStepId} toolCalls={toolCalls} />
         </div>
       ) : activeTab === "artifacts" ? (
         <div

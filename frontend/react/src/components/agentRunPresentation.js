@@ -114,20 +114,25 @@ export function agentWorkbenchDefaultTab({
   run = null,
   artifacts = [],
   references = [],
+  toolCalls = [],
 } = {}) {
   const status = String(run?.runSummary?.status || run?.status || "");
   if (["failed", "interrupted"].includes(status)) return "trace";
   if (!["completed", "success"].includes(status)) return "trace";
   if (Array.isArray(artifacts) && artifacts.length) return "artifacts";
   if (Array.isArray(references) && references.length) return "evidence";
+  if (Array.isArray(toolCalls) && toolCalls.length) return "output";
   return "trace";
 }
 
 const redactionPatterns = [
   [/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[已隐藏]"],
+  [/\b(?:ak|org|proj)-[A-Za-z0-9_-]{12,}\b/g, "[已隐藏]"],
   [/\bBearer\s+[A-Za-z0-9._~-]{8,}\b/gi, "Bearer [已隐藏]"],
-  [/(api[_-]?key|token|password|secret|cookie|authorization)(\s*[:=]\s*)\S+/gi, "$1$2[已隐藏]"],
-  [/(--(?:api[-_]?key|token|password|secret|cookie|authorization))(?:=|\s+)\S+/gi, "$1=[已隐藏]"],
+  [/(^|[^A-Za-z0-9])([A-Z][A-Z0-9_]*(?:API_?KEY|ACCESS_KEY(?:_ID)?|SECRET(?:_ACCESS_KEY)?|TOKEN|PASSWORD|PRIVATE_KEY|COOKIE|AUTHORIZATION)[A-Z0-9_]*)(\s*=\s*)(?:"(?:\\.|[^"\r\n])*"|'(?:\\.|[^'\r\n])*'|[^\s,;]+)/gm, "$1$2$3[已隐藏]"],
+  [/(api[_-]?key|token|password|secret|cookie|authorization)(\s*[:=]\s*)(?:"(?:\\.|[^"\r\n])*"|'(?:\\.|[^'\r\n])*'|[^\s,;]+)/gi, "$1$2[已隐藏]"],
+  [/(--(?:api[-_]?key|token|password|secret|cookie|authorization))(?:=|\s+)(?:"(?:\\.|[^"\r\n])*"|'(?:\\.|[^'\r\n])*'|[^\s,;]+)/gi, "$1=[已隐藏]"],
+  [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/gi, "[私钥已隐藏]"],
 ];
 
 function parseSummary(value) {
@@ -148,6 +153,124 @@ export function compactPublicText(value, limit = 84) {
     text = text.replace(pattern, replacement);
   });
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function serializableAgentText(value) {
+  if (value == null || value === "") return "";
+  if (["string", "number", "boolean"].includes(typeof value)) return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+export function publicAgentLogText(value, limit = 60_000) {
+  let text = serializableAgentText(value)
+    .replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g, "")
+    .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\u007f]/g, "")
+    .replace(/[\u202a-\u202e\u2066-\u2069]/g, "")
+    .trimEnd();
+  redactionPatterns.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  const safeLimit = Math.max(0, Number(limit) || 0);
+  return safeLimit && text.length > safeLimit
+    ? `${text.slice(0, safeLimit)}\n…输出已截断`
+    : text;
+}
+
+function toolOutputStatus(status) {
+  const value = String(status || "").toLowerCase();
+  if (["success", "completed", "succeeded"].includes(value)) {
+    return { label: "已完成", tone: "success" };
+  }
+  if (["error", "failed"].includes(value)) {
+    return { label: "失败", tone: "danger" };
+  }
+  if (["cancelled", "interrupted"].includes(value)) {
+    return { label: "已中断", tone: "muted" };
+  }
+  if (["running", "planning"].includes(value)) {
+    return { label: "运行中", tone: "running" };
+  }
+  return { label: value === "waiting" ? "等待中" : "已记录", tone: "muted" };
+}
+
+function agentTextLines(value) {
+  return value ? value.split("\n").length : 0;
+}
+
+function agentTextBytes(value) {
+  if (!value) return 0;
+  try {
+    return new TextEncoder().encode(value).length;
+  } catch {
+    return value.length;
+  }
+}
+
+export function buildAgentToolOutputPresentation(call, index = 0) {
+  const source = call && typeof call === "object" ? call : {};
+  const identifier = String(source.toolCallId || source.tool_call_id || source.id || `tool-${index}`);
+  const name = String(source.toolName || source.tool_name || source.name || "tool");
+  const status = String(source.status || source.normalizedStatus || "");
+  const statusMeta = toolOutputStatus(status);
+  const inputValue = source.arguments ?? source.inputJson ?? source.input_json ?? source.input ?? "";
+  const input = parseSummary(inputValue);
+  const outputValue = source.output ?? source.outputText ?? source.output_text ?? source.content ?? "";
+  const output = parseSummary(outputValue);
+  const command = publicAgentLogText(
+    input.command ?? input.cmd ?? source.command ?? "",
+    4_000,
+  );
+  const stdout = publicAgentLogText(output.stdout ?? source.stdout ?? "");
+  const stderr = publicAgentLogText(output.stderr ?? source.stderr ?? "");
+  const structuredResult = output.result ?? output.content ?? output.message;
+  const plainResult = typeof outputValue === "string" ? outputValue : "";
+  const result = publicAgentLogText(structuredResult ?? plainResult);
+  const error = publicAgentLogText(
+    source.errorMessage ?? source.error_message ?? source.error?.message ?? output.error ?? "",
+  );
+  const inputText = publicAgentLogText(inputValue, 12_000);
+  const sections = [
+    stdout ? { key: "stdout", label: "stdout", tone: "default", text: stdout } : null,
+    stderr ? { key: "stderr", label: "stderr", tone: "warning", text: stderr } : null,
+    result && result !== stdout && result !== stderr
+      ? { key: "result", label: "结果", tone: "default", text: result }
+      : null,
+    error ? { key: "error", label: "错误", tone: "danger", text: error } : null,
+    !command && inputText ? { key: "input", label: "输入", tone: "muted", text: inputText } : null,
+  ].filter(Boolean);
+  const exitValue = output.exit_code ?? output.exitCode ?? source.exitCode ?? source.exit_code;
+  const parsedExitCode = exitValue == null || exitValue === "" ? null : Number(exitValue);
+  const copyParts = [
+    command ? `$ ${command}` : "",
+    ...sections.map((section) => `[${section.label}]\n${section.text}`),
+  ].filter(Boolean);
+  const copyText = copyParts.join("\n\n");
+  const derivedLines = sections.reduce((count, section) => count + agentTextLines(section.text), 0);
+  const derivedBytes = agentTextBytes(copyText);
+  const latencyValue = source.durationMs ?? source.latencyMs ?? source.latency_ms;
+  const latencyMs = latencyValue == null || latencyValue === "" ? null : Number(latencyValue);
+  return {
+    active: ["planning", "running"].includes(status.toLowerCase()),
+    command,
+    copyText,
+    exitCode: Number.isFinite(parsedExitCode) ? parsedExitCode : null,
+    id: identifier,
+    inputText,
+    latencyMs: Number.isFinite(latencyMs) ? latencyMs : null,
+    name,
+    sections,
+    status,
+    statusLabel: statusMeta.label,
+    statusTone: statusMeta.tone,
+    totalBytes: Math.max(0, Number(source.totalBytes ?? source.total_bytes) || derivedBytes),
+    totalLines: Math.max(0, Number(source.totalLines ?? source.total_lines) || derivedLines),
+  };
 }
 
 function publicUrlTarget(value) {

@@ -548,7 +548,7 @@ def check_agent_run_presentation_fixture() -> None:
         / "agentRunPresentation.js"
     ).as_uri()
     script = f"""
-import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, verificationTraceStepId }} from {json.dumps(module_path)};
+import {{ agentWorkbenchDefaultTab, buildAgentDiffPresentation, buildAgentOperationPresentation, buildAgentRunPresentation, buildAgentToolOutputPresentation, buildAgentVerificationPresentation, mergeAgentArtifactUpdate, verificationTraceStepId }} from {json.dumps(module_path)};
 const completed = buildAgentRunPresentation({{
   now: Date.parse("2026-08-12T00:00:03Z"),
   run: {{
@@ -667,6 +667,19 @@ const artifactUpdate = mergeAgentArtifactUpdate(
   [{{ artifactId: "file:src/app.js", artifactType: "file", path: "src/app.js", operationId: "edit-app", addedLines: 2, reverted: false }}],
   {{ artifactId: "file:src/app.js", artifactType: "file", path: "src/app.js", operationId: "edit-app", reverted: true, changeStatus: "reverted" }},
 );
+const toolOutput = buildAgentToolOutputPresentation({{
+  toolCallId: "shell-fixture",
+  toolName: "run_sandbox_command",
+  status: "failed",
+  durationMs: 1280,
+  arguments: {{ command: "npm test -- --token \\\"SECRET VALUE\\\"" }},
+  output: {{
+    stdout: "first line\\n\\u001b[31msecond line\\u001b[0m\\nvisible\\u202etext\\nAuthorization: Bearer abcdefghijklmnop",
+    stderr: "apiKey=abcdefghijklmnop\\npassword: 'quoted secret value'\\nOPENAI_API_KEY=sk-openai-environment-secret\\nGITHUB_TOKEN=github-environment-secret\\nAWS_SECRET_ACCESS_KEY='aws environment secret'\\n<unsafe-tag>text only</unsafe-tag>",
+    result: "-----BEGIN PRIVATE KEY-----\\nprivate-material\\n-----END PRIVATE KEY-----",
+    exit_code: 2,
+  }},
+}});
 const workbenchTabs = {{
   running: agentWorkbenchDefaultTab({{
     run: {{ status: "running" }},
@@ -685,6 +698,10 @@ const workbenchTabs = {{
   researched: agentWorkbenchDefaultTab({{
     run: {{ status: "completed" }},
     references: [{{ url: "https://example.com" }}],
+  }}),
+  executed: agentWorkbenchDefaultTab({{
+    run: {{ status: "completed" }},
+    toolCalls: [{{ toolCallId: "tool-only" }}],
   }}),
   answered: agentWorkbenchDefaultTab({{
     run: {{ status: "completed" }},
@@ -730,6 +747,7 @@ console.log(JSON.stringify({{
   protocolVerifications,
   diffRows,
   artifactUpdate,
+  toolOutput,
   workbenchTabs,
 }}));
 """
@@ -865,11 +883,36 @@ console.log(JSON.stringify({{
             "changeStatus": "reverted",
         }
     ]
+    tool_output = result["toolOutput"]
+    assert tool_output["id"] == "shell-fixture"
+    assert tool_output["statusLabel"] == "失败"
+    assert tool_output["statusTone"] == "danger"
+    assert tool_output["exitCode"] == 2
+    assert tool_output["latencyMs"] == 1280
+    assert tool_output["command"] == "npm test -- --token=[已隐藏]"
+    assert "first line\nsecond line" in tool_output["copyText"]
+    assert "<unsafe-tag>text only</unsafe-tag>" in tool_output["copyText"]
+    assert "\u001b" not in tool_output["copyText"]
+    assert "\u202e" not in tool_output["copyText"]
+    assert "SECRET VALUE" not in tool_output["copyText"]
+    assert "quoted secret value" not in tool_output["copyText"]
+    assert "sk-openai-environment-secret" not in tool_output["copyText"]
+    assert "github-environment-secret" not in tool_output["copyText"]
+    assert "aws environment secret" not in tool_output["copyText"]
+    assert "abcdefghijklmnop" not in tool_output["copyText"]
+    assert "private-material" not in tool_output["copyText"]
+    assert "[私钥已隐藏]" in tool_output["copyText"]
+    assert [section["label"] for section in tool_output["sections"]] == [
+        "stdout",
+        "stderr",
+        "结果",
+    ]
     assert result["workbenchTabs"] == {
         "running": "trace",
         "failed": "trace",
         "delivered": "artifacts",
         "researched": "evidence",
+        "executed": "output",
         "answered": "trace",
     }
 
@@ -1186,13 +1229,13 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        "timeline-item-expandable",
-        "compact expandable tool timeline",
+        'data-workbench-tab={"output"}',
+        "dedicated tool output tab",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        "function ToolCallTimeline",
-        "legacy tool calls stay inside process panel",
+        "function ToolOutputPanel",
+        "tool output console",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
@@ -1246,7 +1289,7 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        '["1", "2", "3"].includes(event.key)',
+        '["1", "2", "3", "4"].includes(event.key)',
         "run workbench exposes direct numbered tab selection",
     )
     require(
@@ -1291,13 +1334,23 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        "公开输入",
-        "tool input summary label",
+        'aria-pressed={autoFollow}',
+        "tool output follow control",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        "结果摘要",
-        "tool output summary label",
+        "navigator.clipboard.writeText",
+        "tool output copy action",
+    )
+    require(
+        "frontend/react/src/components/agentRunPresentation.js",
+        "publicAgentLogText",
+        "tool output text sanitization",
+    )
+    forbid(
+        "frontend/react/src/components/ChatEvidenceDrawer.jsx",
+        "dangerouslySetInnerHTML",
+        "raw tool output HTML rendering",
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
@@ -1491,8 +1544,8 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/ChatEvidenceDrawer.jsx",
-        'event.currentTarget.open',
-        "tool disclosure consumes Escape before the drawer",
+        "if (!atEnd && autoFollow) setAutoFollow(false);",
+        "manual tool output scrolling pauses follow mode",
     )
     require(
         "frontend/react/src/components/AgentArtifactList.jsx",
