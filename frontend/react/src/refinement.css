@@ -2477,13 +2477,88 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     --drawer-width: min(360px, 38vw);
   }
 
+  .chat-layout {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-panel {
+    height: calc(100dvh - 24px);
+    min-height: 0;
+  }
+
   .evidence-drawer {
-    min-width: 320px;
+    position: absolute;
+    z-index: 40;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: var(--drawer-width);
+    max-width: calc(100% - 24px);
+    height: auto;
+    min-width: min(320px, calc(100% - 24px));
+    min-height: 0;
+    border: 0 !important;
+    border-radius: 14px !important;
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16) !important;
+    transition:
+      opacity 140ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0s linear;
+  }
+
+  body.drawer-collapsed .evidence-drawer {
+    display: grid;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(12px);
+    transition:
+      opacity 140ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0s linear 180ms;
   }
 
   .agent-trace-node {
     grid-template-columns: 10px 48px minmax(0, 1fr) auto 14px;
     gap: 7px;
+  }
+}
+
+@media (max-width: 1180px), (pointer: coarse) {
+  .evidence-drawer > .drawer-header > .icon-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .evidence-drawer button,
+  #page-chat .chat-topbar .secondary-button,
+  #page-chat .chat-topbar .chat-topbar-actions button,
+  #page-chat .chat-jump-to-latest,
+  #chat-form.composer .composer-model-trigger,
+  #chat-form.composer .composer-permission-trigger {
+    min-height: 44px !important;
+  }
+
+  #page-chat #refresh-btn {
+    width: 44px;
+  }
+
+  #page-chat .message-actions {
+    min-height: 44px;
+  }
+
+  #page-chat .message-actions button,
+  #page-chat .message-actions .retry-answer-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 }
 
@@ -2545,8 +2620,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   #page-chat.chat-empty #chat-form.composer .composer-shell,
   #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
-    grid-template-columns: 34px minmax(0, 1fr) 34px !important;
-    grid-template-rows: minmax(46px, auto) 34px !important;
+    grid-template-columns: 44px minmax(0, 1fr) 44px !important;
+    grid-template-rows: minmax(46px, auto) 44px !important;
     padding: 10px !important;
     border-radius: 20px !important;
   }
@@ -2556,8 +2631,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 
   #chat-form.composer .composer-plus {
-    width: 34px !important;
-    height: 34px !important;
+    width: 44px !important;
+    height: 44px !important;
   }
 
   #chat-form.composer .composer-model-trigger {
@@ -2565,15 +2640,26 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   }
 
   #page-chat #chat-form.composer .composer-shell > button#chat-submit-btn.composer-send-button[type="submit"] {
-    width: 34px !important;
-    min-width: 34px !important;
-    max-width: 34px !important;
-    height: 34px !important;
-    min-height: 34px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
   }
 
   .evidence-drawer {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
     min-width: 0;
+    border-radius: 12px !important;
+  }
+
+  body.drawer-collapsed .evidence-drawer {
+    transform: translateY(12px);
   }
 
   .agent-trace-section {
@@ -3665,13 +3751,13 @@ body.sidebar-collapsed .sidebar {
   .sidebar .user-menu-button,
   .sidebar.collapsed .user-menu-button,
   body.sidebar-collapsed .sidebar .user-menu-button {
-    width: 36px !important;
-    min-width: 36px !important;
-    max-width: 36px !important;
-    height: 36px !important;
-    min-height: 36px !important;
-    flex: 0 0 36px !important;
-    border-radius: 9px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    flex: 0 0 44px !important;
+    border-radius: 10px !important;
   }
 
   .sidebar-bottom-tools,
@@ -3692,7 +3778,7 @@ body.sidebar-collapsed .sidebar {
 
   .user-menu,
   body.sidebar-collapsed .user-menu {
-    flex: 0 0 36px !important;
+    flex: 0 0 44px !important;
   }
 
   .sidebar #runtime-box {
@@ -3702,32 +3788,39 @@ body.sidebar-collapsed .sidebar {
   #page-chat .chat-theme-toggle,
   #page-chat #theme-toggle-btn.chat-theme-toggle,
   #page-chat #theme-toggle-btn.chat-theme-toggle[aria-pressed="true"] {
-    top: 10px !important;
-    right: 10px !important;
-    width: 34px !important;
-    min-width: 34px !important;
-    height: 34px !important;
-    min-height: 34px !important;
+    top: 6px !important;
+    right: 8px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
     border-radius: 10px !important;
   }
 
   #page-chat.chat-empty #chat-form.composer .composer-shell,
   #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
-    grid-template-columns: 34px minmax(0, 1fr) 34px minmax(72px, auto) 34px !important;
-    grid-template-rows: minmax(38px, auto) 34px !important;
+    grid-template-columns: 44px minmax(0, 1fr) 44px minmax(72px, auto) 44px !important;
+    grid-template-rows: minmax(44px, auto) 44px !important;
     column-gap: 4px !important;
     padding: 9px !important;
     border-radius: 16px !important;
   }
 
   #chat-form.composer .composer-input-stack textarea {
-    min-height: 38px !important;
+    min-height: 44px !important;
   }
 
   #chat-form.composer .composer-permission-trigger {
-    width: 34px !important;
-    min-width: 34px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
     padding: 0 !important;
+  }
+
+  #chat-form.composer .composer-plus {
+    width: 44px !important;
+    height: 44px !important;
   }
 
   #chat-form.composer .composer-permission-trigger > span:nth-child(2),
@@ -3737,8 +3830,23 @@ body.sidebar-collapsed .sidebar {
 
   #chat-form.composer .composer-model-trigger {
     max-width: 116px !important;
+    min-height: 44px !important;
     padding-inline: 6px !important;
     overflow: hidden;
+  }
+
+  #page-chat #chat-form.composer .composer-shell > button#chat-submit-btn.composer-send-button[type="submit"] {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+
+  #page-chat .chat-topbar #inspector-toggle {
+    width: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
   }
 
   #chat-form.composer .composer-model-trigger > span:nth-child(2) {

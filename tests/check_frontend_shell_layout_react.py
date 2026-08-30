@@ -78,6 +78,37 @@ def main() -> None:
         if needle not in mobile_guard:
             raise AssertionError(f"missing {label} after desktop shell overrides: {needle}")
 
+    refinement = read("frontend/refinement.css")
+    responsive_marker = "/* AgentLens refinement: responsive */"
+    responsive_index = refinement.find(responsive_marker)
+    if responsive_index < 0:
+        raise AssertionError("missing AgentLens responsive refinement marker")
+    responsive = refinement[responsive_index:]
+    for needle, label in [
+        (".evidence-drawer {\n    position: absolute;", "floating run workbench below 1180px"),
+        ("body.drawer-collapsed .evidence-drawer {\n    display: grid;", "animated hidden workbench state"),
+        ("visibility: hidden;", "collapsed workbench removed from interaction"),
+        ("@media (max-width: 1180px), (pointer: coarse)", "touch-aware control sizing"),
+        (".evidence-drawer button,", "44px run workbench targets"),
+        ("#page-chat .message-actions button", "responsive message action targets"),
+        ("left: 8px;", "full-width mobile run workbench"),
+    ]:
+        if needle not in responsive:
+            raise AssertionError(f"missing {label} in responsive refinement: {needle}")
+
+    final_mobile_index = refinement.rfind("@media (max-width: 760px)")
+    if final_mobile_index < responsive_index:
+        raise AssertionError("missing final mobile interaction pass")
+    final_mobile = refinement[final_mobile_index:]
+    for needle, label in [
+        ("grid-template-columns: 44px minmax(0, 1fr) 44px minmax(72px, auto) 44px !important;", "mobile composer touch columns"),
+        ("body.sidebar-collapsed .sidebar .user-menu-button {\n    width: 44px !important;", "mobile sidebar touch controls"),
+        ("#chat-form.composer .composer-input-stack textarea {\n    min-height: 44px !important;", "mobile composer input target"),
+        ("#page-chat .chat-topbar #inspector-toggle", "mobile workbench toggle target"),
+    ]:
+        if needle not in final_mobile:
+            raise AssertionError(f"missing {label} in final mobile pass: {needle}")
+
     for needle, label in [
         ('icon: "KB"', "letter knowledge icon"),
         ('icon: "SET"', "letter settings icon"),
