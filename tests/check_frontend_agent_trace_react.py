@@ -1522,6 +1522,16 @@ def main() -> None:
     )
     require(
         "frontend/react/src/components/AgentArtifactList.jsx",
+        "workspaceApi.downloadUrl",
+        "local artifact direct download",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
+        '"下载"',
+        "download action is visible on generated files",
+    )
+    require(
+        "frontend/react/src/components/AgentArtifactList.jsx",
         'strong>{"变更审阅"}</strong>',
         "sequential change review entry",
     )

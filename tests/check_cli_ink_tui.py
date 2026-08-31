@@ -338,6 +338,37 @@ class FakeBackend:
         }
 
 
+class LongOutputBackend(FakeBackend):
+    def run(
+        self,
+        question,
+        event_sink,
+        reasoning_effort="default",
+        execution_mode="auto",
+        attachment_paths=None,
+    ):
+        event_sink(
+            {
+                "eventName": "tool.completed",
+                "type": "tool_result",
+                "runId": "run-long-output",
+                "sequence": 42,
+                "eventId": "event-long-output",
+                "toolCallId": "call-long-output",
+                "toolName": "run_sandbox_command",
+                "status": "success",
+                "output": "x" * 20_000,
+            }
+        )
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": "run-long-output",
+                "answer": "完成",
+            }
+        )
+
+
 class ApprovalBackend(FakeBackend):
     def __init__(self) -> None:
         super().__init__()
@@ -585,6 +616,39 @@ def main() -> None:
         for row in shell_rows
     )
     assert shell_rows[-1]["answer"] == "sandbox-ok\n"
+
+    detail_output = StringIO()
+    detail_bridge = InkRuntimeBridge(
+        LongOutputBackend("/long-output-workspace"),
+        input_stream=StringIO(),
+        output_stream=detail_output,
+    )
+    detail_bridge.handle(
+        {"type": "submit", "requestId": "turn-long-output", "text": "输出长记录"}
+    )
+    detail_rows = wait_for(detail_output, "turn_completed")
+    preview = next(
+        row["event"]
+        for row in detail_rows
+        if row.get("type") == "agent_event"
+        and row.get("event", {}).get("eventId") == "event-long-output"
+    )
+    assert preview["outputTruncated"] is True
+    assert len(preview["output"]) == 12_000
+    detail_bridge.handle(
+        {
+            "type": "agent_event_detail",
+            "requestId": "detail-1",
+            "runId": "run-long-output",
+            "sequence": 42,
+            "eventId": "event-long-output",
+            "toolCallId": "call-long-output",
+        }
+    )
+    detail_rows = wait_for(detail_output, "agent_event_detail")
+    full_event = detail_rows[-1]["event"]
+    assert not full_event.get("outputTruncated", False)
+    assert len(full_event["output"]) == 20_000
 
     ready_output = StringIO()
     ready_bridge = InkRuntimeBridge(

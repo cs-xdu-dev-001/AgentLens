@@ -743,6 +743,12 @@ function activityFromEvent(previous, event) {
   const output = event.output ?? current.output;
   next.set(callId, {
     id: callId,
+    runId: event.runId ?? current.runId,
+    sequence: event.sequence ?? current.sequence,
+    eventId: event.eventId ?? current.eventId,
+    outputTruncated: event.outputTruncated === undefined
+      ? Boolean(current.outputTruncated)
+      : Boolean(event.outputTruncated),
     name: publicLabel(event.toolName ?? event.name ?? current.name, '工具调用'),
     status: runtimeStatusFromEvent(event, current.status ?? 'running'),
     arguments: event.arguments ?? current.arguments,
@@ -2766,6 +2772,7 @@ export function App({
   const [toolDetailOpen, setToolDetailOpen] = useState(false);
   const [toolDetailIndex, setToolDetailIndex] = useState(0);
   const [toolDetailOffset, setToolDetailOffset] = useState(0);
+  const eventDetailRequestsRef = useRef(new Set());
   const [recoveryChoice, setRecoveryChoice] = useState(0);
   const recoveryChoiceRef = useRef(0);
   const updateRecoveryChoice = useCallback(next => {
@@ -3487,6 +3494,20 @@ export function App({
           });
           activitiesRef.current = nextActivities;
           setActivities(nextActivities);
+        }
+        return;
+      }
+      if (message.type === 'agent_event_detail') {
+        if (message.event && typeof message.event === 'object') {
+          const nextActivities = activityFromEvent(activitiesRef.current, {
+            ...message.event,
+            outputTruncated: false,
+          });
+          activitiesRef.current = nextActivities;
+          setActivities(nextActivities);
+          setPhase('已加载完整工具输出');
+        } else if (message.error) {
+          appendItem('warning', String(message.error));
         }
         return;
       }
@@ -5528,6 +5549,31 @@ export function App({
     setDetailTab(detailRows.length ? 'tools' : 'references');
     setToolDetailOpen(true);
   }, [appendItem, closeTransientSurfaces, detailRows, updateRecoveryChoice]);
+  const requestEventDetail = useCallback((row) => {
+    if (!row?.outputTruncated) return;
+    const runId = String(row.runId || currentRunId || '').trim();
+    const sequence = Number(row.sequence) || 0;
+    const eventId = String(row.eventId || '').trim();
+    const toolCallId = String(row.id || '').trim();
+    if (!runId || (!sequence && !eventId && !toolCallId)) return;
+    const cacheKey = [runId, sequence || '', eventId, toolCallId].join('|');
+    if (eventDetailRequestsRef.current.has(cacheKey)) return;
+    eventDetailRequestsRef.current.add(cacheKey);
+    const requestId = `event-detail-${runId}-${sequence || eventId || toolCallId}`;
+    const sent = client.send({
+      type: 'agent_event_detail',
+      requestId,
+      runId,
+      ...(sequence ? {sequence} : {}),
+      ...(eventId ? {eventId} : {}),
+      ...(toolCallId ? {toolCallId} : {}),
+    });
+    if (!sent) eventDetailRequestsRef.current.delete(cacheKey);
+  }, [client, currentRunId]);
+  useEffect(() => {
+    if (!toolDetailOpen || detailTab !== 'tools') return;
+    requestEventDetail(detailRows[toolDetailIndex]);
+  }, [detailRows, detailTab, requestEventDetail, toolDetailIndex, toolDetailOpen]);
   const recoverFailure = useCallback((mode, row = null) => {
     const failureRow = row || {
       name: runProjectionRef.current.failedStep?.title || 'Agent运行',

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 from contextlib import redirect_stdout
 from hashlib import sha256
 import json
@@ -17,7 +18,7 @@ from ..services.agent_event_protocol import (
 )
 from ..services.agent_failure import classify_agent_failure
 from ..services.agent_execution import AgentExecution
-from ..services.agent_trace import sanitize_trace_value
+from ..services.agent_trace import sanitize_trace_payload, sanitize_trace_value
 from ..services.remote_agent import RemoteAgentClient, RemoteProfileStore
 from ..services.local_cli_runtime import local_data_dir
 from .backend import TuiBackend
@@ -25,6 +26,9 @@ from .state import PromptHistoryStore, PromptQueueStore
 
 
 PROTOCOL_VERSION = 16
+EVENT_DETAIL_CACHE_LIMIT = 2048
+EVENT_DETAIL_VALUE_LIMIT = 1_000_000
+EVENT_PREVIEW_VALUE_LIMIT = 12_000
 
 
 def _history_scope(backend: TuiBackend) -> str:
@@ -86,6 +90,7 @@ class InkRuntimeBridge:
         self.output_stream = output_stream
         self._write_lock = Lock()
         self._state_lock = Lock()
+        self._event_detail_lock = Lock()
         self._queue_lock = Lock()
         self._running = False
         self._stopping = False
@@ -99,6 +104,7 @@ class InkRuntimeBridge:
         self._request_id = ""
         self._run_id = ""
         self._updating_cli = False
+        self._event_detail_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.history_store = PromptHistoryStore(
             local_data_dir() / "history" / f"{_history_scope(backend)}.jsonl"
         )
@@ -147,7 +153,13 @@ class InkRuntimeBridge:
         run_id = str(event.get("runId") or "")
         if run_id:
             self._run_id = run_id
-        safe_event = _public_value(event, max_chars=12_000)
+        full_event, _ = _bounded_event(event, max_chars=EVENT_DETAIL_VALUE_LIMIT)
+        if isinstance(full_event, dict):
+            self._remember_event_detail(full_event)
+        safe_event, truncated = _bounded_event(
+            event,
+            max_chars=EVENT_PREVIEW_VALUE_LIMIT,
+        )
         if not isinstance(safe_event, dict):
             safe_event = {
                 "type": str(event.get("type") or "runtime_event"),
@@ -157,6 +169,8 @@ class InkRuntimeBridge:
                 "status": str(event.get("status") or ""),
                 "output": safe_event,
             }
+        if truncated:
+            safe_event["outputTruncated"] = True
         self.send(
             {
                 "type": "agent_event",
@@ -164,6 +178,59 @@ class InkRuntimeBridge:
                 "event": safe_event,
             }
         )
+
+    def _remember_event_detail(self, event: dict[str, Any]) -> None:
+        run_id = str(event.get("runId") or self._run_id or "")
+        sequence = str(event.get("sequence") or "")
+        event_id = str(event.get("eventId") or event.get("id") or "")
+        tool_call_id = str(event.get("toolCallId") or "")
+        key = "|".join(
+            (
+                run_id,
+                sequence or "-",
+                event_id or "-",
+                tool_call_id or "-",
+                str(event.get("eventName") or event.get("type") or "event"),
+            )
+        )
+        with self._event_detail_lock:
+            self._event_detail_cache[key] = event
+            self._event_detail_cache.move_to_end(key)
+            while len(self._event_detail_cache) > EVENT_DETAIL_CACHE_LIMIT:
+                self._event_detail_cache.popitem(last=False)
+
+    def _find_event_detail(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        run_id = str(message.get("runId") or self._run_id or "")
+        sequence = str(message.get("sequence") or "")
+        event_id = str(message.get("eventId") or "")
+        tool_call_id = str(message.get("toolCallId") or "")
+        with self._event_detail_lock:
+            events = tuple(self._event_detail_cache.values())
+        for event in reversed(events):
+            if run_id and str(event.get("runId") or "") != run_id:
+                continue
+            if sequence and str(event.get("sequence") or "") == sequence:
+                return event
+            if event_id and str(event.get("eventId") or event.get("id") or "") == event_id:
+                return event
+            if tool_call_id and str(event.get("toolCallId") or "") == tool_call_id:
+                return event
+        return None
+
+    def _agent_event_detail(self, message: dict[str, Any]) -> None:
+        event = self._find_event_detail(message)
+        payload: dict[str, Any] = {
+            "type": "agent_event_detail",
+            "requestId": str(message.get("requestId") or ""),
+            "runId": str(message.get("runId") or self._run_id or ""),
+            "sequence": message.get("sequence"),
+            "eventId": str(message.get("eventId") or ""),
+        }
+        if event is None:
+            payload["error"] = "完整事件已不在当前TUI缓存中。"
+        else:
+            payload["event"] = event
+        self.send(payload)
 
     def _start_worker(self, target: Any, *, busy_message: str) -> bool:
         with self._state_lock:
@@ -1221,6 +1288,8 @@ class InkRuntimeBridge:
             self._submit(message)
         elif message_type == "shell":
             self._shell(message)
+        elif message_type == "agent_event_detail":
+            self._agent_event_detail(message)
         elif message_type == "approve":
             self._approve(message)
         elif message_type == "answer_question":
@@ -1381,6 +1450,28 @@ def _public_value(value: Any, *, max_chars: int) -> Any:
         return json.loads(safe)
     except json.JSONDecodeError:
         return safe
+
+
+def _bounded_event(value: Any, *, max_chars: int) -> tuple[Any, bool]:
+    """Redact an event while bounding large fields without losing its shape."""
+    truncated = False
+
+    def trim(item: Any) -> Any:
+        nonlocal truncated
+        safe = sanitize_trace_payload(item)
+        if isinstance(safe, str):
+            if len(safe) > max_chars:
+                truncated = True
+            return safe[:max_chars]
+        if isinstance(safe, dict):
+            return {str(key): trim(child) for key, child in safe.items()}
+        if isinstance(safe, (list, tuple)):
+            return [trim(child) for child in safe]
+        if safe is None or isinstance(safe, (bool, int, float)):
+            return safe
+        return str(safe)
+
+    return trim(value), truncated
 
 
 def _backend(config: dict[str, Any]) -> TuiBackend:

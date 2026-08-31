@@ -110,6 +110,17 @@ export function AgentArtifactList({
     }
   };
 
+  const downloadArtifact = (artifact) => {
+    const path = String(artifact?.path || "").trim();
+    if (!path || artifact?.reverted) return;
+    try {
+      window.location.assign(workspaceApi.downloadUrl(path));
+      notifyToast("正在下载产物");
+    } catch (error) {
+      notifyError(error, "下载产物失败");
+    }
+  };
+
   const openDiff = async (artifact, identifier) => {
     const requestId = diffRequestRef.current + 1;
     diffRequestRef.current = requestId;
@@ -255,6 +266,7 @@ export function AgentArtifactList({
         const displayTarget = artifactDisplayTarget(artifact);
         const metrics = artifactMetrics(artifact);
         const external = /^https?:\/\//i.test(target);
+        const downloadable = !external && Boolean(String(artifact?.path || "").trim()) && !artifact.reverted;
         const identifier = artifactIdentifier(artifact, index);
         const selected = selectedId === identifier;
         const canInspect = !external && Boolean(artifact.diffAvailable || artifact.operationId);
@@ -301,6 +313,15 @@ export function AgentArtifactList({
                   onClick={() => toggleDiff(artifact, identifier)}
                 >
                   {selected ? "收起" : "详情"}
+                </button>
+              ) : null}
+              {downloadable ? (
+                <button
+                  type={"button"}
+                  title={"下载到本地"}
+                  onClick={() => downloadArtifact(artifact)}
+                >
+                  {"下载"}
                 </button>
               ) : null}
               {target ? (
