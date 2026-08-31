@@ -650,7 +650,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
   return (
     <Box marginTop={1}>
       <Text color={running ? ACCENT : MUTED}>{animate ? `${spinner} ${stablePhase}` : stablePhase}</Text>
-      {running ? <Text color={cancelPending ? WARNING : MUTED}>{cancelPending ? ' · 取消中' : ' · Ctrl+C取消'}</Text> : null}
+      {running ? <Text color={cancelPending ? WARNING : MUTED}>{cancelPending ? ' · 取消中' : ' · Esc/Ctrl+C取消'}</Text> : null}
       {waitingCount ? <Text color={WARNING}> · 待处理{waitingCount}</Text> : null}
       {queueLength ? <Text color={MUTED}> · 队列{queueLength}</Text> : null}
       {queuePaused ? <Text color={WARNING}> · 队列已暂停，输入/continue继续</Text> : null}
@@ -6515,6 +6515,10 @@ export function App({
         setHistoryIndex(-1);
         showComposerNotice('已取回最近排队任务');
       }
+      return;
+    }
+    if (key.escape && running) {
+      requestCancel();
       return;
     }
     if (key.escape && composerModeRef.current === 'shell' && !inputRef.current) {

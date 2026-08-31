@@ -1330,6 +1330,24 @@ test('running cancellation gives immediate feedback and ignores repeated Ctrl+C'
   assert.doesNotMatch(view.lastFrame(), /取消中/);
 });
 
+test('Escape cancels a running task before editing the composer', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.19.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('需要立即停止');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('\u001b');
+  await tick();
+
+  assert.equal(client.sent.filter(item => item.type === 'cancel').length, 1);
+  assert.match(view.lastFrame(), /正在请求取消/);
+  assert.match(view.lastFrame(), /取消中/);
+  assert.doesNotMatch(view.lastFrame(), /需要立即停止\s*$/);
+});
+
 test('the active overlay exclusively owns rendering and command navigation', async t => {
   const client = new FakeClient();
   const view = render(<App client={client} version="0.19.0" />);
