@@ -218,6 +218,36 @@ try {
   });
   assert.equal(streamResult.final, "token-100");
   assert.ok(streamResult.mutations <= 4, JSON.stringify(streamResult));
+  await page.setViewportSize({ width: 320, height: 700 });
+  const narrowComposer = await page.evaluate(() => {
+    const shell = document.querySelector("#chat-form .composer-shell");
+    const permission = document.querySelector(".composer-permission-picker .composer-permission-trigger");
+    const model = document.querySelector(".composer-model-picker:not(.composer-permission-picker) .composer-model-trigger");
+    const send = document.querySelector("#chat-submit-btn");
+    const rect = node => {
+      const box = node?.getBoundingClientRect();
+      return box ? { left: box.left, right: box.right, top: box.top, bottom: box.bottom } : null;
+    };
+    const boxes = [permission, model, send].map(rect);
+    const overlaps = boxes.some((left, index) => boxes.slice(index + 1).some((right) => (
+      left && right
+      && left.left < right.right
+      && right.left < left.right
+      && left.top < right.bottom
+      && right.top < left.bottom
+    )));
+    return {
+      shell: rect(shell),
+      boxes,
+      overlaps,
+      modelLabelHidden: model
+        ? getComputedStyle(model.querySelector("span:nth-child(2)")).display === "none"
+        : false,
+    };
+  });
+  assert.equal(narrowComposer.overlaps, false, JSON.stringify(narrowComposer));
+  assert.equal(narrowComposer.modelLabelHidden, true, JSON.stringify(narrowComposer));
+  await page.setViewportSize({ width: 390, height: 844 });
   await open();
   await page.mouse.click(4, 395);
   await palette.waitFor({ state: "detached" });

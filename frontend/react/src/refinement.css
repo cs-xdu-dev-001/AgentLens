@@ -4753,3 +4753,32 @@ body.sidebar-collapsed .sidebar {
     padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
 }
+
+/* Keep the four primary composer actions separated on very narrow phones.
+   The model picker stays available as an icon-only control instead of
+   forcing its label to compete with the permission and send buttons. */
+@media (max-width: 360px) {
+  #page-chat #chat-form.composer .composer-shell {
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px 44px !important;
+  }
+
+  #chat-form.composer .composer-permission-picker,
+  #chat-form.composer .composer-model-picker {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+  }
+
+  #chat-form.composer .composer-model-trigger {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    justify-content: center;
+    padding-inline: 0 !important;
+  }
+
+  #chat-form.composer .composer-model-trigger > span:nth-child(2),
+  #chat-form.composer .composer-model-trigger > .composer-model-chevron {
+    display: none !important;
+  }
+}
