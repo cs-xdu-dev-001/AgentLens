@@ -160,6 +160,51 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
 
         runtime.agent_runs.create_run(
             user_id=1,
+            session_id="session-api-session-approval",
+            user_message_id=3,
+            goal_summary="Allow a tool for this session",
+            trigger_mode="auto",
+            run_id="run_session_approval",
+        )
+        runtime.agent_runs.transition_run(
+            1,
+            "run_session_approval",
+            "running",
+        )
+        runtime.agent_runs.transition_run(
+            1,
+            "run_session_approval",
+            "waiting_approval",
+        )
+        session_operation = runtime.agent_tool_operations.ensure_waiting(
+            user_id=1,
+            run_id="run_session_approval",
+            tool_call_id="call_session_write",
+            tool_name="notion_create_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"title": "Session"},
+        )
+        session_response = alice.post(
+            f"/api/agent/approvals/{session_operation['approvalId']}",
+            json={"decision": "allow_session"},
+        )
+        assert session_response.status_code == 200, session_response.text
+        assert durable_resumes.get(timeout=1) == (
+            1,
+            "run_session_approval",
+            f"approval:{session_operation['approvalId']}",
+        )
+        stored_session_operation = runtime.agent_tool_operations.get(
+            1,
+            session_operation["approvalId"],
+        )
+        assert stored_session_operation is not None
+        assert stored_session_operation["status"] == "approved"
+        assert stored_session_operation["decision"] == "allow_session"
+
+        runtime.agent_runs.create_run(
+            user_id=1,
             session_id="session-timeout-approval",
             user_message_id=2,
             goal_summary="Expire a durable write",
@@ -223,7 +268,9 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     assert '"Approval timed out"' in extensions
     assert '"approval_timeout"' in extensions
-    print("durable LangGraph approvals are isolated, resumable, and expiring")
+    print(
+        "durable LangGraph approvals are isolated, resumable, session-scoped, and expiring"
+    )
 
 
 if __name__ == "__main__":

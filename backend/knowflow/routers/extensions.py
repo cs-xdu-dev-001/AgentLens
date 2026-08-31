@@ -567,7 +567,7 @@ def execute_agent_chat(
             None,
         )
         if approval_trace_step is not None:
-            allowed = approval_decision == "allow_once"
+            allowed = approval_decision in {"allow_once", "allow_session"}
             timed_out = approval_decision == "timeout"
             trace.finish_step(
                 approval_trace_step,
@@ -1061,6 +1061,9 @@ def execute_agent_chat(
                         interrupt_value.get("risk") or "unknown"
                     ),
                     input_summary=interrupt_value.get("inputSummary"),
+                    input_fingerprint=interrupt_value.get(
+                        "inputFingerprint"
+                    ),
                 )
                 approval_step_id = trace.start_step(
                     kind="approval",
@@ -2002,7 +2005,7 @@ def execute_persisted_agent_run(
                 "decision": approval_decision,
                 "status": (
                     "success"
-                    if approval_decision == "allow_once"
+                    if approval_decision in {"allow_once", "allow_session"}
                     else "failed"
                 ),
             }

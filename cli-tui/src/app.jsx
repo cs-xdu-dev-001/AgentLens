@@ -3218,7 +3218,7 @@ export function App({
   const decideApproval = useCallback((decision, event = approval) => {
     if (!event) return;
     if (decision === 'allow_session') sessionApprovals.current.add(approvalKey(event));
-    client.send({type: 'approve', decision: decision === 'allow_session' ? 'allow_once' : decision});
+    client.send({type: 'approve', decision});
     setWaitingInteractions(items => removeWaitingInteraction(items, 'approval', event));
     setPhase(waitingInteractionsRef.current.length > 1 ? '还有待处理请求' : '继续执行');
   }, [approval, client]);

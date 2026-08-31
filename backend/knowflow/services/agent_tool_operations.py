@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -11,6 +12,23 @@ from sqlalchemy import text
 
 
 logger = logging.getLogger(__name__)
+
+
+def tool_input_fingerprint(value: Any) -> str:
+    """Return a stable digest that binds an approval to exact tool input."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            pass
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _now() -> datetime:
@@ -68,6 +86,11 @@ class AgentToolOperationStore:
                 row.get("input_summary"),
                 None,
             ),
+            "inputFingerprint": (
+                str(row["input_fingerprint"])
+                if row.get("input_fingerprint")
+                else None
+            ),
             "status": str(row["status"]),
             "decision": (
                 str(row["decision"])
@@ -119,6 +142,7 @@ class AgentToolOperationStore:
         server_name: str,
         risk: str,
         input_summary: Any,
+        input_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         if int(user_id) <= 0 or not run_id or not tool_call_id:
             raise ValueError("A user, run, and tool call are required.")
@@ -127,6 +151,12 @@ class AgentToolOperationStore:
         expires_at = now + timedelta(
             seconds=self.approval_timeout_seconds
         )
+        fingerprint = str(input_fingerprint or "").strip().lower()
+        if len(fingerprint) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in fingerprint
+        ):
+            fingerprint = tool_input_fingerprint(input_summary)
         with self.database.engine.begin() as conn:
             owner = conn.execute(
                 text(
@@ -143,11 +173,12 @@ class AgentToolOperationStore:
                 """
                 INSERT IGNORE INTO agent_tool_operation(
                   id, user_id, run_id, tool_call_id, tool_name,
-                  server_name, risk, input_summary, status,
+                  server_name, risk, input_summary, input_fingerprint, status,
                   expires_at, created_at, updated_at
                 ) VALUES (
                   :id, :user_id, :run_id, :tool_call_id, :tool_name,
-                  :server_name, :risk, :input_summary, 'waiting',
+                  :server_name, :risk, :input_summary, :input_fingerprint,
+                  'waiting',
                   :expires_at, :created_at, :updated_at
                 )
                 """
@@ -155,11 +186,12 @@ class AgentToolOperationStore:
                 else """
                 INSERT INTO agent_tool_operation(
                   id, user_id, run_id, tool_call_id, tool_name,
-                  server_name, risk, input_summary, status,
+                  server_name, risk, input_summary, input_fingerprint, status,
                   expires_at, created_at, updated_at
                 ) VALUES (
                   :id, :user_id, :run_id, :tool_call_id, :tool_name,
-                  :server_name, :risk, :input_summary, 'waiting',
+                  :server_name, :risk, :input_summary, :input_fingerprint,
+                  'waiting',
                   :expires_at, :created_at, :updated_at
                 )
                 ON CONFLICT(run_id, tool_call_id) DO NOTHING
@@ -180,6 +212,7 @@ class AgentToolOperationStore:
                         ensure_ascii=False,
                         default=str,
                     ),
+                    "input_fingerprint": fingerprint,
                     "expires_at": _timestamp(expires_at),
                     "created_at": _timestamp(now),
                     "updated_at": _timestamp(now),
@@ -201,7 +234,18 @@ class AgentToolOperationStore:
             ).mappings().first()
         if row is None:
             raise RuntimeError("Agent tool operation was not created.")
-        return self._normalize(dict(row))
+        operation = self._normalize(dict(row))
+        if (
+            operation["toolName"] != str(tool_name)[:160]
+            or operation["serverName"]
+            != str(server_name or "MCP")[:255]
+            or operation["risk"] != str(risk or "unknown")[:30]
+            or operation["inputFingerprint"] != fingerprint
+        ):
+            raise ValueError(
+                "Tool call identity was reused with different approval input."
+            )
+        return operation
 
     def resolve(
         self,
@@ -209,7 +253,12 @@ class AgentToolOperationStore:
         approval_id: str,
         decision: str,
     ) -> dict[str, Any] | None:
-        if decision not in {"allow_once", "deny", "timeout"}:
+        if decision not in {
+            "allow_once",
+            "allow_session",
+            "deny",
+            "timeout",
+        }:
             return None
         now = self.clock()
         with self.database.engine.begin() as conn:
@@ -240,7 +289,11 @@ class AgentToolOperationStore:
                 )
                 updated = self._row(conn, user_id, approval_id)
                 return self._normalize(updated) if updated else None
-            status = "approved" if decision == "allow_once" else "denied"
+            status = (
+                "approved"
+                if decision in {"allow_once", "allow_session"}
+                else "denied"
+            )
             result = conn.execute(
                 text(
                     """
@@ -425,6 +478,206 @@ class AgentToolOperationStore:
             result.append(item)
         return result
 
+    @staticmethod
+    def _session_grant_exists(
+        conn,
+        *,
+        user_id: int,
+        run_id: str,
+        tool_call_id: str,
+        tool_name: str,
+        server_name: str,
+        risk: str,
+    ) -> bool:
+        # A session grant is intentionally scoped to the tool/server/risk,
+        # not one argument set. Each inherited operation still fingerprints
+        # its own exact input so a durable call cannot be replayed with edits.
+        granted = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM agent_run AS current_run
+                JOIN agent_run AS grant_run
+                  ON grant_run.user_id=current_run.user_id
+                 AND grant_run.session_id=current_run.session_id
+                JOIN agent_tool_operation AS grant_operation
+                  ON grant_operation.run_id=grant_run.id
+                 AND grant_operation.user_id=grant_run.user_id
+                WHERE current_run.id=:run_id
+                  AND current_run.user_id=:user_id
+                  AND grant_operation.decision='allow_session'
+                  AND grant_operation.status IN (
+                    'approved', 'succeeded', 'failed'
+                  )
+                  AND grant_operation.tool_name=:tool_name
+                  AND COALESCE(grant_operation.server_name, 'MCP')=:server_name
+                  AND grant_operation.risk=:risk
+                  AND NOT (
+                    grant_operation.run_id=:run_id
+                    AND grant_operation.tool_call_id=:tool_call_id
+                  )
+                LIMIT 1
+                """
+            ),
+            {
+                "user_id": int(user_id),
+                "run_id": str(run_id),
+                "tool_call_id": str(tool_call_id or ""),
+                "tool_name": str(tool_name)[:160],
+                "server_name": str(server_name or "MCP")[:255],
+                "risk": str(risk or "unknown")[:30],
+            },
+        ).first()
+        return granted is not None
+
+    def has_session_grant(
+        self,
+        *,
+        user_id: int,
+        run_id: str,
+        tool_call_id: str,
+        tool_name: str,
+        server_name: str,
+        risk: str,
+    ) -> bool:
+        """Check a prior explicit grant scoped to this Agent session and tool."""
+        if int(user_id) <= 0 or not run_id or not tool_name:
+            return False
+        with self.database.engine.connect() as conn:
+            return self._session_grant_exists(
+                conn,
+                user_id=user_id,
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                server_name=server_name,
+                risk=risk,
+            )
+
+    def ensure_session_granted_operation(
+        self,
+        *,
+        user_id: int,
+        run_id: str,
+        tool_call_id: str,
+        tool_name: str,
+        server_name: str,
+        risk: str,
+        input_summary: Any,
+        input_fingerprint: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a durable, claimable operation from a prior session grant."""
+        if (
+            int(user_id) <= 0
+            or not run_id
+            or not tool_call_id
+            or not tool_name
+        ):
+            return None
+        now = self.clock()
+        expires_at = now + timedelta(
+            seconds=self.approval_timeout_seconds
+        )
+        fingerprint = str(input_fingerprint or "").strip().lower()
+        if len(fingerprint) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in fingerprint
+        ):
+            fingerprint = tool_input_fingerprint(input_summary)
+        approval_id = f"apr_{secrets.token_urlsafe(18)}"
+        with self.database.engine.begin() as conn:
+            if not self._session_grant_exists(
+                conn,
+                user_id=user_id,
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                server_name=server_name,
+                risk=risk,
+            ):
+                return None
+            statement = (
+                """
+                INSERT IGNORE INTO agent_tool_operation(
+                  id, user_id, run_id, tool_call_id, tool_name,
+                  server_name, risk, input_summary, input_fingerprint,
+                  status, decision,
+                  expires_at, resolved_at, created_at, updated_at
+                ) VALUES (
+                  :id, :user_id, :run_id, :tool_call_id, :tool_name,
+                  :server_name, :risk, :input_summary, :input_fingerprint,
+                  'approved', 'allow_session', :expires_at, :resolved_at,
+                  :created_at, :updated_at
+                )
+                """
+                if self.database.is_mysql
+                else """
+                INSERT INTO agent_tool_operation(
+                  id, user_id, run_id, tool_call_id, tool_name,
+                  server_name, risk, input_summary, input_fingerprint,
+                  status, decision,
+                  expires_at, resolved_at, created_at, updated_at
+                ) VALUES (
+                  :id, :user_id, :run_id, :tool_call_id, :tool_name,
+                  :server_name, :risk, :input_summary, :input_fingerprint,
+                  'approved', 'allow_session', :expires_at, :resolved_at,
+                  :created_at, :updated_at
+                )
+                ON CONFLICT(run_id, tool_call_id) DO NOTHING
+                """
+            )
+            conn.execute(
+                text(statement),
+                {
+                    "id": approval_id,
+                    "user_id": int(user_id),
+                    "run_id": str(run_id),
+                    "tool_call_id": str(tool_call_id),
+                    "tool_name": str(tool_name)[:160],
+                    "server_name": str(server_name or "MCP")[:255],
+                    "risk": str(risk or "unknown")[:30],
+                    "input_summary": json.dumps(
+                        input_summary,
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                    "input_fingerprint": fingerprint,
+                    "expires_at": _timestamp(expires_at),
+                    "resolved_at": _timestamp(now),
+                    "created_at": _timestamp(now),
+                    "updated_at": _timestamp(now),
+                },
+            )
+            row = conn.execute(
+                text(
+                    """
+                    SELECT * FROM agent_tool_operation
+                    WHERE user_id=:user_id AND run_id=:run_id
+                      AND tool_call_id=:tool_call_id
+                    """
+                ),
+                {
+                    "user_id": int(user_id),
+                    "run_id": str(run_id),
+                    "tool_call_id": str(tool_call_id),
+                },
+            ).mappings().first()
+        if row is None:
+            return None
+        operation = self._normalize(dict(row))
+        if (
+            operation["decision"] != "allow_session"
+            or operation["status"]
+            not in {"approved", "executing", "succeeded", "failed"}
+            or operation["toolName"] != str(tool_name)[:160]
+            or operation["serverName"]
+            != str(server_name or "MCP")[:255]
+            or operation["risk"] != str(risk or "unknown")[:30]
+            or operation["inputFingerprint"] != fingerprint
+        ):
+            return None
+        return operation
+
     def get(self, user_id: int, approval_id: str) -> dict[str, Any] | None:
         with self.database.engine.connect() as conn:
             row = self._row(conn, user_id, approval_id)
@@ -488,7 +741,8 @@ class AgentToolOperationStore:
                     SET status='executing', started_at=:now,
                         updated_at=:now
                     WHERE id=:approval_id AND user_id=:user_id
-                      AND status='approved' AND decision='allow_once'
+                      AND status='approved'
+                      AND decision IN ('allow_once', 'allow_session')
                     """
                 ),
                 {

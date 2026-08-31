@@ -182,7 +182,7 @@ class McpOAuthStartIn(BaseModel):
 
 class AgentApprovalDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    decision: Literal["allow_once", "deny", "timeout"]
+    decision: Literal["allow_once", "allow_session", "deny", "timeout"]
 
 
 class SkillGitHubInspect(BaseModel):

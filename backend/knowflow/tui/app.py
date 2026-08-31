@@ -2127,7 +2127,6 @@ class KnowFlowTui(App[None]):
                 self.session.session_approvals[
                     self.current_approval_policy
                 ] = self.current_approval_tool
-            selected = "allow_once"
         self._set_status("正在继续…")
         self.resume_turn(execution, selected)
         self._refresh_status_bar()

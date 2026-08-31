@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 
 from .db_schema import MYSQL_SCHEMA, SQLITE_SCHEMA
 
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 
 class Database:
@@ -84,6 +84,12 @@ class Database:
             "request_json",
             "LONGTEXT" if self.is_mysql else "TEXT",
         )
+        self.add_column_if_missing(
+            conn,
+            "agent_tool_operation",
+            "input_fingerprint",
+            "VARCHAR(64)" if self.is_mysql else "TEXT",
+        )
         summary_type = "LONGTEXT" if self.is_mysql else "TEXT"
         self.add_column_if_missing(
             conn,
@@ -134,7 +140,7 @@ class Database:
             {
                 "version": CURRENT_SCHEMA_VERSION,
                 "description": (
-                    "Persist per-user archived chat sessions."
+                    "Bind durable tool approvals to exact input."
                 ),
             },
         )

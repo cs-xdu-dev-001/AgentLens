@@ -14,6 +14,7 @@ from knowflow.services.agent_run_store import AgentRunStore
 from knowflow.services.agent_tool_operations import (
     AgentApprovalRunner,
     AgentToolOperationStore,
+    tool_input_fingerprint,
 )
 
 
@@ -59,6 +60,24 @@ def main() -> None:
         assert waiting["status"] == "waiting"
         assert waiting["expiresAt"].endswith("Z")
         assert waiting["inputSummary"] == {"title": "Weekly report"}
+        assert waiting["inputFingerprint"] == tool_input_fingerprint(
+            {"title": "Weekly report"}
+        )
+        try:
+            store.ensure_waiting(
+                user_id=11,
+                run_id="run-operation",
+                tool_call_id="call-write-1",
+                tool_name="mcp__notion__create_page",
+                server_name="Notion",
+                risk="write",
+                input_summary={"title": "Changed input"},
+            )
+            raise AssertionError(
+                "reused tool call ids must keep the same approval input"
+            )
+        except ValueError as exc:
+            assert "reused" in str(exc)
         assert store.resolve(
             12,
             waiting["approvalId"],
@@ -98,6 +117,132 @@ def main() -> None:
         assert finished is not None
         assert finished["status"] == "succeeded"
         assert finished["execution"]["output"] == {"pageId": "page-1"}
+
+        runs.create_run(
+            user_id=11,
+            session_id="session-grant-scope",
+            user_message_id=5,
+            goal_summary="Grant a tool for this session",
+            trigger_mode="auto",
+            run_id="run-session-grant-source",
+        )
+        session_grant = store.ensure_waiting(
+            user_id=11,
+            run_id="run-session-grant-source",
+            tool_call_id="call-session-grant",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"title": "Grant this session"},
+        )
+        assert not store.has_session_grant(
+            user_id=11,
+            run_id="run-session-grant-source",
+            tool_call_id="call-session-grant",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+        )
+        session_approved = store.resolve(
+            11,
+            session_grant["approvalId"],
+            "allow_session",
+        )
+        assert session_approved is not None
+        assert session_approved["status"] == "approved"
+        assert session_approved["decision"] == "allow_session"
+        assert store.claim_execution(11, session_grant["approvalId"])
+        assert not store.has_session_grant(
+            user_id=11,
+            run_id="run-session-grant-source",
+            tool_call_id="call-session-while-executing",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+        )
+        assert store.finish_execution(
+            11,
+            session_grant["approvalId"],
+            {
+                "call_id": "call-session-grant",
+                "tool_name": "mcp__notion__create_page",
+                "arguments": {"title": "Grant this session"},
+                "output": {"pageId": "page-session-grant"},
+                "status": "success",
+                "error_code": None,
+                "error_message": None,
+                "latency_ms": 12,
+            },
+        )
+        runs.transition_run(11, "run-session-grant-source", "running")
+        runs.transition_run(11, "run-session-grant-source", "completed")
+        runs.create_run(
+            user_id=11,
+            session_id="session-grant-scope",
+            user_message_id=6,
+            goal_summary="Reuse a session approval",
+            trigger_mode="auto",
+            run_id="run-session-grant",
+        )
+        assert store.has_session_grant(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-reuse",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+        )
+        inherited_operation = store.ensure_session_granted_operation(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-reuse",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"title": "Reuse the session grant"},
+        )
+        assert inherited_operation is not None
+        assert inherited_operation["status"] == "approved"
+        assert inherited_operation["decision"] == "allow_session"
+        assert inherited_operation["inputFingerprint"] == (
+            tool_input_fingerprint(
+                {"title": "Reuse the session grant"}
+            )
+        )
+        assert store.ensure_session_granted_operation(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-reuse",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="write",
+            input_summary={"title": "Changed inherited input"},
+        ) is None
+        assert not store.has_session_grant(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-reuse",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="destructive",
+        )
+        assert not store.has_session_grant(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-reuse",
+            tool_name="mcp__notion__delete_page",
+            server_name="Notion",
+            risk="write",
+        )
+        assert store.ensure_session_granted_operation(
+            user_id=11,
+            run_id="run-session-grant",
+            tool_call_id="call-session-wrong-risk",
+            tool_name="mcp__notion__create_page",
+            server_name="Notion",
+            risk="destructive",
+            input_summary={},
+        ) is None
 
         denied = store.ensure_waiting(
             user_id=11,
@@ -312,7 +457,7 @@ def main() -> None:
             version = conn.exec_driver_sql(
                 "SELECT MAX(version) FROM schema_version"
             ).scalar()
-        assert version == CURRENT_SCHEMA_VERSION == 15
+        assert version == CURRENT_SCHEMA_VERSION == 16
         database.engine.dispose()
 
     schema = (ROOT / "backend" / "knowflow" / "db_schema.py").read_text(
@@ -321,7 +466,7 @@ def main() -> None:
     assert "UNIQUE (run_id, tool_call_id)" in schema
     assert "uk_agent_tool_operation_call" in schema
     print(
-        "durable Agent tool approvals expire and resume without a browser"
+        "durable Agent tool approvals expire, resume, and stay session-scoped"
     )
 
 

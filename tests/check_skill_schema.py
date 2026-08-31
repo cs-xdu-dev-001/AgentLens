@@ -39,13 +39,13 @@ def main() -> None:
     from knowflow.db_schema import MYSQL_SCHEMA
     from knowflow.runtime import fetch_all, fetch_one
 
-    assert CURRENT_SCHEMA_VERSION == 15, CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 16, CURRENT_SCHEMA_VERSION
     version_row = fetch_one(
         "SELECT description FROM schema_version WHERE version=:version",
         {"version": CURRENT_SCHEMA_VERSION},
     )
     assert version_row == {
-        "description": "Persist per-user archived chat sessions."
+        "description": "Bind durable tool approvals to exact input."
     }, version_row
 
     tables = {

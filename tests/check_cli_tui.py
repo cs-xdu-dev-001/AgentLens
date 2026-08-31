@@ -1220,7 +1220,7 @@ async def exercise_session_approval() -> None:
             await pilot.pause(0.05)
             if len(backend.decisions) == 2 and not app.running:
                 break
-        assert backend.decisions == ["allow_once", "allow_once"]
+        assert backend.decisions == ["allow_session", "allow_once"]
         assert not isinstance(app.screen, ApprovalScreen)
 
 
@@ -1323,7 +1323,7 @@ async def exercise_scoped_session_approval() -> None:
             if isinstance(app.screen, ApprovalScreen):
                 break
         assert isinstance(app.screen, ApprovalScreen)
-        assert backend.decisions == ["allow_once"]
+        assert backend.decisions == ["allow_session"]
         await pilot.press("d")
         for _ in range(20):
             await pilot.pause(0.05)

@@ -61,7 +61,7 @@ def main() -> None:
     require(approval, 'handleDecision("allow_once")', "automatic approval submission")
     require(approval, 'handleDecision("allow_session")', "session approval action")
     require(approval, "sessionAllowsApproval", "session approval projection")
-    require(approval, "transportDecision", "server-side decision boundary")
+    require(approval, "approval.approvalId,\n        nextDecision", "durable session decision")
     require(approval, "autoAttemptRef", "bounded automatic approval attempt")
     require(approval, 'ruleBehavior === "ask"', "ask rule override")
     require(approval, 'ruleBehavior === "deny"', "deny rule enforcement")
@@ -78,6 +78,7 @@ def main() -> None:
     require(tui, "permissionRuleBehavior", "TUI rule enforcement")
     require(tui, "Home/End首尾", "TUI permission boundary navigation")
     require(tui, "R工具规则", "TUI direct rule navigation")
+    require(tui, "client.send({type: 'approve', decision})", "durable TUI session decision")
 
     script = r'''import {
   allowApprovalForSession,

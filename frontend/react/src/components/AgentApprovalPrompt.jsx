@@ -142,12 +142,9 @@ export function AgentApprovalPrompt({
       error: "",
     });
     try {
-      const transportDecision = nextDecision === "allow_session"
-        ? "allow_once"
-        : nextDecision;
       const result = await approvalApi.resolve(
         approval.approvalId,
-        transportDecision,
+        nextDecision,
       );
       if (nextDecision === "allow_session") {
         allowApprovalForSession(approval);
@@ -228,7 +225,10 @@ export function AgentApprovalPrompt({
     };
     const handleFocusRequest = (event) => {
       const requestedApprovalId = String(event.detail?.approvalId || "").trim();
-      if (requestedApprovalId && requestedApprovalId !== String(approvalId)) return;
+      if (
+        requestedApprovalId
+        && requestedApprovalId !== String(approval?.approvalId)
+      ) return;
       focusPrompt();
     };
     window.addEventListener("knowflow:react-agent-interaction-focus", handleFocusRequest);

@@ -1699,7 +1699,7 @@ test('session approval reuses the exact tool grant and resets on a new session',
   await tick();
   view.stdin.write('s');
   await tick();
-  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
+  assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_session'});
 
   const sentBeforeReuse = client.sent.length;
   client.emit('message', approval('approval-session-2'));

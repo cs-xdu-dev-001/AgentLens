@@ -1211,6 +1211,303 @@ def main() -> None:
 
         approval_runs.create_run(
             user_id=17,
+            session_id="session-langgraph-session-grant",
+            user_message_id=5,
+            goal_summary="Create two notes with one session approval",
+            trigger_mode="auto",
+            run_id="run_write_session_grant",
+        )
+        session_write_calls: list[dict] = []
+        session_write_registry = ToolRegistry()
+        register_write_mcp(session_write_registry, session_write_calls)
+        session_write_gateway = FakeGateway(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"session one"}',
+                        "call_session_write_1",
+                    ),
+                    tool_call(
+                        "mcp_notes_create",
+                        '{"title":"session two"}',
+                        "call_session_write_2",
+                    ),
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": "Both session notes were created.",
+                "tool_calls": [],
+            },
+        )
+        session_write_engine = LangGraphAgentEngine(
+            gateway=session_write_gateway,
+            checkpoint_db_path=root / "write-session-grant.sqlite3",
+        )
+        session_pause = run_engine(
+            session_write_engine,
+            session_write_registry,
+            run_id="run_write_session_grant",
+            messages=[
+                {"role": "user", "content": "Create two session notes"}
+            ],
+            tool_operation_store=operation_store,
+        )
+        assert session_pause.paused is True
+        session_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_session_grant",
+            tool_call_id="call_session_write_1",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "session one"},
+        )
+        assert operation_store.resolve(
+            17,
+            session_operation["approvalId"],
+            "allow_session",
+        )
+        session_result = run_engine(
+            session_write_engine,
+            session_write_registry,
+            run_id="run_write_session_grant",
+            resume=True,
+            tool_operation_store=operation_store,
+            approval_decision="allow_session",
+        )
+        assert session_result.paused is False
+        assert session_result.answer == "Both session notes were created."
+        assert session_write_calls == [
+            {"title": "session one"},
+            {"title": "session two"},
+        ]
+        stored_session_operation = operation_store.get(
+            17,
+            session_operation["approvalId"],
+        )
+        assert stored_session_operation is not None
+        assert stored_session_operation["status"] == "succeeded"
+        assert stored_session_operation["decision"] == "allow_session"
+        inherited_session_operation = operation_store.get_for_call(
+            17,
+            "run_write_session_grant",
+            "call_session_write_2",
+        )
+        assert inherited_session_operation is not None
+        assert inherited_session_operation["status"] == "succeeded"
+        assert inherited_session_operation["decision"] == "allow_session"
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-persisted-result",
+            user_message_id=6,
+            goal_summary="Recover a persisted write result",
+            trigger_mode="auto",
+            run_id="run_write_persisted_result",
+        )
+        persisted_calls: list[dict] = []
+        persisted_registry = ToolRegistry()
+        register_write_mcp(persisted_registry, persisted_calls)
+        persisted_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_persisted_result",
+            tool_call_id="call_write_persisted",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "persisted"},
+        )
+        assert operation_store.resolve(
+            17,
+            persisted_operation["approvalId"],
+            "allow_session",
+        )
+        assert operation_store.claim_execution(
+            17,
+            persisted_operation["approvalId"],
+        )
+        assert operation_store.finish_execution(
+            17,
+            persisted_operation["approvalId"],
+            {
+                "call_id": "call_write_persisted",
+                "tool_name": "mcp_notes_create",
+                "arguments": {"title": "persisted"},
+                "output": {"pageId": "page-persisted"},
+                "status": "success",
+                "error_code": None,
+                "error_message": None,
+                "latency_ms": 4,
+                "audit_output": {"pageId": "page-persisted"},
+                "skill_snapshot": None,
+            },
+        )
+        persisted_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=FakeGateway(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            tool_call(
+                                "mcp_notes_create",
+                                '{"title":"persisted"}',
+                                "call_write_persisted",
+                            )
+                        ],
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "The persisted note was recovered.",
+                        "tool_calls": [],
+                    },
+                ),
+                checkpoint_db_path=root / "write-persisted-result.sqlite3",
+            ),
+            persisted_registry,
+            run_id="run_write_persisted_result",
+            messages=[{"role": "user", "content": "Create a note"}],
+            tool_operation_store=operation_store,
+        )
+        assert persisted_result.paused is False
+        assert persisted_result.answer == "The persisted note was recovered."
+        assert persisted_calls == []
+        assert persisted_result.executions[0].output == {
+            "pageId": "page-persisted"
+        }
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-indeterminate-write",
+            user_message_id=7,
+            goal_summary="Recover an indeterminate write",
+            trigger_mode="auto",
+            run_id="run_write_indeterminate",
+        )
+        indeterminate_calls: list[dict] = []
+        indeterminate_registry = ToolRegistry()
+        register_write_mcp(indeterminate_registry, indeterminate_calls)
+        indeterminate_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_indeterminate",
+            tool_call_id="call_write_indeterminate",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "indeterminate"},
+        )
+        assert operation_store.resolve(
+            17,
+            indeterminate_operation["approvalId"],
+            "allow_once",
+        )
+        assert operation_store.claim_execution(
+            17,
+            indeterminate_operation["approvalId"],
+        )
+        indeterminate_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=FakeGateway(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            tool_call(
+                                "mcp_notes_create",
+                                '{"title":"indeterminate"}',
+                                "call_write_indeterminate",
+                            )
+                        ],
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "The write state is indeterminate.",
+                        "tool_calls": [],
+                    },
+                ),
+                checkpoint_db_path=root / "write-indeterminate.sqlite3",
+            ),
+            indeterminate_registry,
+            run_id="run_write_indeterminate",
+            messages=[{"role": "user", "content": "Create a note"}],
+            tool_operation_store=operation_store,
+        )
+        assert indeterminate_result.paused is False
+        assert indeterminate_result.answer == (
+            "The write state is indeterminate."
+        )
+        assert indeterminate_calls == []
+        assert indeterminate_result.executions[0].error_code == (
+            "tool_execution_indeterminate"
+        )
+
+        approval_runs.create_run(
+            user_id=17,
+            session_id="session-langgraph-mismatched-write",
+            user_message_id=8,
+            goal_summary="Reject a mismatched durable write",
+            trigger_mode="auto",
+            run_id="run_write_mismatch",
+        )
+        mismatched_calls: list[dict] = []
+        mismatched_registry = ToolRegistry()
+        register_write_mcp(mismatched_registry, mismatched_calls)
+        mismatched_operation = operation_store.ensure_waiting(
+            user_id=17,
+            run_id="run_write_mismatch",
+            tool_call_id="call_write_mismatch",
+            tool_name="mcp_notes_create",
+            server_name="Notes",
+            risk="write",
+            input_summary={"title": "approved input"},
+        )
+        assert operation_store.resolve(
+            17,
+            mismatched_operation["approvalId"],
+            "allow_once",
+        )
+        mismatched_result = run_engine(
+            LangGraphAgentEngine(
+                gateway=FakeGateway(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            tool_call(
+                                "mcp_notes_create",
+                                '{"title":"changed input"}',
+                                "call_write_mismatch",
+                            )
+                        ],
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "The mismatched write was rejected.",
+                        "tool_calls": [],
+                    },
+                ),
+                checkpoint_db_path=root / "write-mismatch.sqlite3",
+            ),
+            mismatched_registry,
+            run_id="run_write_mismatch",
+            messages=[{"role": "user", "content": "Create a note"}],
+            tool_operation_store=operation_store,
+        )
+        assert mismatched_result.paused is False
+        assert mismatched_result.answer == (
+            "The mismatched write was rejected."
+        )
+        assert mismatched_calls == []
+        assert mismatched_result.executions[0].error_code == (
+            "tool_operation_mismatch"
+        )
+
+        approval_runs.create_run(
+            user_id=17,
             session_id="session-langgraph-deny",
             user_message_id=2,
             goal_summary="Create a denied note",

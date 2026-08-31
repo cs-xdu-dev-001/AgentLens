@@ -19,6 +19,7 @@ from .agent_loop import (
     ToolExecution,
     ToolRegistry,
 )
+from .agent_tool_operations import tool_input_fingerprint
 from .agent_tooling import ASK_USER_QUESTION_TOOL
 from .langgraph_checkpoint import (
     LangGraphCheckpointError,
@@ -694,6 +695,49 @@ class LangGraphAgentEngine:
         )
 
     @staticmethod
+    def _execute_durable_tool_operation(
+        context: LangGraphRunContext,
+        prepared: PreparedToolCall,
+        store,
+        operation: dict[str, Any] | None,
+    ) -> ToolExecution:
+        execution = None
+        if operation and operation["status"] in {
+            "succeeded",
+            "failed",
+        } and isinstance(operation.get("execution"), dict):
+            execution = LangGraphAgentEngine._execution_from_state(
+                operation["execution"]
+            )
+        elif operation and operation["status"] == "approved":
+            claimed = store.claim_execution(
+                context.user_id,
+                operation["approvalId"],
+            )
+            if claimed is not None:
+                LangGraphAgentEngine._emit_tool_lifecycle(
+                    context,
+                    prepared,
+                    "running",
+                )
+                execution = context.registry.invoke(prepared)
+                store.finish_execution(
+                    context.user_id,
+                    operation["approvalId"],
+                    LangGraphAgentEngine._execution_to_state(execution),
+                )
+        if execution is not None:
+            return execution
+        return context.registry._failure(
+            prepared.call_id,
+            prepared.tool_name,
+            prepared.arguments,
+            "tool_execution_indeterminate",
+            "The write tool state is indeterminate and was not repeated.",
+            time.perf_counter(),
+        )
+
+    @staticmethod
     def _call_tools(
         state: LangGraphState,
         runtime: Runtime[LangGraphRunContext],
@@ -864,101 +908,146 @@ class LangGraphAgentEngine:
             and definition is not None
             and definition.requires_approval
         ):
-            LangGraphAgentEngine._emit_tool_lifecycle(
-                context,
-                prepared,
-                "waiting",
+            store = context.tool_operation_store
+            input_fingerprint = tool_input_fingerprint(
+                prepared.arguments
             )
-            decision_value = interrupt(
-                {
-                    "type": "tool_approval",
-                    "toolCallId": prepared.call_id,
-                    "toolName": prepared.tool_name,
-                    "serverName": definition.server_name or "MCP",
-                    "risk": definition.risk,
-                    "readOnly": definition.read_only,
-                    "destructive": definition.destructive,
-                    "inputSummary": sanitize_trace_value(
+            current_operation = (
+                store.get_for_call(
+                    context.user_id,
+                    context.run_id,
+                    prepared.call_id,
+                )
+                if store is not None
+                else None
+            )
+            if current_operation is not None:
+                operation_matches = (
+                    current_operation["toolName"] == prepared.tool_name
+                    and current_operation["serverName"]
+                    == (definition.server_name or "MCP")
+                    and current_operation["risk"]
+                    == str(definition.risk or "unknown")
+                    and current_operation["inputFingerprint"]
+                    == input_fingerprint
+                )
+                if not operation_matches:
+                    execution = context.registry._failure(
+                        prepared.call_id,
+                        prepared.tool_name,
+                        prepared.arguments,
+                        "tool_operation_mismatch",
+                        (
+                            "Stored approval input does not match the "
+                            "current tool call."
+                        ),
+                        time.perf_counter(),
+                    )
+                elif (
+                    current_operation["decision"]
+                    in {"allow_once", "allow_session"}
+                    and current_operation["status"]
+                    in {"approved", "executing", "succeeded", "failed"}
+                ):
+                    execution = (
+                        LangGraphAgentEngine._execute_durable_tool_operation(
+                            context,
+                            prepared,
+                            store,
+                            current_operation,
+                        )
+                    )
+            session_operation = (
+                store.ensure_session_granted_operation(
+                    user_id=context.user_id,
+                    run_id=context.run_id,
+                    tool_call_id=prepared.call_id,
+                    tool_name=prepared.tool_name,
+                    server_name=definition.server_name or "MCP",
+                    risk=definition.risk,
+                    input_summary=sanitize_trace_value(
                         prepared.arguments
                     ),
-                }
-            )
-            decision = (
-                str(decision_value.get("decision") or "")
-                if isinstance(decision_value, dict)
-                else str(decision_value or "")
-            )
-            if decision != "allow_once":
-                timed_out = decision == "timeout"
-                execution = context.registry._failure(
-                    prepared.call_id,
-                    prepared.tool_name,
-                    prepared.arguments,
-                    (
-                        "approval_timeout"
-                        if timed_out
-                        else "permission_denied"
-                    ),
-                    (
-                        "Tool approval timed out."
-                        if timed_out
-                        else "Tool execution was denied."
-                    ),
-                    time.perf_counter(),
+                    input_fingerprint=input_fingerprint,
                 )
-            else:
-                store = context.tool_operation_store
-                if store is None:
-                    LangGraphAgentEngine._emit_tool_lifecycle(
+                if store is not None and execution is None
+                else None
+            )
+            if session_operation is not None:
+                execution = (
+                    LangGraphAgentEngine._execute_durable_tool_operation(
                         context,
                         prepared,
-                        "running",
+                        store,
+                        session_operation,
                     )
-                    execution = context.registry.invoke(prepared)
-                operation = (
-                    store.get_for_call(
-                        context.user_id,
-                        context.run_id,
-                        prepared.call_id,
-                    )
-                    if store is not None
-                    else None
                 )
-                if operation and operation["status"] in {
-                    "succeeded",
-                    "failed",
-                } and isinstance(operation.get("execution"), dict):
-                    execution = LangGraphAgentEngine._execution_from_state(
-                        operation["execution"]
+            elif execution is None:
+                LangGraphAgentEngine._emit_tool_lifecycle(
+                    context,
+                    prepared,
+                    "waiting",
+                )
+                decision_value = interrupt(
+                    {
+                        "type": "tool_approval",
+                        "toolCallId": prepared.call_id,
+                        "toolName": prepared.tool_name,
+                        "serverName": definition.server_name or "MCP",
+                        "risk": definition.risk,
+                        "readOnly": definition.read_only,
+                        "destructive": definition.destructive,
+                        "inputSummary": sanitize_trace_value(
+                            prepared.arguments
+                        ),
+                        "inputFingerprint": input_fingerprint,
+                    }
+                )
+                decision = (
+                    str(decision_value.get("decision") or "")
+                    if isinstance(decision_value, dict)
+                    else str(decision_value or "")
+                )
+                if decision not in {"allow_once", "allow_session"}:
+                    timed_out = decision == "timeout"
+                    execution = context.registry._failure(
+                        prepared.call_id,
+                        prepared.tool_name,
+                        prepared.arguments,
+                        (
+                            "approval_timeout"
+                            if timed_out
+                            else "permission_denied"
+                        ),
+                        (
+                            "Tool approval timed out."
+                            if timed_out
+                            else "Tool execution was denied."
+                        ),
+                        time.perf_counter(),
                     )
-                elif operation and operation["status"] == "approved":
-                    claimed = store.claim_execution(
-                        context.user_id,
-                        operation["approvalId"],
-                    )
-                    if claimed is not None:
+                else:
+                    if store is None:
                         LangGraphAgentEngine._emit_tool_lifecycle(
                             context,
                             prepared,
                             "running",
                         )
                         execution = context.registry.invoke(prepared)
-                        store.finish_execution(
+                    else:
+                        operation = store.get_for_call(
                             context.user_id,
-                            operation["approvalId"],
-                            LangGraphAgentEngine._execution_to_state(
-                                execution
-                            ),
+                            context.run_id,
+                            prepared.call_id,
                         )
-                if execution is None:
-                    execution = context.registry._failure(
-                        prepared.call_id,
-                        prepared.tool_name,
-                        prepared.arguments,
-                        "tool_execution_indeterminate",
-                        "The write tool state is indeterminate and was not repeated.",
-                        time.perf_counter(),
-                    )
+                        execution = (
+                            LangGraphAgentEngine._execute_durable_tool_operation(
+                                context,
+                                prepared,
+                                store,
+                                operation,
+                            )
+                        )
         if execution is None:
             LangGraphAgentEngine._emit_tool_lifecycle(
                 context,
