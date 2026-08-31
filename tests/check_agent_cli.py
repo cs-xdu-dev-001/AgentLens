@@ -257,6 +257,59 @@ def main() -> None:
     assert launch_chat.call_args.kwargs["resume_session"] is True
     assert launch_chat.call_args.kwargs["continue_session"] is False
 
+    default_workspace = Path.cwd().resolve()
+    with (
+        patch.object(cli.sys, "argv", ["agentlens"]),
+        patch.object(cli, "_confirm_default_workspace", return_value=True) as trust,
+        patch.object(cli, "app") as launch_default,
+    ):
+        cli.main()
+    trust.assert_called_once_with(default_workspace)
+    launch_default.assert_called_once_with(
+        args=["chat", "--local", "--workspace", str(default_workspace)],
+        prog_name="agentlens",
+    )
+
+    with (
+        patch.object(cli.sys, "argv", ["agentlens", "--help"]),
+        patch.object(cli, "app") as launch_with_args,
+    ):
+        cli.main()
+    launch_with_args.assert_called_once_with()
+
+    class FakeConfigStore:
+        public = {}
+
+        def load_public(self):
+            return dict(self.public)
+
+        def update_public(self, update):
+            update(self.public)
+            return dict(self.public)
+
+    class InteractiveStream:
+        @staticmethod
+        def isatty():
+            return True
+
+    fake_store = FakeConfigStore()
+    with (
+        patch(
+            "knowflow.services.local_cli_runtime.LocalCliConfigStore",
+            return_value=fake_store,
+        ),
+        patch.object(cli.sys, "stdin", InteractiveStream()),
+        patch.object(cli.sys, "stdout", InteractiveStream()),
+        patch.object(cli.console, "print"),
+        patch.object(cli.typer, "confirm", return_value=True) as confirm,
+    ):
+        assert cli._confirm_default_workspace(default_workspace) is True
+        assert cli._confirm_default_workspace(default_workspace) is True
+    assert confirm.call_count == 1
+    assert fake_store.public["trusted_workspaces"] == [
+        cli._workspace_trust_id(default_workspace)
+    ]
+
     cli_source = (ROOT / "backend" / "knowflow" / "cli.py").read_text(
         encoding="utf-8"
     )

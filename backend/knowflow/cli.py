@@ -206,6 +206,46 @@ def _resolve_workspace_path(value: Path | None) -> Path | None:
     return candidate
 
 
+def _workspace_trust_id(workspace_root: Path) -> str:
+    """Return a stable local identity for a workspace trust decision."""
+    return os.path.normcase(str(workspace_root.expanduser().resolve()))
+
+
+def _confirm_default_workspace(workspace_root: Path) -> bool:
+    """Ask once before the zero-argument launcher grants workspace access."""
+    from .services.local_cli_runtime import LocalCliConfigStore
+
+    store = LocalCliConfigStore()
+    workspace_id = _workspace_trust_id(workspace_root)
+    public = store.load_public()
+    trusted = [
+        str(value)
+        for value in public.get("trusted_workspaces", [])
+        if isinstance(value, str) and value.strip()
+    ]
+    if workspace_id in trusted:
+        return True
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return True
+
+    console.print("[bold]信任此工作目录？[/bold]")
+    console.print(f"[cyan]{workspace_root}[/cyan]")
+    console.print("[dim]AgentLens可在此目录读取、编辑文件并运行命令。[/dim]")
+    if not typer.confirm("继续进入Chat", default=True):
+        return False
+
+    def remember(value: dict[str, Any]) -> None:
+        current = [
+            str(item)
+            for item in value.get("trusted_workspaces", [])
+            if isinstance(item, str) and item.strip() and str(item) != workspace_id
+        ]
+        value["trusted_workspaces"] = [*current[-199:], workspace_id]
+
+    store.update_public(remember)
+    return True
+
+
 def _local_agent(workspace_root: Path | None = None):
     from .services.local_cli_runtime import LocalAgentRuntime
 
@@ -1788,7 +1828,17 @@ def clear_memory(yes: bool = typer.Option(False, "--yes")) -> None:
 
 
 def main() -> None:
-    app()
+    if len(sys.argv) > 1:
+        app()
+        return
+    workspace_root = Path.cwd().resolve()
+    if not _confirm_default_workspace(workspace_root):
+        console.print("已取消。")
+        raise SystemExit(1)
+    app(
+        args=["chat", "--local", "--workspace", str(workspace_root)],
+        prog_name="agentlens",
+    )
 
 
 if __name__ == "__main__":
