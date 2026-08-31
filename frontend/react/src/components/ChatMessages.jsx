@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
+import { applyTranscriptSearchHighlights } from "../controller/chatSearch.js";
 import {
   memoryActivityTrace,
   mergeMemoryActivityTrace,
@@ -592,6 +593,7 @@ export function ChatMessages() {
     setSearchOpen(false);
     setSearchQuery("");
     setSearchCursor(0);
+    window.requestAnimationFrame(() => document.querySelector('textarea[name="question"]')?.focus());
   };
   const openSearch = (query = "") => {
     setSearchOpen(true);
@@ -611,16 +613,10 @@ export function ChatMessages() {
   }, [searchMatches.length]);
 
   useEffect(() => {
-    if (!searchOpen || !currentSearchMatch) return;
-    const bubble = findBubble(currentSearchMatch.messageId);
-    const row = bubble?.closest(".message-row");
-    if (!row) return;
+    if (!searchOpen || !searchQuery.trim()) return undefined;
     setFollowOutput(false);
-    row.scrollIntoView({
-      block: "center",
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-    });
-  }, [currentSearchMatch?.messageId, currentSearchMatch?.offset, searchOpen]);
+    return applyTranscriptSearchHighlights(messagesRef.current, searchQuery, searchCursor);
+  }, [messages, searchCursor, searchOpen, searchQuery]);
 
   useEffect(() => {
     const handleSearchOpen = (event) => openSearch(event.detail?.query || "");

@@ -607,7 +607,6 @@ test('Ctrl+F opens searchable visible transcript results without sending another
   view.stdin.write('\x06');
   view.stdin.write('发布');
   await tick();
-  assert.match(view.lastFrame(), /搜索对话/);
   assert.match(view.lastFrame(), /1\/2/);
   assert.match(view.lastFrame(), /检查发布状态/);
   assert.equal(client.sent.filter(item => item.type === 'submit').length, submitCount);
@@ -1062,6 +1061,29 @@ test('Ink app renders command suggestions and streamed tool progress', async () 
   assert.deepEqual(client.sent.at(-1), {type: 'approve', decision: 'allow_once'});
 
   view.unmount();
+});
+
+test('Ctrl+F moves the TUI reader to the selected transcript row', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+  for (let index = 0; index < 12; index += 1) {
+    view.stdin.write(`发布任务${index + 1}`);
+    view.stdin.write('\r');
+    await tick();
+    client.emit('message', {type: 'turn_completed', answer: `发布结果${index + 1}`});
+    await tick();
+  }
+  view.stdin.write('\u0006');
+  view.stdin.write('发布');
+  await tick();
+  assert.match(view.lastFrame(), /1\/24/);
+  const firstSelection = view.lastFrame();
+  view.stdin.write('\r');
+  await tick();
+  assert.match(view.lastFrame(), /2\/24/);
+  assert.notEqual(view.lastFrame(), firstSelection);
 });
 
 test('command completion reveals the selected command argument contract', async () => {

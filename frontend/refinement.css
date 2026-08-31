@@ -3847,6 +3847,27 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   box-shadow: inset 3px 0 0 var(--text);
 }
 
+#page-chat .message-row[data-search-hit-current="true"] {
+  background: color-mix(in srgb, var(--control-bg-hover) 76%, transparent);
+  box-shadow: inset 3px 0 0 var(--text);
+}
+
+#page-chat ::highlight(agentlens-transcript-search) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--kf-focus-ring) 34%, transparent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: color-mix(in srgb, var(--text) 50%, transparent);
+}
+
+#page-chat .agentlens-search-hit {
+  color: var(--text);
+  background: color-mix(in srgb, var(--kf-focus-ring) 34%, transparent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: color-mix(in srgb, var(--text) 50%, transparent);
+}
+
 @media (max-width: 720px) {
   #page-chat .transcript-search-bar {
     top: 8px;

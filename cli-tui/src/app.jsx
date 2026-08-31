@@ -2406,27 +2406,31 @@ const TranscriptRow = React.memo(function TranscriptRow({
   taskExpanded = false,
   taskNavigationActive = false,
   selectedNavigationKey = '',
+  searchTargetId = '',
+  searchTargetRef = null,
 }) {
   if (item.role === 'task_summary') {
     return (
-      <TaskSummary
-        activities={new Map(item.activities ?? [])}
-        elapsedMs={item.elapsedMs ?? 0}
-        expanded={taskExpanded}
-        phase={item.phase ?? '已完成'}
-        running={false}
-        traceSteps={new Map(item.traceSteps ?? [])}
-        goal={item.goal ?? ''}
-        usage={item.usage ?? {}}
-        artifacts={item.artifacts ?? []}
-        references={item.references ?? []}
-        verifications={item.verifications ?? []}
-        recoveryActions={item.recoveryActions ?? []}
-        runSummary={item.runSummary ?? null}
-        failure={item.failure ?? null}
-        navigationActive={taskNavigationActive}
-        selectedNavigationKey={selectedNavigationKey}
-      />
+      <Box ref={item.id === searchTargetId ? searchTargetRef : undefined}>
+        <TaskSummary
+          activities={new Map(item.activities ?? [])}
+          elapsedMs={item.elapsedMs ?? 0}
+          expanded={taskExpanded}
+          phase={item.phase ?? '已完成'}
+          running={false}
+          traceSteps={new Map(item.traceSteps ?? [])}
+          goal={item.goal ?? ''}
+          usage={item.usage ?? {}}
+          artifacts={item.artifacts ?? []}
+          references={item.references ?? []}
+          verifications={item.verifications ?? []}
+          recoveryActions={item.recoveryActions ?? []}
+          runSummary={item.runSummary ?? null}
+          failure={item.failure ?? null}
+          navigationActive={taskNavigationActive}
+          selectedNavigationKey={selectedNavigationKey}
+        />
+      </Box>
     );
   }
   if (item.role === 'delivery_summary') {
@@ -2493,7 +2497,7 @@ const TranscriptRow = React.memo(function TranscriptRow({
   }
   const assistant = item.role === 'assistant' || item.role === 'assistant_chunk';
   return (
-    <Box marginBottom={item.role === 'user' ? 1 : 0}>
+    <Box ref={item.id === searchTargetId ? searchTargetRef : undefined} marginBottom={item.role === 'user' ? 1 : 0}>
       {item.role === 'user' ? <Text color={ACCENT} bold>› </Text> : null}
       {item.role === 'error' ? (
         <Text color={ERROR}>错误：{item.content}</Text>
@@ -2513,10 +2517,12 @@ const Transcript = React.memo(function Transcript({
   taskExpanded = false,
   taskNavigationActive = false,
   selectedNavigationKey = '',
+  searchTargetId = '',
+  searchTargetRef = null,
 }) {
   const latestTaskIndex = items.findLastIndex(item => item.role === 'task_summary');
   return (
-    <Box flexDirection="column">
+    <>
       {items.map((item, index) => (
         <TranscriptRow
           key={item.id}
@@ -2524,9 +2530,11 @@ const Transcript = React.memo(function Transcript({
           taskExpanded={taskExpanded}
           taskNavigationActive={taskNavigationActive && index === latestTaskIndex}
           selectedNavigationKey={index === latestTaskIndex ? selectedNavigationKey : ''}
+          searchTargetId={searchTargetId}
+          searchTargetRef={searchTargetRef}
         />
       ))}
-    </Box>
+    </>
   );
 });
 
@@ -2663,6 +2671,8 @@ export function App({
   const {stdout} = useStdout();
   const scrollRef = useRef(null);
   const viewportRef = useRef(null);
+  const transcriptSearchTargetRef = useRef(null);
+  const transcriptSearchEnteredReaderRef = useRef(false);
   const scrollPinnedRef = useRef(true);
   const [ready, setReady] = useState(false);
   const [model, setModel] = useState('');
@@ -4341,14 +4351,39 @@ export function App({
       .filter(value => !query || value.toLowerCase().includes(query));
   }, [history, historySearchQuery]);
   const transcriptSearchItems = useMemo(() => [
-    ...transcript,
-    ...turnChunks,
-    ...(assistantDraft ? [{id: 'live-assistant-draft', role: 'assistant_chunk', content: assistantDraft}] : []),
-  ], [assistantDraft, transcript, turnChunks]);
+    ...(transcriptMode && transcriptSnapshot ? transcriptSnapshot.transcript : transcript),
+    ...(transcriptMode && transcriptSnapshot ? transcriptSnapshot.turnChunks : turnChunks),
+    ...((transcriptMode && transcriptSnapshot ? transcriptSnapshot.assistantDraft : assistantDraft)
+      ? [{id: 'live-assistant-draft', role: 'assistant_chunk', content: transcriptMode && transcriptSnapshot
+        ? transcriptSnapshot.assistantDraft : assistantDraft}]
+      : []),
+  ], [assistantDraft, transcript, transcriptMode, transcriptSnapshot, turnChunks]);
   const transcriptMatches = useMemo(
     () => transcriptSearchMatches(transcriptSearchItems, transcriptSearchQuery),
     [transcriptSearchItems, transcriptSearchQuery],
   );
+  const transcriptSearchTarget = transcriptMatches[
+    Math.min(transcriptSearchChoice, Math.max(0, transcriptMatches.length - 1))
+  ];
+  const transcriptSearchTargetItem = transcriptSearchTarget
+    ? transcriptSearchItems[transcriptSearchTarget.itemIndex]
+    : null;
+  useEffect(() => {
+    if (!transcriptMode || !transcriptSearchOpen || !transcriptSearchTarget) return undefined;
+    const immediate = setImmediate(() => {
+      const target = transcriptSearchTargetRef.current;
+      const scroller = scrollRef.current;
+      if (!target || !scroller) return;
+      const layout = target.yogaNode?.getComputedLayout?.();
+      if (!layout) return;
+      const viewportHeight = Math.max(1, scroller.getViewportHeight?.() ?? 1);
+      const bottom = scroller.getBottomOffset?.() ?? 0;
+      const next = Math.max(0, Math.min(bottom, layout.top - Math.max(0, (viewportHeight - layout.height) / 2)));
+      scroller.scrollTo(next);
+      scrollPinnedRef.current = next >= bottom;
+    });
+    return () => clearImmediate(immediate);
+  }, [transcriptMode, transcriptSearchChoice, transcriptSearchOpen, transcriptSearchTarget]);
   const interactionFocus = resolveInteractionFocus({
     question,
     approval,
@@ -5004,6 +5039,10 @@ export function App({
       }
     } else if (command.value === '/search') {
       closeTransientSurfaces('transcriptSearch');
+      if (!transcriptModeRef.current) {
+        transcriptSearchEnteredReaderRef.current = true;
+        toggleTranscriptMode();
+      }
       transcriptSearchOpenRef.current = true;
       setTranscriptSearchQuery(args.trim());
       setTranscriptSearchChoice(0);
@@ -5617,6 +5656,10 @@ export function App({
         setTranscriptSearchChoice(value => (value + 1) % transcriptMatches.length);
       } else {
         closeTransientSurfaces('transcriptSearch');
+        if (!transcriptModeRef.current) {
+          transcriptSearchEnteredReaderRef.current = true;
+          toggleTranscriptMode();
+        }
         transcriptSearchOpenRef.current = true;
         setTranscriptSearchOpen(true);
         setTranscriptSearchChoice(0);
@@ -6146,6 +6189,10 @@ export function App({
         setTranscriptSearchOpen(false);
         setTranscriptSearchQuery('');
         setTranscriptSearchChoice(0);
+        if (transcriptSearchEnteredReaderRef.current) {
+          transcriptSearchEnteredReaderRef.current = false;
+          closeTranscriptMode();
+        }
       } else if ((key.upArrow || (key.return && key.shift)) && transcriptMatches.length) {
         setTranscriptSearchChoice(value => (value + transcriptMatches.length - 1) % transcriptMatches.length);
       } else if ((key.downArrow || key.return) && transcriptMatches.length) {
@@ -6678,13 +6725,16 @@ export function App({
     running,
   };
   const transcriptConversation = (
-    <Box key="transcript-conversation" flexDirection="column" width="100%">
+    <>
       <Welcome version={version} model={model} workspace={workspace} />
       <Transcript
         items={frozen.transcript}
         taskExpanded={taskExpanded}
         taskNavigationActive={taskNavigationOpen}
         selectedNavigationKey={selectedTaskItem?.key}
+        searchTargetId={transcriptSearchTarget?.itemIndex < frozen.transcript.length
+          ? transcriptSearchTargetItem?.id : ''}
+        searchTargetRef={transcriptSearchTargetRef}
       />
       {frozen.running || frozen.activities.size || frozen.traceSteps?.size ? (
         <TaskSummary
@@ -6713,9 +6763,14 @@ export function App({
           selectedNavigationKey={selectedTaskItem?.key}
         />
       ) : null}
-      <Transcript items={frozen.turnChunks ?? []} />
+      <Transcript
+        items={frozen.turnChunks ?? []}
+        searchTargetId={transcriptSearchTarget?.itemIndex >= frozen.transcript.length
+          ? transcriptSearchTargetItem?.id : ''}
+        searchTargetRef={transcriptSearchTargetRef}
+      />
       <StreamingReply>{frozen.assistantDraft}</StreamingReply>
-    </Box>
+    </>
   );
   const transcriptFooter = (
     <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
@@ -6970,7 +7025,6 @@ export function App({
   if (transcriptMode) {
     return (
       <>
-        {staticConversation}
         <Box flexDirection="column" height={frameHeight} paddingX={1} overflow="hidden">
           {fullscreenEnabled && frozen.running ? (
             <ActiveTaskAnchor
@@ -6999,6 +7053,13 @@ export function App({
               {transcriptConversation}
             </ScrollView>
           </Box>
+          {transcriptSearchOpen ? (
+            <TranscriptSearch
+              matches={transcriptMatches}
+              selected={Math.min(transcriptSearchChoice, Math.max(0, transcriptMatches.length - 1))}
+              query={transcriptSearchQuery}
+            />
+          ) : null}
           {transcriptFooter}
         </Box>
       </>
