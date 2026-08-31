@@ -15,11 +15,13 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 let workspaceStatusCalls = 0;
 let listingCalls = 0;
+let previewCalls = 0;
 page.on("pageerror", (error) => errors.push(error.message));
 
 await page.route("**/api/**", async (route) => {
   const request = route.request();
-  const path = new URL(request.url()).pathname;
+  const requestUrl = new URL(request.url());
+  const path = requestUrl.pathname;
   if (!path.startsWith("/api/")) return route.continue();
   const fixtures = {
     "/api/auth/me": { authenticated: true, user: { id: 903, username: "workspace-loading-test", display_name: "工作区测试" } },
@@ -29,8 +31,17 @@ await page.route("**/api/**", async (route) => {
     "/api/model-configs": [{ id: 1, name: "测试模型", modelName: "test-model", modelType: "chat", enabled: true, isDefault: true }],
     "/api/workspace/files": { path: "", entries: [
       { path: "docs", kind: "directory" },
-      { path: "README.md", kind: "file" },
+      { path: "README.md", kind: "file", size: 33 },
     ] },
+    "/api/workspace/files/README.md": {
+      path: "README.md",
+      name: "README.md",
+      size: 33,
+      mimeType: "text/markdown",
+      previewable: true,
+      truncated: false,
+      content: "# AgentLens\n\nWorkspace preview.",
+    },
   };
   if (path === "/api/workspace") {
     workspaceStatusCalls += 1;
@@ -39,6 +50,9 @@ await page.route("**/api/**", async (route) => {
   if (path === "/api/workspace/files") {
     listingCalls += 1;
     await new Promise((resolve) => setTimeout(resolve, listingCalls === 1 ? 420 : 320));
+  }
+  if (path === "/api/workspace/files/README.md" && requestUrl.searchParams.get("preview") === "true") {
+    previewCalls += 1;
   }
   return route.fulfill({ json: { code: 0, data: fixtures[path] || [] } });
 });
@@ -74,11 +88,28 @@ try {
   assert.equal(await fileList.locator(".workspace-loading-dot").first().evaluate((node) => getComputedStyle(node).animationName), "none");
   await fileList.locator(".workspace-refreshing").waitFor({ state: "detached" });
 
+  await fileList.getByRole("button", { name: /README\.md.*预览/ }).click();
+  const preview = workspace.getByRole("complementary", { name: "README.md文件预览" });
+  await preview.waitFor({ state: "visible" });
+  await preview.getByText("Workspace preview.", { exact: false }).waitFor();
+  assert.equal(previewCalls, 1);
+  assert.equal(await preview.getByRole("link", { name: "下载", exact: true }).getAttribute("href"), "/api/workspace/files/README.md");
+  assert.match(new URL(page.url()).pathname, /^\/?$/);
+  if (process.env.AGENTLENS_SCREENSHOT_PATH) {
+    await page.screenshot({ path: process.env.AGENTLENS_SCREENSHOT_PATH, fullPage: true });
+  }
+  await preview.getByRole("button", { name: "关闭文件预览" }).click();
+  await preview.waitFor({ state: "detached" });
+
   await page.setViewportSize({ width: 390, height: 844 });
+  await fileList.getByRole("button", { name: /README\.md.*预览/ }).click();
+  await preview.waitFor({ state: "visible" });
+  const previewBounds = await preview.boundingBox();
+  assert.ok(previewBounds && previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390);
   const bounds = await workspace.boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
   assert.deepEqual(errors, []);
-  console.log("workspace loading browser checks passed: initial skeleton, retained refresh rows, reduced motion, mobile bounds");
+  console.log("workspace browser checks passed: loading states, in-app preview, reduced motion, mobile bounds");
 } catch (error) {
   console.error({ errors, page: (await page.locator("body").innerText()).slice(0, 1200) });
   throw error;

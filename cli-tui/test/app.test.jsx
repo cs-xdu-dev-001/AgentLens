@@ -1990,6 +1990,35 @@ test('Ink app exposes queued follow-ups and lets users clear them', async () => 
   view.unmount();
 });
 
+test('Ctrl+Q pauses and resumes queued follow-ups without cancelling the active run', async t => {
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.17.0" />);
+  t.after(() => view.unmount());
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('当前任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('排队任务');
+  view.stdin.write('\r');
+  await tick();
+  view.stdin.write('\x11');
+  await waitForFrame(view, /队列已暂停/);
+  client.emit('message', {type: 'turn_completed', runId: 'run-active', answer: '当前任务完成'});
+  await tick();
+  assert.equal(
+    client.sent.filter(message => message.type === 'submit').at(-1)?.text,
+    '当前任务',
+  );
+  assert.match(view.lastFrame(), /Ctrl\+Q继续/);
+
+  view.stdin.write('\x11');
+  await waitForCondition(
+    () => client.sent.filter(message => message.type === 'submit').at(-1)?.text === '排队任务',
+    'queued task did not resume after Ctrl+Q',
+  );
+});
+
 test('Ink app restores a durable runtime queue paused and claims it before execution', async t => {
   const client = new FakeClient();
   const restored = {

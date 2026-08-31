@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 import shutil
 import sys
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..responses import api_success
@@ -33,6 +34,56 @@ from ..services.workspace_runtime import (
 
 router = APIRouter()
 WORKSPACE_TAGS = ["Workspace"]
+WORKSPACE_PREVIEW_MAX_BYTES = 256 * 1024
+WORKSPACE_TEXT_SUFFIXES = {
+    ".bat",
+    ".c",
+    ".cc",
+    ".conf",
+    ".cpp",
+    ".css",
+    ".csv",
+    ".diff",
+    ".env",
+    ".go",
+    ".h",
+    ".hpp",
+    ".html",
+    ".ini",
+    ".ipynb",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".log",
+    ".md",
+    ".mjs",
+    ".patch",
+    ".ps1",
+    ".py",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".svg",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+WORKSPACE_TEXT_MIME_TYPES = {
+    "application/javascript",
+    "application/json",
+    "application/ld+json",
+    "application/sql",
+    "application/toml",
+    "application/xhtml+xml",
+    "application/xml",
+    "application/yaml",
+    "image/svg+xml",
+}
 
 
 class WorkspaceUndoRequest(BaseModel):
@@ -81,6 +132,32 @@ def _raise_workspace_error(exc: WorkspaceRuntimeError) -> None:
         status_code=status,
         detail={"code": exc.code, "message": str(exc)},
     ) from exc
+
+
+def _workspace_file_preview(target: Path, path: str) -> dict:
+    mime_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    size = target.stat().st_size
+    with target.open("rb") as stream:
+        raw = stream.read(WORKSPACE_PREVIEW_MAX_BYTES + 1)
+    previewable = (
+        mime_type.startswith("text/")
+        or mime_type in WORKSPACE_TEXT_MIME_TYPES
+        or target.suffix.lower() in WORKSPACE_TEXT_SUFFIXES
+    ) and b"\x00" not in raw
+    truncated = size > WORKSPACE_PREVIEW_MAX_BYTES
+    return {
+        "path": path,
+        "name": target.name,
+        "size": size,
+        "mimeType": mime_type,
+        "previewable": previewable,
+        "truncated": truncated if previewable else False,
+        "content": (
+            raw[:WORKSPACE_PREVIEW_MAX_BYTES].decode("utf-8-sig", errors="replace")
+            if previewable
+            else ""
+        ),
+    }
 
 
 @router.get("/api/workspace", tags=WORKSPACE_TAGS)
@@ -252,11 +329,17 @@ async def upload_workspace_file(
 
 
 @router.get("/api/workspace/files/{path:path}", tags=WORKSPACE_TAGS)
-def download_workspace_file(path: str, request: Request) -> FileResponse:
+def download_workspace_file(
+    path: str,
+    request: Request,
+    preview: bool = False,
+) -> Response:
     try:
         target = _runtime(request).file_path(path)
     except WorkspaceRuntimeError as exc:
         _raise_workspace_error(exc)
+    if preview:
+        return JSONResponse(api_success(_workspace_file_preview(target, path)))
     return FileResponse(target, filename=target.name)
 
 

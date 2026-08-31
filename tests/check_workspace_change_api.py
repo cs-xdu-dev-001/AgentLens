@@ -83,6 +83,44 @@ def main() -> None:
             json={"runId": run["id"], "operationId": written["operationId"]},
         )
         assert repeat.status_code == 409, repeat.text
+
+        readme = tracked.root / "README.md"
+        readme.write_text("# AgentLens\n\nWorkspace preview.\n", encoding="utf-8")
+        preview = client.get(
+            "/api/workspace/files/README.md",
+            params={"preview": "true"},
+        )
+        assert preview.status_code == 200, preview.text
+        preview_data = preview.json()["data"]
+        assert preview_data["path"] == "README.md"
+        assert preview_data["previewable"] is True
+        assert preview_data["content"].startswith("# AgentLens")
+        assert preview_data["truncated"] is False
+
+        large = tracked.root / "large.log"
+        large.write_text("x" * (256 * 1024 + 20), encoding="utf-8")
+        large_preview = client.get(
+            "/api/workspace/files/large.log",
+            params={"preview": "true"},
+        )
+        assert large_preview.status_code == 200, large_preview.text
+        assert large_preview.json()["data"]["truncated"] is True
+        assert len(large_preview.json()["data"]["content"]) == 256 * 1024
+
+        image = tracked.root / "image.png"
+        image.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
+        image_preview = client.get(
+            "/api/workspace/files/image.png",
+            params={"preview": "true"},
+        )
+        assert image_preview.status_code == 200, image_preview.text
+        assert image_preview.json()["data"]["previewable"] is False
+        assert image_preview.json()["data"]["content"] == ""
+
+        download = client.get("/api/workspace/files/README.md")
+        assert download.status_code == 200, download.text
+        assert download.content.startswith(b"# AgentLens")
+        assert "attachment" in download.headers.get("content-disposition", "")
         client.close()
         runtime.db.engine.dispose()
 

@@ -206,6 +206,8 @@ export const workspaceApi = {
     return apiRequest("/api/workspace/files", { method: "POST", body });
   },
   downloadUrl: (path) => `/api/workspace/files/${workspacePath(path)}`,
+  preview: (path) =>
+    apiRequest(`/api/workspace/files/${workspacePath(path)}?preview=true`),
   delete: (path) =>
     apiRequest(`/api/workspace/files/${workspacePath(path)}`, {
       method: "DELETE",

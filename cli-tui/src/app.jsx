@@ -327,6 +327,7 @@ const HELP_SHORTCUTS = Object.freeze([
   {value: 'Ctrl+S', description: '暂存或恢复草稿'},
   {value: 'Ctrl+A/B', description: '移到行首或向左一格'},
   {value: 'Ctrl+U/W/K/Y', description: '剪切行、词并粘回'},
+  {value: 'Ctrl+Q', description: '暂停或继续排队任务'},
   {value: 'Shift+Tab', description: '切换权限模式'},
   {value: 'Alt+P', description: '切换模型'},
   {value: 'Alt+R', description: '切换推理强度'},
@@ -653,7 +654,7 @@ const RuntimeStatusLine = React.memo(function RuntimeStatusLine({
       {running ? <Text color={cancelPending ? WARNING : MUTED}>{cancelPending ? ' · 取消中' : ' · Esc/Ctrl+C取消'}</Text> : null}
       {waitingCount ? <Text color={WARNING}> · 待处理{waitingCount}</Text> : null}
       {queueLength ? <Text color={MUTED}> · 队列{queueLength}</Text> : null}
-      {queuePaused ? <Text color={WARNING}> · 队列已暂停，输入/continue继续</Text> : null}
+      {queuePaused ? <Text color={WARNING}> · 队列已暂停 · Ctrl+Q继续</Text> : null}
     </Box>
   );
 });
@@ -1145,11 +1146,12 @@ function QueuePreview({items, paused, durable, hidden = false}) {
   if (hidden) return null;
   if (!items.length) return null;
   const ordered = orderedQueue(items);
+  const queueToggleLabel = paused ? 'Ctrl+Q继续' : 'Ctrl+Q暂停';
   return (
     <Box flexDirection="column" marginTop={1} paddingLeft={1} borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} borderColor={paused ? WARNING : ACCENT}>
       <Box justifyContent="space-between">
         <Text color={paused ? WARNING : PRIMARY}>{paused ? '待发送已暂停' : `接下来 ${items.length}`}</Text>
-        <Text color={durable ? MUTED : WARNING}>{durable ? '已保存 · Ctrl+T编辑' : '仅本次运行 · Ctrl+T编辑'}</Text>
+        <Text color={durable ? MUTED : WARNING}>{durable ? `已保存 · Ctrl+T编辑 · ${queueToggleLabel}` : `仅本次运行 · Ctrl+T编辑 · ${queueToggleLabel}`}</Text>
       </Box>
       {ordered.slice(0, 3).map((item, index) => (
         <Text key={`${index}-${queuedPromptText(item)}`} color={MUTED} wrap="truncate-end">
@@ -2835,6 +2837,7 @@ export function App({
   const [queue, setQueue] = useState([]);
   const queueSequenceRef = useRef(0);
   const [queuePaused, setQueuePaused] = useState(false);
+  const queuePausedRef = useRef(false);
   const [queueDurable, setQueueDurable] = useState(false);
   const queueHydratedRef = useRef(false);
   const queueSyncTimerRef = useRef(null);
@@ -3898,10 +3901,13 @@ export function App({
         setCancelPending(false);
         setWaitingInteractions([]);
         setTaskExpanded(false);
-        setQueuePaused(false);
         setLastFailedRunId('');
         if (scopedRequestId) settledRequestIdsRef.current.add(scopedRequestId);
         if (!scopedRequestId || queueInterruptRequestRef.current === scopedRequestId) {
+          if (queueInterruptRequestRef.current) {
+            queuePausedRef.current = false;
+            setQueuePaused(false);
+          }
           queueInterruptRequestRef.current = '';
         }
         setPhase(message.cancelled ? '已取消' : '就绪');
@@ -4241,7 +4247,11 @@ export function App({
   }, [client, queue, queuePaused, ready]);
 
   useEffect(() => {
-    if (running || approval || question || queueManagerOpen || queuePaused || !ready || queue.length === 0) return;
+    queuePausedRef.current = queuePaused;
+  }, [queuePaused]);
+
+  useEffect(() => {
+    if (running || approval || question || queueManagerOpen || queuePaused || queuePausedRef.current || !ready || queue.length === 0) return;
     const [next, ...remaining] = orderedQueue(queue);
     const text = queuedPromptText(next);
     const displayText = queuedPromptDisplay(next);
@@ -4500,6 +4510,18 @@ export function App({
     if (composerNoticeTimerRef.current) clearTimeout(composerNoticeTimerRef.current);
     composerNoticeTimerRef.current = setTimeout(() => setComposerNotice(''), 2400);
   }, []);
+
+  const toggleQueuePaused = useCallback(() => {
+    if (!queue.length && !queuePaused) {
+      showComposerNotice('当前没有排队任务');
+      return;
+    }
+    const nextPaused = !queuePaused;
+    queuePausedRef.current = nextPaused;
+    setQueuePaused(nextPaused);
+    setPhase(nextPaused ? '队列已暂停' : '队列已恢复');
+    showComposerNotice(nextPaused ? '排队任务已暂停，当前任务不受影响' : '排队任务已恢复，将自动继续');
+  }, [queue.length, queuePaused, showComposerNotice]);
 
   const openRewindPicker = useCallback(() => {
     closeTransientSurfaces('rewind');
@@ -6279,7 +6301,8 @@ export function App({
     if (interactionFocus === 'queueManager' && queueManagerOpen) {
       const ordered = orderedQueue(queue);
       const selected = ordered[queueManagerIndex];
-      if (key.escape) setQueueManagerOpen(false);
+      if (key.ctrl && character.toLowerCase() === 'q') toggleQueuePaused();
+      else if (key.escape) setQueueManagerOpen(false);
       else if (key.upArrow && ordered.length) {
         setQueueManagerIndex(value => (value + ordered.length - 1) % ordered.length);
       } else if (key.downArrow && ordered.length) {
@@ -6324,6 +6347,10 @@ export function App({
       } else if (key.downArrow && taskNavigationItems.length) {
         setTaskNavigationIndex(value => (value + 1) % taskNavigationItems.length);
       } else if (key.return) openSelectedTaskItem();
+      return;
+    }
+    if (key.ctrl && character.toLowerCase() === 'q') {
+      toggleQueuePaused();
       return;
     }
     if (key.ctrl && character === 'c') {
@@ -6726,7 +6753,7 @@ export function App({
     toolDetail: 'PgUp/PgDn翻页 · Home/End首尾 · ↑↓选择 · Tab切换 · Esc返回',
     taskStep: 'Enter或Esc返回',
     taskNavigation: '↑↓选择 · Enter查看 · Esc返回',
-    queueManager: '↑↓选择 · ←→优先级 · Enter取回编辑 · D移除',
+    queueManager: `↑↓选择 · ←→优先级 · Enter取回编辑 · ${queuePaused ? 'Ctrl+Q继续' : 'Ctrl+Q暂停'} · D移除`,
     sessions: `↑↓选择 · Enter恢复 · ${sessionScope === 'archived' ? 'A恢复' : 'A归档 · P置顶/取消'} · D永久删除 · Tab切换 · Esc关闭`,
     localConfig: '↑↓选择 · ←→编辑/切换 · Enter下一项/保存 · Esc取消',
     models: '↑↓选择 · Enter切换 · Esc关闭',
@@ -6851,7 +6878,7 @@ export function App({
     <Box borderStyle="single" borderLeft={false} borderRight={false} borderBottom={false} borderColor={MUTED} paddingLeft={1} justifyContent="space-between">
       <Text color={PRIMARY}>对话记录{currentSessionLabel ? <Text color={MUTED}> · {currentSessionLabel}</Text> : null}</Text>
       <Text color={MUTED}>
-        {mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Ctrl+T任务 · Ctrl+O/Esc返回
+        {mouseEnabled ? '滚轮/' : ''}↑↓滚动 · PgUp/PgDn翻页 · Ctrl+T任务 · Ctrl+Q队列 · Ctrl+O/Esc返回
       </Text>
     </Box>
   );

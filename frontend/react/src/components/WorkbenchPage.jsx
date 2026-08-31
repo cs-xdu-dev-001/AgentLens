@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 
@@ -12,12 +13,41 @@ function parentPath(path) {
 }
 
 
+function fileName(path) {
+  return String(path || "").split("/").filter(Boolean).pop() || "文件";
+}
+
+
+function formatFileSize(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+
 export function WorkbenchPage({ active = false }) {
   const [status, setStatus] = useState(null);
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const fileInputRef = useRef(null);
+  const previewPanelRef = useRef(null);
+  const previewTriggerRef = useRef(null);
+  const previewRequestRef = useRef(0);
+
+  const closePreview = useCallback((restoreFocus = true) => {
+    previewRequestRef.current += 1;
+    setPreview(null);
+    setPreviewLoading(false);
+    setPreviewError("");
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => previewTriggerRef.current?.focus());
+    }
+  }, []);
 
   const load = useCallback(async (nextPath = path) => {
     if (!active) return;
@@ -44,6 +74,50 @@ export function WorkbenchPage({ active = false }) {
     if (active) load(path);
   }, [active]);
 
+  const navigateTo = (nextPath) => {
+    closePreview(false);
+    load(nextPath);
+  };
+
+  const openPreview = async (entry, trigger) => {
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
+    previewTriggerRef.current = trigger || null;
+    setPreview({
+      path: entry.path,
+      name: fileName(entry.path),
+      size: Number(entry.size) || 0,
+      mimeType: "",
+      previewable: null,
+      truncated: false,
+      content: "",
+    });
+    setPreviewLoading(true);
+    setPreviewError("");
+    window.requestAnimationFrame(() => previewPanelRef.current?.focus({ preventScroll: true }));
+    try {
+      const result = await workspaceApi.preview(entry.path);
+      if (previewRequestRef.current !== requestId) return;
+      setPreview(result);
+    } catch (error) {
+      if (previewRequestRef.current !== requestId) return;
+      setPreviewError(safeAgentText(error?.message, 240) || "无法预览文件");
+      notifyError(error, "无法预览文件");
+    } finally {
+      if (previewRequestRef.current === requestId) setPreviewLoading(false);
+    }
+  };
+
+  const handleCopyPreview = async () => {
+    if (!preview?.previewable || !preview.content) return;
+    try {
+      await copyTextToClipboard(preview.content);
+      notifyToast("文件内容已复制");
+    } catch (error) {
+      notifyError(error, "复制失败");
+    }
+  };
+
   const handleUpload = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -64,6 +138,7 @@ export function WorkbenchPage({ active = false }) {
     try {
       await workspaceApi.delete(entry.path);
       notifyToast("文件已删除");
+      if (preview?.path === entry.path) closePreview(false);
       await load(path);
       window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated"));
     } catch (error) {
@@ -134,53 +209,125 @@ export function WorkbenchPage({ active = false }) {
         </section>
 
         <nav className="workspace-breadcrumb" aria-label="工作区路径">
-          <button type="button" onClick={() => load("")}>工作区</button>
+          <button type="button" onClick={() => navigateTo("")}>工作区</button>
           {crumbs.map((part, index) => {
             const target = crumbs.slice(0, index + 1).join("/");
-            return <button type="button" key={target} onClick={() => load(target)}>{part}</button>;
+            return <button type="button" key={target} onClick={() => navigateTo(target)}>{part}</button>;
           })}
         </nav>
 
-        <div className={`workspace-file-list${loading ? " is-loading" : ""}`} aria-busy={loading}>
-          {loading && !entries.length ? (
-            <div className="workspace-loading" role="status" aria-live="polite">
-              <div className="workspace-loading-heading">
+        <div className={`workspace-file-workarea${preview ? " has-preview" : ""}`}>
+          <div className={`workspace-file-list${loading ? " is-loading" : ""}`} aria-busy={loading}>
+            {loading && !entries.length ? (
+              <div className="workspace-loading" role="status" aria-live="polite">
+                <div className="workspace-loading-heading">
+                  <span className="workspace-loading-dot" aria-hidden="true" />
+                  <strong>正在读取工作区…</strong>
+                </div>
+                <div className="workspace-loading-skeleton" aria-hidden="true">
+                  {[0, 1, 2, 3].map((index) => (
+                    <div className="workspace-loading-row" key={index}>
+                      <span className="workspace-loading-icon" />
+                      <span className="workspace-loading-name" />
+                      <span className="workspace-loading-meta" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {loading && entries.length ? (
+              <div className="workspace-refreshing" role="status" aria-live="polite">
                 <span className="workspace-loading-dot" aria-hidden="true" />
-                <strong>正在读取工作区…</strong>
+                <span>正在更新列表…</span>
               </div>
-              <div className="workspace-loading-skeleton" aria-hidden="true">
-                {[0, 1, 2, 3].map((index) => (
-                  <div className="workspace-loading-row" key={index}>
-                    <span className="workspace-loading-icon" />
-                    <span className="workspace-loading-name" />
-                    <span className="workspace-loading-meta" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {loading && entries.length ? (
-            <div className="workspace-refreshing" role="status" aria-live="polite">
-              <span className="workspace-loading-dot" aria-hidden="true" />
-              <span>正在更新列表…</span>
-            </div>
-          ) : null}
-          {path ? (
-            <button className="workspace-file-row directory" type="button" onClick={() => load(parentPath(path))} disabled={loading}>
-              <span className="workspace-file-icon">↰</span><strong>返回上一级</strong>
-            </button>
-          ) : null}
-          {!loading && !entries.length ? <div className="workspace-empty">工作区为空。上传文件，或让Agent在这里生成产物。</div> : null}
-          {entries.map((entry) => (
-            <div className="workspace-file-row" key={entry.path}>
-              <button className="workspace-file-open" type="button" onClick={() => entry.kind === "directory" ? load(entry.path) : window.location.assign(workspaceApi.downloadUrl(entry.path))} disabled={loading}>
-                <span className="workspace-file-icon">{entry.kind === "directory" ? "▢" : "·"}</span>
-                <strong>{entry.path.split("/").pop()}</strong>
-                <span>{entry.kind === "directory" ? "文件夹" : "下载"}</span>
+            ) : null}
+            {path ? (
+              <button className="workspace-file-row directory" type="button" onClick={() => navigateTo(parentPath(path))} disabled={loading}>
+                <span className="workspace-file-icon">↰</span><strong>返回上一级</strong>
               </button>
-              {entry.kind === "file" ? <button className="workspace-file-delete" type="button" onClick={() => handleDelete(entry)} disabled={loading}>删除</button> : null}
-            </div>
-          ))}
+            ) : null}
+            {!loading && !entries.length ? <div className="workspace-empty">工作区为空。上传文件，或让Agent在这里生成产物。</div> : null}
+            {entries.map((entry) => {
+              const selected = entry.kind === "file" && preview?.path === entry.path;
+              return (
+                <div className={`workspace-file-row${selected ? " is-active" : ""}`} key={entry.path}>
+                  <button
+                    className="workspace-file-open"
+                    type="button"
+                    onClick={(event) => entry.kind === "directory"
+                      ? navigateTo(entry.path)
+                      : openPreview(entry, event.currentTarget)}
+                    disabled={loading}
+                    aria-pressed={entry.kind === "file" ? selected : undefined}
+                  >
+                    <span className="workspace-file-icon">{entry.kind === "directory" ? "▢" : "·"}</span>
+                    <strong>{fileName(entry.path)}</strong>
+                    <span>{entry.kind === "directory" ? "文件夹" : "预览"}</span>
+                  </button>
+                  {entry.kind === "file" ? (
+                    <div className="workspace-file-actions">
+                      <a href={workspaceApi.downloadUrl(entry.path)}>下载</a>
+                      <button className="workspace-file-delete" type="button" onClick={() => handleDelete(entry)} disabled={loading}>删除</button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          {preview ? (
+            <aside
+              className="workspace-file-preview"
+              ref={previewPanelRef}
+              tabIndex={-1}
+              aria-label={`${preview.name || fileName(preview.path)}文件预览`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") closePreview();
+              }}
+            >
+              <header className="workspace-preview-header">
+                <div className="workspace-preview-title">
+                  <strong>{preview.name || fileName(preview.path)}</strong>
+                  <span title={preview.path}>{preview.path}</span>
+                </div>
+                <div className="workspace-preview-actions">
+                  <button type="button" onClick={handleCopyPreview} disabled={previewLoading || !preview.previewable || !preview.content}>复制</button>
+                  <a href={workspaceApi.downloadUrl(preview.path)}>下载</a>
+                  <button type="button" onClick={() => closePreview()} aria-label="关闭文件预览">关闭</button>
+                </div>
+              </header>
+              <div className="workspace-preview-meta" role="status">
+                <span>{previewLoading ? "正在识别文件" : preview.mimeType || "未知类型"}</span>
+                <span>{formatFileSize(preview.size)}</span>
+              </div>
+
+              {previewLoading ? (
+                <div className="workspace-preview-state" role="status" aria-live="polite">
+                  <span className="workspace-loading-dot" aria-hidden="true" />
+                  <strong>正在读取{preview.name || fileName(preview.path)}…</strong>
+                </div>
+              ) : previewError ? (
+                <div className="workspace-preview-state error" role="alert">
+                  <strong>预览失败</strong>
+                  <span>{previewError}</span>
+                  <button type="button" onClick={() => openPreview(preview, previewTriggerRef.current)}>重试</button>
+                </div>
+              ) : !preview.previewable ? (
+                <div className="workspace-preview-state">
+                  <strong>此文件不支持文本预览</strong>
+                  <span>可直接下载后使用本地应用打开。</span>
+                  <a href={workspaceApi.downloadUrl(preview.path)}>下载文件</a>
+                </div>
+              ) : preview.content ? (
+                <div className="workspace-preview-content">
+                  {preview.truncated ? <div className="workspace-preview-truncated">仅显示前256 KB，下载可查看完整文件。</div> : null}
+                  <pre tabIndex={0}><code>{preview.content}</code></pre>
+                </div>
+              ) : (
+                <div className="workspace-preview-state"><strong>文件为空</strong></div>
+              )}
+            </aside>
+          ) : null}
         </div>
       </div>
     </section>

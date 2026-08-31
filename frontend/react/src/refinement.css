@@ -3080,7 +3080,17 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 .workspace-breadcrumb button + button::before { content: "/"; margin-right: 8px; color: var(--border-strong); }
 
+.workspace-file-workarea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.workspace-file-workarea.has-preview {
+  grid-template-columns: minmax(300px, .9fr) minmax(0, 1.1fr);
+}
 .workspace-file-list {
+  min-width: 0;
   min-height: 180px;
   padding-top: 10px;
 }
@@ -3091,6 +3101,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-file-row {
   min-height: 54px;
   border-bottom: 1px solid var(--border);
+}
+.workspace-file-row.is-active {
+  border-color: var(--control-border);
+  background: color-mix(in srgb, var(--control-bg) 72%, transparent);
 }
 .workspace-file-open {
   flex: 1;
@@ -3103,8 +3117,149 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-file-open strong { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .workspace-file-open span:last-child { color: var(--muted); }
 .workspace-file-icon { width: 22px; color: var(--muted); text-align: center; }
-.workspace-file-delete { border: 0; color: var(--danger); background: transparent; }
+.workspace-file-actions,
+.workspace-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.workspace-file-actions a,
+.workspace-file-actions button,
+.workspace-preview-actions a,
+.workspace-preview-actions button {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  text-decoration: none;
+}
+.workspace-file-actions a:hover,
+.workspace-preview-actions a:hover,
+.workspace-preview-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--control-bg);
+}
+.workspace-file-actions .workspace-file-delete { color: var(--danger); }
 .workspace-empty { padding: 64px 12px; color: var(--muted); text-align: center; }
+
+.workspace-file-preview {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  min-width: 0;
+  max-height: min(72vh, 720px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+}
+.workspace-file-preview:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.workspace-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 12px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-preview-title {
+  min-width: 0;
+}
+.workspace-preview-title strong,
+.workspace-preview-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-preview-title strong {
+  margin-bottom: 3px;
+  font-size: 16px;
+}
+.workspace-preview-title span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-preview-actions {
+  flex: 0 0 auto;
+}
+.workspace-preview-actions button:disabled {
+  opacity: .38;
+}
+.workspace-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-preview-content {
+  min-height: 0;
+  overflow: auto;
+}
+.workspace-preview-content pre {
+  min-height: 240px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: var(--text);
+  background: transparent;
+  font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  tab-size: 2;
+  white-space: pre;
+  unicode-bidi: plaintext;
+}
+.workspace-preview-truncated {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.workspace-preview-state {
+  display: flex;
+  min-height: 240px;
+  padding: 28px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+.workspace-preview-state strong {
+  color: var(--text);
+  font-size: 16px;
+}
+.workspace-preview-state a,
+.workspace-preview-state button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel-bg);
+  font: inherit;
+  line-height: 34px;
+  text-decoration: none;
+}
+.workspace-preview-state.error strong,
+.workspace-preview-state.error span {
+  color: var(--danger);
+}
 .workspace-loading {
   display: grid;
   align-content: center;
@@ -3171,6 +3326,18 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .workspace-browser-header { align-items: flex-start; }
   .workspace-runtime-strip { flex-wrap: wrap; }
   .workspace-boundary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-preview-header { flex-direction: column; }
+  .workspace-preview-actions { width: 100%; }
+}
+
+@media (max-width: 900px) {
+  .workspace-file-workarea.has-preview { grid-template-columns: minmax(0, 1fr); }
+  .workspace-file-preview {
+    position: relative;
+    top: auto;
+    order: -1;
+    max-height: 60vh;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

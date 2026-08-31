@@ -32,6 +32,8 @@ def main() -> None:
     assert "current_user_id(request)" in router
     assert '"/api/workspace/files"' in router
     assert '"/api/workspace/files/{path:path}"' in router
+    assert "WORKSPACE_PREVIEW_MAX_BYTES" in router
+    assert "_workspace_file_preview" in router
     assert '"/api/workspace/changes"' in router
     assert '"/api/workspace/changes/undo"' in router
     assert "operation_id=payload.operationId" in router
@@ -51,6 +53,7 @@ def main() -> None:
     assert "WorkspaceContext(runtime.root).status()" in router
     assert "workspace_router" in registry
     assert "workspaceApi" in client
+    assert "preview: (path)" in client and "?preview=true" in client
     assert "undoChange" in client and "workspace/changes" in client
     assert "工作区" in page and "Linux沙箱可用" in page
     assert "隔离工作区已启用" in page and "敏感路径受保护" in page
@@ -62,6 +65,8 @@ def main() -> None:
     assert "projectInstructions" in topbar and "份项目指令" in topbar
     assert "项目指令：" in page and "未发现项目指令" in page
     assert "workspace-boundary-card" in page and "Agent可见范围" in page
+    assert "workspace-file-preview" in page and "handleCopyPreview" in page
+    assert "仅显示前256 KB" in page and "不支持文本预览" in page
     assert "allowedDirectoryCount" in page and "cwdLabel" in page
     assert "workspaceGitPresentation(status)" in topbar
     assert "conflictedFiles" in git_presentation
