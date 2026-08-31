@@ -29,8 +29,11 @@ sudo apt-get update && sudo apt-get install -y python3-venv git
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 agentlens configure
 agentlens doctor --cli
-agentlens chat --workspace /path/to/project
+cd /path/to/project
+agentlens
 ```
+
+直接运行`agentlens`会把当前目录作为工作区，首次使用该目录只确认一次后进入Chat。
 
 `agentlens configure`会通过隐藏输入保存API Key。不要把Key写进命令、截图、Issue或仓库文件。
 

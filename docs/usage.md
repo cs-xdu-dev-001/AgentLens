@@ -4,7 +4,7 @@
 
 | 场景 | 推荐入口 | 环境要求 |
 | --- | --- | --- |
-| 在Linux项目目录中运行Agent | `agentlens chat` | Linux、Python 3.10+、Node.js 22+ |
+| 在Linux项目目录中运行Agent | `agentlens` | Linux、Python 3.10+、Node.js 22+ |
 | 使用已部署的AgentLens | Web或`agentlens chat --remote` | 现代浏览器或Linux CLI |
 | 修改和调试项目 | 本地Web开发 | Python 3.10+、Node.js 18+、npm |
 | 自行部署服务 | systemd与HTTPS反向代理 | 推荐Ubuntu 24.04 |
@@ -24,10 +24,11 @@ agentlens --version
 ```bash
 agentlens configure
 agentlens doctor --cli
-agentlens chat --workspace /path/to/project
+cd /path/to/project
+agentlens
 ```
 
-`agentlens`是正式命令，旧版`knowflow`仅作为兼容别名。更新后应重新启动TUI：
+`agentlens`是正式命令，旧版`knowflow`仅作为兼容别名。直接运行时会把当前目录作为工作区，并只在首次使用该目录时询问一次；`agentlens chat --workspace ...`仍可用于显式指定目录。更新后应重新启动TUI：
 
 ```bash
 agentlens update

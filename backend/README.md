@@ -21,12 +21,15 @@ Until the first PyPI release is available, install the current GitHub version:
 pipx install "knowflow-ai[agent] @ git+https://github.com/cs-xdu-dev-001/AgentLens.git#subdirectory=backend"
 ```
 
-Configure a model and start the local TUI:
+Configure a model and start the local TUI from the project directory:
 
 ```bash
 agentlens configure
-agentlens chat
+cd /path/to/project
+agentlens
 ```
+
+The bare `agentlens` command asks once before trusting the current directory, then opens Chat with that directory as the workspace. The explicit `agentlens chat` form remains available for scripts and advanced flags.
 
 Optional local capabilities:
 

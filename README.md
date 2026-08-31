@@ -49,9 +49,11 @@
 
 ## Linux CLI
 
+在项目目录直接运行`agentlens`会把当前目录作为工作区；首次使用该目录时只询问一次，确认后直接进入Chat。需要高级参数时仍可使用显式的`agentlens chat`。
+
 CLI默认是本地BYOK Agent：不需要AgentLens账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
-Linux安装Node.js 22+后，`agentlens chat`默认启动与Claude Code同技术路线的React/Ink界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual agentlens chat`主动切换。脚本或管道场景使用`agentlens chat --plain`。
+Linux安装Node.js 22+后，在项目目录直接输入`agentlens`即可确认一次当前目录并进入与Claude Code同技术路线的React/Ink Chat界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。显式的`agentlens chat`仍兼容，缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual agentlens`主动切换。脚本或管道场景使用`agentlens chat --plain`。
 
 Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任务排队、流式Markdown回答、审批和工具原位进度。输入`/`后用↑↓选择、Tab或→补全、Esc关闭；`Alt+P`或`/model`打开可搜索的聊天模型选择器，远程模式直接切换Web端已有模型配置，本地模式使用`agentlens configure`修改当前配置。`/update`可在TUI内更新CLI，完成后退出并重新运行`agentlens chat`；`/version`用于核验CLI与运行协议版本。任务完成、失败或等待操作时会发送一次终端提醒，使用`/notifications on|off|status`可在本次会话中控制；Web端只会在用户点击顶部提醒按钮并授权后发送脱敏桌面通知。`Shift+Tab`循环“询问、自动编辑、完全访问”，`/permissions`打开内联选择器，并可继续进入Allow/Ask/Deny工具规则；也可直接输入`/permissions allow|ask|deny <工具名>`。Deny优先拒绝，Ask始终询问，Allow自动放行，规则只作用于本次会话。`Ctrl+R`搜索当前工作区的持久输入历史，`/history clear`只清空该工作区的历史；`Ctrl+S`暂存或恢复当前草稿，`Shift+Enter`或`Ctrl+J`插入换行，`Ctrl+_`或`Ctrl+Z`撤销输入，`Ctrl+U/K/W`分别删除到行首、行尾或前一词，`Ctrl+Y`粘回。超过2行或800字符的粘贴内容会折叠为引用，提交、排队或恢复草稿时仍保留完整原文，避免大段日志拖慢输入区。默认使用终端主屏scrollback，滚轮浏览和拖拽选择复制都由终端负责；`Ctrl+O`进入完整记录，`Ctrl+E`展开工具详情。需要固定输入框的全屏模式时使用`KNOWFLOW_CLI_FULLSCREEN=1 agentlens chat`，该模式支持`PgUp/PgDn`滚动；如需应用捕获滚轮，同时设置`KNOWFLOW_CLI_MOUSE=1`，部分终端此时需要按住Shift拖拽选择。Shell工具持续显示最近输出、耗时、总行数和输出大小；运行中按`Ctrl+C`终止SRT进程组并在安全边界停止Agent，空输入时连续按两次`Ctrl+C`退出。
 
@@ -65,7 +67,7 @@ node --version  # 新版Ink界面需要v22+
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
 agentlens configure
 agentlens doctor --cli
-agentlens chat
+agentlens
 agentlens update
 ```
 
