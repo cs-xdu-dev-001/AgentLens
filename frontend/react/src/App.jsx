@@ -418,7 +418,6 @@ function WorkbenchShell() {
             <ChatPage
               active={activePage === "chat"}
               drawerCollapsed={drawerCollapsed}
-              sessions={paletteSessions}
             />
             <DeferredPage active={activePage === "knowledge"} visited={visitedPages.has("knowledge")} page={"knowledge"} label={"知识库"}>
               <KnowledgePage active={activePage === "knowledge"} />
@@ -444,7 +443,7 @@ function WorkbenchShell() {
           </main>
         </div>
       ) : null}
-      {!shellLocked && activePage !== "chat" ? (
+      {!shellLocked ? (
         <CommandPalette
           commands={globalPaletteCommands}
           sessions={paletteSessions}

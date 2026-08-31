@@ -13,7 +13,6 @@ import {
 import { readActiveSessionPreference } from "../controller/sessionPersistence.js";
 import { ComposerCommandHelp } from "./ComposerCommandHelp.jsx";
 import { ComposerHistorySearch } from "./ComposerHistorySearch.jsx";
-import { CommandPalette } from "./CommandPalette.jsx";
 import { ComposerModelPicker } from "./ComposerModelPicker.jsx";
 import { ComposerPermissionPicker } from "./ComposerPermissionPicker.jsx";
 import { ComposerSlashPicker } from "./ComposerSlashPicker.jsx";
@@ -81,7 +80,7 @@ function initialComposerDraft(user) {
   };
 }
 
-export function ChatComposerForm({ active = true, sessions = [] } = {}) {
+export function ChatComposerForm() {
   const { user } = useAuth();
   const draftOwnerId = valueOf(user?.id);
   const initialDraftRef = useRef(null);
@@ -1003,19 +1002,7 @@ export function ChatComposerForm({ active = true, sessions = [] } = {}) {
       window.requestAnimationFrame(() => document.getElementById("main-stage")?.focus());
     }
   };
-  const handlePaletteSession = (session) => {
-    const sessionId = String(session?.id || "").trim();
-    if (!sessionId) return;
-    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
-      detail: {
-        sessionId,
-        title: String(session?.title || session?.latest_run?.goalSummary || "新任务"),
-        chatModelConfigId: session?.chat_model_config_id ?? null,
-      },
-    }));
-  };
   paletteCommandHandlerRef.current = handlePaletteCommand;
-
   useEffect(() => {
     const handlePaletteCommandEvent = (event) => {
       const command = event.detail?.command;
@@ -1477,14 +1464,6 @@ export function ChatComposerForm({ active = true, sessions = [] } = {}) {
         : idleAgentState;
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
-      <CommandPalette
-        commands={helpCommands}
-        sessions={sessions}
-        disabled={switchingSession}
-        shortcutEnabled={active}
-        onCommand={handlePaletteCommand}
-        onSessionSelect={handlePaletteSession}
-      />
       {commandHelpOpen ? (
         <ComposerCommandHelp
           commands={helpCommands}

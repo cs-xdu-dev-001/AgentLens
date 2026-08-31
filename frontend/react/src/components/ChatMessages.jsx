@@ -420,7 +420,7 @@ export function transcriptSearchMatches(messages, query) {
   return matches;
 }
 
-function MessageRow({
+const MessageRow = memo(function MessageRow({
   interactionOwner,
   message,
   pendingInteractionCount,
@@ -498,15 +498,30 @@ function MessageRow({
       ) : null}
     </div>
   );
+}, (previous, next) => previous.message === next.message
+  && previous.pendingInteractionCount === next.pendingInteractionCount
+  && previous.searchCurrent === next.searchCurrent
+  && previous.searchMatch === next.searchMatch
+  && sameInteractionOwner(previous.interactionOwner, next.interactionOwner));
+
+function sameInteractionOwner(previous, next) {
+  return (previous?.messageId || "") === (next?.messageId || "")
+    && (previous?.kind || "") === (next?.kind || "")
+    && (previous?.queuedCount || 0) === (next?.queuedCount || 0);
 }
 
 export function ChatMessages() {
   const messagesRef = useRef(null);
   const messageStateRef = useRef([]);
+  const messageIndexRef = useRef(new Map());
   const searchInputRef = useRef(null);
   const nextMessageIdRef = useRef(1);
   const followOutputRef = useRef(true);
   const scrollFrameRef = useRef(0);
+  const messageRenderFrameRef = useRef(0);
+  const messageRenderPendingRef = useRef(false);
+  const pendingMessageScrollRef = useRef({ force: false, behavior: "auto" });
+  const mountedRef = useRef(true);
   const [messages, setMessages] = useState([]);
   const [showWelcome, setShowWelcome] = useState(true);
   const [sessionSwitch, setSessionSwitch] = useState(null);
@@ -516,7 +531,9 @@ export function ChatMessages() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCursor, setSearchCursor] = useState(0);
   const [taskClock, setTaskClock] = useState(() => Date.now());
-  messageStateRef.current = messages;
+  // Keep the logical message list ahead of React's paint while token updates are
+  // coalesced. Unrelated renders must not overwrite a queued stream snapshot.
+  if (!messageRenderPendingRef.current) messageStateRef.current = messages;
   const searchMatches = useMemo(
     () => transcriptSearchMatches(messages, searchQuery),
     [messages, searchQuery],
@@ -578,6 +595,44 @@ export function ChatMessages() {
       } else {
         viewport.scrollTop = viewport.scrollHeight;
       }
+    });
+  };
+
+  const cancelMessageRender = () => {
+    if (messageRenderFrameRef.current) {
+      window.cancelAnimationFrame(messageRenderFrameRef.current);
+      messageRenderFrameRef.current = 0;
+    }
+    messageRenderPendingRef.current = false;
+    pendingMessageScrollRef.current = { force: false, behavior: "auto" };
+  };
+
+  const commitMessageState = (
+    nextMessages,
+    { defer = false, forceScroll = false, behavior = "auto" } = {},
+  ) => {
+    messageStateRef.current = nextMessages;
+    if (!defer) {
+      cancelMessageRender();
+      flushSync(() => setMessages(nextMessages));
+      scrollToBottom({ force: forceScroll, behavior });
+      return;
+    }
+
+    messageRenderPendingRef.current = true;
+    pendingMessageScrollRef.current = {
+      force: pendingMessageScrollRef.current.force || Boolean(forceScroll),
+      behavior: behavior || "auto",
+    };
+    if (messageRenderFrameRef.current) return;
+    messageRenderFrameRef.current = window.requestAnimationFrame(() => {
+      messageRenderFrameRef.current = 0;
+      if (!mountedRef.current || !messageRenderPendingRef.current) return;
+      messageRenderPendingRef.current = false;
+      const scrollOptions = pendingMessageScrollRef.current;
+      pendingMessageScrollRef.current = { force: false, behavior: "auto" };
+      flushSync(() => setMessages(messageStateRef.current));
+      scrollToBottom(scrollOptions);
     });
   };
   const handleMessagesScroll = () => {
@@ -655,21 +710,31 @@ export function ChatMessages() {
       sourceMessageId: payload.sourceMessageId ?? null,
     };
   };
-  const updateMessage = (messageId, updater) => {
-    let didUpdate = false;
-    flushSync(() => {
-      setMessages((currentMessages) =>
-        currentMessages.map((message) => {
-          if (message.id !== messageId) return message;
-          didUpdate = true;
-          return updater(message);
-        }),
-      );
-    });
-    scrollToBottom();
-    return { messageId, bubble: findBubble(messageId), handled: didUpdate };
+  const updateMessage = (messageId, updater, options = {}) => {
+    const currentMessages = messageStateRef.current;
+    let messageIndex = messageIndexRef.current.get(messageId);
+    if (
+      !Number.isInteger(messageIndex)
+      || currentMessages[messageIndex]?.id !== messageId
+    ) {
+      messageIndex = currentMessages.findIndex((message) => message.id === messageId);
+      if (messageIndex >= 0) messageIndexRef.current.set(messageId, messageIndex);
+    }
+    if (messageIndex < 0) return { messageId, bubble: findBubble(messageId), handled: false };
+    const currentMessage = currentMessages[messageIndex];
+    const nextMessage = updater(currentMessage);
+    if (nextMessage === currentMessage) {
+      return { messageId, bubble: findBubble(messageId), handled: true };
+    }
+    const nextMessages = currentMessages.slice();
+    nextMessages[messageIndex] = nextMessage;
+    commitMessageState(nextMessages, options);
+    return { messageId, bubble: findBubble(messageId), handled: true };
   };
   const resetMessages = ({ showWelcome: nextShowWelcome = false } = {}) => {
+    messageStateRef.current = [];
+    messageIndexRef.current.clear();
+    cancelMessageRender();
     flushSync(() => {
       setMessages([]);
       setShowWelcome(Boolean(nextShowWelcome));
@@ -681,9 +746,13 @@ export function ChatMessages() {
     const messageId = "react-message-" + nextMessageIdRef.current;
     nextMessageIdRef.current += 1;
     const message = normalizeMessage(payload || {}, messageId);
+    const nextMessages = [...messageStateRef.current, message];
+    messageStateRef.current = nextMessages;
+    messageIndexRef.current.set(messageId, nextMessages.length - 1);
+    cancelMessageRender();
     flushSync(() => {
       setShowWelcome(false);
-      setMessages((currentMessages) => [...currentMessages, message]);
+      setMessages(nextMessages);
     });
     scrollToBottom({ force: payload?.role === "user" });
     return { messageId, bubble: findBubble(messageId) };
@@ -694,8 +763,16 @@ export function ChatMessages() {
     return () => document.querySelector("#page-chat")?.classList.remove("chat-empty");
   }, [showWelcome]);
 
-  useEffect(() => () => {
-    window.cancelAnimationFrame(scrollFrameRef.current);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      window.cancelAnimationFrame(messageRenderFrameRef.current);
+      messageRenderFrameRef.current = 0;
+      messageRenderPendingRef.current = false;
+      pendingMessageScrollRef.current = { force: false, behavior: "auto" };
+    };
   }, []);
 
   useEffect(() => {
@@ -786,7 +863,7 @@ export function ChatMessages() {
         rawContent,
         thinking: false,
         streaming: Boolean(detail.streaming),
-      }));
+      }), { defer: Boolean(detail.streaming) });
       detail.messageId = result.messageId;
       detail.bubble = result.bubble;
       detail.handled = result.handled;
@@ -872,14 +949,13 @@ export function ChatMessages() {
       }
       if (!detail.runId) return;
       let didUpdate = false;
-      flushSync(() => {
-        setMessages((currentMessages) => currentMessages.map((message) => {
-          const runId = String(message.run?.id || message.run?.runId || "");
-          if (runId !== String(detail.runId)) return message;
-          didUpdate = true;
-          return { ...message, run: { ...message.run, artifacts: nextArtifacts } };
-        }));
+      const nextMessages = messageStateRef.current.map((message) => {
+        const runId = String(message.run?.id || message.run?.runId || "");
+        if (runId !== String(detail.runId)) return message;
+        didUpdate = true;
+        return { ...message, run: { ...message.run, artifacts: nextArtifacts } };
       });
+      if (didUpdate) commitMessageState(nextMessages);
       detail.handled = didUpdate;
     };
     const handleToolCalls = (event) => {

@@ -5,7 +5,7 @@ import { ChatMessages } from "./ChatMessages.jsx";
 import { ChatTopbar } from "./ChatTopbar.jsx";
 import { ThemeToggle } from "./ThemeToggle.jsx";
 
-export function ChatPage({ active = false, drawerCollapsed = true, sessions = [] }) {
+export function ChatPage({ active = false, drawerCollapsed = true }) {
   return (
     <section className={active ? "page active" : "page"} id={"page-chat"}>
       <div className={"chat-layout"}>
@@ -14,7 +14,7 @@ export function ChatPage({ active = false, drawerCollapsed = true, sessions = []
           <ChatTopbar drawerCollapsed={drawerCollapsed} />
           <ChatContextToolbar />
           <ChatMessages />
-          <ChatComposerForm active={active} sessions={sessions} />
+          <ChatComposerForm active={active} />
         </section>
         <ChatEvidenceDrawer />
       </div>

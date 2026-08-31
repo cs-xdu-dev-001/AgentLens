@@ -4735,3 +4735,21 @@ body.sidebar-collapsed .sidebar {
     white-space: nowrap;
   }
 }
+
+/* Keep the transcript on a comfortable reading axis while preserving the
+   compact user bubble and the existing responsive layout. */
+#page-chat:not(.chat-empty) .messages {
+  gap: 16px;
+}
+
+#page-chat:not(.chat-empty) .message {
+  max-width: min(72ch, 84%);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  #page-chat:not(.chat-empty) .messages {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}

@@ -14,10 +14,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 const writes = [];
 page.on("pageerror", error => errors.push(error.message));
-await page.route("**/api/**", route => {
+await page.route("**/api/**", async route => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
-  if (!path.startsWith("/api/")) return route.continue();
+  if (!path.startsWith("/api/")) {
+    await route.continue();
+    return;
+  }
   if (request.method() !== "GET") writes.push(request.url());
   const fixtures = {
     "/api/auth/me": { authenticated: true, user: { id: 999, username: "palette-test", display_name: "交互测试" } },
@@ -35,7 +38,7 @@ await page.route("**/api/**", route => {
     ],
     "/api/model-configs": [{ id: 1, name: "测试模型", modelName: "test-model", modelType: "chat", enabled: true, isDefault: true }],
   };
-  return route.fulfill({ json: { code: 0, data: fixtures[path] || [] } });
+  await route.fulfill({ json: { code: 0, data: fixtures[path] || [] } });
 });
 const palette = page.locator("#command-palette");
 const search = page.getByRole("combobox", { name: "搜索命令", exact: true });
@@ -75,6 +78,12 @@ try {
   assert.equal(await focused(draft), true);
   assert.equal(await draft.inputValue(), "保留这份草稿，不要发送");
   assert.deepEqual(await draft.evaluate(node => [node.selectionStart, node.selectionEnd]), [2, 5]);
+  await open();
+  await search.press("Escape");
+  await open();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "搜索命令");
+  assert.equal(await focused(search), true, "a stale close frame must not steal focus from a reopened palette");
+  await search.press("Escape");
   await page.keyboard.press("Meta+k");
   await palette.waitFor({ state: "visible" });
   await search.press("Escape");
@@ -117,6 +126,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-sending-updated", { detail: { sending: true } })));
   await open();
   await search.fill("stop");
+  await page.locator("#palette-command-stop").waitFor({ state: "visible" });
   assert.equal(await page.locator("#palette-command-stop").count(), 1);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-sending-updated", { detail: { sending: false } })));
   await page.locator("#palette-command-stop").waitFor({ state: "detached" });
@@ -124,6 +134,20 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".command-palette-option").length === 0);
   assert.match(await page.locator(".command-palette-footer").innerText(), /正在打开任务/);
   await search.press("Escape");
+  const disabledShortcut = await page.evaluate(() => {
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      key: "k",
+    });
+    document.dispatchEvent(event);
+    return {
+      defaultPrevented: event.defaultPrevented,
+      paletteMounted: Boolean(document.getElementById("command-palette")),
+    };
+  });
+  assert.deepEqual(disabledShortcut, { defaultPrevented: false, paletteMounted: false });
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-session-switch-state", { detail: { status: "success" } })));
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -145,9 +169,13 @@ try {
   // Session rows from the existing sidebar index are searchable from the same palette.
   await page.evaluate(() => {
     window.__paletteSessionSelection = "";
+    window.__paletteSessionSwitchEvents = [];
     window.addEventListener("knowflow:react-session-continue", event => {
       window.__paletteSessionSelection = String(event.detail?.sessionId || "");
     }, { once: true });
+    window.addEventListener("knowflow:react-session-switch-state", event => {
+      window.__paletteSessionSwitchEvents.push({ ...event.detail });
+    });
   });
   await open();
   await search.fill("部署AgentLens");
@@ -155,6 +183,12 @@ try {
   await search.press("Enter");
   await palette.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => window.__paletteSessionSelection), "session-42");
+  await page.waitForFunction(
+    () => window.__paletteSessionSwitchEvents?.some(
+      event => event.status === "success" && event.sessionId === "session-42",
+    ),
+  );
+  assert.equal(await page.locator("#page-chat .session-switch-state").count(), 0);
   await page.locator("#page-chat.active").waitFor();
   await open();
   await page.setViewportSize({ width: 390, height: 400 });
@@ -162,6 +196,28 @@ try {
   const shortBounds = await palette.boundingBox();
   assert.ok(shortBounds.y + shortBounds.height <= 400, JSON.stringify(shortBounds));
   await search.press("Escape");
+  const streamResult = await page.evaluate(async () => {
+    const append = { role: "assistant", rawContent: "", streaming: true, thinking: false };
+    window.dispatchEvent(new CustomEvent("knowflow:react-message-append", { detail: append }));
+    const messageId = append.messageId;
+    const bubble = () => document.querySelector(`[data-react-message-id="${messageId}"] .message-markdown`);
+    let mutations = 0;
+    const target = bubble();
+    const observer = new MutationObserver(() => { mutations += 1; });
+    observer.observe(target, { childList: true, subtree: true, characterData: true });
+    for (let index = 1; index <= 100; index += 1) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-message-content", {
+        detail: { messageId, rawContent: `token-${index}`, streaming: true },
+      }));
+    }
+    const immediate = bubble()?.textContent || "";
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    observer.disconnect();
+    if (immediate !== "") throw new Error(`stream content painted before the frame: ${immediate}`);
+    return { immediate, final: bubble()?.textContent || "", mutations };
+  });
+  assert.equal(streamResult.final, "token-100");
+  assert.ok(streamResult.mutations <= 4, JSON.stringify(streamResult));
   await open();
   await page.mouse.click(4, 395);
   await palette.waitFor({ state: "detached" });

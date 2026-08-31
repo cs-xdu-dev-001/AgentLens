@@ -62,6 +62,11 @@ export function CommandPalette({
   const inputRef = useRef(null);
   const closeButtonRef = useRef(null);
   const originRef = useRef(null);
+  const shortcutEnabledRef = useRef(shortcutEnabled);
+  const disabledRef = useRef(disabled);
+  const restoreFocusFrameRef = useRef(0);
+  shortcutEnabledRef.current = shortcutEnabled;
+  disabledRef.current = disabled;
   const commandItems = useMemo(
     () => disabled ? [] : searchComposerCommands(commands, query),
     [commands, disabled, query],
@@ -81,21 +86,38 @@ export function CommandPalette({
     : `palette-command-${item.command.value.slice(1)}`;
 
   const close = useCallback((restoreFocus = true) => {
+    if (restoreFocusFrameRef.current) {
+      window.cancelAnimationFrame(restoreFocusFrameRef.current);
+      restoreFocusFrameRef.current = 0;
+    }
     dialogRef.current?.close();
     setOpen(false);
     const origin = originRef.current;
     if (restoreFocus && origin?.element?.isConnected) {
-      origin.element.focus({ preventScroll: true });
-      if (typeof origin.start === "number") {
-        origin.element.setSelectionRange(origin.start, origin.end, origin.direction);
-      }
+      const restore = () => {
+        if (!origin.element?.isConnected || typeof origin.element.focus !== "function") return;
+        origin.element.focus({ preventScroll: true });
+        if (typeof origin.start === "number" && typeof origin.element.setSelectionRange === "function") {
+          origin.element.setSelectionRange(origin.start, origin.end, origin.direction);
+        }
+      };
+      // Native dialog close can restore focus after the React handler returns;
+      // reclaim it on the next frame as well so keyboard flows stay deterministic.
+      restore();
+      restoreFocusFrameRef.current = window.requestAnimationFrame(() => {
+        restoreFocusFrameRef.current = 0;
+        restore();
+      });
     }
   }, []);
 
   useEffect(() => {
-    if (!shortcutEnabled) return undefined;
     const show = () => {
-      if (disabled || document.querySelector(modalSelector)) return;
+      if (!shortcutEnabledRef.current || disabledRef.current || document.querySelector(modalSelector)) return;
+      if (restoreFocusFrameRef.current) {
+        window.cancelAnimationFrame(restoreFocusFrameRef.current);
+        restoreFocusFrameRef.current = 0;
+      }
       const element = document.activeElement;
       originRef.current = {
         element,
@@ -109,7 +131,7 @@ export function CommandPalette({
     };
     const onShortcut = (event) => {
       if (!isCommandPaletteShortcut(event)) return;
-      if (document.querySelector(modalSelector)) return;
+      if (!shortcutEnabledRef.current || disabledRef.current || document.querySelector(modalSelector)) return;
       event.preventDefault();
       show();
     };
@@ -119,7 +141,14 @@ export function CommandPalette({
       window.removeEventListener("keydown", onShortcut);
       window.removeEventListener("knowflow:react-command-palette-open", show);
     };
-  }, [disabled, shortcutEnabled]);
+  }, []);
+
+  useEffect(() => () => {
+    if (restoreFocusFrameRef.current) {
+      window.cancelAnimationFrame(restoreFocusFrameRef.current);
+      restoreFocusFrameRef.current = 0;
+    }
+  }, []);
 
   useEffect(() => {
     if (!shortcutEnabled && open) close(false);
