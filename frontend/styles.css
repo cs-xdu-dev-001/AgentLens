@@ -1424,6 +1424,47 @@ p {
   border-bottom: 1px solid rgba(37, 99, 235, 0.26);
 }
 
+.message.assistant a:hover {
+  border-bottom-color: currentColor;
+}
+
+.message.assistant blockquote {
+  margin: 10px 0 14px;
+  padding: 9px 14px;
+  box-shadow: inset 2px 0 0 var(--line-strong);
+  border-radius: 0 10px 10px 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.message.assistant blockquote > :first-child {
+  margin-top: 0;
+}
+
+.message.assistant blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant del,
+.message.assistant s {
+  color: var(--muted);
+  text-decoration-thickness: 1px;
+}
+
+.message.assistant hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.message.assistant img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 10px 0 14px;
+  border-radius: 10px;
+}
+
 .message.assistant code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.92em;

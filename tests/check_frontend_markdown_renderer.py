@@ -63,6 +63,15 @@ const fenced = renderMarkdown("```js\nconst x = '<tag>';\n");
 assertContains(fenced, "<pre><code class=\"language-js\">const x = '&lt;tag&gt;';", "escapes unterminated fenced code content");
 assertContains(fenced, "</code></pre>", "closes unterminated fenced code safely");
 
+const rich = renderMarkdown("> quoted context\n\n- parent\n  - child\n\nhttps://example.com");
+assertContains(rich, "<blockquote>", "renders blockquotes");
+assertContains(rich, "<ul>\n<li>parent\n<ul>", "renders nested lists");
+assertContains(rich, "<a href=\"https://example.com\" target=\"_blank\" rel=\"noreferrer\">", "linkifies safe URLs");
+
+const image = renderMarkdown("![diagram](https://example.com/diagram.png)");
+assertContains(image, "loading=\"lazy\"", "lazy-loads assistant images");
+assertContains(image, "referrerpolicy=\"no-referrer\"", "protects image referrers");
+
 console.log("markdown renderer escapes untrusted content and preserves code literals");
 '''
     result = subprocess.run(
