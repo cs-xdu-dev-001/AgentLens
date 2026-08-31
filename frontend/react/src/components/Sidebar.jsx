@@ -1,7 +1,7 @@
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { runtimeApi, sessionApi } from "../api/client.js";
+import { approvalApi, runtimeApi, sessionApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { sidebarTools } from "../data/navigation.js";
 import { safeAgentText } from "../controller/agentEvents.js";
@@ -1240,6 +1240,147 @@ function RuntimeStatus() {
   );
 }
 
+function PendingApprovals({ collapsed = false }) {
+  const { authenticated } = useAuth();
+  const [items, setItems] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const requestRef = useRef(0);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    const requestId = ++requestRef.current;
+    if (!authenticated) {
+      setItems([]);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+    if (!silent) setLoading(true);
+    try {
+      const result = await approvalApi.listPending({ limit: 50 });
+      if (requestId !== requestRef.current) return;
+      const list = Array.isArray(result)
+        ? result
+        : (Array.isArray(result?.items) ? result.items : []);
+      setItems(list.filter((item) => (
+        item
+        && !item.decision
+        && String(item.status || "waiting") === "waiting"
+      )));
+      setError(false);
+    } catch {
+      if (requestId === requestRef.current) setError(true);
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  }, [authenticated]);
+  useEffect(() => {
+    load();
+    const poll = window.setInterval(() => {
+      if (!document.hidden) void load({ silent: true });
+    }, 15_000);
+    const refresh = () => void load({ silent: true });
+    const handleVisibility = () => {
+      if (!document.hidden) refresh();
+    };
+    window.addEventListener("knowflow:react-agent-approvals-updated", refresh);
+    window.addEventListener("knowflow:react-agent-approval-resume", refresh);
+    window.addEventListener("knowflow:react-refresh", refresh);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      requestRef.current += 1;
+      window.clearInterval(poll);
+      window.removeEventListener("knowflow:react-agent-approvals-updated", refresh);
+      window.removeEventListener("knowflow:react-agent-approval-resume", refresh);
+      window.removeEventListener("knowflow:react-refresh", refresh);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [load]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+  const openApproval = (approval) => {
+    const sessionId = approval?.sessionId || approval?.session_id;
+    setOpen(false);
+    if (sessionId) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+        detail: {
+          sessionId,
+          title: approval?.sessionTitle || approval?.goalSummary || "任务",
+          chatModelConfigId: approval?.chatModelConfigId ?? null,
+          approvalId: approval?.approvalId || "",
+          messageId: approval?.messageId ?? null,
+        },
+      }));
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-interaction-focus", {
+      detail: { approvalId: approval?.approvalId || "" },
+    }));
+  };
+  const countLabel = items.length > 99 ? "99+" : String(items.length);
+  const triggerLabel = items.length
+    ? `待处理审批，${countLabel}项`
+    : "待处理审批";
+  return (
+    <div className={["pending-approvals", collapsed ? "collapsed" : ""].filter(Boolean).join(" ")}>
+      <button
+        className={"sidebar-tool pending-approvals-trigger"}
+        type={"button"}
+        title={triggerLabel}
+        aria-label={triggerLabel}
+        aria-expanded={open}
+        aria-controls={"pending-approvals-list"}
+        onClick={() => {
+          setOpen((value) => !value);
+          void load({ silent: true });
+        }}
+      >
+        <span className={"nav-icon"} aria-hidden={"true"}>
+          <svg viewBox={"0 0 24 24"} focusable={"false"}>
+            <path d={"M12 4a6 6 0 0 0-6 6v3.2l-1.4 2.1h14.8L18 13.2V10a6 6 0 0 0-6-6Z"} />
+            <path d={"M9.8 18a2.4 2.4 0 0 0 4.4 0"} />
+          </svg>
+        </span>
+        <span className={"pending-approvals-label"}>{"待处理审批"}</span>
+        {items.length ? <span className={"pending-approvals-badge"}>{countLabel}</span> : null}
+      </button>
+      {open ? (
+        <div className={"pending-approvals-list"} id={"pending-approvals-list"} role={"region"} aria-label={"待处理审批列表"} aria-live={"polite"}>
+          <div className={"pending-approvals-list-heading"}>
+            <strong>{"需要你的确认"}</strong>
+            {loading ? <span>{"同步中"}</span> : null}
+          </div>
+          {error ? (
+            <button className={"pending-approvals-retry"} type={"button"} onClick={() => load()}>
+              {"加载失败 · 重试"}
+            </button>
+          ) : items.length ? (
+            <>
+              {items.slice(0, 6).map((item) => (
+                <button type={"button"} className={"pending-approval-item"} key={item.approvalId} onClick={() => openApproval(item)}>
+                  <strong>{item.toolName || "工具操作"}</strong>
+                  <span>{item.sessionTitle || item.goalSummary || item.serverName || "等待确认"}</span>
+                </button>
+              ))}
+              {items.length > 6 ? <span className={"pending-approvals-more"}>{`还有${items.length - 6}项`}</span> : null}
+            </>
+          ) : (
+            <span className={"pending-approvals-empty"}>{"暂无待处理审批"}</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Sidebar({
   activePage = "chat",
   collapsed = false,
@@ -1335,6 +1476,7 @@ export function Sidebar({
         <span>{"命令面板"}</span>
         <kbd>{"Ctrl/⌘ K"}</kbd>
       </button>
+      <PendingApprovals collapsed={collapsed} />
       <SessionHistory
         mobileOpen={mobileHistoryOpen}
         onMobileClose={onMobileHistoryClose}

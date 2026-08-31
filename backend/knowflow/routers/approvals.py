@@ -2,7 +2,7 @@ from collections.abc import Callable
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..runtime import (
     agent_run_coordinator,
@@ -86,6 +86,24 @@ approval_runner = AgentApprovalRunner(
     store=agent_tool_operations,
     resume=_resume_resolved_approval,
 )
+
+
+@router.get("/api/agent/approvals")
+@router.get("/api/agent/approvals/waiting", include_in_schema=False)
+def list_agent_approvals(
+    request: Request,
+    status: str = Query("waiting", min_length=1, max_length=32),
+    limit: int = Query(100, ge=1, le=200),
+) -> dict:
+    """List durable approvals for the current user."""
+    user_id = current_user_id(request)
+    normalized_status = str(status or "waiting").strip().lower()
+    if normalized_status != "waiting":
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持查询waiting状态的审批。",
+        )
+    return api_success(agent_tool_operations.list_waiting(user_id, limit=limit))
 
 
 @router.post("/api/agent/approvals/{approval_id}")

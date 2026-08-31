@@ -60,6 +60,22 @@ function waitForAgentReconnect(delayMs, signal) {
   });
 }
 
+function scheduleAgentInteractionFocus(detail, isCurrentSession) {
+  if (typeof window === "undefined") return;
+  const dispatch = () => {
+    if (!isCurrentSession()) return;
+    window.dispatchEvent(new CustomEvent(
+      "knowflow:react-agent-interaction-focus",
+      { detail },
+    ));
+  };
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(dispatch));
+    return;
+  }
+  window.setTimeout(dispatch, 0);
+}
+
 function clonePlainSnapshotValue(value) {
   if (Array.isArray(value)) {
     return value.map((item) => clonePlainSnapshotValue(item));
@@ -871,6 +887,8 @@ export function createChatFlow({
       title: String(options.title || "").trim() || "任务",
       chatModelConfigId: options.chatModelConfigId ?? null,
     };
+    const focusApprovalId = String(options.approvalId || "").trim();
+    const focusMessageId = options.approvalMessageId ?? null;
     publishSessionSwitch("loading", switchDetail);
     switchPage("chat");
     let messages;
@@ -1016,6 +1034,15 @@ export function createChatFlow({
             setSending(false);
           }
         });
+    }
+    if (focusApprovalId) {
+      scheduleAgentInteractionFocus(
+        {
+          approvalId: focusApprovalId,
+          messageId: focusMessageId,
+        },
+        () => String(state.currentSessionId || "") === nextSessionId,
+      );
     }
     return true;
   }

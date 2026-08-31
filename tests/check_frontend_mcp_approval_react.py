@@ -20,6 +20,8 @@ def forbid(path: str, token: str, label: str) -> None:
 def main() -> None:
     client = "frontend/react/src/api/client.js"
     require(client, "export const approvalApi", "approval API")
+    require(client, "/api/agent/approvals?status=waiting", "global waiting approval list endpoint")
+    require(client, "listPending", "global approval list client")
     require(client, "/api/agent/approvals/", "approval endpoint")
     require(client, "body: { decision }", "approval decision body")
 
@@ -64,6 +66,7 @@ def main() -> None:
     require(prompt, "pendingApprovalIds.delete", "successful request lock release")
     require(prompt, "interactive = true", "single interactive approval owner")
     require(prompt, "knowflow:react-agent-interaction-focus", "approval focus request")
+    require(prompt, "requestedApprovalId", "targeted approval focus")
     require(prompt, "queuedCount", "pending interaction count")
     require(prompt, "error?.status === 404", "expired approval")
     require(prompt, "审批已失效", "expired copy")
@@ -105,6 +108,15 @@ def main() -> None:
     question_prompt = "frontend/react/src/components/AgentQuestionPrompt.jsx"
     require(question_prompt, "interactive = true", "single interactive question owner")
     require(question_prompt, "前往当前请求", "inactive question handoff")
+
+    sidebar = "frontend/react/src/components/Sidebar.jsx"
+    require(sidebar, "function PendingApprovals", "global approval inbox")
+    require(sidebar, "approvalApi.listPending", "global approval inbox request")
+    require(sidebar, "knowflow:react-session-continue", "approval session jump")
+    require(sidebar, "pending-approvals-badge", "pending approval count badge")
+
+    require(flow, "scheduleAgentInteractionFocus", "post-hydration approval focus")
+    require(flow, "approvalMessageId", "approval message focus metadata")
 
     script = r'''import {
   activeAgentInteractionOwner,

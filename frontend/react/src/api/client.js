@@ -134,6 +134,9 @@ export const mcpApi = {
 };
 
 export const approvalApi = {
+  listPending: ({ limit = 100 } = {}) => apiRequest(
+    `/api/agent/approvals?status=waiting&limit=${Math.max(1, Math.min(200, Number(limit) || 100))}`,
+  ),
   resolve: (approvalId, decision) =>
     apiRequest(`/api/agent/approvals/${approvalId}`, {
       method: "POST",

@@ -195,6 +195,8 @@ export function bindReactControllerEvents({
     continueSession(detail.sessionId, {
       title: detail.title,
       chatModelConfigId: detail.chatModelConfigId ?? null,
+      approvalId: detail.approvalId || "",
+      approvalMessageId: detail.messageId ?? null,
     })
       .then((opened) => {
         if (!opened) return;

@@ -226,7 +226,11 @@ export function AgentApprovalPrompt({
         ?.querySelector("button:not(:disabled)")
         ?.focus({ preventScroll: true });
     };
-    const handleFocusRequest = () => focusPrompt();
+    const handleFocusRequest = (event) => {
+      const requestedApprovalId = String(event.detail?.approvalId || "").trim();
+      if (requestedApprovalId && requestedApprovalId !== String(approvalId)) return;
+      focusPrompt();
+    };
     window.addEventListener("knowflow:react-agent-interaction-focus", handleFocusRequest);
     if (autoFocus) {
       const frame = window.requestAnimationFrame(focusPrompt);
@@ -256,6 +260,7 @@ export function AgentApprovalPrompt({
         compact ? "compact" : "",
         pending ? "waiting" : "resolved",
       ].filter(Boolean).join(" ")}
+      data-approval-id={approval.approvalId}
       aria-label={`${approval.toolName || "工具"}操作确认`}
       aria-busy={busy}
       ref={rootRef}

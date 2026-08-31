@@ -90,3 +90,81 @@ test("a session response cannot cross an authenticated user boundary", async () 
     globalThis.CustomEvent = originalCustomEvent;
   }
 });
+
+test("a global approval jump focuses the requested approval after session hydration", async () => {
+  const originalWindow = globalThis.window;
+  const originalCustomEvent = globalThis.CustomEvent;
+  const events = [];
+  globalThis.window = {
+    ...createWindowStub(),
+    dispatchEvent: (event) => {
+      events.push(event);
+      return true;
+    },
+  };
+  globalThis.CustomEvent = class CustomEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  };
+  const state = {
+    activeChatController: null,
+    activeRunId: null,
+    activeRunMessageId: null,
+    activeRunReconnectController: null,
+    chatAttachments: [],
+    chatQueue: [],
+    chatQueueBlockReason: "",
+    chatQueuePaused: false,
+    currentSessionId: null,
+    currentSessionTitle: "",
+    currentUser: { id: 1 },
+  };
+  const noop = () => {};
+  try {
+    const flow = createChatFlow({
+      state,
+      messageRetryRequests: new Map(),
+      request: async () => [],
+      toast: noop,
+      appendMessage: noop,
+      clearChatMessages: noop,
+      setMessageContent: noop,
+      setMessageThinking: noop,
+      setSending: noop,
+      renderActiveSession: noop,
+      renderAgentApprovals: noop,
+      renderAgentQuestions: noop,
+      renderAgentRun: noop,
+      renderAgentTrace: noop,
+      renderMemoryActivity: noop,
+      renderAttachmentTray: noop,
+      notifyReactKnowledgeSelectionUpdated: noop,
+      notifyReactModelSelectionUpdated: noop,
+      renderReferences: noop,
+      renderRagQuality: noop,
+      renderToolTimeline: noop,
+      openRetrievalDrawerFromRun: noop,
+      requestComposerReset: noop,
+      requestReactSessionsRefresh: noop,
+      switchPage: noop,
+      rememberActiveSession: noop,
+    });
+    assert.equal(await flow.continueSession("session-focus", {
+      approvalId: "apr_focus",
+      approvalMessageId: 42,
+    }), true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const focus = events.find(
+      (event) => event.type === "knowflow:react-agent-interaction-focus",
+    );
+    assert.deepEqual(focus?.detail, {
+      approvalId: "apr_focus",
+      messageId: 42,
+    });
+  } finally {
+    globalThis.window = originalWindow;
+    globalThis.CustomEvent = originalCustomEvent;
+  }
+});

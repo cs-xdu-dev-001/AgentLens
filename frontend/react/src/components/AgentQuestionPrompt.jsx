@@ -30,7 +30,10 @@ export function AgentQuestionPrompt({
 
   useEffect(() => {
     if (!interactive || answered) return undefined;
-    const handleFocusRequest = () => {
+    const handleFocusRequest = (event) => {
+      if (String(event.detail?.approvalId || "").trim()) return;
+      const requestedQuestionId = String(event.detail?.questionId || "").trim();
+      if (requestedQuestionId && requestedQuestionId !== String(question?.questionId || "")) return;
       rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       rootRef.current
         ?.querySelector("button:not(:disabled), input:not(:disabled)")

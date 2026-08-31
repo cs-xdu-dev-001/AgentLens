@@ -15847,3 +15847,146 @@ select {
     padding: 12px 18px 16px;
   }
 }
+.pending-approvals {
+  position: relative;
+  z-index: 4;
+}
+
+.pending-approvals-trigger {
+  width: 100%;
+}
+
+.pending-approvals-trigger .nav-icon {
+  position: relative;
+}
+
+.pending-approvals-trigger .nav-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.pending-approvals-badge {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.pending-approvals-list {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--muted);
+  font-size: 12px;
+  animation: pending-approvals-in 140ms ease-out both;
+}
+
+.pending-approvals-list-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 4px;
+  color: var(--text);
+}
+
+.pending-approvals-list-heading span {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.pending-approval-item,
+.pending-approvals-retry {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pending-approval-item strong {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-approval-item span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-approval-item:hover,
+.pending-approval-item:focus-visible,
+.pending-approvals-retry:hover,
+.pending-approvals-retry:focus-visible {
+  outline: none;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.pending-approvals-retry {
+  color: var(--danger);
+}
+
+.pending-approvals-empty,
+.pending-approvals-more {
+  padding: 4px;
+  color: var(--faint);
+}
+
+.pending-approvals-more {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  font-size: 11px;
+}
+
+@keyframes pending-approvals-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body.sidebar-collapsed .pending-approvals {
+  width: 44px;
+}
+
+body.sidebar-collapsed .pending-approvals-list {
+  position: absolute;
+  top: 0;
+  left: 52px;
+  width: 260px;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-approvals-list {
+    animation: none;
+  }
+}

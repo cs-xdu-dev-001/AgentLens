@@ -115,6 +115,17 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
         risk="write",
         input_summary={"title": "Durable"},
     )
+    waiting_response = alice.get("/api/agent/approvals?status=waiting")
+    assert waiting_response.status_code == 200, waiting_response.text
+    waiting_items = waiting_response.json()["data"]
+    assert [item["approvalId"] for item in waiting_items] == [
+        durable["approvalId"]
+    ]
+    assert waiting_items[0]["sessionId"] == "session-durable-approval"
+    assert bob.get("/api/agent/approvals?status=waiting").json()["data"] == []
+    assert alice.get(
+        "/api/agent/approvals/waiting"
+    ).json()["data"][0]["approvalId"] == durable["approvalId"]
     durable_resumes: Queue = Queue()
     original_executor = approval_router._run_executor
     approval_router.configure_approval_run_executor(
@@ -145,6 +156,7 @@ def test_durable_approval_api_is_owner_scoped_and_resumes() -> None:
             1,
             durable["approvalId"],
         )["status"] == "approved"
+        assert alice.get("/api/agent/approvals?status=waiting").json()["data"] == []
 
         runtime.agent_runs.create_run(
             user_id=1,

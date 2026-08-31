@@ -373,6 +373,58 @@ class AgentToolOperationStore:
             return normalized
         return [item for item in normalized if item["status"] in statuses]
 
+    def list_waiting(
+        self,
+        user_id: int,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return durable approvals that still block one of the user's runs."""
+        safe_limit = max(1, min(int(limit), 200))
+        with self.database.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT operation.*,
+                           run.session_id AS approval_session_id,
+                           run.assistant_message_id AS approval_message_id,
+                           run.goal_summary AS approval_goal_summary,
+                           run.status AS approval_run_status,
+                           session_record.title AS approval_session_title,
+                           session_record.chat_model_config_id AS approval_model_config_id
+                    FROM agent_tool_operation AS operation
+                    JOIN agent_run AS run
+                      ON run.id=operation.run_id
+                     AND run.user_id=operation.user_id
+                    LEFT JOIN chat_session AS session_record
+                      ON session_record.id=run.session_id
+                     AND session_record.user_id=run.user_id
+                    WHERE operation.user_id=:user_id
+                      AND operation.status='waiting'
+                      AND run.status='waiting_approval'
+                    ORDER BY operation.created_at, operation.id
+                    LIMIT :limit
+                    """
+                ),
+                {"user_id": int(user_id), "limit": safe_limit},
+            ).mappings().all()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = self._normalize(dict(row))
+            item.update(
+                {
+                    "sessionId": str(row.get("approval_session_id") or ""),
+                    "messageId": row.get("approval_message_id"),
+                    "runStatus": str(row.get("approval_run_status") or ""),
+                    "goalSummary": str(row.get("approval_goal_summary") or "")[:700],
+                    "sessionTitle": str(row.get("approval_session_title") or "")[:255],
+                    "chatModelConfigId": row.get("approval_model_config_id"),
+                    "createdAt": _public_timestamp(row.get("created_at")),
+                }
+            )
+            result.append(item)
+        return result
+
     def get(self, user_id: int, approval_id: str) -> dict[str, Any] | None:
         with self.database.engine.connect() as conn:
             row = self._row(conn, user_id, approval_id)
