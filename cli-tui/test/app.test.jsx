@@ -1129,6 +1129,67 @@ test('at mentions fuzzy-complete workspace files without exposing sensitive path
   assert.equal(client.sent.find(item => item.type === 'submit')?.text, '检查 @src/app.jsx');
 });
 
+test('workspace switch rebuilds the @ file index for the active project', async t => {
+  const firstRoot = await mkdtemp(join(tmpdir(), 'knowflow-at-first-'));
+  const nextRoot = await mkdtemp(join(tmpdir(), 'knowflow-at-next-'));
+  await writeFile(join(firstRoot, 'first-only.md'), '# first\n');
+  await writeFile(join(nextRoot, 'next-only.md'), '# next\n');
+  const client = new FakeClient();
+  const view = render(<App client={client} version="0.64.8" workspaceRoot={firstRoot} />);
+  t.after(async () => {
+    view.unmount();
+    await Promise.all([
+      rm(firstRoot, {recursive: true, force: true}),
+      rm(nextRoot, {recursive: true, force: true}),
+    ]);
+  });
+  await waitForFrame(view, /deepseek-chat/);
+
+  view.stdin.write('检查 @first');
+  await waitForFrame(view, /@first-only\.md/);
+  view.stdin.write('\u0015');
+  await tick();
+  view.stdin.write(`/workspace ${nextRoot}`);
+  view.stdin.write('\r');
+  await tick();
+  assert.deepEqual(client.sent.at(-1), {
+    type: 'workspace',
+    action: 'switch',
+    path: nextRoot,
+  });
+  client.emit('message', {type: 'session_reset'});
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'switch',
+    history: [],
+    sessions: [],
+    result: {
+      projectRoot: nextRoot,
+      cwd: nextRoot,
+      allowedDirectories: [nextRoot],
+      workspaceKind: 'project',
+      message: `已切换工作区：${nextRoot}`,
+    },
+  });
+  await waitForFrame(view, /已切换工作区/);
+
+  view.stdin.write('检查 @next');
+  await waitForFrame(view, /@next-only\.md/);
+  assert.doesNotMatch(view.lastFrame(), /@first-only\.md/);
+
+  client.emit('message', {
+    type: 'workspace_result',
+    action: 'switch',
+    result: {remote: true, message: '远程模式的工作区由服务器管理。'},
+  });
+  await waitForFrame(view, /远程模式的工作区/);
+  view.stdin.write('\u0015');
+  await tick();
+  view.stdin.write('检查 @next');
+  await tick();
+  assert.doesNotMatch(view.lastFrame(), /@next-only\.md/);
+});
+
 test('workspace context attachments stay visible and travel with submit, queue, and detach', async t => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'knowflow-attach-'));
   await mkdir(join(workspaceRoot, 'src'));

@@ -2018,6 +2018,11 @@ function workspaceDiagnosticName(workspace) {
   return publicLabel(source.split(/[\\/]/u).filter(Boolean).at(-1), '未识别', 80);
 }
 
+function workspaceIndexRoot(value) {
+  if (!value || value.remote) return '';
+  return String(value.projectRoot || value.cwd || '').trim();
+}
+
 export function buildTuiDiagnosticReport({
   version = '',
   model = '',
@@ -2733,6 +2738,11 @@ export function App({
   const [dismissedFollowUpKey, setDismissedFollowUpKey] = useState('');
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [workspacePaths, setWorkspacePaths] = useState([]);
+  const [workspaceIndexRootValue, setWorkspaceIndexRootValue] = useState(
+    () => String(workspaceRoot ?? '').trim(),
+  );
+  const [workspaceIndexReload, setWorkspaceIndexReload] = useState(0);
+  const workspacePathLoadIdRef = useRef(0);
   const [attachedPaths, setAttachedPaths] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [staticEpoch, setStaticEpoch] = useState(0);
@@ -4061,6 +4071,11 @@ export function App({
         } else {
           setWorkspace(result);
           if (message.action === 'switch') {
+            // 切换立即使旧索引失效，即使新根相同、React跳过相同值更新也一样。
+            workspacePathLoadIdRef.current += 1;
+            setWorkspacePaths([]);
+            setWorkspaceIndexRootValue(workspaceIndexRoot(result));
+            setWorkspaceIndexReload(value => value + 1);
             if (queueSyncTimerRef.current) {
               clearTimeout(queueSyncTimerRef.current);
               queueSyncTimerRef.current = null;
@@ -4282,16 +4297,26 @@ export function App({
   }, [approval, appendItem, client, question, queue, queueManagerOpen, queuePaused, ready, resetAssistantDraft, running]);
 
   useEffect(() => {
+    setWorkspaceIndexRootValue(localMode ? String(workspaceRoot ?? '').trim() : '');
+  }, [localMode, workspaceRoot]);
+
+  useEffect(() => {
+    const requestId = ++workspacePathLoadIdRef.current;
     let active = true;
-    if (!workspaceRoot) {
-      setWorkspacePaths([]);
+    const root = localMode ? String(workspaceIndexRootValue ?? '').trim() : '';
+    setWorkspacePaths([]);
+    if (!root) {
       return () => { active = false; };
     }
-    void loadWorkspacePaths(workspaceRoot).then(paths => {
-      if (active) setWorkspacePaths(paths);
-    });
+    void loadWorkspacePaths(root)
+      .then(paths => {
+        if (active && requestId === workspacePathLoadIdRef.current) setWorkspacePaths(paths);
+      })
+      .catch(() => {
+        if (active && requestId === workspacePathLoadIdRef.current) setWorkspacePaths([]);
+      });
     return () => { active = false; };
-  }, [workspaceRoot]);
+  }, [localMode, workspaceIndexReload, workspaceIndexRootValue]);
 
   const fileMention = useMemo(
     () => composerMode === 'prompt' ? fileMentionAtCursor(input, cursorOffset) : null,
