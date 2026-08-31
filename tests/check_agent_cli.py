@@ -107,6 +107,65 @@ def main() -> None:
     resumed = service.resume(user_id=7, run_id="run_cli")
     assert resumed.result["answer"] == "done"
 
+    with patch.object(cli.typer, "prompt", side_effect=["maybe", "s"]) as prompt:
+        assert cli._approval_decision(
+            assume_yes=False,
+            prompt="测试审批",
+        ) == "allow_session"
+        assert prompt.call_count == 2
+    with patch.object(cli.typer, "prompt") as prompt:
+        assert cli._approval_decision(
+            assume_yes=True,
+            prompt="测试审批",
+        ) == "allow_once"
+        prompt.assert_not_called()
+
+    local_approval_calls = []
+
+    class FakeApprovalAgent:
+        def run(self, task, *, history, run_id, approval_decision, event_sink):
+            local_approval_calls.append(
+                {
+                    "task": task,
+                    "history": history,
+                    "run_id": run_id,
+                    "approval_decision": approval_decision,
+                }
+            )
+            return AgentExecution(
+                result={"paused": False, "runId": run_id, "answer": "ok"}
+            )
+
+    paused = AgentExecution(
+        result={
+            "paused": True,
+            "runId": "run_cli_approval",
+            "messages": [{"role": "user", "content": "write"}],
+        },
+        events=[
+            {
+                "type": "approval_required",
+                "approvalId": "approval_cli",
+            }
+        ],
+    )
+    with patch.object(cli.typer, "prompt", return_value="s"):
+        resolved = cli._local_approval_loop(
+            paused,
+            agent=FakeApprovalAgent(),
+            renderer=lambda _event: None,
+            assume_yes=False,
+        )
+    assert resolved.paused is False
+    assert local_approval_calls == [
+        {
+            "task": "",
+            "history": [{"role": "user", "content": "write"}],
+            "run_id": "run_cli_approval",
+            "approval_decision": "allow_session",
+        }
+    ]
+
     completed = AgentExecution(
         result={
             "paused": False,
@@ -210,6 +269,8 @@ def main() -> None:
     assert "Typer" in cli_source
     assert "PromptSession" in cli_source
     assert "--events" in cli_source
+    assert "allow_session" in cli_source
+    assert "本会话" in cli_source
     assert "def resume(" in cli_source
     assert "def list_models(" in cli_source
     assert "KNOWFLOW_CLI_USER_ID" in cli_source

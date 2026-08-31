@@ -59,6 +59,35 @@ DEFAULT_CLI_PACKAGE_SPEC = (
 )
 
 
+def _approval_decision(*, assume_yes: bool, prompt: str) -> str:
+    """Read a keyboard-first approval choice shared by local and remote CLI."""
+    if assume_yes:
+        return "allow_once"
+    choices = {
+        "y": "allow_once",
+        "yes": "allow_once",
+        "1": "allow_once",
+        "s": "allow_session",
+        "session": "allow_session",
+        "2": "allow_session",
+        "n": "deny",
+        "no": "deny",
+        "0": "deny",
+    }
+    while True:
+        selected = typer.prompt(
+            f"{prompt} [y]本次 / [s]本会话 / [n]拒绝",
+            default="y",
+            show_default=False,
+        ).strip().lower()
+        decision = choices.get(selected)
+        if decision:
+            return decision
+        error_console.print(
+            "[red]请输入y允许本次、s允许本会话，或n拒绝。[/red]"
+        )
+
+
 def _prompt_local_api_mode(current: str) -> str:
     from .services.local_cli_runtime import normalize_local_api_mode
 
@@ -195,12 +224,15 @@ def _local_approval_loop(
         run_id = str(current.result.get("runId") or "")
         if not run_id:
             raise RuntimeError("Agent暂停，但运行信息不完整。")
-        allowed = assume_yes or typer.confirm("允许本次工具调用？")
+        decision = _approval_decision(
+            assume_yes=assume_yes,
+            prompt="允许工具调用？",
+        )
         current = agent.run(
             "",
             history=list(current.result.get("messages") or []),
             run_id=run_id,
-            approval_decision="allow_once" if allowed else "deny",
+            approval_decision=decision,
             event_sink=renderer,
         )
     return current
@@ -228,11 +260,14 @@ def _remote_approval_loop(
                 "approval_unavailable",
                 "Agent等待审批，但审批信息不可用。",
             )
-        allowed = assume_yes or typer.confirm("允许本次工具调用？")
+        decision = _approval_decision(
+            assume_yes=assume_yes,
+            prompt="允许工具调用？",
+        )
         current = client.resolve_approval(
             run_id,
             approval_id,
-            "allow_once" if allowed else "deny",
+            decision,
             renderer,
         )
     return current
@@ -381,12 +416,15 @@ def _approval_loop(
         run_id = str(current.result.get("runId") or "")
         if not approval_id or not run_id:
             raise RuntimeError("Agent暂停，但审批信息不完整。")
-        allowed = assume_yes or typer.confirm("允许本次工具调用？")
+        decision = _approval_decision(
+            assume_yes=assume_yes,
+            prompt="允许工具调用？",
+        )
         current = service.resolve_approval(
             user_id=user_id,
             run_id=run_id,
             approval_id=approval_id,
-            decision="allow_once" if allowed else "deny",
+            decision=decision,
             event_sink=renderer,
         )
     return current
@@ -952,13 +990,14 @@ def resume(
                         "approval_unavailable",
                         "等待中的审批信息不可用。",
                     )
-                allowed = assume_yes or typer.confirm(
-                    "允许等待中的工具调用？"
+                decision = _approval_decision(
+                    assume_yes=assume_yes,
+                    prompt="允许等待中的工具调用？",
                 )
                 execution = remote.resolve_approval(
                     run_id,
                     str(waiting["approvalId"]),
-                    "allow_once" if allowed else "deny",
+                    decision,
                     renderer,
                 )
             elif status in {"failed", "interrupted"}:
@@ -1010,14 +1049,15 @@ def resume(
                         event_sink=renderer,
                     )
                 else:
-                    allowed = assume_yes or typer.confirm(
-                        "允许等待中的工具调用？"
+                    decision = _approval_decision(
+                        assume_yes=assume_yes,
+                        prompt="允许等待中的工具调用？",
                     )
                     execution = service.resolve_approval(
                         user_id=resolved_user,
                         run_id=run_id,
                         approval_id=str(waiting["approvalId"]),
-                        decision=("allow_once" if allowed else "deny"),
+                        decision=decision,
                         event_sink=renderer,
                     )
             else:
