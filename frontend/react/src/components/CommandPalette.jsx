@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Fuse from "fuse.js";
 import { searchComposerCommands } from "./composerCommands.js";
 
 const modalSelector = 'dialog[open], [aria-modal="true"]';
@@ -11,7 +12,49 @@ export function isCommandPaletteShortcut(event) {
     && String(event.key || "").toLowerCase() === "k";
 }
 
-export function CommandPalette({ commands, disabled = false, onCommand }) {
+function sessionTitle(session) {
+  const title = String(session?.title || "").trim();
+  if (title && title !== "新会话") return title;
+  return String(session?.latest_run?.goalSummary || "新任务").trim() || "新任务";
+}
+
+function sessionSearchResults(sessions, query) {
+  const available = (Array.isArray(sessions) ? sessions : [])
+    .filter((session) => session && String(session.id || "").trim());
+  const normalized = String(query || "").trim().toLocaleLowerCase();
+  if (!normalized) return available.slice(0, 6);
+  const fuse = new Fuse(available.map((session) => ({
+    session,
+    title: sessionTitle(session),
+    goal: String(session.latest_run?.goalSummary || ""),
+    id: String(session.id || ""),
+  })), {
+    threshold: 0.36,
+    ignoreLocation: true,
+    keys: [
+      { name: "title", weight: 4 },
+      { name: "goal", weight: 2 },
+      { name: "id", weight: 1 },
+    ],
+  });
+  return fuse.search(normalized).slice(0, 8).map((result) => result.item.session);
+}
+
+function sessionOptionId(session) {
+  const safeId = String(session?.id || "session")
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .slice(0, 72);
+  return `palette-session-${safeId}`;
+}
+
+export function CommandPalette({
+  commands = [],
+  sessions = [],
+  disabled = false,
+  shortcutEnabled = true,
+  onCommand,
+  onSessionSelect,
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -19,13 +62,23 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
   const inputRef = useRef(null);
   const closeButtonRef = useRef(null);
   const originRef = useRef(null);
-  const items = useMemo(
+  const commandItems = useMemo(
     () => disabled ? [] : searchComposerCommands(commands, query),
     [commands, disabled, query],
   );
+  const sessionItems = useMemo(
+    () => disabled || !onSessionSelect ? [] : sessionSearchResults(sessions, query),
+    [disabled, onSessionSelect, query, sessions],
+  );
+  const items = useMemo(() => [
+    ...commandItems.map((command) => ({ kind: "command", command })),
+    ...sessionItems.map((session) => ({ kind: "session", session })),
+  ], [commandItems, sessionItems]);
   const selectedIndex = Math.min(activeIndex, items.length - 1);
   const selected = items[selectedIndex];
-  const optionId = (command) => `palette-command-${command.value.slice(1)}`;
+  const optionId = (item) => item?.kind === "session"
+    ? sessionOptionId(item.session)
+    : `palette-command-${item.command.value.slice(1)}`;
 
   const close = useCallback((restoreFocus = true) => {
     dialogRef.current?.close();
@@ -40,8 +93,9 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
   }, []);
 
   useEffect(() => {
+    if (!shortcutEnabled) return undefined;
     const show = () => {
-      if (document.querySelector(modalSelector)) return;
+      if (disabled || document.querySelector(modalSelector)) return;
       const element = document.activeElement;
       originRef.current = {
         element,
@@ -65,12 +119,17 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
       window.removeEventListener("keydown", onShortcut);
       window.removeEventListener("knowflow:react-command-palette-open", show);
     };
-  }, []);
+  }, [disabled, shortcutEnabled]);
+
+  useEffect(() => {
+    if (!shortcutEnabled && open) close(false);
+  }, [close, open, shortcutEnabled]);
 
   useEffect(() => {
     if (!open) return undefined;
     const dialog = dialogRef.current;
-    dialog.showModal();
+    if (!dialog) return undefined;
+    if (!dialog.open) dialog.showModal();
     inputRef.current?.focus({ preventScroll: true });
     return () => dialog.close();
   }, [open]);
@@ -80,10 +139,18 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
     if (selected) document.getElementById(optionId(selected))?.scrollIntoView({ block: "nearest" });
   }, [selected, open]);
 
-  const execute = (command) => {
-    if (disabled || !commands.some((item) => item.value === command?.value)) return;
+  const execute = (item) => {
+    if (disabled || !item) return;
+    if (item.kind === "session") {
+      if (!onSessionSelect) return;
+      close(false);
+      onSessionSelect(item.session);
+      return;
+    }
+    const command = item.command;
+    if (!commands.some((entry) => entry.value === command?.value)) return;
     close(false);
-    onCommand(command);
+    onCommand?.(command);
   };
 
   const handleKeyDown = (event) => {
@@ -131,7 +198,7 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
             aria-expanded={true}
             aria-controls={"command-palette-list"}
             aria-activedescendant={selected ? optionId(selected) : undefined}
-            placeholder={"搜索命令或输入 /model…"}
+            placeholder={"搜索命令、任务或输入 /model…"}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             autoComplete={"off"}
@@ -139,27 +206,44 @@ export function CommandPalette({ commands, disabled = false, onCommand }) {
           />
           <button ref={closeButtonRef} type={"button"} aria-label={"关闭命令面板"} onClick={() => close()}>Esc</button>
         </div>
-        <div className={"command-palette-list"} id={"command-palette-list"} role={"listbox"} aria-label={"可用命令"} aria-busy={disabled}>
-          {items.map((command, index) => (
-            <button
-              key={command.value}
-              id={optionId(command)}
-              type={"button"}
-              role={"option"}
-              tabIndex={-1}
-              aria-selected={index === selectedIndex}
-              className={"command-palette-option"}
-              onMouseMove={() => setActiveIndex(index)}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => execute(command)}
-            >
-              <span>{command.label}</span>
-              <code>{command.value}</code>
-            </button>
+        <div className={"command-palette-list"} id={"command-palette-list"} role={"listbox"} aria-label={"可用命令与最近任务"} aria-busy={disabled}>
+          {items.map((item, index) => (
+            <div key={item.kind === "session" ? `session-${item.session.id}` : item.command.value}>
+              {item.kind === "session" && (index === 0 || items[index - 1]?.kind !== "session") ? (
+                <div className={"command-palette-group-label"}>最近任务</div>
+              ) : null}
+              <button
+                id={optionId(item)}
+                type={"button"}
+                role={"option"}
+                tabIndex={-1}
+                aria-selected={index === selectedIndex}
+                className={item.kind === "session" ? "command-palette-option palette-session-option" : "command-palette-option"}
+                onMouseMove={() => setActiveIndex(index)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => execute(item)}
+              >
+                {item.kind === "session" ? (
+                  <span className={"palette-session-copy"}>
+                    <span className={"palette-session-title"}>{sessionTitle(item.session)}</span>
+                    {item.session.latest_run?.goalSummary ? (
+                      <small>{String(item.session.latest_run.goalSummary)}</small>
+                    ) : null}
+                  </span>
+                ) : <span>{item.command.label}</span>}
+                <code>{item.kind === "session" ? "任务" : item.command.value}</code>
+              </button>
+            </div>
           ))}
         </div>
         <div className={"command-palette-footer"} role={"status"}>
-          <span>{disabled ? "正在打开任务，请稍候" : selected?.description || "没有匹配命令，换个关键词试试"}</span>
+          <span>
+            {disabled
+              ? "正在打开任务，请稍候"
+              : selected?.kind === "session"
+                ? `打开任务：${sessionTitle(selected.session)}`
+                : selected?.command?.description || "没有匹配命令，换个关键词试试"}
+          </span>
           {selected ? <kbd>{"↑↓选择 · Enter执行"}</kbd> : null}
         </div>
       </div>

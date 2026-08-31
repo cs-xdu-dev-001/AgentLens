@@ -380,7 +380,7 @@ function sessionTitle(session) {
 }
 
 
-function SessionHistory({ mobileOpen = false, onMobileClose = null }) {
+function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionIndexChange = null }) {
   const { authenticated, user } = useAuth();
   const userId = String(user?.id ?? "");
   const [sessions, setSessions] = useState([]);
@@ -564,6 +564,14 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null }) {
     window.addEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
     return () => window.removeEventListener("knowflow:react-agent-run-updated", handleAgentRunUpdated);
   }, []);
+
+  useEffect(() => {
+    onSessionIndexChange?.(sessions);
+    // The shell palette reuses the same index instead of issuing a second session query.
+    window.dispatchEvent(new CustomEvent("knowflow:react-session-index-updated", {
+      detail: { sessions, scope: sessionScope },
+    }));
+  }, [onSessionIndexChange, sessionScope, sessions]);
 
   useEffect(() => {
     if (!currentSessionId) return;
@@ -1388,6 +1396,7 @@ export function Sidebar({
   mobileHistoryOpen = false,
   onMobileHistoryToggle = null,
   onMobileHistoryClose = null,
+  onSessionIndexChange = null,
 }) {
   const sidebarClassName = [
     "sidebar",
@@ -1480,6 +1489,7 @@ export function Sidebar({
       <SessionHistory
         mobileOpen={mobileHistoryOpen}
         onMobileClose={onMobileHistoryClose}
+        onSessionIndexChange={onSessionIndexChange}
       />
       <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
         {sidebarTools.map((tool) =>

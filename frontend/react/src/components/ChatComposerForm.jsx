@@ -81,7 +81,7 @@ function initialComposerDraft(user) {
   };
 }
 
-export function ChatComposerForm() {
+export function ChatComposerForm({ active = true, sessions = [] } = {}) {
   const { user } = useAuth();
   const draftOwnerId = valueOf(user?.id);
   const initialDraftRef = useRef(null);
@@ -136,6 +136,7 @@ export function ChatComposerForm() {
   const pendingStashRestoreRef = useRef(false);
   const lastEmptyEscapeAtRef = useRef(0);
   const sessionSwitchingRef = useRef(false);
+  const paletteCommandHandlerRef = useRef(null);
   const draftContextRef = useRef({
     userId: draftOwnerId,
     sessionId: initialDraftRef.current.sessionId,
@@ -978,6 +979,53 @@ export function ChatComposerForm() {
     if (command.action === "stop") handleStopClick();
   };
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-command-usage-updated", {
+      detail: { usage: commandUsage },
+    }));
+  }, [commandUsage]);
+
+  const handlePaletteCommand = (command, args = "") => {
+    if (!command?.value) return;
+    closeCommandHelp(false);
+    closeComposerHistory(false);
+    closeSkillPicker();
+    closeMentionPicker();
+    setMenuOpen(false);
+    if (!pageActions.has(command.action)) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page: "chat" } }));
+    }
+    if (command.action === "session-rename") {
+      window.dispatchEvent(new CustomEvent("knowflow:react-sidebar-open"));
+    }
+    runComposerCommand(command, args);
+    if (pageActions.has(command.action)) {
+      window.requestAnimationFrame(() => document.getElementById("main-stage")?.focus());
+    }
+  };
+  const handlePaletteSession = (session) => {
+    const sessionId = String(session?.id || "").trim();
+    if (!sessionId) return;
+    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+      detail: {
+        sessionId,
+        title: String(session?.title || session?.latest_run?.goalSummary || "新任务"),
+        chatModelConfigId: session?.chat_model_config_id ?? null,
+      },
+    }));
+  };
+  paletteCommandHandlerRef.current = handlePaletteCommand;
+
+  useEffect(() => {
+    const handlePaletteCommandEvent = (event) => {
+      const command = event.detail?.command;
+      if (!command?.value) return;
+      paletteCommandHandlerRef.current?.(command, event.detail?.args);
+    };
+    window.addEventListener("knowflow:react-command-palette-command", handlePaletteCommandEvent);
+    return () => window.removeEventListener("knowflow:react-command-palette-command", handlePaletteCommandEvent);
+  }, []);
+
   const updateSkillPicker = (value, cursor) => {
     const beforeCursor = value.slice(0, cursor);
     const match = beforeCursor.match(slashPattern);
@@ -1431,24 +1479,11 @@ export function ChatComposerForm() {
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
       <CommandPalette
         commands={helpCommands}
+        sessions={sessions}
         disabled={switchingSession}
-        onCommand={(command) => {
-          closeCommandHelp(false);
-          closeComposerHistory(false);
-          closeSkillPicker();
-          closeMentionPicker();
-          setMenuOpen(false);
-          if (!pageActions.has(command.action)) {
-            window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page: "chat" } }));
-          }
-          if (command.action === "session-rename") {
-            window.dispatchEvent(new CustomEvent("knowflow:react-sidebar-open"));
-          }
-          runComposerCommand(command);
-          if (pageActions.has(command.action)) {
-            window.requestAnimationFrame(() => document.getElementById("main-stage")?.focus());
-          }
-        }}
+        shortcutEnabled={active}
+        onCommand={handlePaletteCommand}
+        onSessionSelect={handlePaletteSession}
       />
       {commandHelpOpen ? (
         <ComposerCommandHelp

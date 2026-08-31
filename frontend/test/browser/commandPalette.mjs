@@ -24,6 +24,15 @@ await page.route("**/api/**", route => {
     "/api/runtime": { version: "test" },
     "/api/workspace": { enabled: false },
     "/api/memory/settings": { enabled: false },
+    "/api/sessions": [
+      {
+        id: "session-42",
+        title: "部署AgentLens",
+        updated_at: "2026-08-31 20:00:00",
+        latest_run: { goalSummary: "检查发布状态", status: "completed" },
+        chat_model_config_id: 1,
+      },
+    ],
     "/api/model-configs": [{ id: 1, name: "测试模型", modelName: "test-model", modelType: "chat", enabled: true, isDefault: true }],
   };
   return route.fulfill({ json: { code: 0, data: fixtures[path] || [] } });
@@ -133,6 +142,20 @@ try {
   await page.locator("#session-history[aria-modal=true]").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.activeElement?.id === "sidebar-session-search");
   await page.keyboard.press("Escape");
+  // Session rows from the existing sidebar index are searchable from the same palette.
+  await page.evaluate(() => {
+    window.__paletteSessionSelection = "";
+    window.addEventListener("knowflow:react-session-continue", event => {
+      window.__paletteSessionSelection = String(event.detail?.sessionId || "");
+    }, { once: true });
+  });
+  await open();
+  await search.fill("部署AgentLens");
+  await page.locator("#palette-session-session-42").waitFor({ state: "visible" });
+  await search.press("Enter");
+  await palette.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.__paletteSessionSelection), "session-42");
+  await page.locator("#page-chat.active").waitFor();
   await open();
   await page.setViewportSize({ width: 390, height: 400 });
   await page.waitForFunction(() => window.innerHeight === 400 && document.getElementById("command-palette").getBoundingClientRect().bottom <= 400);

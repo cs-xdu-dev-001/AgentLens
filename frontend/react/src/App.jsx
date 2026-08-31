@@ -1,13 +1,16 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPage } from "./components/ChatPage.jsx";
+import { CommandPalette } from "./components/CommandPalette.jsx";
+import { composerCommandSuggestions } from "./components/composerCommands.js";
 import { Toast } from "./components/Toast.jsx";
 import { AgentWindowFeedback } from "./components/AgentWindowFeedback.jsx";
 import { KnowFlowController } from "./components/KnowFlowController.jsx";
 import { useAuth } from "./auth/AuthProvider.jsx";
 
 const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings", "cli-auth"]);
+const palettePageActions = new Set(["knowledge", "workspace", "tools", "skills", "memory", "settings"]);
 const SIDEBAR_LAYOUT_VERSION = "20260522-chatgpt-sidebar";
 const pageModuleLoaders = Object.freeze({
   knowledge: () => import("./components/KnowledgePage.jsx"),
@@ -117,6 +120,12 @@ function restoreWorkbenchOrigin(element) {
   });
 }
 
+function paletteSessionTitle(session) {
+  const title = String(session?.title || "").trim();
+  if (title && title !== "新会话") return title;
+  return String(session?.latest_run?.goalSummary || "新任务").trim() || "新任务";
+}
+
 function WorkbenchShell() {
   const { authenticated, loading } = useAuth();
   const [activePage, setActivePage] = useState(readInitialPage);
@@ -124,6 +133,14 @@ function WorkbenchShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readInitialSidebarCollapsed);
   const [drawerCollapsed, setDrawerCollapsed] = useState(() => readStoredBoolean("knowflow.drawerCollapsed", true));
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [paletteSessions, setPaletteSessions] = useState([]);
+  const [paletteRuntime, setPaletteRuntime] = useState({
+    sending: false,
+    recoveryActions: [],
+    queuePaused: false,
+    switching: false,
+    usage: {},
+  });
   const pendingWorkbenchFocusRef = useRef(false);
   const drawerCollapsedRef = useRef(drawerCollapsed);
   const drawerFocusOriginRef = useRef(null);
@@ -152,6 +169,58 @@ function WorkbenchShell() {
     return () => {
       window.removeEventListener("knowflow:react-page-change", handlePageEvent);
       window.removeEventListener("knowflow:react-page-activated", handlePageEvent);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSessionIndex = (event) => {
+      const nextSessions = event.detail?.sessions;
+      setPaletteSessions(Array.isArray(nextSessions) ? nextSessions : []);
+    };
+    const handleSending = (event) => {
+      setPaletteRuntime((current) => ({
+        ...current,
+        sending: Boolean(event.detail?.sending),
+      }));
+    };
+    const handleAgentState = (event) => {
+      const actions = Array.isArray(event.detail?.recoveryActions)
+        ? event.detail.recoveryActions.filter((action) => ["continue", "retry", "fix"].includes(action))
+        : [];
+      setPaletteRuntime((current) => ({ ...current, recoveryActions: actions }));
+    };
+    const handleQueue = (event) => {
+      setPaletteRuntime((current) => ({
+        ...current,
+        queuePaused: Boolean(event.detail?.paused),
+      }));
+    };
+    const handleCommandUsage = (event) => {
+      const usage = event.detail?.usage;
+      setPaletteRuntime((current) => ({
+        ...current,
+        usage: usage && typeof usage === "object" ? { ...usage } : {},
+      }));
+    };
+    const handleSessionSwitch = (event) => {
+      setPaletteRuntime((current) => ({
+        ...current,
+        switching: event.detail?.status === "loading",
+      }));
+    };
+    window.addEventListener("knowflow:react-session-index-updated", handleSessionIndex);
+    window.addEventListener("knowflow:react-sending-updated", handleSending);
+    window.addEventListener("knowflow:react-agent-composer-state", handleAgentState);
+    window.addEventListener("knowflow:react-chat-queue-updated", handleQueue);
+    window.addEventListener("knowflow:react-command-usage-updated", handleCommandUsage);
+    window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitch);
+    return () => {
+      window.removeEventListener("knowflow:react-session-index-updated", handleSessionIndex);
+      window.removeEventListener("knowflow:react-sending-updated", handleSending);
+      window.removeEventListener("knowflow:react-agent-composer-state", handleAgentState);
+      window.removeEventListener("knowflow:react-chat-queue-updated", handleQueue);
+      window.removeEventListener("knowflow:react-command-usage-updated", handleCommandUsage);
+      window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitch);
     };
   }, []);
 
@@ -302,6 +371,32 @@ function WorkbenchShell() {
     };
   }, []);
 
+  const globalPaletteCommands = useMemo(
+    () => composerCommandSuggestions("", paletteRuntime),
+    [paletteRuntime],
+  );
+  const handleGlobalPaletteCommand = (command) => {
+    if (!command?.value) return;
+    if (!palettePageActions.has(command.action)) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page: "chat" } }));
+    }
+    window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-command", {
+      detail: { command },
+    }));
+  };
+  const handleGlobalPaletteSession = (session) => {
+    const sessionId = String(session?.id || "").trim();
+    if (!sessionId) return;
+    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page: "chat" } }));
+    window.dispatchEvent(new CustomEvent("knowflow:react-session-continue", {
+      detail: {
+        sessionId,
+        title: paletteSessionTitle(session),
+        chatModelConfigId: session?.chat_model_config_id ?? null,
+      },
+    }));
+  };
+
   return (
     <>
       <a className="skip-link" href="#main-stage">
@@ -317,11 +412,13 @@ function WorkbenchShell() {
             mobileHistoryOpen={mobileHistoryOpen}
             onMobileHistoryToggle={() => setMobileHistoryOpen((current) => !current)}
             onMobileHistoryClose={() => setMobileHistoryOpen(false)}
+            onSessionIndexChange={setPaletteSessions}
           />
           <main className="main-stage" id="main-stage" tabIndex={-1}>
             <ChatPage
               active={activePage === "chat"}
               drawerCollapsed={drawerCollapsed}
+              sessions={paletteSessions}
             />
             <DeferredPage active={activePage === "knowledge"} visited={visitedPages.has("knowledge")} page={"knowledge"} label={"知识库"}>
               <KnowledgePage active={activePage === "knowledge"} />
@@ -346,6 +443,15 @@ function WorkbenchShell() {
             </DeferredPage>
           </main>
         </div>
+      ) : null}
+      {!shellLocked && activePage !== "chat" ? (
+        <CommandPalette
+          commands={globalPaletteCommands}
+          sessions={paletteSessions}
+          disabled={paletteRuntime.switching}
+          onCommand={handleGlobalPaletteCommand}
+          onSessionSelect={handleGlobalPaletteSession}
+        />
       ) : null}
       <Toast />
       <AgentWindowFeedback />

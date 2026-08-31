@@ -4140,6 +4140,38 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   font-size: 13px;
 }
 
+.command-palette-group-label {
+  padding: 8px 12px 4px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.palette-session-option {
+  align-items: flex-start;
+}
+
+.palette-session-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.palette-session-title,
+.palette-session-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-session-copy small {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .command-palette-option[aria-selected="true"],
 .command-palette-search button:hover {
   background: var(--control-bg-hover);
