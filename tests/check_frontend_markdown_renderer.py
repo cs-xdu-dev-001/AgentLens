@@ -23,10 +23,40 @@ def main() -> None:
     chat_messages = (
         ROOT / "frontend" / "react" / "src" / "components" / "ChatMessages.jsx"
     ).read_text(encoding="utf-8")
-    if "renderMarkdown(redactEmailAddresses(message.rawContent))" not in chat_messages:
+    if "redactEmailAddresses(rawContent)" not in chat_messages:
         raise AssertionError("assistant display must mask email addresses before rendering")
+    if 'import("../controller/codeHighlighting.js")' not in chat_messages:
+        raise AssertionError("syntax highlighting must stay out of the initial chat bundle")
+    if 'streaming || !root?.querySelector("[data-message-code-block]")' not in chat_messages:
+        raise AssertionError("streaming and plain messages must skip lazy highlighting")
+    for needle, label in (
+        ('data-message-code-copy', "code block copy delegation"),
+        ("copyTextToClipboard", "clipboard fallback"),
+        ("redactCopyText", "code copy redaction"),
+    ):
+        if needle not in chat_messages:
+            raise AssertionError(f"missing {label} in ChatMessages.jsx")
+
+    package = (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
+    if '"highlight.js": "11.12.0"' not in package:
+        raise AssertionError("highlight.js must stay pinned for deterministic code rendering")
+
+    for stylesheet in (
+        ROOT / "frontend" / "refinement.css",
+        ROOT / "frontend" / "react" / "src" / "refinement.css",
+    ):
+        styles = stylesheet.read_text(encoding="utf-8")
+        for selector in (
+            ".message-code-block",
+            ".message-code-header",
+            ".message-code-language",
+            ".hljs-keyword",
+        ):
+            if selector not in styles:
+                raise AssertionError(f"missing code block style in {stylesheet}: {selector}")
 
     script = r'''
+import { highlightCode } from "./frontend/react/src/controller/codeHighlighting.js";
 import { redactEmailAddresses, renderMarkdown } from "./frontend/react/src/controller/markdown.js";
 
 function assertContains(html, needle, label) {
@@ -60,8 +90,22 @@ assertNotContains(redacted, "mentor42@campus.example", "does not expose the firs
 assertNotContains(redacted, "owner@example.com", "does not expose later emails");
 
 const fenced = renderMarkdown("```js\nconst x = '<tag>';\n");
-assertContains(fenced, "<pre><code class=\"language-js\">const x = '&lt;tag&gt;';", "escapes unterminated fenced code content");
-assertContains(fenced, "</code></pre>", "closes unterminated fenced code safely");
+assertContains(fenced, "class=\"message-code-block\"", "wraps reviewable fenced code");
+assertContains(fenced, "data-code-language=\"JavaScript\"", "labels the fenced language");
+assertContains(fenced, "data-code-language-key=\"javascript\"", "exposes a safe language key for lazy highlighting");
+assertContains(fenced, "data-message-code-copy=\"true\"", "renders a code copy control");
+assertContains(fenced, "class=\"hljs language-javascript\"", "uses the maintained syntax highlighter");
+assertNotContains(fenced, "hljs-keyword", "keeps the initial renderer free of highlighter work");
+assertContains(fenced, "'&lt;tag&gt;'", "escapes unterminated fenced code content");
+assertContains(fenced, "</code></pre></div>", "closes unterminated fenced code safely");
+assertNotContains(fenced, "<tag>", "does not expose fenced HTML");
+
+const highlighted = highlightCode("const x = '<tag>';", "javascript");
+assertContains(highlighted, "class=\"hljs-keyword\">const</span>", "highlights known language tokens");
+assertContains(highlighted, "&lt;tag&gt;", "keeps highlighted code escaped");
+if (highlightCode("plain", "unknown-language") !== null) {
+  throw new Error("unknown languages must remain escaped plaintext");
+}
 
 const rich = renderMarkdown("> quoted context\n\n- parent\n  - child\n\nhttps://example.com");
 assertContains(rich, "<blockquote>", "renders blockquotes");

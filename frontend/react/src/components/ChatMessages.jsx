@@ -3,6 +3,8 @@ import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
 import { applyTranscriptSearchHighlights } from "../controller/chatSearch.js";
+import { copyTextToClipboard } from "../controller/clipboard.js";
+import { redactCopyText } from "../controller/copyPresentation.js";
 import {
   memoryActivityTrace,
   mergeMemoryActivityTrace,
@@ -42,6 +44,18 @@ const ACTIVE_RUN_STATUSES = new Set([
   "waiting_approval",
   "waiting_input",
 ]);
+
+let codeHighlighterPromise = null;
+
+function loadCodeHighlighter() {
+  if (!codeHighlighterPromise) {
+    codeHighlighterPromise = import("../controller/codeHighlighting.js").catch((error) => {
+      codeHighlighterPromise = null;
+      throw error;
+    });
+  }
+  return codeHighlighterPromise;
+}
 
 function compactTaskAnchorText(value, maxLength = 180) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -276,6 +290,38 @@ const AgentTurnRunBlock = memo(function AgentTurnRunBlock({
   );
 });
 
+const MessageMarkdown = memo(function MessageMarkdown({ rawContent, streaming }) {
+  const rootRef = useRef(null);
+  const html = useMemo(
+    () => renderMarkdown(redactEmailAddresses(rawContent)),
+    [rawContent],
+  );
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (streaming || !root?.querySelector("[data-message-code-block]")) {
+      return undefined;
+    }
+    let active = true;
+    loadCodeHighlighter()
+      .then(({ highlightMessageCodeBlocks }) => {
+        if (active && root.isConnected) highlightMessageCodeBlocks(root);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [html, streaming]);
+
+  return (
+    <div
+      ref={rootRef}
+      className={"message-markdown"}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 }) {
   const pendingInteractions = pendingAgentInteractions(message);
   const activeInteraction = pendingInteractions[0] || null;
@@ -362,11 +408,9 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
           <AgentThinkingOrb trace={message.trace} />
         ) : (
           <>
-            <div
-              className={"message-markdown"}
-              dangerouslySetInnerHTML={{
-                __html: renderMarkdown(redactEmailAddresses(message.rawContent)),
-              }}
+            <MessageMarkdown
+              rawContent={message.rawContent}
+              streaming={message.streaming}
             />
             <AgentDeliveryCard
               messageId={message.id}
@@ -801,8 +845,45 @@ export function ChatMessages() {
   useEffect(() => {
     const messagesNode = messagesRef.current;
     if (!messagesNode) return undefined;
+    const copyTimers = new Set();
+    const copyCodeBlock = async (button) => {
+      if (!button || button.dataset.copying === "true") return;
+      const code = button.closest("[data-message-code-block]")?.querySelector("code");
+      const value = redactCopyText(code?.textContent || "");
+      if (!value) return;
+      const initialLabel = button.textContent || "复制";
+      button.dataset.copying = "true";
+      button.disabled = true;
+      try {
+        await copyTextToClipboard(value);
+        button.textContent = "已复制";
+        button.setAttribute("aria-label", "已复制代码");
+        button.setAttribute("title", "已复制代码");
+      } catch {
+        button.textContent = "复制失败";
+        button.setAttribute("aria-label", "复制代码失败");
+        button.setAttribute("title", "复制代码失败");
+      } finally {
+        button.disabled = false;
+        const timer = window.setTimeout(() => {
+          copyTimers.delete(timer);
+          if (!button.isConnected) return;
+          button.dataset.copying = "false";
+          button.textContent = initialLabel;
+          button.setAttribute("aria-label", "复制代码");
+          button.setAttribute("title", "复制代码");
+        }, 1_600);
+        copyTimers.add(timer);
+      }
+    };
     const handleMessageActionClick = (event) => {
       const target = event.target instanceof Element ? event.target : null;
+      const codeCopyButton = target?.closest("[data-message-code-copy]");
+      if (codeCopyButton && messagesNode.contains(codeCopyButton)) {
+        event.preventDefault();
+        void copyCodeBlock(codeCopyButton);
+        return;
+      }
       const button = target?.closest("[data-message-action]");
       if (!button || !messagesNode.contains(button)) return;
       const eventName = actionEvents[button.dataset.messageAction];
@@ -856,6 +937,8 @@ export function ChatMessages() {
     return () => {
       messagesNode.removeEventListener("click", handleMessageActionClick);
       window.removeEventListener("knowflow:react-message-command", handleMessageCommand);
+      copyTimers.forEach((timer) => window.clearTimeout(timer));
+      copyTimers.clear();
     };
   }, []);
 

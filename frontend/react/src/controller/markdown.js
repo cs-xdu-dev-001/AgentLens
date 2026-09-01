@@ -1,5 +1,56 @@
 import MarkdownIt from "markdown-it";
 
+const LANGUAGE_ALIASES = {
+  bat: "bash",
+  "c++": "cpp",
+  cxx: "cpp",
+  cjs: "javascript",
+  cs: "csharp",
+  docker: "dockerfile",
+  html: "xml",
+  js: "javascript",
+  jsx: "javascript",
+  md: "markdown",
+  mjs: "javascript",
+  pem: "plaintext",
+  py: "python",
+  ps1: "powershell",
+  rb: "ruby",
+  sh: "bash",
+  shell: "bash",
+  svg: "xml",
+  ts: "typescript",
+  tsx: "typescript",
+  yml: "yaml",
+  zsh: "bash",
+};
+
+const LANGUAGE_LABELS = {
+  bash: "Shell",
+  c: "C",
+  cpp: "C++",
+  css: "CSS",
+  csharp: "C#",
+  diff: "Diff",
+  dockerfile: "Dockerfile",
+  go: "Go",
+  java: "Java",
+  javascript: "JavaScript",
+  json: "JSON",
+  kotlin: "Kotlin",
+  markdown: "Markdown",
+  php: "PHP",
+  plaintext: "纯文本",
+  powershell: "PowerShell",
+  python: "Python",
+  ruby: "Ruby",
+  rust: "Rust",
+  sql: "SQL",
+  typescript: "TypeScript",
+  xml: "HTML/XML",
+  yaml: "YAML",
+};
+
 const SAFE_LINK_PROTOCOL = /^(?:https?:|mailto:)/i;
 
 /**
@@ -23,6 +74,43 @@ export function redactEmailAddresses(value) {
 
 function isSafeLink(value) {
   return SAFE_LINK_PROTOCOL.test(String(value ?? "").trim());
+}
+
+function normalizeCodeLanguage(value) {
+  const source = String(value || "")
+    .trim()
+    .split(/\s+/u)[0]
+    .toLowerCase()
+    .replace(/^language-/u, "");
+  if (!source || ["text", "txt", "plain", "plaintext"].includes(source)) {
+    return "plaintext";
+  }
+  return LANGUAGE_ALIASES[source] || source;
+}
+
+function codeLanguageLabel(language, source) {
+  if (LANGUAGE_LABELS[language]) return LANGUAGE_LABELS[language];
+  const raw = String(source || "").trim().split(/\s+/u)[0];
+  return raw || "纯文本";
+}
+
+function renderCodeFence(tokens, index) {
+  const token = tokens[index];
+  const source = String(token.content || "").replace(/\n$/u, "");
+  const info = String(token.info || "").trim();
+  const language = normalizeCodeLanguage(info);
+  const label = codeLanguageLabel(language, info);
+  const languageClass = language === "plaintext" ? "" : ` language-${escapeHtml(language)}`;
+  const buttonLabel = source ? "复制代码" : "复制空代码块";
+  return [
+    `<div class="message-code-block" data-message-code-block="true" data-code-language="${escapeHtml(label)}" data-code-language-key="${escapeHtml(language)}">`,
+    '<div class="message-code-header">',
+    `<span class="message-code-language">${escapeHtml(label)}</span>`,
+    `<button type="button" data-message-code-copy="true" aria-label="${buttonLabel}" title="${buttonLabel}">复制</button>`,
+    "</div>",
+    `<pre><code class="hljs${languageClass}">${escapeHtml(source)}</code></pre>`,
+    "</div>",
+  ].join("");
 }
 
 const markdownRenderer = new MarkdownIt({
@@ -81,6 +169,7 @@ markdownRenderer.renderer.rules.table_open = () => (
 );
 markdownRenderer.renderer.rules.table_close = () => "</table></div>";
 markdownRenderer.renderer.rules.th_open = () => '<th scope="col">';
+markdownRenderer.renderer.rules.fence = renderCodeFence;
 
 export function renderInlineMarkdown(value) {
   return markdownRenderer.renderInline(String(value ?? ""));
