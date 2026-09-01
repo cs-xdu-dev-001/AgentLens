@@ -7570,7 +7570,8 @@ body.sidebar-collapsed .app-shell {
   font-weight: 750;
 }
 
-.messages.session-switching > :not(.session-switch-state) {
+.messages.session-switching .message-row,
+.messages.session-switching .welcome-card {
   opacity: 0.58;
 }
 
@@ -16029,5 +16030,39 @@ body.sidebar-collapsed .pending-approvals-list {
 @media (prefers-reduced-motion: reduce) {
   .pending-approvals-list {
     animation: none;
+  }
+}
+
+/* The virtual transcript keeps gutters on the measured list, not its absolute scroller. */
+#page-chat:not(.chat-empty) .messages.messages-virtualized {
+  padding: 0 !important;
+  overflow-x: hidden !important;
+}
+
+#page-chat:not(.chat-empty) .messages.messages-virtualized [data-testid="virtuoso-item-list"] {
+  box-sizing: border-box;
+  padding-inline: max(30px, calc((100% - 900px) / 2));
+}
+
+#page-chat:not(.chat-empty) .messages.messages-virtualized .message-list-header {
+  padding-top: 24px;
+}
+
+#page-chat:not(.chat-empty) .messages.messages-virtualized .message-list-footer {
+  flex: 0 0 auto;
+  height: 72px;
+}
+
+@media (max-width: 760px) {
+  #page-chat:not(.chat-empty) .messages.messages-virtualized [data-testid="virtuoso-item-list"] {
+    padding-inline: 16px;
+  }
+
+  #page-chat:not(.chat-empty) .messages.messages-virtualized .message-list-header {
+    padding-top: 18px;
+  }
+
+  #page-chat:not(.chat-empty) .messages.messages-virtualized .message-list-footer {
+    height: 66px;
   }
 }

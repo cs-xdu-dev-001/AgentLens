@@ -17,15 +17,29 @@ def require(relative_path: str, needle: str, label: str) -> None:
 def main() -> None:
     component = "frontend/react/src/components/ChatMessages.jsx"
     styles = "frontend/refinement.css"
+    layout_styles = "frontend/styles.css"
 
     require(component, "followOutputRef", "pinned-output state")
     require(component, "isChatViewportPinned", "viewport distance check")
     require(component, "onScroll={handleMessagesScroll}", "reader-owned scrolling")
     require(component, "shouldFollowChatUpdate", "stream update scroll guard")
+    require(component, 'from "react-virtuoso"', "virtualized message list")
+    require(component, "<Virtuoso", "virtualized message renderer")
+    require(component, "computeItemKey={messageItemKey}", "stable message keys")
+    require(component, "atBottomStateChange={handleVirtuosoAtBottom}", "virtualized bottom state")
+    require(component, 'index: "LAST"', "virtualized latest-message jump")
+    require(component, "data-message-count", "message count telemetry")
+    require(component, "message-list-footer", "virtualized composer-safe bottom gutter")
+    require(component, "messages-virtualized", "virtualized transcript layout class")
+    if "{messages.map((message) => (" in read(component):
+        raise AssertionError("unbounded message DOM map remains in ChatMessages")
+    require("frontend/package.json", '"react-virtuoso": "4.18.12"', "pinned virtualization dependency")
     require(component, "查看最新Agent输出", "new output accessible label")
     require(component, "prefers-reduced-motion: reduce", "reduced-motion scroll behavior")
     require(styles, ".chat-jump-to-latest", "jump-to-latest control")
     require(styles, ".chat-jump-to-latest:focus-visible", "visible keyboard focus")
+    require(layout_styles, ".messages.messages-virtualized", "virtualized transcript gutter layout")
+    require(layout_styles, "overflow-x: hidden !important", "virtualized transcript horizontal clipping guard")
 
     script = r'''import {
   CHAT_SCROLL_PIN_THRESHOLD,

@@ -28,6 +28,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           "markdown-vendor": ["markdown-it"],
+          "virtuoso-vendor": ["react-virtuoso"],
         },
       },
     },

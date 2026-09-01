@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
@@ -44,6 +45,105 @@ const ACTIVE_RUN_STATUSES = new Set([
   "waiting_approval",
   "waiting_input",
 ]);
+
+const MessageScroller = forwardRef(function MessageScroller(
+  { children, style, ...props },
+  ref,
+) {
+  return (
+    <div ref={ref} {...props} style={style}>
+      {children}
+    </div>
+  );
+});
+
+const MessageListFooter = memo(function MessageListFooter() {
+  return <div className={"message-list-footer"} aria-hidden={"true"}></div>;
+});
+
+function SessionSwitchState({ sessionSwitch, onRetry }) {
+  if (!sessionSwitch) return null;
+  return (
+    <div
+      className={`session-switch-state ${sessionSwitch.status}`}
+      role={sessionSwitch.status === "error" ? "alert" : "status"}
+    >
+      {sessionSwitch.status === "loading" ? (
+        <AgentThinkingOrb
+          state={"connecting"}
+          label={`正在打开「${sessionSwitch.title}」`}
+        />
+      ) : (
+        <>
+          <span>{`无法打开「${sessionSwitch.title}」`}</span>
+          <button type={"button"} onClick={onRetry}>{"重试"}</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+const MessageListHeader = memo(function MessageListHeader({ context }) {
+  const currentTask = context?.currentTask || null;
+  const sessionSwitch = context?.sessionSwitch || null;
+  const retrySessionSwitch = context?.retrySessionSwitch || (() => {});
+  return (
+    <div className={"message-list-header"}>
+      {currentTask ? (
+        <button
+          className={"active-task-anchor"}
+          type={"button"}
+          onClick={context?.revealCurrentTask}
+          aria-label={`回到当前任务：${currentTask.text}；${currentTask.presentation?.status?.label || "执行中"}`}
+          title={currentTask.text}
+          style={{
+            "--task-progress-scale": Math.max(
+              0,
+              Math.min(100, Number(currentTask.presentation?.progressPercent) || 0),
+            ) / 100,
+          }}
+        >
+          <strong>{"任务"}</strong>
+          <span className={"active-task-anchor-copy"}>{currentTask.text}</span>
+          {currentTask.presentation?.metrics ? (
+            <span className={"active-task-anchor-metrics"}>{currentTask.presentation.metrics}</span>
+          ) : null}
+          <span className={`active-task-anchor-state ${currentTask.presentation?.status?.className || "running"}`}>
+            {currentTask.presentation?.status?.label || "执行中"}
+          </span>
+          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+            <path d={"M7 4h9v9"}></path>
+            <path d={"M16 4 5 15"}></path>
+          </svg>
+        </button>
+      ) : null}
+      <SessionSwitchState sessionSwitch={sessionSwitch} onRetry={retrySessionSwitch} />
+    </div>
+  );
+});
+
+const MESSAGE_VIRTUOSO_COMPONENTS = Object.freeze({
+  Footer: MessageListFooter,
+  Header: MessageListHeader,
+  Scroller: MessageScroller,
+});
+
+function messageItemContent(_index, message, context) {
+  return (
+    <MessageRow
+      interactionOwner={context?.interactionOwner || null}
+      key={message.id}
+      message={message}
+      pendingInteractionCount={context?.pendingInteractionCount || 0}
+      searchMatch={context?.searchMessageIds?.has(String(message.id)) || false}
+      searchCurrent={context?.currentSearchMessageId === String(message.id)}
+    />
+  );
+}
+
+function messageItemKey(_index, message) {
+  return message.id;
+}
 
 let codeHighlighterPromise = null;
 
@@ -579,9 +679,12 @@ const WELCOME_ACTIONS = [
 
 export function ChatMessages() {
   const messagesRef = useRef(null);
+  const virtuosoRef = useRef(null);
   const messageStateRef = useRef([]);
   const messageIndexRef = useRef(new Map());
   const searchInputRef = useRef(null);
+  const searchHighlightFrameRef = useRef(0);
+  const searchHighlightCleanupRef = useRef(null);
   const nextMessageIdRef = useRef(1);
   const followOutputRef = useRef(true);
   const scrollFrameRef = useRef(0);
@@ -628,15 +731,31 @@ export function ChatMessages() {
   const pendingInteractionCount = interactionOwner
     ? interactionOwner.queuedCount + 1
     : 0;
+  const setMessagesScroller = useCallback((node) => {
+    messagesRef.current = node && typeof node.querySelector === "function" ? node : null;
+  }, []);
   const findBubble = (messageId) =>
     messagesRef.current?.querySelector('[data-react-message-id="' + messageId + '"]') || null;
   const revealCurrentTask = () => {
+    const taskIndex = messageStateRef.current.findIndex(
+      (message) => String(message.id) === String(currentTask?.messageId || ""),
+    );
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (taskIndex >= 0 && virtuosoRef.current?.scrollToIndex) {
+      setFollowOutput(false);
+      virtuosoRef.current.scrollToIndex({
+        index: taskIndex,
+        align: "start",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+      return;
+    }
     const row = findBubble(currentTask?.messageId)?.closest(".message-row");
     if (!row) return;
     setFollowOutput(false);
     row.scrollIntoView({
       block: "start",
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      behavior: reduceMotion ? "auto" : "smooth",
     });
   };
   const setFollowOutput = (nextValue) => {
@@ -657,7 +776,13 @@ export function ChatMessages() {
       const viewport = messagesRef.current;
       if (!viewport) return;
       setFollowOutput(true);
-      if (typeof viewport.scrollTo === "function") {
+      if (messageStateRef.current.length && virtuosoRef.current?.scrollToIndex) {
+        virtuosoRef.current.scrollToIndex({
+          index: "LAST",
+          align: "end",
+          behavior,
+        });
+      } else if (typeof viewport.scrollTo === "function") {
         viewport.scrollTo({ top: viewport.scrollHeight, behavior });
       } else {
         viewport.scrollTop = viewport.scrollHeight;
@@ -706,6 +831,13 @@ export function ChatMessages() {
     const pinned = isChatViewportPinned(messagesRef.current);
     if (pinned !== followOutputRef.current) setFollowOutput(pinned);
   };
+  const handleVirtuosoAtBottom = (atBottom) => {
+    if (Boolean(atBottom) !== followOutputRef.current) setFollowOutput(atBottom);
+  };
+  const followVirtuosoOutput = useCallback((atBottom) => {
+    if (!followOutputRef.current || !atBottom) return false;
+    return "auto";
+  }, []);
   const jumpToLatest = () => {
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     setFollowOutput(true);
@@ -735,10 +867,47 @@ export function ChatMessages() {
   }, [searchMatches.length]);
 
   useEffect(() => {
-    if (!searchOpen || !searchQuery.trim()) return undefined;
+    if (!searchOpen || !searchQuery.trim()) {
+      searchHighlightCleanupRef.current?.();
+      searchHighlightCleanupRef.current = null;
+      return undefined;
+    }
     setFollowOutput(false);
-    return applyTranscriptSearchHighlights(messagesRef.current, searchQuery, searchCursor);
-  }, [messages, searchCursor, searchOpen, searchQuery]);
+    const targetIndex = currentSearchMatch
+      ? messages.findIndex((message) => String(message.id) === String(currentSearchMatch.messageId))
+      : -1;
+    if (targetIndex >= 0) {
+      virtuosoRef.current?.scrollToIndex?.({
+        index: targetIndex,
+        align: "center",
+        behavior: "auto",
+      });
+    }
+    window.cancelAnimationFrame(searchHighlightFrameRef.current);
+    let secondFrame = 0;
+    searchHighlightFrameRef.current = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        searchHighlightCleanupRef.current?.();
+        searchHighlightCleanupRef.current = applyTranscriptSearchHighlights(
+          messagesRef.current,
+          searchQuery,
+          searchCursor,
+        );
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(searchHighlightFrameRef.current);
+      window.cancelAnimationFrame(secondFrame);
+      searchHighlightCleanupRef.current?.();
+      searchHighlightCleanupRef.current = null;
+    };
+  }, [
+    currentSearchMatch,
+    messages,
+    searchCursor,
+    searchOpen,
+    searchQuery,
+  ]);
 
   useEffect(() => {
     const handleSearchOpen = (event) => openSearch(event.detail?.query || "");
@@ -836,6 +1005,9 @@ export function ChatMessages() {
       mountedRef.current = false;
       window.cancelAnimationFrame(scrollFrameRef.current);
       window.cancelAnimationFrame(messageRenderFrameRef.current);
+      window.cancelAnimationFrame(searchHighlightFrameRef.current);
+      searchHighlightCleanupRef.current?.();
+      searchHighlightCleanupRef.current = null;
       messageRenderFrameRef.current = 0;
       messageRenderPendingRef.current = false;
       pendingMessageScrollRef.current = { force: false, behavior: "auto" };
@@ -843,8 +1015,6 @@ export function ChatMessages() {
   }, []);
 
   useEffect(() => {
-    const messagesNode = messagesRef.current;
-    if (!messagesNode) return undefined;
     const copyTimers = new Set();
     const copyCodeBlock = async (button) => {
       if (!button || button.dataset.copying === "true") return;
@@ -877,6 +1047,8 @@ export function ChatMessages() {
       }
     };
     const handleMessageActionClick = (event) => {
+      const messagesNode = messagesRef.current;
+      if (!messagesNode) return;
       const target = event.target instanceof Element ? event.target : null;
       const codeCopyButton = target?.closest("[data-message-code-copy]");
       if (codeCopyButton && messagesNode.contains(codeCopyButton)) {
@@ -925,17 +1097,55 @@ export function ChatMessages() {
         detail.handled = true;
         return;
       }
-      const buttons = Array.from(
-        messagesNode.querySelectorAll(`[data-message-action="${action}"]`),
-      ).filter((button) => !button.disabled);
-      const button = buttons[buttons.length - 1];
-      detail.handled = Boolean(button);
-      if (button) button.click();
+      const candidates = messageStateRef.current
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => {
+          if (action === "edit") return message?.role === "user";
+          if (action === "rewind") return message?.role === "user" && Boolean(message.sourceMessageId);
+          return message?.role === "assistant"
+            && !message.thinking
+            && !message.streaming
+            && Boolean(message.retryable);
+        });
+      const target = candidates[candidates.length - 1];
+      if (!target) {
+        detail.handled = false;
+        return;
+      }
+      const messageId = String(target.message.id || "");
+      const bubble = findBubble(messageId);
+      const visibleButton = bubble?.closest(".message-row")?.querySelector(
+        `[data-message-action="${action}"]`,
+      );
+      if (visibleButton && !visibleButton.disabled) {
+        detail.handled = true;
+        visibleButton.click();
+        return;
+      }
+      detail.handled = true;
+      if (virtuosoRef.current?.scrollToIndex) {
+        virtuosoRef.current.scrollToIndex({
+          index: target.index,
+          align: "center",
+          behavior: "auto",
+        });
+      }
+      window.dispatchEvent(
+        new CustomEvent(actionEvents[action], {
+          detail: {
+            action,
+            bubble,
+            messageId,
+            sourceMessageId: target.message.sourceMessageId || "",
+            rawContent: target.message.rawContent || "",
+          },
+        }),
+      );
     };
-    messagesNode.addEventListener("click", handleMessageActionClick);
+    document.addEventListener("click", handleMessageActionClick);
     window.addEventListener("knowflow:react-message-command", handleMessageCommand);
     return () => {
-      messagesNode.removeEventListener("click", handleMessageActionClick);
+      document.removeEventListener("click", handleMessageActionClick);
       window.removeEventListener("knowflow:react-message-command", handleMessageCommand);
       copyTimers.forEach((timer) => window.clearTimeout(timer));
       copyTimers.clear();
@@ -1158,6 +1368,25 @@ export function ChatMessages() {
     }));
   };
 
+  const messageListContext = useMemo(() => ({
+    currentTask,
+    interactionOwner,
+    pendingInteractionCount,
+    retrySessionSwitch,
+    revealCurrentTask,
+    searchMessageIds,
+    currentSearchMessageId: currentSearchMatch?.messageId || "",
+    sessionSwitch,
+  }), [
+    currentSearchMatch?.messageId,
+    currentTask,
+    interactionOwner,
+    pendingInteractionCount,
+    searchMessageIds,
+    sessionSwitch,
+  ]);
+  const messagesClassName = `messages messages-virtualized${sessionSwitch?.status === "loading" ? " session-switching" : ""}`;
+
   return (
     <>
       {searchOpen ? (
@@ -1194,91 +1423,63 @@ export function ChatMessages() {
           <button type={"button"} aria-label={"关闭搜索"} onClick={closeSearch}>×</button>
         </div>
       ) : null}
-      <div
-        className={`messages${sessionSwitch?.status === "loading" ? " session-switching" : ""}`}
-        id={"chat-messages"}
-        ref={messagesRef}
-        aria-busy={sessionSwitch?.status === "loading"}
-        onScroll={handleMessagesScroll}
-      >
-        {currentTask ? (
-          <button
-            className={"active-task-anchor"}
-            type={"button"}
-            onClick={revealCurrentTask}
-            aria-label={`回到当前任务：${currentTask.text}；${currentTask.presentation?.status?.label || "执行中"}`}
-            title={currentTask.text}
-            style={{
-              "--task-progress-scale": Math.max(
-                0,
-                Math.min(100, Number(currentTask.presentation?.progressPercent) || 0),
-              ) / 100,
-            }}
-          >
-            <strong>{"任务"}</strong>
-            <span className={"active-task-anchor-copy"}>{currentTask.text}</span>
-            {currentTask.presentation?.metrics ? (
-              <span className={"active-task-anchor-metrics"}>{currentTask.presentation.metrics}</span>
-            ) : null}
-            <span className={`active-task-anchor-state ${currentTask.presentation?.status?.className || "running"}`}>
-              {currentTask.presentation?.status?.label || "执行中"}
-            </span>
-            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-              <path d={"M7 4h9v9"}></path>
-              <path d={"M16 4 5 15"}></path>
-            </svg>
-          </button>
-        ) : null}
-        {sessionSwitch ? (
-          <div
-            className={`session-switch-state ${sessionSwitch.status}`}
-            role={sessionSwitch.status === "error" ? "alert" : "status"}
-          >
-            {sessionSwitch.status === "loading" ? (
-              <AgentThinkingOrb
-                state={"connecting"}
-                label={`正在打开「${sessionSwitch.title}」`}
-              />
-            ) : (
-              <>
-                <span>{`无法打开「${sessionSwitch.title}」`}</span>
-                <button type={"button"} onClick={retrySessionSwitch}>{"重试"}</button>
-              </>
-            )}
-          </div>
-        ) : null}
-        {showWelcome ? (
-          <div className={"welcome-card"}>
-            <h2>{"有什么可以帮你？"}</h2>
-            <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
-              {WELCOME_ACTIONS.map((action) => (
-                <button
-                  className={"welcome-action"}
-                  data-welcome-action={action.id}
-                  key={action.id}
-                  type={"button"}
-                  onClick={() => seedComposer(action.prompt)}
-                >
-                  <span>{action.label}</span>
-                  <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-                    <path d={"m7 4 6 6-6 6"}></path>
-                  </svg>
-                </button>
-              ))}
-            </nav>
-          </div>
-        ) : null}
-        {messages.map((message) => (
-          <MessageRow
-            interactionOwner={interactionOwner}
-            key={message.id}
-            message={message}
-            pendingInteractionCount={pendingInteractionCount}
-            searchMatch={searchMessageIds.has(String(message.id))}
-            searchCurrent={currentSearchMatch?.messageId === String(message.id)}
-          />
-        ))}
-      </div>
+      {messages.length ? (
+        <Virtuoso
+          ref={virtuosoRef}
+          className={messagesClassName}
+          id={"chat-messages"}
+          data={messages}
+          data-message-count={messages.length}
+          aria-busy={sessionSwitch?.status === "loading"}
+          onScroll={handleMessagesScroll}
+          scrollerRef={setMessagesScroller}
+          components={MESSAGE_VIRTUOSO_COMPONENTS}
+          context={messageListContext}
+          computeItemKey={messageItemKey}
+          itemContent={messageItemContent}
+          atBottomThreshold={96}
+          atBottomStateChange={handleVirtuosoAtBottom}
+          followOutput={followVirtuosoOutput}
+          defaultItemHeight={72}
+          initialItemCount={Math.min(messages.length, 24)}
+          increaseViewportBy={{ top: 600, bottom: 600 }}
+          minOverscanItemCount={3}
+          skipAnimationFrameInResizeObserver={true}
+          style={{ height: "100%" }}
+        />
+      ) : (
+        <div
+          className={messagesClassName}
+          id={"chat-messages"}
+          ref={setMessagesScroller}
+          data-message-count={0}
+          aria-busy={sessionSwitch?.status === "loading"}
+          onScroll={handleMessagesScroll}
+        >
+          <SessionSwitchState sessionSwitch={sessionSwitch} onRetry={retrySessionSwitch} />
+          {showWelcome ? (
+            <div className={"welcome-card"}>
+              <h2>{"有什么可以帮你？"}</h2>
+              <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
+                {WELCOME_ACTIONS.map((action) => (
+                  <button
+                    className={"welcome-action"}
+                    data-welcome-action={action.id}
+                    key={action.id}
+                    type={"button"}
+                    onClick={() => seedComposer(action.prompt)}
+                  >
+                    <span>{action.label}</span>
+                    <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+                      <path d={"m7 4 6 6-6 6"}></path>
+                    </svg>
+                  </button>
+                ))}
+              </nav>
+            </div>
+          ) : null}
+        </div>
+      )}
       {!showWelcome && !followingOutput ? (
         <button
           className={`chat-jump-to-latest${hasNewOutput ? " has-new-output" : ""}`}

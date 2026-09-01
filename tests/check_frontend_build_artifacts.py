@@ -55,6 +55,7 @@ def main() -> None:
     assert "plugins: [react()]" in vite_config
     assert 'minify: "esbuild"' in vite_config
     assert '"markdown-vendor": ["markdown-it"]' in vite_config
+    assert '"virtuoso-vendor": ["react-virtuoso"]' in vite_config
     assert "function jsxClassicPlugin" not in vite_config
     assert "transformAsync" not in vite_config
     assert "esbuild: false" not in vite_config
@@ -106,8 +107,10 @@ def main() -> None:
         assert (dist / "vendor" / "react-dom.production.min.js").exists()
         main_scripts = list((dist / "assets").glob("index-*.js"))
         markdown_chunks = list((dist / "assets").glob("markdown-vendor-*.js"))
+        virtuoso_chunks = list((dist / "assets").glob("virtuoso-vendor-*.js"))
         assert main_scripts, "missing production entry bundle"
         assert markdown_chunks, "missing cacheable Markdown vendor chunk"
+        assert virtuoso_chunks, "missing cacheable virtualized transcript vendor chunk"
         assert max(asset.stat().st_size for asset in main_scripts) < 500_000, (
             "production entry bundle exceeded the 500 kB budget"
         )
