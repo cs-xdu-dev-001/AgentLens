@@ -914,7 +914,15 @@ class KnowFlowTui(App[None]):
         self._question_in_progress = False
         self._stream_failure_reported = False
         self._queue_manager_previous_pause: bool | None = None
-        self.workspace = str(Path.cwd())
+        try:
+            workspace_status = self.backend.workspace_status()
+        except Exception:
+            workspace_status = {}
+        self.workspace = str(
+            workspace_status.get("cwd")
+            or workspace_status.get("projectRoot")
+            or Path.cwd()
+        )
         self.command_handlers: dict[str, Any] = {
             "/help": self._cmd_help,
             "/about": self._cmd_about,
@@ -927,6 +935,8 @@ class KnowFlowTui(App[None]):
             "/mcp": self._cmd_mcp,
             "/memory": self._cmd_memory,
             "/status": self._cmd_status,
+            "/workspace": self._cmd_workspace,
+            "/cd": self._cmd_cd,
             "/doctor": self._cmd_doctor,
             "/diff": self._cmd_diff,
             "/undo": self._cmd_undo,
@@ -1263,6 +1273,82 @@ class KnowFlowTui(App[None]):
             f"{'已暂停' if self.session.queue_paused else '自动继续'}；"
             f"权限：{permission_label}。"
         )
+        return True
+
+    async def _cmd_workspace(self, args: list[str]) -> bool:
+        transcript = self.query_one(TranscriptView)
+        path = " ".join(args).strip()
+        if len(path) >= 2 and path[0] == path[-1] and path[0] in {'"', "'"}:
+            path = path[1:-1]
+        if path and self.running:
+            await transcript.add_notice(
+                "当前任务尚未结束，请先完成或取消后再切换工作区。",
+                error=True,
+            )
+            return True
+        try:
+            result = (
+                await asyncio.to_thread(self.backend.workspace_switch_root, path)
+                if path
+                else await asyncio.to_thread(self.backend.workspace_status)
+            )
+        except Exception as exc:
+            await transcript.add_recovery(
+                "工作区未切换",
+                redact_public_detail(exc, limit=240),
+                "确认目录存在且可访问后重试 /workspace <项目目录>。",
+                error=True,
+            )
+            return True
+        next_workspace = str(
+            result.get("cwd") or result.get("projectRoot") or self.workspace
+        )
+        if path:
+            self.workspace = next_workspace
+            self.session.reset_session()
+            self.pending_execution = None
+            self.current_run_id = None
+            self.current_approval_id = None
+            self.current_question_id = None
+            self._set_status("工作区已切换")
+        else:
+            self.workspace = next_workspace
+            self._refresh_status_bar()
+        message = str(result.get("message") or "").strip()
+        await transcript.add_notice(message or f"当前工作区：{self.workspace}")
+        self.query_one(Composer).focus()
+        return True
+
+    async def _cmd_cd(self, args: list[str]) -> bool:
+        transcript = self.query_one(TranscriptView)
+        if self.running:
+            await transcript.add_notice(
+                "当前任务尚未结束，请先完成或取消后再切换目录。",
+                error=True,
+            )
+            return True
+        path = " ".join(args).strip()
+        if len(path) >= 2 and path[0] == path[-1] and path[0] in {'"', "'"}:
+            path = path[1:-1]
+        try:
+            result = await asyncio.to_thread(
+                self.backend.workspace_change_directory,
+                path,
+            )
+        except Exception as exc:
+            await transcript.add_recovery(
+                "工作目录未切换",
+                redact_public_detail(exc, limit=240),
+                "目录必须存在于当前工作区边界内。",
+                error=True,
+            )
+            return True
+        self.workspace = str(
+            result.get("cwd") or result.get("projectRoot") or self.workspace
+        )
+        self._set_status("工作目录已切换")
+        await transcript.add_notice(f"当前工作目录：{self.workspace}")
+        self.query_one(Composer).focus()
         return True
 
     async def _cmd_doctor(self, args: list[str]) -> bool:

@@ -52,6 +52,10 @@ class FakeBackend:
         self.reset_count = 0
         self.diff_paths: list[str | None] = []
         self.undo_calls: list[tuple[str | None, str | None]] = []
+        self.workspace_root = str(Path.cwd())
+        self.workspace_cwd = self.workspace_root
+        self.workspace_switches: list[str] = []
+        self.workspace_directories: list[str] = []
 
     def run(self, question, event_sink):
         self.questions.append(question)
@@ -146,6 +150,33 @@ class FakeBackend:
 
     def reset(self):
         self.reset_count += 1
+
+    def workspace_status(self):
+        return {
+            "projectRoot": self.workspace_root,
+            "cwd": self.workspace_cwd,
+            "message": f"当前工作区：{self.workspace_root}",
+        }
+
+    def workspace_switch_root(self, path):
+        self.workspace_switches.append(path)
+        self.workspace_root = path
+        self.workspace_cwd = path
+        self.reset()
+        return {
+            "projectRoot": path,
+            "cwd": path,
+            "message": f"已切换工作区：{path}",
+        }
+
+    def workspace_change_directory(self, path):
+        self.workspace_cwd = path or self.workspace_root
+        self.workspace_directories.append(self.workspace_cwd)
+        return {
+            "projectRoot": self.workspace_root,
+            "cwd": self.workspace_cwd,
+            "message": f"Current directory: {self.workspace_cwd}",
+        }
 
     def command_catalog(self):
         return [
@@ -550,6 +581,8 @@ def exercise_command_matching() -> None:
     assert canonical_command("/allowed-tools", commands) == "/permissions"
     assert match_commands("/dif", commands)[0].value == "/diff"
     assert match_commands("/und", commands)[0].value == "/undo"
+    assert match_commands("/work", commands)[0].value == "/workspace"
+    assert match_commands("/cd", commands)[0].value == "/cd"
     recently_used = match_commands("/", commands, {"/status": 3})
     assert recently_used[0].value == "/status"
 
@@ -620,8 +653,8 @@ async def exercise_tui() -> None:
         assert menu.has_class("visible")
         assert [item.value for item in menu.matches[:3]] == [
             "/about",
+            "/cd",
             "/clear",
-            "/continue",
         ]
         assert any(item.value == "/status" for item in menu.matches)
         assert len(menu.query_one("#command-options", OptionList).options) == 6
@@ -819,6 +852,39 @@ async def exercise_tui() -> None:
         await pilot.pause(0.05)
         assert backend.reset_count == 1
         assert not list(app.query(".assistant-message"))
+
+
+async def exercise_workspace_commands() -> None:
+    backend = FakeBackend()
+    app = KnowFlowTui(backend, assume_yes=False)
+    async with app.run_test(size=(100, 30)) as pilot:
+        composer = app.query_one(Composer)
+        assert app.workspace == str(Path.cwd())
+
+        composer.load_text("/workspace")
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert any(
+            "当前工作区" in str(item.render())
+            for item in app.query(".notice")
+        )
+
+        target = str(ROOT / "workspace next")
+        composer.load_text(f'/workspace "{target}"')
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert backend.workspace_switches == [target]
+        assert backend.reset_count == 1
+        assert app.workspace == target
+        assert "工作区已切换" in str(app.query_one("#run-status").render())
+
+        child = str(Path(target) / "src")
+        composer.load_text(f'/cd "{child}"')
+        await pilot.press("enter")
+        await pilot.pause(0.05)
+        assert backend.workspace_directories == [child]
+        assert app.workspace == child
+        assert "工作目录已切换" in str(app.query_one("#run-status").render())
 
 
 async def exercise_remote_streaming() -> None:
@@ -1772,6 +1838,7 @@ def main() -> None:
         os.environ["XDG_DATA_HOME"] = data_home
         exercise_workspace_diff_boundaries()
         asyncio.run(exercise_tui())
+        asyncio.run(exercise_workspace_commands())
         asyncio.run(exercise_remote_streaming())
         asyncio.run(exercise_live_status())
         asyncio.run(exercise_retry_status())

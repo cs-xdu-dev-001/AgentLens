@@ -60,6 +60,8 @@ COMMANDS = (
     SlashCommand("/clear", "清空当前显示", immediate=True),
     SlashCommand("/model", "查看或切换模型", argument_hint="[list | config | use <ID>]"),
     SlashCommand("/status", "查看会话与运行状态", immediate=True),
+    SlashCommand("/workspace", "查看或切换工作区边界", argument_hint="[项目目录]"),
+    SlashCommand("/cd", "切换工具执行目录", argument_hint="[目录]"),
     SlashCommand("/doctor", "检查SRT沙箱和本地执行环境", immediate=True),
     SlashCommand(
         "/permissions",
