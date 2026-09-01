@@ -635,6 +635,26 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
     setSearchQuery(query);
   };
 
+  const handleSessionListKeyDown = (event) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target?.closest?.('button[data-session-item="true"]');
+    const history = historyRef.current;
+    if (!target || !history?.contains(target)) return;
+    const items = Array.from(
+      history.querySelectorAll('button[data-session-item="true"]:not([disabled])'),
+    );
+    const currentIndex = items.indexOf(target);
+    if (currentIndex < 0 || !items.length) return;
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : (currentIndex + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+    event.preventDefault();
+    items[nextIndex]?.focus();
+  };
+
   const handleSessionScopeChange = (scope) => {
     if (scope === sessionScope) return;
     sessionScopeRef.current = scope;
@@ -967,7 +987,15 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
           </svg>
         </button>
       </div>
-      <div className={"sidebar-list chat-history-list"} id={"session-list"} ref={sessionListRef}>
+      <div
+        className={"sidebar-list chat-history-list"}
+        id={"session-list"}
+        ref={sessionListRef}
+        role={"group"}
+        aria-label={"会话列表，使用上下箭头切换任务"}
+        aria-keyshortcuts={"ArrowDown ArrowUp Home End"}
+        onKeyDown={handleSessionListKeyDown}
+      >
         {loadingSessions && !sessions.length ? (
           <div className={"session-list-skeleton"} aria-label={"正在加载任务"}>
             {[0, 1, 2].map((item) => <span key={item} />)}
@@ -1008,6 +1036,8 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
                           <button
                             className={"sidebar-list-item"}
                             type={"button"}
+                            data-session-item={"true"}
+                            aria-label={`${sessionTitle(session)}${run ? `，${run.label}` : ""}`}
                             aria-busy={isSwitching}
                             aria-current={isActive ? "page" : undefined}
                             disabled={isSwitching}
@@ -1038,7 +1068,7 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
                               </span>
                             ) : null}
                           </button>
-                          <button className={"session-menu-button"} type={"button"} data-session-id={session.id} aria-label={"会话操作"} title={"会话操作"} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
+                          <button className={"session-menu-button"} type={"button"} data-session-id={session.id} aria-label={`会话操作：${sessionTitle(session)}`} title={`会话操作：${sessionTitle(session)}`} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
                             <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
                               <circle cx={"6"} cy={"12"} r={"1.7"} />
                               <circle cx={"12"} cy={"12"} r={"1.7"} />

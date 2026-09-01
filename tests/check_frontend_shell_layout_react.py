@@ -74,6 +74,12 @@ def main() -> None:
     require("frontend/react/src/components/Sidebar.jsx", "sidebarToggleLabel", "Sidebar renders toggle label from React")
     require("frontend/react/src/components/Sidebar.jsx", "function SidebarToolIcon", "Sidebar renders real tool icons")
     require("frontend/react/src/components/Sidebar.jsx", "<svg", "Sidebar tool icons are SVG")
+    require("frontend/react/src/components/Sidebar.jsx", "handleSessionListKeyDown", "session history owns keyboard navigation")
+    require("frontend/react/src/components/Sidebar.jsx", 'data-session-item={"true"}', "session history exposes navigable items")
+    require("frontend/react/src/components/Sidebar.jsx", 'role={"group"}', "session history has a named navigation group")
+    require("frontend/react/src/components/Sidebar.jsx", 'aria-keyshortcuts={"ArrowDown ArrowUp Home End"}', "session history advertises keyboard navigation")
+    require("frontend/react/src/components/Sidebar.jsx", "会话操作：${sessionTitle(session)}", "session menu identifies its task")
+    require("frontend/react/src/components/Sidebar.jsx", "会话列表，使用上下箭头切换任务", "session history keyboard hint")
     require("frontend/styles.css", ".sidebar-tool .nav-icon svg", "Sidebar SVG icon style")
 
     css = read("frontend/styles.css")
@@ -132,6 +138,9 @@ def main() -> None:
         ("/* Keep the same mounted workbench across breakpoints.", "responsive workbench contract"),
         ('[data-panel]#evidence-panel', "evidence panel responsive target"),
         ("position: fixed !important;", "mobile workbench overlay"),
+        ("#session-list .session-row:has(.sidebar-list-item:focus-visible)", "session keyboard focus surface"),
+        ("mobile-history-open #session-list .session-menu-button", "mobile session menu target"),
+        ("min-height: 44px !important;", "mobile session row target"),
     ]:
         if needle not in refinement:
             raise AssertionError(f"missing {label} in workbench refinement: {needle}")
