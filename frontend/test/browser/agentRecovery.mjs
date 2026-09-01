@@ -87,6 +87,10 @@ await page.route("**/api/**", async route => {
 });
 await page.addInitScript(() => {
   localStorage.setItem("agentlens.activeSessionId.v1:903", "session-browser-recovery");
+  if (!sessionStorage.getItem("agentlens.workbenchLayoutTestInitialized")) {
+    localStorage.removeItem("agentlens.chatWorkbenchLayout.v1");
+    sessionStorage.setItem("agentlens.workbenchLayoutTestInitialized", "1");
+  }
   window.recoveryTestActions = [];
   window.addEventListener("knowflow:react-agent-run-action", event => window.recoveryTestActions.push(event.detail));
 });
@@ -105,9 +109,55 @@ try {
   await page.goto(baseUrl);
   await panel.getByText("任务被服务重启中断", { exact: true }).waitFor();
   await continueButton().waitFor({ state: "visible" });
+  const workbenchGroup = page.locator("#chat-workbench-layout");
+  const resizeSeparator = page.locator("#chat-workbench-resize");
+  const evidencePanel = page.locator("#evidence-panel");
+  await workbenchGroup.waitFor({ state: "visible" });
+  await resizeSeparator.waitFor({ state: "visible" });
+  assert.equal(await resizeSeparator.getAttribute("role"), "separator");
+  assert.equal(await resizeSeparator.getAttribute("aria-orientation"), "vertical");
+  assert.equal(await resizeSeparator.getAttribute("tabindex"), "0");
+  const initialEvidenceWidth = (await evidencePanel.boundingBox())?.width || 0;
+  assert.ok(initialEvidenceWidth >= 320);
+  const separatorBounds = await resizeSeparator.boundingBox();
+  assert.ok(separatorBounds);
+  await page.mouse.move(
+    separatorBounds.x + separatorBounds.width / 2,
+    separatorBounds.y + separatorBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    separatorBounds.x - 64,
+    separatorBounds.y + separatorBounds.height / 2,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await page.waitForFunction((previousWidth) => (
+    document.querySelector("#evidence-panel")?.getBoundingClientRect().width > previousWidth + 24
+  ), initialEvidenceWidth);
+  const pointerResizedWidth = (await evidencePanel.boundingBox())?.width || 0;
+  await resizeSeparator.focus();
+  await resizeSeparator.press("ArrowLeft");
+  await page.waitForFunction(() => Boolean(localStorage.getItem("agentlens.chatWorkbenchLayout.v1")));
+  const keyboardResizedWidth = (await evidencePanel.boundingBox())?.width || 0;
+  assert.ok(keyboardResizedWidth > pointerResizedWidth + 1);
+  const savedLayout = JSON.parse(await page.evaluate(() => localStorage.getItem("agentlens.chatWorkbenchLayout.v1")));
+  assert.ok(savedLayout["evidence-panel"] > 24);
   assert.deepEqual(writes, []);
   await page.reload();
   await continueButton().waitFor({ state: "visible" });
+  const restoredEvidenceWidth = (await evidencePanel.boundingBox())?.width || 0;
+  assert.ok(restoredEvidenceWidth > initialEvidenceWidth + 1);
+  await page.locator("#inspector-close").click();
+  await resizeSeparator.waitFor({ state: "detached" });
+  await page.waitForFunction(() => (
+    (document.querySelector("#evidence-panel")?.getBoundingClientRect().width || 0) < 1
+  ));
+  assert.equal(await page.locator("#inspector-toggle").getAttribute("aria-expanded"), "false");
+  await page.locator("#inspector-toggle").click();
+  await resizeSeparator.waitFor({ state: "visible" });
+  const reopenedEvidenceWidth = (await evidencePanel.boundingBox())?.width || 0;
+  assert.ok(Math.abs(reopenedEvidenceWidth - restoredEvidenceWidth) < 4);
   await screenshot("recovery-desktop.png");
 
   await continueButton().click();
@@ -131,6 +181,11 @@ try {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const bounds = await panel.boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 375);
+  const mobileEvidencePanel = page.locator("#evidence-panel");
+  const mobileEvidenceBox = await mobileEvidencePanel.boundingBox();
+  assert.ok(mobileEvidenceBox && mobileEvidenceBox.x >= 0 && mobileEvidenceBox.width >= 374 && mobileEvidenceBox.x + mobileEvidenceBox.width <= 375);
+  assert.equal(await mobileEvidencePanel.evaluate((node) => getComputedStyle(node).position), "fixed");
+  assert.equal(await resizeSeparator.evaluate((node) => getComputedStyle(node).display), "none");
   for (const button of await panel.locator("button").all()) {
     const box = await button.boundingBox();
     assert.ok(box && box.x >= 0 && box.x + box.width <= 375);
@@ -161,7 +216,7 @@ try {
   assert.equal(writes.at(-1), "/api/agent/runs/run-browser-recovery/restart");
   assert.deepEqual(cursors.at(-1), { runId: "run-browser-restarted", after: 0 });
   assert.deepEqual(errors, []);
-  console.log("Agent recovery browser checks passed: refresh, no-plan checkpoint, pending copy, duplicate guard, failure retry, cursor replay, completion reload, restart identity, 375px bounds, reduced motion");
+  console.log("Agent recovery browser checks passed: pointer and keyboard workbench resize, layout reload, collapse restore, recovery refresh, duplicate guard, cursor replay, 375px overlay, reduced motion");
 } catch (error) {
   console.error({ errors, writes, cursors, page: (await page.locator("body").innerText()).slice(0, 4000) });
   throw error;

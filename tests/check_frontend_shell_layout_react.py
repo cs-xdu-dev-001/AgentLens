@@ -55,6 +55,13 @@ def main() -> None:
     require("frontend/react/src/components/ChatTopbar.jsx", "aria-expanded={!drawerCollapsed}", "run button exposes the drawer state")
     require("frontend/react/src/components/ChatTopbar.jsx", "focus: drawerCollapsed", "run button transfers keyboard focus when opening")
     require("frontend/react/src/components/ChatPage.jsx", "drawerCollapsed={drawerCollapsed}", "chat shell passes the drawer state to its topbar")
+    require("frontend/react/src/components/ChatPage.jsx", 'from "react-resizable-panels"', "maintained resize primitive")
+    require("frontend/react/src/components/ChatPage.jsx", 'id={"chat-workbench-layout"}', "stable workbench group id")
+    require("frontend/react/src/components/ChatPage.jsx", 'id={"chat-workbench-resize"}', "keyboard resize separator")
+    require("frontend/react/src/components/ChatPage.jsx", 'aria-label={"调整运行面板宽度"}', "resize separator label")
+    require("frontend/react/src/components/ChatPage.jsx", 'CHAT_LAYOUT_STORAGE_KEY = "agentlens.chatWorkbenchLayout.v1"', "layout persistence key")
+    require("frontend/react/src/components/ChatPage.jsx", "meta?.isUserInteraction", "user-only layout persistence")
+    require("frontend/package.json", '"react-resizable-panels": "4.12.3"', "pinned resize dependency")
     require("frontend/react/src/App.jsx", "document.body.classList.toggle(\"sidebar-collapsed\"", "React shell syncs sidebar body class")
     require("frontend/react/src/App.jsx", "document.body.classList.toggle(\"drawer-collapsed\"", "React shell syncs drawer body class")
     require("frontend/react/src/App.jsx", "knowflow.sidebarCollapsed", "React shell persists sidebar layout")
@@ -105,7 +112,7 @@ def main() -> None:
         if needle not in responsive:
             raise AssertionError(f"missing {label} in responsive refinement: {needle}")
 
-    final_mobile_index = refinement.rfind("@media (max-width: 760px)")
+    final_mobile_index = refinement.rfind("/* Final mobile interaction pass")
     if final_mobile_index < responsive_index:
         raise AssertionError("missing final mobile interaction pass")
     final_mobile = refinement[final_mobile_index:]
@@ -117,6 +124,17 @@ def main() -> None:
     ]:
         if needle not in final_mobile:
             raise AssertionError(f"missing {label} in final mobile pass: {needle}")
+
+    for needle, label in [
+        ("/* Desktop workbench resize rail:", "desktop workbench resize contract"),
+        ('#page-chat .chat-layout-resizable > [data-separator]', "visible resize rail"),
+        ('[data-drawer-collapsed="true"]', "collapsed workbench contract"),
+        ("/* Keep the same mounted workbench across breakpoints.", "responsive workbench contract"),
+        ('[data-panel]#evidence-panel', "evidence panel responsive target"),
+        ("position: fixed !important;", "mobile workbench overlay"),
+    ]:
+        if needle not in refinement:
+            raise AssertionError(f"missing {label} in workbench refinement: {needle}")
 
     for needle, label in [
         ('icon: "KB"', "letter knowledge icon"),
