@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
 import { AgentRunSummary } from "./AgentRunSummary.jsx";
@@ -92,8 +93,15 @@ function formatOutputSize(lines, bytes) {
   return parts.join(" · ");
 }
 
+function toolOutputItemKey(_index, item) {
+  return item.id;
+}
+
 function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
-  const presentations = toolCalls.map(buildAgentToolOutputPresentation);
+  const presentations = useMemo(
+    () => toolCalls.map(buildAgentToolOutputPresentation),
+    [toolCalls],
+  );
   const initialId = presentations.some((item) => item.id === focusStepId)
     ? focusStepId
     : presentations.at(-1)?.id || "";
@@ -101,10 +109,13 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
   const [autoFollow, setAutoFollow] = useState(true);
   const [copyState, setCopyState] = useState("idle");
   const scrollRef = useRef(null);
+  const toolListRef = useRef(null);
+  const virtuosoRef = useRef(null);
+  const focusFrameRef = useRef(null);
   const copyTimerRef = useRef(null);
-  const selected = presentations.find((item) => item.id === selectedId)
-    || presentations.at(-1)
-    || null;
+  const selectedIndex = presentations.findIndex((item) => item.id === selectedId);
+  const activeIndex = selectedIndex >= 0 ? selectedIndex : presentations.length - 1;
+  const selected = activeIndex >= 0 ? presentations[activeIndex] : null;
 
   useEffect(() => {
     if (!presentations.length) {
@@ -123,7 +134,56 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
 
   useEffect(() => () => {
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    if (focusFrameRef.current) window.cancelAnimationFrame(focusFrameRef.current);
   }, []);
+
+  const setToolListScroller = useCallback((node) => {
+    toolListRef.current = node;
+  }, []);
+
+  const queueToolFocus = useCallback((toolId) => {
+    if (focusFrameRef.current) window.cancelAnimationFrame(focusFrameRef.current);
+    let attempts = 0;
+    const focusRenderedTool = () => {
+      focusFrameRef.current = null;
+      const tool = Array.from(
+        toolListRef.current?.querySelectorAll('[data-workbench-item="tool"]') || [],
+      ).find((item) => item.getAttribute("data-workbench-item-id") === toolId);
+      if (tool) {
+        tool.focus();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 6) {
+        focusFrameRef.current = window.requestAnimationFrame(focusRenderedTool);
+      }
+    };
+    focusFrameRef.current = window.requestAnimationFrame(focusRenderedTool);
+  }, []);
+
+  const handleToolKeyDown = useCallback((event, currentIndex) => {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextIndex = nextWorkbenchItemIndex(
+      presentations.length,
+      currentIndex,
+      event.key,
+    );
+    const nextTool = presentations[nextIndex];
+    if (!nextTool) return;
+    setSelectedId(nextTool.id);
+    virtuosoRef.current?.scrollToIndex({
+      index: nextIndex,
+      align: nextIndex === 0
+        ? "start"
+        : nextIndex === presentations.length - 1
+          ? "end"
+          : "center",
+      behavior: "auto",
+    });
+    queueToolFocus(nextTool.id);
+  }, [presentations, queueToolFocus]);
 
   const copyOutput = async () => {
     if (!selected?.copyText) return;
@@ -144,13 +204,24 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
     <section className={"agent-tool-output"} aria-label={"工具输出"}>
       {presentations.length ? (
         <>
-          <div
+          <Virtuoso
+            ref={virtuosoRef}
             className={"agent-tool-output-list"}
             id={"tool-timeline-mini"}
+            data={presentations}
+            data-tool-count={presentations.length}
             aria-label={"执行记录"}
             role={"group"}
-          >
-            {presentations.map((item, index) => {
+            scrollerRef={setToolListScroller}
+            computeItemKey={toolOutputItemKey}
+            defaultItemHeight={50}
+            initialItemCount={Math.min(presentations.length, 8)}
+            initialTopMostItemIndex={Math.max(0, activeIndex)}
+            increaseViewportBy={{ top: 100, bottom: 100 }}
+            minOverscanItemCount={2}
+            skipAnimationFrameInResizeObserver={true}
+            style={{ height: `${Math.min(174, Math.max(52, presentations.length * 50 + 4))}px` }}
+            itemContent={(index, item) => {
               const active = item.id === selected?.id;
               const meta = [
                 item.latencyMs != null ? `${item.latencyMs}ms` : "",
@@ -165,7 +236,10 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
                   type={"button"}
                   tabIndex={active ? 0 : -1}
                   aria-pressed={active}
+                  aria-posinset={index + 1}
+                  aria-setsize={presentations.length}
                   onClick={() => setSelectedId(item.id)}
+                  onKeyDown={(event) => handleToolKeyDown(event, index)}
                 >
                   <span className={`agent-tool-output-status ${item.statusTone}`} aria-hidden={"true"}></span>
                   <span className={"agent-tool-output-call-copy"}>
@@ -175,8 +249,8 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
                   <span className={"agent-tool-output-chevron"} aria-hidden={"true"}>{"›"}</span>
                 </button>
               );
-            })}
-          </div>
+            }}
+          />
           <div className={"agent-tool-console"} aria-live={selected?.active ? "polite" : "off"}>
             <div className={"agent-tool-console-header"}>
               <div>
