@@ -51,6 +51,13 @@ def main() -> None:
     assert ".agent-thinking-orb" in react_css
     assert ".thinking-indicator" not in react_css
     assert 'from "thinking-orbs"' in thinking_orb
+    assert 'from "@vitejs/plugin-react"' in vite_config
+    assert "plugins: [react()]" in vite_config
+    assert 'minify: "esbuild"' in vite_config
+    assert '"markdown-vendor": ["markdown-it"]' in vite_config
+    assert "function jsxClassicPlugin" not in vite_config
+    assert "transformAsync" not in vite_config
+    assert "esbuild: false" not in vite_config
     assert 'find: /^react\\/jsx-runtime$/' in vite_config
     assert 'find: /^react\\/jsx-dev-runtime$/' in vite_config
     assert 'include: ["parse-diff"]' in vite_config
@@ -62,6 +69,8 @@ def main() -> None:
     assert 'aria-atomic={"true"}' in thinking_orb
     assert 'size={20}' in thinking_orb
     assert '"thinking-orbs": "0.2.0"' in package_json
+    assert '"@vitejs/plugin-react": "4.7.0"' in package_json
+    assert '"@babel/core"' not in package_json
     assert ".message-row.thinking-row .message-actions" in react_css
     assert 'appendMessage("assistant", "", { thinking: true, streaming: true })' in controller_js
     assert "setMessageThinking" in controller_js
@@ -95,6 +104,13 @@ def main() -> None:
         assert not (dist / "assets" / "legacyApp.js").exists()
         assert (dist / "vendor" / "react.production.min.js").exists()
         assert (dist / "vendor" / "react-dom.production.min.js").exists()
+        main_scripts = list((dist / "assets").glob("index-*.js"))
+        markdown_chunks = list((dist / "assets").glob("markdown-vendor-*.js"))
+        assert main_scripts, "missing production entry bundle"
+        assert markdown_chunks, "missing cacheable Markdown vendor chunk"
+        assert max(asset.stat().st_size for asset in main_scripts) < 500_000, (
+            "production entry bundle exceeded the 500 kB budget"
+        )
         dist_text = read_active_dist_assets(dist)
         assert "姝ｅ湪缁勭粐鍥炵瓟" not in dist_text
         assert "streaming:empty" not in dist_text
