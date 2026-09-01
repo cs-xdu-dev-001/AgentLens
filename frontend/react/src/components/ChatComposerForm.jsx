@@ -1,5 +1,6 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import {
@@ -175,14 +176,17 @@ export function ChatComposerForm() {
   }, []);
 
   const closeComposerHistory = useCallback((restoreDraft = true) => {
-    setHistorySearchOpen(false);
     const snapshot = historySearchDraftRef.current;
     historySearchDraftRef.current = null;
-    if (!restoreDraft) return;
-    if (snapshot) {
-      questionRef.current = snapshot.question;
-      setQuestion(snapshot.question);
+    if (!restoreDraft) {
+      setHistorySearchOpen(false);
+      return;
     }
+    if (snapshot) questionRef.current = snapshot.question;
+    flushSync(() => {
+      setHistorySearchOpen(false);
+      if (snapshot) setQuestion(snapshot.question);
+    });
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
