@@ -14,6 +14,19 @@ def require(source: str, needle: str, label: str) -> None:
 
 
 def main() -> None:
+    messages = read("frontend/react/src/components/ChatMessages.jsx")
+    for needle, label in (
+        ("WELCOME_ACTIONS", "welcome action model"),
+        ('label: "梳理项目结构"', "project overview action"),
+        ('label: "检查当前改动"', "workspace review action"),
+        ('label: "运行测试并修复"', "test action"),
+        ('label: "继续最近的工作"', "continuation action"),
+        ('detail: { focus: true, question: prompt }', "composer handoff"),
+        ('aria-label={"常用起始任务"}', "action navigation label"),
+    ):
+        if needle not in messages:
+            raise AssertionError(f"missing {label}: {needle}")
+
     for stylesheet in (
         "frontend/refinement.css",
         "frontend/react/src/refinement.css",
@@ -83,6 +96,26 @@ def main() -> None:
             source,
             "outline: 2px solid var(--kf-focus-ring) !important;",
             "keyboard focus visibility",
+        )
+        require(
+            source,
+            "/* Actionable project start surface. */",
+            "actionable start surface contract",
+        )
+        require(
+            source,
+            "grid-template-columns: repeat(2, minmax(0, 1fr));",
+            "desktop starter grid",
+        )
+        require(
+            source,
+            "animation: welcome-surface-enter 220ms",
+            "welcome entrance motion",
+        )
+        require(
+            source,
+            "@media (prefers-reduced-motion: reduce)",
+            "reduced motion contract",
         )
     print("empty welcome and composer share one calm visual axis")
 

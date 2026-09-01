@@ -510,6 +510,29 @@ function sameInteractionOwner(previous, next) {
     && (previous?.queuedCount || 0) === (next?.queuedCount || 0);
 }
 
+const WELCOME_ACTIONS = [
+  {
+    id: "understand",
+    label: "梳理项目结构",
+    prompt: "请梳理当前工作区的项目结构、技术栈、关键入口和运行方式，并告诉我最值得先关注的部分。",
+  },
+  {
+    id: "review",
+    label: "检查当前改动",
+    prompt: "请检查当前工作区的未提交改动，指出可能的缺陷、风险和遗漏；发现明确问题时直接修复，并运行相关验证。",
+  },
+  {
+    id: "test",
+    label: "运行测试并修复",
+    prompt: "请运行与当前项目相关的测试，定位失败原因并修复问题，完成后汇报验证结果。",
+  },
+  {
+    id: "continue",
+    label: "继续最近的工作",
+    prompt: "请结合当前工作区状态和最近的Git提交判断上次工作进展，并从最合理的下一步继续。",
+  },
+];
+
 export function ChatMessages() {
   const messagesRef = useRef(null);
   const messageStateRef = useRef([]);
@@ -1046,6 +1069,12 @@ export function ChatMessages() {
     }));
   };
 
+  const seedComposer = (prompt) => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-composer-reset", {
+      detail: { focus: true, question: prompt },
+    }));
+  };
+
   return (
     <>
       {searchOpen ? (
@@ -1138,6 +1167,22 @@ export function ChatMessages() {
         {showWelcome ? (
           <div className={"welcome-card"}>
             <h2>{"有什么可以帮你？"}</h2>
+            <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
+              {WELCOME_ACTIONS.map((action) => (
+                <button
+                  className={"welcome-action"}
+                  data-welcome-action={action.id}
+                  key={action.id}
+                  type={"button"}
+                  onClick={() => seedComposer(action.prompt)}
+                >
+                  <span>{action.label}</span>
+                  <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
+                    <path d={"m7 4 6 6-6 6"}></path>
+                  </svg>
+                </button>
+              ))}
+            </nav>
           </div>
         ) : null}
         {messages.map((message) => (

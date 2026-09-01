@@ -59,7 +59,26 @@ await page.route("**/api/**", async (route) => {
 
 try {
   await page.goto(baseUrl);
-  await page.getByRole("textbox", { name: "消息", exact: true }).waitFor({ state: "visible" });
+  const composer = page.getByRole("textbox", { name: "消息", exact: true });
+  await composer.waitFor({ state: "visible" });
+  const welcomeActions = page.getByRole("navigation", { name: "常用起始任务" });
+  await welcomeActions.waitFor({ state: "visible" });
+  assert.equal(await welcomeActions.getByRole("button").count(), 4);
+  if (process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH) {
+    await page.screenshot({ path: process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH, fullPage: true });
+  }
+  if (process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH, fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 800 });
+  }
+  await welcomeActions.getByRole("button", { name: "检查当前改动", exact: true }).click();
+  assert.equal(
+    await composer.inputValue(),
+    "请检查当前工作区的未提交改动，指出可能的缺陷、风险和遗漏；发现明确问题时直接修复，并运行相关验证。",
+  );
+  assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-composer-reset")));
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
     detail: { page: "workspace" },
   })));
