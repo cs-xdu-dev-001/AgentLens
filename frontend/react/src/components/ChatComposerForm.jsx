@@ -1,3 +1,4 @@
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { skillApi, workspaceApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
@@ -121,6 +122,10 @@ export function ChatComposerForm() {
   const [contextStatus, setContextStatus] = useState(null);
   const [contextOperation, setContextOperation] = useState({ status: "idle", message: "" });
   const [commandUsage, setCommandUsage] = useState({});
+  const [queueListRef] = useAutoAnimate({
+    duration: 180,
+    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+  });
   const textareaRef = useRef(null);
   const mountedRef = useRef(false);
   const pickerOpenRef = useRef(false);
@@ -1515,7 +1520,7 @@ export function ChatComposerForm() {
               <button type={"button"} onClick={() => handleQueueAction("clear")}>{"清空"}</button>
             </span>
           </div>
-          <div className={"composer-queue-list"} role={"list"} aria-label={"待发送任务"}>
+          <div className={"composer-queue-list"} ref={queueListRef} role={"list"} aria-label={"待发送任务"}>
           {queuedChats.slice(0, 3).map((item, index) => {
             const priority = Object.prototype.hasOwnProperty.call(queuePriorityLabels, item.priority)
               ? item.priority

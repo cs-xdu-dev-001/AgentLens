@@ -4754,6 +4754,31 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Final mobile interaction pass: keep the controls touchable after the
+   reading-axis overrides above. The 360px pass below may tighten columns. */
+@media (max-width: 760px) {
+  #page-chat.chat-empty #chat-form.composer .composer-shell,
+  #page-chat:not(.chat-empty) #chat-form.composer .composer-shell {
+    grid-template-columns: 44px minmax(0, 1fr) 44px minmax(72px, auto) 44px !important;
+  }
+
+  body.sidebar-collapsed .sidebar .user-menu-button {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  #chat-form.composer .composer-input-stack textarea {
+    min-height: 44px !important;
+  }
+
+  #page-chat .chat-topbar #inspector-toggle {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+}
+
 /* Keep the four primary composer actions separated on very narrow phones.
    The model picker stays available as an icon-only control instead of
    forcing its label to compete with the permission and send buttons. */

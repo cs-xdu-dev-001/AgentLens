@@ -1,4 +1,4 @@
-import { notifyError, notifyToast } from "./errorFeedback.js";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { approvalApi, runtimeApi, sessionApi } from "../api/client.js";
@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthProvider.jsx";
 import { sidebarTools } from "../data/navigation.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
+import { notifyError, notifyToast } from "./errorFeedback.js";
 
 const sessionGroupLabels = [
   ["pinned", "已置顶"],
@@ -397,6 +398,10 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
   const [savingRename, setSavingRename] = useState(false);
   const [deleteTargetSessionId, setDeleteTargetSessionId] = useState(null);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
+  const [sessionListRef] = useAutoAnimate({
+    duration: 180,
+    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+  });
   const historyRef = useRef(null);
   const searchInputRef = useRef(null);
   const switchingSessionRef = useRef(null);
@@ -962,7 +967,7 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
           </svg>
         </button>
       </div>
-      <div className={"sidebar-list chat-history-list"} id={"session-list"}>
+      <div className={"sidebar-list chat-history-list"} id={"session-list"} ref={sessionListRef}>
         {loadingSessions && !sessions.length ? (
           <div className={"session-list-skeleton"} aria-label={"正在加载任务"}>
             {[0, 1, 2].map((item) => <span key={item} />)}
