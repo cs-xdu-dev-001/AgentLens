@@ -1,6 +1,7 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Virtuoso } from "react-virtuoso";
 import { approvalApi, runtimeApi, sessionApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { sidebarTools } from "../data/navigation.js";
@@ -186,16 +187,52 @@ function SidebarToolIcon({ type }) {
   );
 }
 
-function SessionMenuPopover({ anchor, onAction, session }) {
+function SessionMenuPopover({ anchor, onAction, onClose, portalTarget, session }) {
+  const menuRef = useRef(null);
   const sessionId = session?.id;
+
+  useEffect(() => {
+    if (!anchor || !sessionId || typeof window === "undefined") return undefined;
+    const focusFrame = window.requestAnimationFrame(() => {
+      menuRef.current?.querySelector('[role="menuitem"]')?.focus();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [anchor, sessionId]);
+
   if (!anchor || !sessionId || typeof document === "undefined") return null;
+
+  const handleMenuKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]') || []);
+    if (!items.length) return;
+    event.preventDefault();
+    const currentIndex = Math.max(0, items.indexOf(document.activeElement));
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : event.key === "ArrowUp"
+          ? (currentIndex - 1 + items.length) % items.length
+          : (currentIndex + 1) % items.length;
+    items[nextIndex]?.focus();
+  };
 
   return createPortal(
     <div
+      ref={menuRef}
+      id={"session-action-menu"}
       className={"session-popover session-popover-floating"}
       role={"menu"}
+      aria-label={`会话操作：${sessionTitle(session)}`}
       style={{ left: `${anchor.left}px`, top: `${anchor.top}px` }}
       onClick={(event) => event.stopPropagation()}
+      onKeyDown={handleMenuKeyDown}
       onMouseDown={(event) => event.stopPropagation()}
     >
       {sessionMenuItems(Boolean(session.is_pinned), Boolean(session.is_archived)).map((item) => (
@@ -210,7 +247,7 @@ function SessionMenuPopover({ anchor, onAction, session }) {
         </div>
       ))}
     </div>,
-    document.body,
+    portalTarget || document.body,
   );
 }
 
@@ -380,6 +417,120 @@ function sessionTitle(session) {
   return safeAgentText(session.latest_run?.goalSummary || title || "新任务", 160);
 }
 
+const SessionHistoryScroller = forwardRef(function SessionHistoryScroller(
+  { children, style, ...props },
+  ref,
+) {
+  return (
+    <div ref={ref} {...props} style={style}>
+      {children}
+    </div>
+  );
+});
+
+function SessionHistoryRow({
+  session,
+  sessionIndex = null,
+  currentSessionId,
+  switchingSessionId,
+  editingSessionId,
+  isOpen = false,
+  renameDraft,
+  savingRename,
+  onRenameCancel,
+  onRenameDraftChange,
+  onRenameKeyDown,
+  onSessionAction,
+  onSessionMenuToggle,
+}) {
+  const isActive = session.id === currentSessionId;
+  const isSwitching = session.id === switchingSessionId;
+  const isEditing = session.id === editingSessionId;
+  const run = sessionRunView(session);
+  const age = formatSessionAge(session.updated_at || session.created_at);
+  const showIndeterminateProgress = run && activeRunStatuses.has(run.status) && !run.total;
+  return (
+    <div
+      className={["session-row", isActive ? "active" : "", isSwitching ? "switching" : "", isOpen ? "menu-open" : "", run?.status || "chat"].filter(Boolean).join(" ")}
+      data-session-row={"true"}
+      data-session-id={session.id}
+      data-session-index={sessionIndex == null ? undefined : sessionIndex}
+    >
+      {isEditing ? (
+        <input
+          autoFocus
+          className={"session-rename-input"}
+          value={renameDraft}
+          disabled={savingRename}
+          onBlur={onRenameCancel}
+          onChange={(event) => onRenameDraftChange(event.target.value)}
+          onKeyDown={(event) => onRenameKeyDown(event, session.id)}
+        />
+      ) : (
+        <>
+          <button
+            className={"sidebar-list-item"}
+            type={"button"}
+            data-session-item={"true"}
+            data-session-index={sessionIndex == null ? undefined : sessionIndex}
+            aria-label={`${sessionTitle(session)}${run ? `，${run.label}` : ""}`}
+            aria-busy={isSwitching}
+            aria-current={isActive ? "page" : undefined}
+            disabled={isSwitching}
+            onClick={() => onSessionAction("continue", session.id)}
+          >
+            <span className={"session-title-row"}>
+              <span className={"session-title"}>
+                {session.is_pinned ? (
+                  <span className={"session-pin-mark"} aria-label={"已置顶"}>
+                    <SessionMenuIcon type={"pin"} />
+                  </span>
+                ) : null}
+                {sessionTitle(session)}
+              </span>
+              {age ? <time>{age}</time> : null}
+            </span>
+            {run ? (
+              <span className={"session-run-summary"}>
+                <span className={"session-run-status"}>
+                  <i aria-hidden={"true"} />
+                  {run.label}
+                </span>
+                <span className={"session-run-meta"}>
+                  {run.total ? `${run.completed}/${run.total}` : "Agent"}
+                  {run.duration ? ` · ${run.duration}` : ""}
+                </span>
+                {run.total || showIndeterminateProgress ? (
+                  <span className={showIndeterminateProgress ? "session-run-progress indeterminate" : "session-run-progress"} aria-label={run.total ? `任务进度 ${run.completed}/${run.total}` : "任务正在启动"}>
+                    <span style={run.total ? { width: `${Math.min(100, (run.completed / run.total) * 100)}%` } : undefined} />
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </button>
+          <button
+            className={"session-menu-button"}
+            type={"button"}
+            data-session-id={session.id}
+            aria-label={`会话操作：${sessionTitle(session)}`}
+            aria-controls={isOpen ? "session-action-menu" : undefined}
+            aria-expanded={isOpen}
+            aria-haspopup={"menu"}
+            title={`会话操作：${sessionTitle(session)}`}
+            onClick={(event) => onSessionMenuToggle(event, session.id)}
+          >
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <circle cx={"6"} cy={"12"} r={"1.7"} />
+              <circle cx={"12"} cy={"12"} r={"1.7"} />
+              <circle cx={"18"} cy={"12"} r={"1.7"} />
+            </svg>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 
 function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionIndexChange = null }) {
   const { authenticated, user } = useAuth();
@@ -412,7 +563,15 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
   const sessionRequestRef = useRef(0);
   const mobileCloseRef = useRef(onMobileClose);
   const mobileRestoreFocusRef = useRef(null);
+  const menuTriggerRef = useRef(null);
+  const sessionVirtuosoRef = useRef(null);
+  const sessionVirtualScrollerRef = useRef(null);
+  const sessionFocusFrameRef = useRef(null);
   mobileCloseRef.current = onMobileClose;
+
+  useEffect(() => () => {
+    if (sessionFocusFrameRef.current) window.cancelAnimationFrame(sessionFocusFrameRef.current);
+  }, []);
 
   useEffect(() => {
     if (!mobileOpen || typeof document === "undefined") return undefined;
@@ -427,6 +586,8 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
         '[role="dialog"]:not(#session-history), [role="alertdialog"]',
       );
       if (outsideModal) return;
+      const sessionMenu = event.target?.closest?.('[role="menu"].session-popover');
+      if (event.key === "Escape" && sessionMenu) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -635,12 +796,57 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
     setSearchQuery(query);
   };
 
+  const queueSessionFocus = useCallback((sessionId) => {
+    if (sessionFocusFrameRef.current) window.cancelAnimationFrame(sessionFocusFrameRef.current);
+    let attempts = 0;
+    const focusRenderedSession = () => {
+      sessionFocusFrameRef.current = null;
+      const target = Array.from(
+        sessionVirtualScrollerRef.current?.querySelectorAll('button[data-session-item="true"]') || [],
+      ).find((item) => item.closest("[data-session-row]")?.getAttribute("data-session-id") === sessionId
+        || item.getAttribute("data-session-id") === sessionId);
+      if (target) {
+        target.focus();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 6) {
+        sessionFocusFrameRef.current = window.requestAnimationFrame(focusRenderedSession);
+      }
+    };
+    sessionFocusFrameRef.current = window.requestAnimationFrame(focusRenderedSession);
+  }, []);
+
   const handleSessionListKeyDown = (event) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const target = event.target?.closest?.('button[data-session-item="true"]');
     const history = historyRef.current;
     if (!target || !history?.contains(target)) return;
+    if (virtualizeSessionHistory) {
+      const currentIndex = Number(target.getAttribute("data-session-index"));
+      if (!Number.isInteger(currentIndex) || currentIndex < 0 || !filteredSessions.length) return;
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? filteredSessions.length - 1
+          : (currentIndex + (event.key === "ArrowUp" ? -1 : 1) + filteredSessions.length) % filteredSessions.length;
+      const nextItem = historyItems.find((item) => item.type === "session" && item.sessionIndex === nextIndex);
+      const nextItemIndex = nextItem ? historyItems.indexOf(nextItem) : -1;
+      if (nextItemIndex < 0) return;
+      event.preventDefault();
+      sessionVirtuosoRef.current?.scrollToIndex({
+        index: nextItemIndex,
+        align: nextIndex === 0
+          ? "start"
+          : nextIndex === filteredSessions.length - 1
+            ? "end"
+            : "center",
+        behavior: "auto",
+      });
+      queueSessionFocus(String(nextItem.session.id));
+      return;
+    }
     const items = Array.from(
       history.querySelectorAll('button[data-session-item="true"]:not([disabled])'),
     );
@@ -925,8 +1131,18 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
     const menuHeight = 330;
     const left = Math.max(12, Math.min(rect.right + 8, window.innerWidth - menuWidth - 12));
     const top = Math.max(8, Math.min(rect.top - 10, window.innerHeight - menuHeight - 12));
+    menuTriggerRef.current = event.currentTarget;
     setOpenMenuSessionId(sessionId);
     setMenuAnchor({ left, top });
+  };
+
+  const handleSessionMenuClose = () => {
+    const trigger = menuTriggerRef.current;
+    setOpenMenuSessionId(null);
+    setMenuAnchor(null);
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected && typeof trigger.focus === "function") trigger.focus();
+    });
   };
 
   useEffect(() => {
@@ -944,10 +1160,34 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
   }, [openMenuSessionId]);
 
   const keyword = searchQuery.trim().toLowerCase();
-  const filteredSessions = keyword
-    ? sessions.filter((session) => `${session.title || ""} ${session.latest_run?.goalSummary || ""} ${session.id || ""} ${session.updated_at || ""}`.toLowerCase().includes(keyword))
-    : sessions;
-  const groups = groupSessions(filteredSessions);
+  const filteredSessions = useMemo(() => (
+    keyword
+      ? sessions.filter((session) => `${session.title || ""} ${session.latest_run?.goalSummary || ""} ${session.id || ""} ${session.updated_at || ""}`.toLowerCase().includes(keyword))
+      : sessions
+  ), [keyword, sessions]);
+  const groups = useMemo(() => groupSessions(filteredSessions), [filteredSessions]);
+  const historyItems = useMemo(() => {
+    const items = [];
+    let sessionIndex = 0;
+    sessionGroupLabels.forEach(([key, label]) => {
+      if (!groups[key]?.length) return;
+      items.push({ type: "heading", key: `heading:${key}`, label });
+      groups[key].forEach((session) => {
+        items.push({
+          type: "session",
+          key: `session:${session.id}`,
+          session,
+          sessionIndex: sessionIndex++,
+        });
+      });
+    });
+    return items;
+  }, [groups]);
+  const virtualizeSessionHistory = filteredSessions.length > 80;
+  const initialSessionItemIndex = Math.max(
+    0,
+    historyItems.findIndex((item) => item.type === "session" && item.session.id === currentSessionId),
+  );
 
   const historyContent = (
     <section
@@ -990,7 +1230,9 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
       <div
         className={"sidebar-list chat-history-list"}
         id={"session-list"}
-        ref={sessionListRef}
+        ref={virtualizeSessionHistory ? undefined : sessionListRef}
+        data-session-count={filteredSessions.length}
+        data-virtualized={virtualizeSessionHistory ? "true" : "false"}
         role={"group"}
         aria-label={"会话列表，使用上下箭头切换任务"}
         aria-keyshortcuts={"ArrowDown ArrowUp Home End"}
@@ -1006,80 +1248,65 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
             <button type={"button"} onClick={loadSessions}>{"重试"}</button>
           </div>
         ) : sessionGroupLabels.some(([key]) => groups[key].length) ? (
-          sessionGroupLabels
+          virtualizeSessionHistory ? (
+            <Virtuoso
+              ref={sessionVirtuosoRef}
+              className={"session-history-virtual-list"}
+              data={historyItems}
+              components={{ Scroller: SessionHistoryScroller }}
+              computeItemKey={(_index, item) => item.key}
+              defaultItemHeight={52}
+              initialItemCount={Math.min(historyItems.length, 12)}
+              initialTopMostItemIndex={initialSessionItemIndex}
+              increaseViewportBy={{ top: 240, bottom: 240 }}
+              minOverscanItemCount={4}
+              scrollerRef={(node) => {
+                sessionVirtualScrollerRef.current = node;
+              }}
+              skipAnimationFrameInResizeObserver={true}
+              style={{ height: "100%" }}
+              itemContent={(_index, item) => item.type === "heading" ? (
+                <div className={"history-group-title session-history-virtual-heading"} role={"heading"} aria-level={"3"}>{item.label}</div>
+              ) : (
+                <SessionHistoryRow
+                  session={item.session}
+                  sessionIndex={item.sessionIndex}
+                  currentSessionId={currentSessionId}
+                  switchingSessionId={switchingSessionId}
+                  editingSessionId={editingSessionId}
+                  isOpen={openMenuSessionId === item.session.id}
+                  renameDraft={renameDraft}
+                  savingRename={savingRename}
+                  onRenameCancel={cancelSessionRename}
+                  onRenameDraftChange={setRenameDraft}
+                  onRenameKeyDown={handleSessionRenameKeyDown}
+                  onSessionAction={handleSessionAction}
+                  onSessionMenuToggle={handleSessionMenuToggle}
+                />
+              )}
+            />
+          ) : sessionGroupLabels
             .filter(([key]) => groups[key].length)
             .map(([key, label]) => (
               <section className={"history-group"} key={key}>
-                <div className={"history-group-title"}>{label}</div>
-                {groups[key].map((session) => {
-                  const isActive = session.id === currentSessionId;
-                  const isSwitching = session.id === switchingSessionId;
-                  const isOpen = openMenuSessionId === session.id;
-                  const isEditing = editingSessionId === session.id;
-                  const run = sessionRunView(session);
-                  const age = formatSessionAge(session.updated_at || session.created_at);
-                  const showIndeterminateProgress = run && activeRunStatuses.has(run.status) && !run.total;
-                  return (
-                    <div className={["session-row", isActive ? "active" : "", isSwitching ? "switching" : "", isOpen ? "menu-open" : "", run?.status || "chat"].filter(Boolean).join(" ")} key={session.id}>
-                      {isEditing ? (
-                        <input
-                          autoFocus
-                          className={"session-rename-input"}
-                          value={renameDraft}
-                          disabled={savingRename}
-                          onBlur={cancelSessionRename}
-                          onChange={(event) => setRenameDraft(event.target.value)}
-                          onKeyDown={(event) => handleSessionRenameKeyDown(event, session.id)}
-                        />
-                      ) : (
-                        <>
-                          <button
-                            className={"sidebar-list-item"}
-                            type={"button"}
-                            data-session-item={"true"}
-                            aria-label={`${sessionTitle(session)}${run ? `，${run.label}` : ""}`}
-                            aria-busy={isSwitching}
-                            aria-current={isActive ? "page" : undefined}
-                            disabled={isSwitching}
-                            onClick={() => handleSessionAction("continue", session.id)}
-                          >
-                            <span className={"session-title-row"}>
-                              <span className={"session-title"}>
-                                {session.is_pinned ? <span className={"session-pin-mark"} aria-label={"已置顶"}>◆</span> : null}
-                                {sessionTitle(session)}
-                              </span>
-                              {age ? <time>{age}</time> : null}
-                            </span>
-                            {run ? (
-                              <span className={"session-run-summary"}>
-                                <span className={"session-run-status"}>
-                                  <i aria-hidden={"true"} />
-                                  {run.label}
-                                </span>
-                                <span className={"session-run-meta"}>
-                                  {run.total ? `${run.completed}/${run.total}` : "Agent"}
-                                  {run.duration ? ` · ${run.duration}` : ""}
-                                </span>
-                                {run.total || showIndeterminateProgress ? (
-                                  <span className={showIndeterminateProgress ? "session-run-progress indeterminate" : "session-run-progress"} aria-label={run.total ? `任务进度 ${run.completed}/${run.total}` : "任务正在启动"}>
-                                    <span style={run.total ? { width: `${Math.min(100, (run.completed / run.total) * 100)}%` } : undefined} />
-                                  </span>
-                                ) : null}
-                              </span>
-                            ) : null}
-                          </button>
-                          <button className={"session-menu-button"} type={"button"} data-session-id={session.id} aria-label={`会话操作：${sessionTitle(session)}`} title={`会话操作：${sessionTitle(session)}`} onClick={(event) => handleSessionMenuToggle(event, session.id)}>
-                            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-                              <circle cx={"6"} cy={"12"} r={"1.7"} />
-                              <circle cx={"12"} cy={"12"} r={"1.7"} />
-                              <circle cx={"18"} cy={"12"} r={"1.7"} />
-                            </svg>
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                <div className={"history-group-title"} role={"heading"} aria-level={"3"}>{label}</div>
+                {groups[key].map((session) => (
+                  <SessionHistoryRow
+                    key={session.id}
+                    session={session}
+                    currentSessionId={currentSessionId}
+                    switchingSessionId={switchingSessionId}
+                    editingSessionId={editingSessionId}
+                    isOpen={openMenuSessionId === session.id}
+                    renameDraft={renameDraft}
+                    savingRename={savingRename}
+                    onRenameCancel={cancelSessionRename}
+                    onRenameDraftChange={setRenameDraft}
+                    onRenameKeyDown={handleSessionRenameKeyDown}
+                    onSessionAction={handleSessionAction}
+                    onSessionMenuToggle={handleSessionMenuToggle}
+                  />
+                ))}
               </section>
             ))
         ) : (
@@ -1090,6 +1317,8 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
         anchor={menuAnchor}
         session={sessions.find((item) => item.id === openMenuSessionId)}
         onAction={handleSessionAction}
+        onClose={handleSessionMenuClose}
+        portalTarget={mobileOpen ? historyRef.current : null}
       />
       <SessionDeleteDialog
         session={sessions.find((item) => item.id === deleteTargetSessionId)}

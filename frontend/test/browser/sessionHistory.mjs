@@ -110,6 +110,7 @@ try {
   await screenshot("mobile.png");
   await page.keyboard.press("Escape");
   await history.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.id === "mobile-history-btn");
   assert.equal(await focused(historyTrigger), true, "closing mobile history restores the trigger focus");
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);

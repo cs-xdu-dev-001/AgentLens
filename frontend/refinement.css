@@ -1376,6 +1376,30 @@ body {
   padding-right: 0 !important;
 }
 
+.sidebar-list[data-virtualized="true"] {
+  display: block !important;
+  overflow: hidden !important;
+}
+
+.session-history-virtual-list {
+  width: 100%;
+  min-height: 0;
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.session-history-virtual-list [data-session-row] {
+  width: 100%;
+  margin-block: 1px;
+}
+
+.session-history-virtual-heading {
+  margin-top: 2px;
+}
+
 .session-row {
   min-height: 36px;
   grid-template-columns: minmax(0, 1fr) 28px !important;
@@ -4554,9 +4578,10 @@ body.sidebar-collapsed .sidebar {
     display: grid !important;
     width: min(360px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
-    height: auto !important;
+    height: calc(100dvh - 16px) !important;
     max-height: calc(100dvh - 16px);
     min-height: 0;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     padding: 10px !important;
     border: 1px solid var(--control-border);
     border-radius: 16px;
@@ -4587,6 +4612,7 @@ body.sidebar-collapsed .sidebar {
   }
 
   .chat-history-shell.mobile-history-open .sidebar-list {
+    min-height: 0;
     overscroll-behavior: contain;
   }
 
