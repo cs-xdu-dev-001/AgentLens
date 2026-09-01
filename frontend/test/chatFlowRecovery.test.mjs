@@ -29,6 +29,23 @@ function sse(events) {
   });
 }
 
+function brokenSse(events, message = "socket closed") {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+        ),
+      );
+      setTimeout(() => controller.error(new Error(message)), 0);
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 async function until(predicate) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (predicate()) return;
@@ -131,6 +148,39 @@ test("restoring an interrupted checkpoint hydrates composer recovery without sta
     assert.equal(composer?.runId, "run-recovery");
     assert.deepEqual(composer?.recoveryActions, ["continue", "retry"]);
     assert.deepEqual(writes, []);
+  });
+});
+
+test("exhausted stream recovery preserves the run and advertises a direct continuation", async () => {
+  const activeRun = { ...interruptedRun, status: "running", failure: null };
+  let eventStreams = 0;
+  await withFlow(async ({ flow, events, runs, state }) => {
+    await flow.submitChat({ question: "继续检查工作区" });
+    const composer = events
+      .filter(event => event.type === "knowflow:react-agent-composer-state")
+      .at(-1)?.detail;
+    assert.equal(composer?.mode, "failed");
+    assert.equal(composer?.label, "连接已中断");
+    assert.equal(composer?.failureCode, "reconnect_failed");
+    assert.deepEqual(composer?.recoveryActions, ["continue"]);
+    assert.equal(composer?.runId, activeRun.id);
+    assert.equal(runs.at(-1)?.run?.status, "interrupted");
+    assert.equal(state.activeRunId, activeRun.id);
+    assert.equal(eventStreams, 6);
+  }, {
+    run: activeRun,
+    fetchHandler: (path) => {
+      if (path === "/api/chat/stream") {
+        return brokenSse([
+          { type: "run_started", sequence: 1, runId: activeRun.id, run: activeRun },
+        ]);
+      }
+      if (path.includes("/events")) {
+        eventStreams += 1;
+        return brokenSse([]);
+      }
+      return null;
+    },
   });
 });
 

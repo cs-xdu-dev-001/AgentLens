@@ -1467,6 +1467,11 @@ export function ChatComposerForm() {
             actionable: false,
           }
         : idleAgentState;
+  const directRecoveryAvailable = Boolean(visibleAgentState.mode === "failed"
+    && visibleAgentState.failureCode === "reconnect_failed"
+    && visibleAgentState.recoveryActions?.includes("continue")
+    && visibleAgentState.runId
+    && visibleAgentState.messageId);
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
       {commandHelpOpen ? (
@@ -1618,8 +1623,15 @@ export function ChatComposerForm() {
             <span>{visibleAgentState.detail}</span>
           </div>
           {visibleAgentState.actionable ? (
-            <button type={"button"} onClick={handleOpenAgentWorkbench}>
-              {visibleAgentState.mode === "failed" ? "查看恢复操作" : "查看并处理"}
+            <button
+              type={"button"}
+              onClick={directRecoveryAvailable
+                ? () => handleRecoveryCommand("continue")
+                : handleOpenAgentWorkbench}
+            >
+              {directRecoveryAvailable
+                ? "继续恢复"
+                : visibleAgentState.mode === "failed" ? "查看恢复操作" : "查看并处理"}
             </button>
           ) : null}
         </div>

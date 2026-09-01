@@ -345,6 +345,9 @@ export function composerAgentStateFromProjection(projection = {}, context = {}) 
   }
 
   const runStatus = String(projection?.run?.status || "").toLowerCase();
+  const reconnectFailed = String(
+    projection?.error?.code || projection?.error?.errorCode || "",
+  ) === "reconnect_failed";
   if (
     projection?.error
     || projection?.terminal === "failed"
@@ -353,8 +356,12 @@ export function composerAgentStateFromProjection(projection = {}, context = {}) 
   ) {
     return {
       mode: "failed",
-      label: runStatus === "interrupted" ? "任务已中断" : "执行失败",
-      detail: "打开运行详情查看错误与恢复操作",
+      label: reconnectFailed
+        ? "连接已中断"
+        : runStatus === "interrupted" ? "任务已中断" : "执行失败",
+      detail: reconnectFailed
+        ? "任务仍在服务器上，继续恢复不会重复启动"
+        : "打开运行详情查看错误与恢复操作",
       actionable: true,
       ...recovery,
     };
@@ -1456,6 +1463,28 @@ export function createChatFlow({
           advanceQueue = Boolean(projection.terminal && !projection.paused);
         } catch (reconnectError) {
           cancelPendingApprovals();
+          const reconnectMessage = reconnectError.message
+            || error.message
+            || "Agent连接多次中断，请稍后继续恢复。";
+          // Keep the server-side run addressable after the automatic retries
+          // are exhausted. Marking only the composer as failed leaves the
+          // message capsule looking active, so its recovery controls never
+          // become available. The run itself is still resumable: the next
+          // `resume` action first reads the server snapshot and reconnects
+          // directly when the worker is already running.
+          const recoveryRun = {
+            ...(projection.run || {}),
+            id: projection.run?.id || state.activeRunId,
+            sessionId: projection.run?.sessionId || state.currentSessionId,
+            status: "interrupted",
+            lastSequence: projection.lastSequence,
+            failure: {
+              code: "reconnect_failed",
+              message: reconnectMessage,
+              retryable: true,
+            },
+            recoveryActions: ["continue"],
+          };
           if (projection.trace.length) {
             projection = {
               ...projection,
@@ -1463,19 +1492,31 @@ export function createChatFlow({
             };
             renderAgentTrace(answer, projection.trace);
           }
+          projection = {
+            ...projection,
+            run: recoveryRun,
+            terminal: "failed",
+            error: {
+              code: "reconnect_failed",
+              message: reconnectMessage,
+              retryable: true,
+            },
+            recoveryActions: ["continue"],
+          };
+          agentProjections.set(answer.messageId, projection);
+          renderAgentRun(answer, recoveryRun);
           setMessageContent(
             answer,
             "assistant",
-            `请求失败：${reconnectError.message || error.message || "未知错误"}`,
+            projection.answer || `连接中断：${reconnectMessage}`,
           );
-          toast("聊天请求失败", 4200, "error");
+          toast("连接中断，任务仍可继续恢复", 4200, "error");
           state.chatQueuePaused = Boolean(state.chatQueue.length);
           state.chatQueueBlockReason = state.chatQueuePaused ? "failed" : "";
-          publishAgentComposerState(composerAgentStateFromProjection({
-            ...projection,
-            terminal: "failed",
-            error: { code: "reconnect_failed", message: "reconnect_failed" },
-          }, { messageId: answer.messageId }));
+          publishAgentComposerState(composerAgentStateFromProjection(
+            projection,
+            { messageId: answer.messageId },
+          ));
         }
       } else {
         cancelPendingApprovals();

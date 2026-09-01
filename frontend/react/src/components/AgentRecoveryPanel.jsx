@@ -62,6 +62,10 @@ const failureLabels = {
     title: "任务被服务重启中断",
     summary: "运行记录已保存，可以从中断位置继续。",
   },
+  reconnect_failed: {
+    title: "连接已中断",
+    summary: "运行仍保存在服务器上，可以继续连接，不会重复启动。",
+  },
   langgraph_checkpoint_not_found: {
     title: "恢复检查点不可用",
     summary: "运行记录仍保留，可以重新运行本轮。",
