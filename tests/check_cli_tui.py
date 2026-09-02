@@ -23,6 +23,7 @@ from knowflow.tui.app import (  # noqa: E402
     PermissionRuleScreen,
     QuestionScreen,
     QueueManagerScreen,
+    SessionPickerScreen,
     WorkspaceUndoScreen,
 )
 from knowflow.tui.backend import TuiBackend  # noqa: E402
@@ -262,6 +263,59 @@ class FakeBackend:
                 "items": [{"memory": "用户偏好中文回答"}],
             },
         }
+
+
+class RestoreBackend(FakeBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.restore_calls: list[tuple[str, str, str]] = []
+        self.sessions = [
+            {
+                "runId": "run_recent",
+                "sessionId": "session_recent",
+                "title": "最近的任务",
+                "answer": "检查当前工作区",
+                "status": "completed",
+                "updatedAt": 1_730_000_000,
+                "cwd": self.workspace_cwd,
+            },
+            {
+                "runId": "run_docs",
+                "sessionId": "session_docs",
+                "title": "文档任务",
+                "answer": "更新README",
+                "status": "failed",
+                "updatedAt": 1_729_000_000,
+                "cwd": self.workspace_cwd,
+            },
+        ]
+
+    def list_sessions(self, limit=20, *, archived=False):
+        return list(self.sessions[:limit])
+
+    def restore_session(
+        self,
+        run_id,
+        event_sink,
+        *,
+        session_id="",
+        status="",
+    ):
+        self.restore_calls.append((str(run_id), str(session_id), str(status)))
+        return AgentExecution(
+            result={
+                "paused": False,
+                "runId": str(run_id),
+                "sessionId": str(session_id or "session_recent"),
+                "answer": "",
+                "messages": [
+                    {"role": "user", "content": "检查当前工作区"},
+                    {"role": "assistant", "content": "已检查完成"},
+                ],
+                "restored": True,
+                "status": str(status or "completed"),
+            }
+        )
 
 
 class ApprovalBackend(FakeBackend):
@@ -852,6 +906,75 @@ async def exercise_tui() -> None:
         await pilot.pause(0.05)
         assert backend.reset_count == 1
         assert not list(app.query(".assistant-message"))
+
+
+async def exercise_session_restore() -> None:
+    backend = RestoreBackend()
+    app = KnowFlowTui(
+        backend,
+        assume_yes=False,
+        startup_action="resume",
+    )
+    async with app.run_test(size=(100, 30)) as pilot:
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, SessionPickerScreen) and not app.screen._loading:
+                break
+        assert isinstance(app.screen, SessionPickerScreen)
+        picker = app.screen
+        assert picker.query_one("#session-picker-options", OptionList).option_count == 2
+        assert "最近的任务" in str(
+            picker.query_one("#session-picker-options", OptionList).options[0].prompt
+        )
+        await pilot.press("down")
+        await pilot.press("enter")
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not app._restore_in_progress:
+                break
+        assert backend.restore_calls == [
+            ("run_recent", "session_recent", "completed")
+        ]
+        assert any(
+            record[0] == "assistant" and "已检查完成" in record[1]
+            for record in app.query_one("#transcript")._records.values()
+        )
+        assert any(
+            "已打开会话" in str(item.render())
+            for item in app.query(".notice")
+        )
+        assert "已恢复" in str(app.query_one("#run-status").render())
+        composer = app.query_one(Composer)
+        composer.load_text("/resume 文档")
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, SessionPickerScreen) and not app.screen._loading:
+                break
+        assert isinstance(app.screen, SessionPickerScreen)
+        filtered = app.screen.query_one("#session-picker-options", OptionList)
+        assert filtered.option_count == 1
+        assert "文档任务" in str(filtered.options[0].prompt)
+        await pilot.press("escape")
+
+    continue_backend = RestoreBackend()
+    continue_app = KnowFlowTui(
+        continue_backend,
+        assume_yes=False,
+        startup_action="continue",
+    )
+    async with continue_app.run_test(size=(100, 30)) as pilot:
+        for _ in range(40):
+            await pilot.pause(0.05)
+            if not continue_app._restore_in_progress and continue_backend.restore_calls:
+                break
+        assert continue_backend.restore_calls == [
+            ("run_recent", "session_recent", "completed")
+        ]
+        assert any(
+            record[0] == "assistant" and "已检查完成" in record[1]
+            for record in continue_app.query_one("#transcript")._records.values()
+        )
 
 
 async def exercise_workspace_commands() -> None:
@@ -1838,6 +1961,7 @@ def main() -> None:
         os.environ["XDG_DATA_HOME"] = data_home
         exercise_workspace_diff_boundaries()
         asyncio.run(exercise_tui())
+        asyncio.run(exercise_session_restore())
         asyncio.run(exercise_workspace_commands())
         asyncio.run(exercise_remote_streaming())
         asyncio.run(exercise_live_status())

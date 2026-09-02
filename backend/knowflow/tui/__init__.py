@@ -32,7 +32,11 @@ def run_tui(
                 raise
     from .app import run_tui as run_textual_tui
 
-    run_textual_tui(backend, assume_yes=assume_yes)
+    run_textual_tui(
+        backend,
+        assume_yes=assume_yes,
+        startup_action=startup_action,
+    )
 
 
 __all__ = ["run_tui"]

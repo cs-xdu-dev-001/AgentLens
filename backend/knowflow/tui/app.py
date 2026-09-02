@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version
 import json
@@ -122,6 +123,37 @@ class CommandCatalogLoaded(Message):
         super().__init__()
 
 
+class SessionPickerLoaded(Message):
+    def __init__(
+        self,
+        sessions: list[dict[str, Any]],
+        error: str = "",
+    ) -> None:
+        self.sessions = sessions
+        self.error = error
+        super().__init__()
+
+
+class SessionRestored(Message):
+    def __init__(
+        self,
+        execution: AgentExecution,
+        selection: dict[str, Any],
+        events: list[dict[str, Any]],
+    ) -> None:
+        self.execution = execution
+        self.selection = selection
+        self.events = events
+        super().__init__()
+
+
+class SessionRestoreFailed(Message):
+    def __init__(self, selection: dict[str, Any], error: Exception) -> None:
+        self.selection = selection
+        self.error = error
+        super().__init__()
+
+
 class CommandBrowserScreen(ModalScreen[None]):
     BINDINGS = [
         Binding("left", "previous_tab", "上一类", show=False),
@@ -195,6 +227,216 @@ class CommandBrowserScreen(ModalScreen[None]):
     def action_next_tab(self) -> None:
         self.tab = (self.tab + 1) % 2
         self._render_tab()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class SessionPickerScreen(ModalScreen[dict[str, Any] | None]):
+    """Small, keyboard-first session switcher for the Textual fallback."""
+
+    BINDINGS = [
+        Binding("down", "focus_options", "选择会话", show=False, priority=True),
+        Binding("escape", "close", "关闭", show=False),
+    ]
+
+    STATUS_LABELS = {
+        "completed": "已完成",
+        "cancelled": "已取消",
+        "failed": "失败",
+        "interrupted": "已中断",
+        "running": "运行中",
+        "planning": "规划中",
+        "waiting": "等待中",
+        "waiting_approval": "待确认",
+        "waiting_input": "待回答",
+        "waiting_start": "准备中",
+        "cancelling": "停止中",
+    }
+
+    def __init__(self, backend: TuiBackend, *, query: str = "") -> None:
+        self.backend = backend
+        self.initial_query = str(query or "").strip()
+        self._search_query = self.initial_query.lower()
+        self.sessions: list[dict[str, Any]] = []
+        self.filtered: list[dict[str, Any]] = []
+        self._loading = True
+        self._selection_by_id: dict[str, dict[str, Any]] = {}
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        with Container(id="session-picker-dialog"):
+            yield Static("恢复会话", classes="session-picker-title")
+            yield Input(
+                value=self.initial_query,
+                placeholder="搜索标题、内容或状态…",
+                id="session-picker-search",
+            )
+            yield Static(id="session-picker-summary")
+            yield OptionList(id="session-picker-options", compact=True)
+            yield Static(
+                "输入关键词筛选 · ↓进入列表 · Enter打开 · Esc关闭",
+                classes="session-picker-footer",
+            )
+
+    def on_mount(self) -> None:
+        self._render_options()
+        self.query_one("#session-picker-search", Input).focus()
+        self.set_class(self.size.width < 64, "narrow")
+        self.load_sessions()
+
+    def on_resize(self, event: events.Resize) -> None:
+        self.set_class(event.size.width < 64, "narrow")
+
+    @staticmethod
+    def _format_time(value: Any) -> str:
+        try:
+            timestamp = float(value)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1_000
+            return datetime.fromtimestamp(timestamp).strftime("%m-%d %H:%M")
+        except (TypeError, ValueError, OverflowError, OSError):
+            text = str(value or "").replace("T", " ")
+            return text[:16]
+
+    @classmethod
+    def _status_label(cls, value: Any) -> str:
+        status = str(value or "completed").strip().lower()
+        return cls.STATUS_LABELS.get(status, status or "已完成")
+
+    def _render_options(self) -> None:
+        try:
+            summary = self.query_one("#session-picker-summary", Static)
+            options = self.query_one("#session-picker-options", OptionList)
+        except NoMatches:
+            return
+        query = self.query_one("#session-picker-search", Input).value.strip().lower()
+        self._search_query = query
+        if query:
+            self.filtered = [
+                session
+                for session in self.sessions
+                if query
+                in " ".join(
+                    str(session.get(key) or "")
+                    for key in ("title", "answer", "status", "cwd", "projectRoot")
+                ).lower()
+            ]
+        else:
+            self.filtered = list(self.sessions)
+        self._selection_by_id = {}
+        options.clear_options()
+        if self._loading:
+            summary.update("正在读取当前工作区的会话…")
+            options.add_option(Option("正在读取会话…", disabled=True))
+            return
+        if not self.filtered:
+            summary.update("没有匹配的历史会话")
+            options.add_option(
+                Option(
+                    "没有可恢复的会话；输入新的要求即可开始。",
+                    disabled=True,
+                )
+            )
+            return
+        summary.update(
+            f"{len(self.filtered)}个会话 · 当前工作区优先展示最近使用"
+        )
+        rendered: list[Option] = []
+        for index, session in enumerate(self.filtered):
+            run_id = str(
+                session.get("runId") or session.get("sessionId") or ""
+            ).strip()
+            if not run_id:
+                continue
+            option_id = f"session:{index}:{run_id}"
+            self._selection_by_id[option_id] = dict(session)
+            title = redact_public_detail(
+                session.get("title") or session.get("answer") or "未命名会话",
+                limit=140,
+            ) or "未命名会话"
+            answer = redact_public_detail(session.get("answer") or "", limit=120)
+            status = self._status_label(session.get("status"))
+            timestamp = self._format_time(session.get("updatedAt"))
+            pin = "★ " if session.get("pinned") else ""
+            detail = f"{status} · {timestamp}" if timestamp else status
+            if answer and answer != title:
+                detail += f" · {answer}"
+            rendered.append(
+                Option(
+                    Text.assemble(
+                        (f"{pin}{title}", "bold"),
+                        (f"  {detail}", "dim"),
+                    ),
+                    id=option_id,
+                )
+            )
+        if not rendered:
+            summary.update("没有可恢复的会话")
+            options.add_option(Option("没有可恢复的会话。", disabled=True))
+            return
+        options.add_options(rendered)
+        options.highlighted = 0
+
+    @work(exclusive=True, thread=True, group="session-picker")
+    def load_sessions(self) -> None:
+        try:
+            try:
+                sessions = self.backend.list_sessions(limit=100, archived=False)
+            except TypeError as exc:
+                if "archived" not in str(exc):
+                    raise
+                sessions = self.backend.list_sessions(limit=100)
+            values = [dict(item) for item in (sessions or []) if isinstance(item, dict)]
+            self.post_message(SessionPickerLoaded(values))
+        except Exception as exc:
+            self.post_message(SessionPickerLoaded([], redact_public_detail(exc, limit=240)))
+
+    def on_session_picker_loaded(self, message: SessionPickerLoaded) -> None:
+        if not self.is_mounted:
+            return
+        self._loading = False
+        self.sessions = message.sessions
+        if message.error:
+            self.query_one("#session-picker-summary", Static).update(
+                f"读取失败：{message.error}"
+            )
+            options = self.query_one("#session-picker-options", OptionList)
+            options.clear_options()
+            options.add_option(Option("无法读取历史会话，请关闭后重试。", disabled=True))
+            return
+        self._render_options()
+
+    @on(Input.Changed, "#session-picker-search")
+    def handle_query(self, event: Input.Changed) -> None:
+        self._search_query = event.value.strip().lower()
+        self._render_options()
+
+    @on(Input.Submitted, "#session-picker-search")
+    def handle_query_submitted(self, event: Input.Submitted) -> None:
+        selection = next(
+            (
+                session
+                for session in self.filtered
+                if str(session.get("runId") or session.get("sessionId") or "").strip()
+            ),
+            None,
+        )
+        if selection is not None:
+            self.dismiss(dict(selection))
+
+    @on(OptionList.OptionSelected, "#session-picker-options")
+    def handle_selected(self, event: OptionList.OptionSelected) -> None:
+        option_id = str(event.option.id or "")
+        selection = self._selection_by_id.get(option_id)
+        if selection is not None:
+            self.dismiss(dict(selection))
+
+    def action_focus_options(self) -> None:
+        options = self.query_one("#session-picker-options", OptionList)
+        if options.option_count and options.highlighted is None:
+            options.highlighted = 0
+        options.focus()
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -890,11 +1132,19 @@ class KnowFlowTui(App[None]):
         self,
         backend: TuiBackend,
         *,
-        assume_yes: bool,
+        assume_yes: bool = False,
+        startup_action: str = "",
     ) -> None:
         self.backend = backend
         self.assume_yes = assume_yes
+        normalized_startup_action = str(startup_action or "").strip().lower()
+        self.startup_action = (
+            normalized_startup_action
+            if normalized_startup_action in {"resume", "continue"}
+            else ""
+        )
         self.running = False
+        self._restore_in_progress = False
         self.streamed = False
         self.pending_execution: AgentExecution | None = None
         self.started_at: float | None = None
@@ -943,6 +1193,7 @@ class KnowFlowTui(App[None]):
             "/permissions": self._cmd_permissions,
             "/tasks": self._cmd_tasks,
             "/history": self._cmd_history,
+            "/resume": self._cmd_resume,
             "/continue": self._cmd_continue,
             "/retry": self._cmd_retry,
             "/update": self._cmd_update,
@@ -976,6 +1227,12 @@ class KnowFlowTui(App[None]):
         self.set_interval(0.25, self._tick_elapsed)
         self._apply_viewport_class(self.size.width)
         self._refresh_status_bar()
+        startup_action = self.startup_action
+        self.startup_action = ""
+        if startup_action == "resume":
+            self.call_after_refresh(self._open_session_picker)
+        elif startup_action == "continue":
+            await self._restore_latest_session()
 
     def on_resize(self, event: events.Resize) -> None:
         self._apply_viewport_class(event.size.width)
@@ -1076,6 +1333,9 @@ class KnowFlowTui(App[None]):
         display_question = composer.text.strip()
         question = composer.expanded_text().strip()
         if not display_question or not question:
+            return
+        if self._restore_in_progress:
+            self.notify("正在打开历史会话，请稍候。", severity="warning")
             return
         composer.remember(display_question)
         if not self.history_store.append(display_question):
@@ -1861,6 +2121,219 @@ class KnowFlowTui(App[None]):
         )
         return True
 
+    def _open_session_picker(self, query: str = "") -> None:
+        if self.running or self._restore_in_progress:
+            self.notify("当前任务尚未结束，暂时不能切换会话。", severity="warning")
+            return
+        if isinstance(self.screen, SessionPickerScreen):
+            self.screen.query_one("#session-picker-search", Input).focus()
+            return
+        self.push_screen(
+            SessionPickerScreen(self.backend, query=query),
+            self._on_session_picker_result,
+        )
+
+    def _on_session_picker_result(
+        self,
+        selection: dict[str, Any] | None,
+    ) -> None:
+        self.query_one(Composer).focus()
+        if selection is not None:
+            self._queue_session_restore(selection)
+
+    async def _cmd_resume(self, args: list[str]) -> bool:
+        if self.running or self._restore_in_progress:
+            self.notify("当前任务尚未结束，暂时不能切换会话。", severity="warning")
+            return True
+        self._open_session_picker(" ".join(args).strip())
+        return True
+
+    async def _restore_latest_session(self) -> None:
+        if self.running or self._restore_in_progress:
+            return
+        try:
+            try:
+                sessions = await asyncio.to_thread(
+                    self.backend.list_sessions,
+                    100,
+                    archived=False,
+                )
+            except TypeError as exc:
+                if "archived" not in str(exc):
+                    raise
+                sessions = await asyncio.to_thread(self.backend.list_sessions, 100)
+        except Exception as exc:
+            self._set_status("会话读取失败")
+            await self.query_one(TranscriptView).add_recovery(
+                "无法读取历史会话",
+                redact_public_detail(exc, limit=240),
+                "输入/resume重试，或直接输入新的任务。",
+                error=True,
+            )
+            self.query_one(Composer).focus()
+            return
+        selection = next(
+            (
+                dict(item)
+                for item in (sessions or [])
+                if isinstance(item, dict)
+                and str(item.get("runId") or item.get("sessionId") or "").strip()
+            ),
+            None,
+        )
+        if selection is None:
+            self._set_status("已就绪")
+            await self.query_one(TranscriptView).add_notice(
+                "当前工作区还没有可继续的历史会话。"
+            )
+            self.query_one(Composer).focus()
+            return
+        self._queue_session_restore(selection)
+
+    def _queue_session_restore(self, selection: dict[str, Any]) -> None:
+        if self.running or self._restore_in_progress:
+            self.notify("当前任务尚未结束，暂时不能切换会话。", severity="warning")
+            return
+        normalized = dict(selection)
+        run_id = str(
+            normalized.get("runId") or normalized.get("sessionId") or ""
+        ).strip()
+        if not run_id:
+            self.notify("所选会话缺少运行ID。", severity="error")
+            return
+        normalized["runId"] = run_id
+        self._restore_in_progress = True
+        self.running = False
+        self.pending_execution = None
+        self.current_run_id = run_id
+        self._stream_failure_reported = False
+        title = redact_public_detail(
+            normalized.get("title") or "历史会话",
+            limit=100,
+        ) or "历史会话"
+        self._set_status(f"正在打开：{title}")
+        self.restore_session_worker(normalized)
+
+    @work(exclusive=True, thread=True, group="session-restore")
+    def restore_session_worker(self, selection: dict[str, Any]) -> None:
+        events: list[dict[str, Any]] = []
+        run_id = str(selection.get("runId") or "").strip()
+        try:
+            try:
+                execution = self.backend.restore_session(
+                    run_id,
+                    events.append,
+                    session_id=str(selection.get("sessionId") or ""),
+                    status=str(selection.get("status") or ""),
+                )
+            except TypeError as exc:
+                if not any(
+                    marker in str(exc).lower()
+                    for marker in ("session_id", "status", "unexpected keyword")
+                ):
+                    raise
+                execution = self.backend.restore_session(run_id, events.append)
+            self.post_message(SessionRestored(execution, dict(selection), events))
+        except Exception as exc:
+            self.post_message(SessionRestoreFailed(dict(selection), exc))
+
+    async def on_session_restored(self, message: SessionRestored) -> None:
+        execution = message.execution
+        events = list(message.events or execution.events or [])
+        if events and not execution.events:
+            execution = AgentExecution(
+                result=dict(execution.result),
+                events=events,
+            )
+        self._restore_in_progress = False
+        self.pending_execution = None
+        self.current_approval_id = None
+        self.current_question_id = None
+        self._approval_in_progress = False
+        self._question_in_progress = False
+        self._stream_failure_reported = False
+        self.streamed = False
+        self.session.reset_session()
+        result = execution.result if isinstance(execution.result, dict) else {}
+        raw_messages = result.get("transcriptMessages") or result.get("messages") or []
+        transcript = self.query_one(TranscriptView)
+        await transcript.restore_messages(raw_messages)
+        last_user = next(
+            (
+                str(item.get("content") or "").strip()
+                for item in reversed(raw_messages if isinstance(raw_messages, list) else [])
+                if isinstance(item, dict)
+                and str(item.get("role") or "").lower() == "user"
+                and str(item.get("content") or "").strip()
+            ),
+            "",
+        )
+        if last_user:
+            self.session.last_prompt = QueuedPrompt(
+                text=last_user,
+                display_text=last_user,
+            )
+        try:
+            workspace_status = self.backend.workspace_status()
+        except Exception:
+            workspace_status = {}
+        if isinstance(workspace_status, dict):
+            self.workspace = str(
+                workspace_status.get("cwd")
+                or workspace_status.get("projectRoot")
+                or self.workspace
+            )
+        self.current_run_id = str(
+            result.get("runId")
+            or message.selection.get("runId")
+            or ""
+        ).strip() or None
+        title = redact_public_detail(
+            message.selection.get("title") or "历史会话",
+            limit=120,
+        ) or "历史会话"
+        await transcript.add_notice(f"已打开会话：{title}")
+        if events or execution.paused:
+            self.running = True
+            self.started_at = monotonic()
+            await transcript.begin_run()
+            await transcript.set_activity_expanded(self.activity_expanded)
+            self._set_status("恢复任务")
+            for event in events:
+                if isinstance(event, dict):
+                    await self.on_agent_event_message(AgentEventMessage(event))
+            if execution.paused:
+                self.on_turn_paused(TurnPaused(execution))
+            else:
+                await self.on_turn_completed(TurnCompleted(execution))
+            return
+        answer = str(result.get("answer") or "")
+        if answer:
+            await transcript.append_assistant(answer)
+            transcript.finalize_assistant()
+        self.running = False
+        self.started_at = None
+        self._set_status("已恢复")
+        self.query_one(Composer).focus()
+
+    async def on_session_restore_failed(
+        self,
+        message: SessionRestoreFailed,
+    ) -> None:
+        self._restore_in_progress = False
+        self.running = False
+        self.started_at = None
+        self.pending_execution = None
+        self.current_run_id = None
+        self._set_status("恢复失败")
+        await self.query_one(TranscriptView).add_recovery(
+            "会话未打开",
+            redact_public_detail(message.error, limit=300),
+            "输入/resume重试，或直接输入新的任务。",
+            error=True,
+        )
+        self.query_one(Composer).focus()
+
     async def _cmd_exit(self, args: list[str]) -> bool:
         self.exit()
         return True
@@ -2469,5 +2942,14 @@ class KnowFlowTui(App[None]):
         )
 
 
-def run_tui(backend: TuiBackend, *, assume_yes: bool = False) -> None:
-    KnowFlowTui(backend, assume_yes=assume_yes).run()
+def run_tui(
+    backend: TuiBackend,
+    *,
+    assume_yes: bool = False,
+    startup_action: str = "",
+) -> None:
+    KnowFlowTui(
+        backend,
+        assume_yes=assume_yes,
+        startup_action=startup_action,
+    ).run()

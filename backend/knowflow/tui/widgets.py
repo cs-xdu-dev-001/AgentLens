@@ -1166,6 +1166,48 @@ class TranscriptView(VerticalScroll):
         self._archive_summary = None
         self.archive_expanded = False
 
+    async def restore_messages(self, messages: Any) -> None:
+        """Hydrate a saved conversation without leaving a streaming block open.
+
+        Restored sessions can immediately emit new streaming events (for
+        example when a failed run is resumed). Rendering saved messages as
+        immutable blocks keeps those deltas from being appended to the last
+        persisted assistant response a second time.
+        """
+        await self.clear_transcript()
+        values = messages if isinstance(messages, (list, tuple)) else []
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            content = item.get("content")
+            if isinstance(content, list):
+                content = "\n".join(
+                    str(part.get("text") or "")
+                    for part in content
+                    if isinstance(part, dict) and part.get("text")
+                )
+            text = redact_public_multiline(content, limit=100_000)
+            if not text or role not in {"user", "assistant"}:
+                continue
+            if role == "user":
+                value = Text()
+                value.append("❯ ", style=f"bold {ACCENT}")
+                value.append(text, style="bold")
+                widget = Static(value, classes="message user-message")
+                await self.mount(widget)
+                await self._register_block(widget, "user", text)
+            else:
+                widget = Static(
+                    RichMarkdown(text),
+                    classes="message assistant-message",
+                )
+                await self.mount(widget)
+                await self._register_block(widget, "assistant", text)
+        self._assistant = None
+        self._assistant_text = ""
+        self.scroll_end(animate=False)
+
     async def set_activity_expanded(self, expanded: bool) -> None:
         if self._activity is not None:
             await self._activity.set_expanded(expanded)

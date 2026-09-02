@@ -83,6 +83,11 @@ COMMANDS = (
     SlashCommand("/memory", "查看最近长期记忆", immediate=True),
     SlashCommand("/history", "搜索或清空输入历史", argument_hint="[search <关键词> | clear]"),
     SlashCommand(
+        "/resume",
+        "打开当前工作区的历史会话",
+        argument_hint="[搜索关键词]",
+    ),
+    SlashCommand(
         "/diff",
         "审阅当前Agent运行产生的文件变更",
         argument_hint="[路径]",

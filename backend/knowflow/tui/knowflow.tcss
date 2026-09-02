@@ -342,6 +342,7 @@ Screen.narrow #status-bar {
 }
 
 CommandBrowserScreen,
+SessionPickerScreen,
 QueueManagerScreen,
 PermissionModeScreen,
 PermissionRuleScreen,
@@ -351,6 +352,7 @@ QuestionScreen {
 }
 
 #command-browser-dialog,
+#session-picker-dialog,
 #queue-manager-dialog,
 #permission-mode-dialog,
 #permission-rules-dialog,
@@ -381,6 +383,43 @@ QuestionScreen {
     height: 16;
     border: none;
     background: $surface;
+}
+
+.session-picker-title {
+    height: 1;
+    text-style: bold;
+}
+
+#session-picker-search {
+    width: 100%;
+    height: 3;
+    margin: 1 0;
+    border: none;
+    border-bottom: solid #555555;
+    background: $surface;
+}
+
+#session-picker-search:focus {
+    border-bottom: solid #d97757;
+}
+
+#session-picker-summary {
+    height: 1;
+    margin-bottom: 1;
+    color: $text-muted;
+}
+
+#session-picker-options {
+    width: 100%;
+    height: 16;
+    border: none;
+    background: $surface;
+}
+
+#session-picker-options:focus > .option-list--option-highlighted {
+    color: $background;
+    background: #d97757;
+    text-style: bold;
 }
 
 .queue-manager-title {
@@ -445,13 +484,15 @@ QuestionScreen {
 
 .permission-footer,
 .queue-manager-footer,
-.command-browser-footer {
+.command-browser-footer,
+.session-picker-footer {
     height: 1;
     margin-top: 1;
     color: $text-muted;
 }
 
 Screen.narrow #command-browser-dialog,
+Screen.narrow #session-picker-dialog,
 Screen.narrow #queue-manager-dialog,
 Screen.narrow #permission-mode-dialog,
 Screen.narrow #permission-rules-dialog,
@@ -461,6 +502,7 @@ Screen.narrow #question-dialog {
 }
 
 Screen.narrow #command-browser-options,
+Screen.narrow #session-picker-options,
 Screen.narrow #queue-manager-options,
 Screen.narrow #permission-mode-options,
 Screen.narrow #permission-rule-options {
@@ -468,6 +510,10 @@ Screen.narrow #permission-rule-options {
 }
 
 Screen.narrow .queue-manager-footer {
+    height: auto;
+}
+
+Screen.narrow .session-picker-footer {
     height: auto;
 }
 
