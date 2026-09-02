@@ -852,7 +852,7 @@ export function ChatEvidenceDrawer() {
             artifacts={artifacts}
             messageId={messageId}
             runId={run?.id || run?.runId}
-            runStatus={run?.status}
+            runStatus={String(run?.runSummary?.status || run?.status || "").toLowerCase()}
             onChange={(nextArtifacts) => setRun((current) => (
               current ? { ...current, artifacts: nextArtifacts } : current
             ))}

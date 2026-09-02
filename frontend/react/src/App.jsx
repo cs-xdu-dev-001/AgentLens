@@ -141,6 +141,8 @@ function WorkbenchShell() {
     switching: false,
     usage: {},
   });
+  const [workbenchRun, setWorkbenchRun] = useState(null);
+  const [workbenchMessageId, setWorkbenchMessageId] = useState("");
   const pendingWorkbenchFocusRef = useRef(false);
   const drawerCollapsedRef = useRef(drawerCollapsed);
   const drawerFocusOriginRef = useRef(null);
@@ -221,6 +223,78 @@ function WorkbenchShell() {
       window.removeEventListener("knowflow:react-chat-queue-updated", handleQueue);
       window.removeEventListener("knowflow:react-command-usage-updated", handleCommandUsage);
       window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitch);
+    };
+  }, []);
+
+  useEffect(() => {
+    const runIdOf = (run) => String(run?.id || run?.runId || "");
+    let activeSessionId = "";
+    const updateRun = (nextRun, nextMessageId = "") => {
+      if (!nextRun || typeof nextRun !== "object") return;
+      setWorkbenchRun((current) => {
+        const currentId = runIdOf(current);
+        const nextId = runIdOf(nextRun);
+        if (currentId && nextId && currentId !== nextId) return nextRun;
+        const nextArtifacts = Array.isArray(nextRun.artifacts)
+          ? nextRun.artifacts
+          : current?.artifacts;
+        return {
+          ...(current || {}),
+          ...nextRun,
+          ...(nextArtifacts ? { artifacts: nextArtifacts } : {}),
+        };
+      });
+      if (nextMessageId) setWorkbenchMessageId(String(nextMessageId));
+    };
+    const handleRunUpdated = (event) => updateRun(event.detail?.run, event.detail?.messageId);
+    const handleTraceOpened = (event) => updateRun(event.detail?.run, event.detail?.messageId);
+    const handleWorkspaceOpened = (event) => {
+      updateRun(event.detail?.run, event.detail?.messageId);
+      setActivePage("workspace");
+    };
+    const handleArtifactsUpdated = (event) => {
+      const eventRunId = String(event.detail?.runId || "");
+      const eventMessageId = String(event.detail?.messageId || "");
+      setWorkbenchRun((current) => {
+        if (!current) return current;
+        const currentId = runIdOf(current);
+        if (eventRunId && currentId && eventRunId !== currentId) return current;
+        return {
+          ...current,
+          artifacts: Array.isArray(event.detail?.artifacts) ? event.detail.artifacts : [],
+        };
+      });
+      if (eventMessageId) setWorkbenchMessageId(eventMessageId);
+    };
+    const clearWorkbenchRun = () => {
+      setWorkbenchRun(null);
+      setWorkbenchMessageId("");
+    };
+    const handleActiveSession = (event) => {
+      const nextSessionId = String(event.detail?.sessionId || "");
+      if (activeSessionId && nextSessionId && activeSessionId !== nextSessionId) {
+        clearWorkbenchRun();
+      }
+      if (nextSessionId) activeSessionId = nextSessionId;
+    };
+    const handleSessionSwitch = (event) => {
+      if (event.detail?.status === "loading") clearWorkbenchRun();
+    };
+    window.addEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+    window.addEventListener("knowflow:react-agent-trace-open", handleTraceOpened);
+    window.addEventListener("knowflow:react-workspace-open", handleWorkspaceOpened);
+    window.addEventListener("knowflow:react-agent-artifacts-updated", handleArtifactsUpdated);
+    window.addEventListener("knowflow:react-active-session-updated", handleActiveSession);
+    window.addEventListener("knowflow:react-session-switch-state", handleSessionSwitch);
+    window.addEventListener("knowflow:react-messages-reset", clearWorkbenchRun);
+    return () => {
+      window.removeEventListener("knowflow:react-agent-run-updated", handleRunUpdated);
+      window.removeEventListener("knowflow:react-agent-trace-open", handleTraceOpened);
+      window.removeEventListener("knowflow:react-workspace-open", handleWorkspaceOpened);
+      window.removeEventListener("knowflow:react-agent-artifacts-updated", handleArtifactsUpdated);
+      window.removeEventListener("knowflow:react-active-session-updated", handleActiveSession);
+      window.removeEventListener("knowflow:react-session-switch-state", handleSessionSwitch);
+      window.removeEventListener("knowflow:react-messages-reset", clearWorkbenchRun);
     };
   }, []);
 
@@ -426,7 +500,16 @@ function WorkbenchShell() {
               <SkillsPage active={activePage === "skills"} />
             </DeferredPage>
             <DeferredPage active={activePage === "workspace"} visited={visitedPages.has("workspace")} page={"workspace"} label={"工作区"}>
-              <WorkbenchPage active={activePage === "workspace"} />
+              <WorkbenchPage
+                active={activePage === "workspace"}
+                run={workbenchRun}
+                messageId={workbenchMessageId}
+                onRunChange={setWorkbenchRun}
+                onClearRun={() => {
+                  setWorkbenchRun(null);
+                  setWorkbenchMessageId("");
+                }}
+              />
             </DeferredPage>
             <DeferredPage active={activePage === "memory"} visited={visitedPages.has("memory")} page={"memory"} label={"记忆"}>
               <MemoryPage active={activePage === "memory"} />

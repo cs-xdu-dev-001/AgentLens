@@ -4,6 +4,7 @@ import { safeAgentText } from "../controller/agentEvents.js";
 import { copyTextToClipboard } from "../controller/clipboard.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
+import { AgentArtifactList } from "./AgentArtifactList.jsx";
 
 
 function parentPath(path) {
@@ -26,7 +27,72 @@ function formatFileSize(value) {
 }
 
 
-export function WorkbenchPage({ active = false }) {
+const RUN_STATUS_LABELS = Object.freeze({
+  planning: "规划中",
+  running: "运行中",
+  waiting_approval: "等待确认",
+  waiting_input: "等待输入",
+  paused: "已暂停",
+  checkpoint: "已暂停",
+  completed: "已完成",
+  succeeded: "已完成",
+  success: "已完成",
+  failed: "失败",
+  error: "失败",
+  cancelled: "已取消",
+  canceled: "已取消",
+  interrupted: "已中断",
+});
+
+
+function runIdOf(run) {
+  return String(run?.id || run?.runId || "");
+}
+
+
+function runStatusOf(run) {
+  return String(run?.runSummary?.status || run?.status || "").trim().toLowerCase();
+}
+
+
+function runStatusClass(status) {
+  if (["completed", "succeeded", "success"].includes(status)) return "passed";
+  if (["failed", "error"].includes(status)) return "failed";
+  if (["cancelled", "canceled", "interrupted"].includes(status)) return "cancelled";
+  return "running";
+}
+
+
+function runGoalOf(run) {
+  const candidates = [
+    run?.goal,
+    run?.goalSummary,
+    run?.runSummary?.goalSummary,
+    run?.task,
+    run?.title,
+  ];
+  for (const candidate of candidates) {
+    const text = safeAgentText(candidate, 180);
+    if (text) return text;
+  }
+  return "当前Agent运行";
+}
+
+
+function runArtifactsOf(run) {
+  return Array.isArray(run?.artifacts)
+    ? run.artifacts.filter((artifact) => artifact?.artifactType !== "reference")
+    : [];
+}
+
+
+export function WorkbenchPage({
+  active = false,
+  run = null,
+  messageId = "",
+  onRunChange,
+  onClearRun,
+}) {
   const [status, setStatus] = useState(null);
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState([]);
@@ -38,6 +104,15 @@ export function WorkbenchPage({ active = false }) {
   const previewPanelRef = useRef(null);
   const previewTriggerRef = useRef(null);
   const previewRequestRef = useRef(0);
+  const [runCardExpanded, setRunCardExpanded] = useState(true);
+  const runId = runIdOf(run);
+  const runStatus = runStatusOf(run);
+  const runArtifacts = runArtifactsOf(run);
+  const hasRun = Boolean(runId);
+
+  useEffect(() => {
+    if (runId) setRunCardExpanded(true);
+  }, [runId]);
 
   const closePreview = useCallback((restoreFocus = true) => {
     previewRequestRef.current += 1;
@@ -73,6 +148,16 @@ export function WorkbenchPage({ active = false }) {
   useEffect(() => {
     if (active) load(path);
   }, [active]);
+
+  useEffect(() => {
+    const handleArtifactsUpdated = (event) => {
+      const eventRunId = String(event.detail?.runId || "");
+      if (eventRunId && runId && eventRunId !== runId) return;
+      if (active) void load(path);
+    };
+    window.addEventListener("knowflow:react-agent-artifacts-updated", handleArtifactsUpdated);
+    return () => window.removeEventListener("knowflow:react-agent-artifacts-updated", handleArtifactsUpdated);
+  }, [active, load, path, runId]);
 
   const navigateTo = (nextPath) => {
     closePreview(false);
@@ -146,6 +231,27 @@ export function WorkbenchPage({ active = false }) {
     }
   };
 
+  const handleRunArtifactChange = (nextArtifacts) => {
+    if (!run) return;
+    onRunChange?.({ ...run, artifacts: Array.isArray(nextArtifacts) ? nextArtifacts : [] });
+  };
+
+  const handleOpenRunInChat = () => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+      detail: { page: "chat" },
+    }));
+    window.dispatchEvent(new CustomEvent("knowflow:react-agent-trace-open", {
+      detail: {
+        messageId,
+        run,
+        activeTab: "artifacts",
+      },
+    }));
+    window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open", {
+      detail: { focus: true },
+    }));
+  };
+
   const crumbs = path.split("/").filter(Boolean);
   const projectInstructionPaths = Array.isArray(status?.projectInstructions?.sources)
     ? status.projectInstructions.sources
@@ -207,6 +313,49 @@ export function WorkbenchPage({ active = false }) {
             </div>
           </div>
         </section>
+
+        {hasRun ? (
+          <section
+            className={`agent-delivery-card workspace-run-card${runCardExpanded ? " is-expanded" : ""}`}
+            aria-label="当前运行产物"
+          >
+            <button
+              type="button"
+              onClick={() => setRunCardExpanded((value) => !value)}
+              aria-expanded={runCardExpanded}
+              aria-controls="workspace-run-card-body"
+            >
+              <svg className="agent-delivery-card-chevron" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M7 4l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="agent-delivery-card-copy">
+                <strong>当前运行</strong>
+                <span title={runGoalOf(run)}>{runGoalOf(run)}</span>
+              </span>
+              <span className="agent-delivery-card-diff" aria-label="运行产物数量">
+                {`${runArtifacts.length}个产物`}
+              </span>
+              <span className={`agent-delivery-card-status is-${runStatusClass(runStatus)}`} aria-live="polite">
+                {RUN_STATUS_LABELS[runStatus] || "运行"}
+              </span>
+            </button>
+            {runCardExpanded ? (
+              <div className="agent-delivery-card-body workspace-run-card-body" id="workspace-run-card-body">
+                <AgentArtifactList
+                  artifacts={runArtifacts}
+                  messageId={messageId}
+                  runId={runId}
+                  runStatus={runStatus}
+                  onChange={handleRunArtifactChange}
+                />
+                <div className="workspace-run-actions">
+                  <button type="button" onClick={handleOpenRunInChat}>在对话中打开</button>
+                  <button type="button" onClick={() => onClearRun?.()}>隐藏运行</button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <nav className="workspace-breadcrumb" aria-label="工作区路径">
           <button type="button" onClick={() => navigateTo("")}>工作区</button>

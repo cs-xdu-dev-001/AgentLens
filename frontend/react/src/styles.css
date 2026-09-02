@@ -10804,6 +10804,23 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   text-underline-offset: 3px;
 }
 
+.agent-delivery-card-workspace-open {
+  justify-self: start;
+  padding: 6px 9px;
+  border: 1px solid var(--control-border) !important;
+  border-radius: 8px;
+  background: var(--control-bg) !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
+}
+
+.agent-delivery-card-workspace-open:hover,
+.agent-delivery-card-workspace-open:focus-visible {
+  background: var(--control-bg-hover) !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
+}
+
 @media (max-width: 760px) {
   .agent-delivery-card > button {
     grid-template-columns: 16px minmax(0, 1fr) auto auto;

@@ -62,6 +62,18 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
     "trace",
     verificationTraceStepId(item, trace),
   );
+  const openWorkspace = () => {
+    const currentRun = { ...run, artifacts };
+    window.dispatchEvent(new CustomEvent("knowflow:react-workspace-open", {
+      detail: {
+        messageId,
+        run: currentRun,
+      },
+    }));
+    window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+      detail: { page: "workspace" },
+    }));
+  };
 
   return (
     <section className={`agent-delivery-card${expanded ? " is-expanded" : ""}`} aria-label={delivery.title}>
@@ -93,7 +105,7 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
               artifacts={artifacts}
               messageId={messageId}
               runId={run?.id || run?.runId}
-              runStatus={run?.status}
+              runStatus={runStatus}
               onChange={setArtifacts}
               compact
             />
@@ -141,6 +153,15 @@ export function AgentDeliveryCard({ messageId, run = null, trace = [], approvals
                   : () => openRunPanel("trace")}
             >
               {delivery.actionLabel}
+            </button>
+          ) : null}
+          {artifacts.length ? (
+            <button
+              className={"agent-delivery-card-open agent-delivery-card-workspace-open"}
+              type={"button"}
+              onClick={openWorkspace}
+            >
+              {"在工作区查看"}
             </button>
           ) : null}
         </div>
