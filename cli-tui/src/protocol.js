@@ -787,6 +787,7 @@ export class RuntimeClient extends EventEmitter {
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
+      cwd: String(this.config?.workspaceRoot ?? '').trim() || undefined,
     });
     const lines = createInterface({input: this.child.stdout});
     lines.on('line', line => {

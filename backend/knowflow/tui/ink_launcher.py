@@ -91,11 +91,16 @@ def run_ink_tui(
             "KNOWFLOW_CLI_VERSION": _installed_version(),
         }
     )
+    launch_options = {
+        "check": False,
+        "env": environment,
+    }
+    if workspace_root is not None:
+        launch_options["cwd"] = str(workspace_root)
     try:
         completed = subprocess.run(
             [node, str(entry)],
-            check=False,
-            env=environment,
+            **launch_options,
         )
     except OSError as exc:
         raise InkTuiUnavailable("无法启动Ink终端界面。") from exc

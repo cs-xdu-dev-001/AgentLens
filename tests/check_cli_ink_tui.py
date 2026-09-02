@@ -61,6 +61,45 @@ def check_launcher_single_run() -> None:
     assert calls[0] == ["node", "index.mjs"]
 
 
+def check_launcher_aligns_child_cwd() -> None:
+    original_run = ink_launcher.subprocess.run
+    original_which = ink_launcher.shutil.which
+    original_entry_path = ink_launcher._entry_path
+    original_node_major = ink_launcher._node_major
+    previous_allow = os.environ.get("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED")
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = [str(part) for part in command]
+        captured.update(kwargs)
+        return SimpleNamespace(returncode=0)
+
+    workspace_root = ROOT / "backend"
+    try:
+        os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = "1"
+        ink_launcher.subprocess.run = fake_run
+        ink_launcher.shutil.which = lambda _name: "node"
+        ink_launcher._entry_path = lambda: Path("index.mjs")
+        ink_launcher._node_major = lambda _node: 22
+        backend = SimpleNamespace(
+            remote_client=None,
+            local_agent=SimpleNamespace(workspace_root=workspace_root),
+        )
+        assert ink_launcher.run_ink_tui(backend) is True
+    finally:
+        ink_launcher.subprocess.run = original_run
+        ink_launcher.shutil.which = original_which
+        ink_launcher._entry_path = original_entry_path
+        ink_launcher._node_major = original_node_major
+        if previous_allow is None:
+            os.environ.pop("KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED", None)
+        else:
+            os.environ["KNOWFLOW_INK_TUI_ALLOW_UNSUPPORTED"] = previous_allow
+
+    assert captured["command"] == ["node", "index.mjs"]
+    assert captured["cwd"] == str(workspace_root)
+
+
 def check_auto_falls_back_after_ink_crash() -> None:
     # Patch the launcher module used by run_tui without invoking either UI.
     launcher = __import__("knowflow.tui.ink_launcher", fromlist=["run_ink_tui"])
@@ -558,6 +597,7 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 def main() -> None:
     check_launcher_single_run()
+    check_launcher_aligns_child_cwd()
     check_auto_falls_back_after_ink_crash()
     remote_a = SimpleNamespace(
         remote_client=SimpleNamespace(server="https://agent.example", token="session-a")
@@ -1162,12 +1202,17 @@ def main() -> None:
     assert "fullscreenEnabled={fullscreenEnabled}" in entry_source
     assert "mouseEnabled={mouseEnabled}" in entry_source
     assert "mouseEnabled />" not in entry_source
+    protocol_source = (ROOT / "cli-tui" / "src" / "protocol.js").read_text(
+        encoding="utf-8"
+    )
+    assert "cwd: String(this.config?.workspaceRoot ?? '').trim() || undefined" in protocol_source
     launcher_source = (ROOT / "backend" / "knowflow" / "tui" / "ink_launcher.py").read_text(
         encoding="utf-8"
     )
     assert '"workspaceRoot"' in launcher_source
     assert '"startupAction"' in launcher_source
     assert 'startup_action in {"resume", "continue"}' in launcher_source
+    assert 'launch_options["cwd"] = str(workspace_root)' in launcher_source
     assert "INK_CONFIGURE_EXIT_CODE" not in launcher_source
     assert '[sys.executable, "-m", "knowflow.cli", "configure"]' not in launcher_source
     assert "startupAction={String(config.startupAction || '')}" in entry_source
