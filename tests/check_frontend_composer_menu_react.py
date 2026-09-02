@@ -26,6 +26,8 @@ def main() -> None:
     require("frontend/react/src/components/ChatComposerForm.jsx", "composerMenuClassName", "React composer menu class")
     require("frontend/react/src/components/ChatComposerForm.jsx", "composerPlusClassName", "React composer plus class")
     require("frontend/react/src/components/ChatComposerForm.jsx", "knowflow:react-composer-menu-close", "React composer listens for close command")
+    require("frontend/react/src/components/ChatComposerForm.jsx", 'event.key === "Escape" && menuOpen', "Escape closes the open composer menu")
+    require("frontend/react/src/components/ChatComposerForm.jsx", "setMenuOpen(false)", "composer menu Escape close action")
     require("frontend/react/src/controller/knowflowController.js", "requestComposerMenuClose", "controller asks React to close composer menu")
 
     for needle, label in [

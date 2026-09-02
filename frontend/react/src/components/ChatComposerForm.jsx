@@ -1099,6 +1099,11 @@ export function ChatComposerForm() {
       }
       return;
     }
+    if (event.key === "Escape" && menuOpen) {
+      event.preventDefault();
+      setMenuOpen(false);
+      return;
+    }
     if (event.key === "Tab" && event.shiftKey) {
       event.preventDefault();
       closeSkillPicker();
