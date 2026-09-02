@@ -1,9 +1,11 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { AgentTraceStepDetail } from "./AgentTraceStepDetail.jsx";
 import {
   matchesFocusScope,
@@ -72,6 +74,7 @@ export function AgentTraceView({
   const [selectedId, setSelectedId] = useState("");
   const [focusedId, setFocusedId] = useState("");
   const treeRef = useRef(null);
+  const virtuosoRef = useRef(null);
   const userSelectedRef = useRef(false);
   const focusedIdRef = useRef(focusedId);
   const preferredIdRef = useRef("");
@@ -92,6 +95,43 @@ export function AgentTraceView({
   focusedIdRef.current = focusedId;
   preferredIdRef.current = preferredId;
   rowsRef.current = rows;
+
+  const focusRenderedStep = useCallback((stepId) => {
+    const normalizedId = safeText(stepId);
+    if (!normalizedId) return;
+    let attempts = 0;
+    const focus = () => {
+      const node = treeRef.current?.querySelector(
+        `[data-trace-step-id="${CSS.escape(normalizedId)}"]`,
+      );
+      if (node) {
+        node.focus();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 8) window.requestAnimationFrame(focus);
+    };
+    window.requestAnimationFrame(focus);
+  }, []);
+
+  const scrollAndFocusStep = useCallback((stepId) => {
+    const normalizedId = safeText(stepId);
+    if (!normalizedId) return;
+    const index = rowsRef.current.findIndex(
+      (step) => safeText(step.stepId) === normalizedId,
+    );
+    if (index < 0) return;
+    virtuosoRef.current?.scrollToIndex?.({
+      index,
+      align: index === 0
+        ? "start"
+        : index === rowsRef.current.length - 1
+          ? "end"
+          : "center",
+      behavior: "auto",
+    });
+    focusRenderedStep(normalizedId);
+  }, [focusRenderedStep]);
 
   useEffect(() => {
     if (!requestedId || !rows.some((step) => step.stepId === requestedId)) return;
@@ -133,15 +173,11 @@ export function AgentTraceView({
       if (!nextId) return;
       focusedIdRef.current = nextId;
       setFocusedId(nextId);
-      window.requestAnimationFrame(() => {
-        treeRef.current
-          ?.querySelector(`[data-trace-step-id="${CSS.escape(nextId)}"]`)
-          ?.focus();
-      });
+      scrollAndFocusStep(nextId);
     };
     window.addEventListener("knowflow:react-trace-focus", handleTraceFocus);
     return () => window.removeEventListener("knowflow:react-trace-focus", handleTraceFocus);
-  }, [focusScope]);
+  }, [focusScope, scrollAndFocusStep]);
 
   const currentStepId = (
     [...rows].reverse().find(
@@ -165,11 +201,7 @@ export function AgentTraceView({
     if (!stepId) return;
     focusedIdRef.current = stepId;
     setFocusedId(stepId);
-    window.requestAnimationFrame(() => {
-      treeRef.current
-        ?.querySelector(`[data-trace-step-id="${CSS.escape(stepId)}"]`)
-        ?.focus();
-    });
+    scrollAndFocusStep(stepId);
   };
 
   const handleStepKeyDown = (event, step) => {
@@ -233,87 +265,103 @@ export function AgentTraceView({
         role={"tree"}
         aria-label={"Agent运行步骤"}
       >
-        {rows.map((step) => {
-          const expanded = selectedId === step.stepId;
-          const detailId = `trace-detail-${safeText(step.stepId)}`;
-          return (
-            <div
-              className={[
-                "agent-trace-row",
-                expanded ? "expanded" : "",
-              ].filter(Boolean).join(" ")}
-              style={{ "--trace-depth": step.depth }}
-              role={"none"}
-              key={step.stepId}
-            >
-              <button
+        <Virtuoso
+          ref={virtuosoRef}
+          className={"agent-trace-virtual-list"}
+          data={rows}
+          data-trace-count={rows.length}
+          aria-label={"Agent运行步骤列表"}
+          role={"group"}
+          computeItemKey={(index, step) => safeText(step.stepId) || String(index)}
+          defaultItemHeight={72}
+          initialItemCount={Math.min(rows.length, 18)}
+          increaseViewportBy={{ top: 320, bottom: 320 }}
+          minOverscanItemCount={4}
+          skipAnimationFrameInResizeObserver={true}
+          style={{
+            height: `${Math.min(560, Math.max(128, rows.length * 72))}px`,
+          }}
+          itemContent={(index, step) => {
+            const expanded = selectedId === step.stepId;
+            const detailId = `trace-detail-${safeText(step.stepId)}`;
+            return (
+              <div
                 className={[
-                  "agent-trace-node",
-                  traceStatusClass(step.status),
-                  expanded ? "selected" : "",
+                  "agent-trace-row",
+                  expanded ? "expanded" : "",
                 ].filter(Boolean).join(" ")}
-                type={"button"}
-                role={"treeitem"}
-                aria-level={step.depth + 1}
-                aria-selected={focusedId === step.stepId}
-                data-trace-step-id={safeText(step.stepId)}
-                tabIndex={focusedId === step.stepId ? 0 : -1}
-                aria-current={
-                  step.stepId === currentStepId
-                    ? "step"
-                    : undefined
-                }
-                aria-expanded={expanded}
-                aria-controls={detailId}
-                onClick={() => toggleStep(step.stepId)}
-                onFocus={() => {
-                  focusedIdRef.current = step.stepId;
-                  setFocusedId(step.stepId);
-                  onFocusStepChange?.(step.stepId);
-                }}
-                onKeyDown={(event) => handleStepKeyDown(event, step)}
+                style={{ "--trace-depth": step.depth }}
+                role={"none"}
               >
-                <span
-                  className={"agent-trace-node-dot"}
-                  aria-hidden={"true"}
-                ></span>
-                <span
+                <button
                   className={[
-                    "agent-trace-kind",
-                    safeText(step.kind),
+                    "agent-trace-node",
+                    traceStatusClass(step.status),
+                    expanded ? "selected" : "",
                   ].filter(Boolean).join(" ")}
+                  type={"button"}
+                  role={"treeitem"}
+                  aria-level={step.depth + 1}
+                  aria-selected={focusedId === step.stepId}
+                  data-trace-step-id={safeText(step.stepId)}
+                  tabIndex={focusedId === step.stepId ? 0 : -1}
+                  aria-current={
+                    step.stepId === currentStepId
+                      ? "step"
+                      : undefined
+                  }
+                  aria-expanded={expanded}
+                  aria-controls={detailId}
+                  onClick={() => toggleStep(step.stepId)}
+                  onFocus={() => {
+                    focusedIdRef.current = step.stepId;
+                    setFocusedId(step.stepId);
+                    onFocusStepChange?.(step.stepId);
+                  }}
+                  onKeyDown={(event) => handleStepKeyDown(event, step)}
                 >
-                  {traceKindLabel(step.kind)}
-                </span>
-                <span className={"agent-trace-node-copy"}>
-                  <strong>{traceStepTitle(step)}</strong>
-                  <small>
-                    {displayName(step)}
-                    {" · "}
-                    {traceStatusLabel(step.status)}
-                  </small>
-                </span>
-                <span className={"agent-trace-node-time"}>
-                  {traceDurationLabel(step.durationMs)}
-                </span>
-                <span
-                  className={"agent-trace-node-chevron"}
-                  aria-hidden={"true"}
-                >
-                  {"⌄"}
-                </span>
-              </button>
-              {expanded ? (
-                <AgentTraceStepDetail
-                  id={detailId}
-                  step={step}
-                  messageId={messageId}
-                  run={run}
-                />
-              ) : null}
-            </div>
-          );
-        })}
+                  <span
+                    className={"agent-trace-node-dot"}
+                    aria-hidden={"true"}
+                  ></span>
+                  <span
+                    className={[
+                      "agent-trace-kind",
+                      safeText(step.kind),
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {traceKindLabel(step.kind)}
+                  </span>
+                  <span className={"agent-trace-node-copy"}>
+                    <strong>{traceStepTitle(step)}</strong>
+                    <small>
+                      {displayName(step)}
+                      {" · "}
+                      {traceStatusLabel(step.status)}
+                    </small>
+                  </span>
+                  <span className={"agent-trace-node-time"}>
+                    {traceDurationLabel(step.durationMs)}
+                  </span>
+                  <span
+                    className={"agent-trace-node-chevron"}
+                    aria-hidden={"true"}
+                  >
+                    {"⌄"}
+                  </span>
+                </button>
+                {expanded ? (
+                  <AgentTraceStepDetail
+                    id={detailId}
+                    step={step}
+                    messageId={messageId}
+                    run={run}
+                  />
+                ) : null}
+              </div>
+            );
+          }}
+        />
       </div>
     </div>
   );

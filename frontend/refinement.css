@@ -1982,11 +1982,28 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-trace-tree {
-  gap: 2px;
+  display: block;
+  min-height: 0;
+}
+
+.agent-trace-virtual-list {
+  width: 100%;
+  min-height: 128px;
+  max-height: 560px;
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  contain: layout paint;
 }
 
 .agent-trace-row {
   border-radius: var(--kf-radius-panel);
+}
+
+.agent-trace-virtual-list .agent-trace-row {
+  width: calc(100% - var(--trace-depth) * 18px);
 }
 
 .agent-trace-row.expanded {
@@ -2072,6 +2089,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   border-radius: 8px;
   background: var(--control-bg);
   font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .agent-trace-virtual-list {
+    max-height: 420px;
+  }
 }
 
 .agent-output-section {
