@@ -60,6 +60,10 @@ def main() -> None:
     assert "workspaceGitPresentation(status)" in page
     assert "workspaceApi.status()" in topbar
     assert "chat-workspace-toggle" in topbar
+    assert "workspaceError" in topbar
+    assert "工作区状态读取失败，请重试。" in topbar
+    assert "重试读取状态" in topbar
+    assert 'state: "error"' in topbar
     assert "隔离工作区" in topbar
     assert "knowflow:react-workspace-updated" in topbar
     assert "projectInstructions" in topbar and "份项目指令" in topbar

@@ -7867,6 +7867,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--danger) !important;
 }
 
+#page-chat .chat-workspace-toggle.is-error {
+  color: var(--danger) !important;
+}
+
 #page-chat .chat-run-dot {
   width: 7px;
   height: 7px;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
@@ -31,8 +31,15 @@ function runHeaderState(run) {
   };
 }
 
-export function workspaceHeaderState(status, loading = false) {
+export function workspaceHeaderState(status, loading = false, error = "") {
   if (loading) return { label: "工作区", state: "loading" };
+  if (error) {
+    return {
+      label: "工作区状态异常",
+      state: "error",
+      title: error,
+    };
+  }
   if (!status?.enabled) return { label: "工作区关闭", state: "disabled" };
   const itemCount = Math.max(0, Number(status.itemCount) || 0);
   const instructionSources = Array.isArray(status.projectInstructions?.sources)
@@ -68,24 +75,32 @@ export function ChatTopbar({ drawerCollapsed = true }) {
   const [runHeader, setRunHeader] = useState(() => runHeaderState(null));
   const [workspaceStatus, setWorkspaceStatus] = useState(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const workspaceReloadRef = useRef(() => {});
 
   useEffect(() => {
     let active = true;
-    const loadWorkspace = async () => {
+    const loadWorkspace = async ({ showLoading = false } = {}) => {
+      if (active && showLoading) setWorkspaceLoading(true);
       try {
         const status = await workspaceApi.status();
-        if (active) setWorkspaceStatus(status);
+        if (active) {
+          setWorkspaceStatus(status);
+          setWorkspaceError("");
+        }
       } catch {
-        if (active) setWorkspaceStatus(null);
+        if (active) setWorkspaceError("工作区状态读取失败，请重试。");
       } finally {
         if (active) setWorkspaceLoading(false);
       }
     };
+    workspaceReloadRef.current = () => void loadWorkspace({ showLoading: true });
     const handleWorkspaceUpdated = () => void loadWorkspace();
-    void loadWorkspace();
+    void loadWorkspace({ showLoading: true });
     window.addEventListener("knowflow:react-workspace-updated", handleWorkspaceUpdated);
     return () => {
       active = false;
+      workspaceReloadRef.current = () => {};
       window.removeEventListener("knowflow:react-workspace-updated", handleWorkspaceUpdated);
     };
   }, []);
@@ -140,8 +155,15 @@ export function ChatTopbar({ drawerCollapsed = true }) {
   const handleWorkspaceOpen = () => window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
     detail: { page: "workspace" },
   }));
+  const handleWorkspaceRetry = () => {
+    workspaceReloadRef.current();
+  };
   const runLabel = RUN_LABELS[runHeader.state] || RUN_LABELS.idle;
-  const workspaceHeader = workspaceHeaderState(workspaceStatus, workspaceLoading);
+  const workspaceHeader = workspaceHeaderState(
+    workspaceStatus,
+    workspaceLoading,
+    workspaceError,
+  );
   const runAccessibleLabel = [runLabel, runHeader.progress, "Alt+T打开运行详情"]
     .filter(Boolean)
     .join("，");
@@ -158,9 +180,11 @@ export function ChatTopbar({ drawerCollapsed = true }) {
         <button
           className={`chat-workspace-toggle is-${workspaceHeader.state}`}
           type={"button"}
-          aria-label={`${workspaceHeader.label}，打开工作区`}
-          title={`${workspaceHeader.label}。${workspaceHeader.title || ""}。仅当前用户可见（打开工作区）`}
-          onClick={handleWorkspaceOpen}
+          aria-label={workspaceError
+            ? `${workspaceHeader.label}，重试`
+            : `${workspaceHeader.label}，打开工作区`}
+          title={`${workspaceHeader.label}。${workspaceHeader.title || ""}。${workspaceError ? "重试读取状态" : "仅当前用户可见（打开工作区）"}`}
+          onClick={workspaceError ? handleWorkspaceRetry : handleWorkspaceOpen}
         >
           <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
             <path d={"M2.8 5.4h5l1.4 1.7h8v8.2H2.8z"} />
