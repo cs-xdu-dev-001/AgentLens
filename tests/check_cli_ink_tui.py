@@ -24,6 +24,7 @@ from knowflow.tui.ink_bridge import (  # noqa: E402
     _history_scope,
 )
 from knowflow.tui import ink_launcher  # noqa: E402
+from knowflow.tui import run_tui  # noqa: E402
 
 
 def check_launcher_single_run() -> None:
@@ -58,6 +59,41 @@ def check_launcher_single_run() -> None:
 
     assert len(calls) == 1
     assert calls[0] == ["node", "index.mjs"]
+
+
+def check_auto_falls_back_after_ink_crash() -> None:
+    # Patch the launcher module used by run_tui without invoking either UI.
+    launcher = __import__("knowflow.tui.ink_launcher", fromlist=["run_ink_tui"])
+    original_launcher = launcher.run_ink_tui
+    original_textual = __import__("knowflow.tui.app", fromlist=["run_tui"])
+    original_textual_run = original_textual.run_tui
+    previous_mode = os.environ.get("KNOWFLOW_TUI")
+    fallback_calls = []
+
+    def crash(*_args, **_kwargs):
+        raise launcher.InkTuiLaunchError("ink crashed")
+
+    try:
+        os.environ["KNOWFLOW_TUI"] = "auto"
+        launcher.run_ink_tui = crash
+        original_textual.run_tui = lambda *_args, **kwargs: fallback_calls.append(kwargs)
+        run_tui(SimpleNamespace())
+        assert len(fallback_calls) == 1
+
+        os.environ["KNOWFLOW_TUI"] = "ink"
+        try:
+            run_tui(SimpleNamespace())
+        except launcher.InkTuiLaunchError:
+            pass
+        else:
+            raise AssertionError("explicit Ink mode must surface launch failures")
+    finally:
+        launcher.run_ink_tui = original_launcher
+        original_textual.run_tui = original_textual_run
+        if previous_mode is None:
+            os.environ.pop("KNOWFLOW_TUI", None)
+        else:
+            os.environ["KNOWFLOW_TUI"] = previous_mode
 
 
 class FakeBackend:
@@ -522,6 +558,7 @@ def wait_for(output: StringIO, event_type: str) -> list[dict]:
 
 def main() -> None:
     check_launcher_single_run()
+    check_auto_falls_back_after_ink_crash()
     remote_a = SimpleNamespace(
         remote_client=SimpleNamespace(server="https://agent.example", token="session-a")
     )

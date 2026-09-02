@@ -197,6 +197,7 @@ export function bindReactControllerEvents({
       chatModelConfigId: detail.chatModelConfigId ?? null,
       approvalId: detail.approvalId || "",
       approvalMessageId: detail.messageId ?? null,
+      skipIfCurrentSession: true,
     })
       .then((opened) => {
         if (!opened) return;

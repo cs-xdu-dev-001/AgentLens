@@ -14,6 +14,12 @@ class InkTuiUnavailable(RuntimeError):
     pass
 
 
+class InkTuiLaunchError(InkTuiUnavailable):
+    """The Ink bundle was found but could not stay running."""
+
+    pass
+
+
 def _node_major(node: str) -> int:
     try:
         result = subprocess.run(
@@ -94,7 +100,9 @@ def run_ink_tui(
     except OSError as exc:
         raise InkTuiUnavailable("无法启动Ink终端界面。") from exc
     if completed.returncode not in {0, 130}:
-        raise RuntimeError(f"Ink终端界面异常退出（{completed.returncode}）。")
+        raise InkTuiLaunchError(
+            f"Ink终端界面异常退出（{completed.returncode}）。"
+        )
     return True
 
 

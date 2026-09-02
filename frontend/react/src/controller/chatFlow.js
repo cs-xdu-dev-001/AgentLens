@@ -886,16 +886,26 @@ export function createChatFlow({
     if (!ownerUserId || ownerUserId !== String(state.currentUser?.id ?? "")) {
       return false;
     }
-    sessionSwitchController?.abort();
-    const controller = new AbortController();
-    sessionSwitchController = controller;
+    const focusApprovalId = String(options.approvalId || "").trim();
+    const focusMessageId = options.approvalMessageId ?? null;
     const switchDetail = {
       sessionId: nextSessionId,
       title: String(options.title || "").trim() || "任务",
       chatModelConfigId: options.chatModelConfigId ?? null,
     };
-    const focusApprovalId = String(options.approvalId || "").trim();
-    const focusMessageId = options.approvalMessageId ?? null;
+    if (
+      options.skipIfCurrentSession
+      &&
+      nextSessionId === String(state.currentSessionId || "").trim()
+      && !focusApprovalId
+    ) {
+      switchPage("chat");
+      publishSessionSwitch("success", switchDetail);
+      return true;
+    }
+    sessionSwitchController?.abort();
+    const controller = new AbortController();
+    sessionSwitchController = controller;
     publishSessionSwitch("loading", switchDetail);
     switchPage("chat");
     let messages;
