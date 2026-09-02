@@ -8656,20 +8656,18 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 /* Auth surface final polish: quiet product login, no placeholder controls. */
 .auth-screen {
-  background:
-    linear-gradient(135deg, rgba(232, 236, 243, 0.86), rgba(247, 248, 250, 0.96) 42%, rgba(240, 244, 247, 0.9)),
-    #f5f6f7 !important;
+  background: var(--workspace-bg) !important;
 }
 
 .auth-card {
   width: min(432px, calc(100vw - 40px)) !important;
   gap: 16px !important;
   padding: 28px !important;
-  border-radius: 22px !important;
-  border-color: rgba(17, 24, 39, 0.12) !important;
-  background: rgba(255, 255, 255, 0.88) !important;
-  box-shadow: 0 18px 54px rgba(17, 24, 39, 0.11) !important;
-  backdrop-filter: blur(14px) !important;
+  border-radius: 14px !important;
+  border-color: var(--control-border) !important;
+  background: var(--panel-bg) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
 }
 
 .auth-brand {
@@ -8679,7 +8677,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .auth-brand .eyebrow {
   margin-bottom: 5px !important;
-  color: #0f172a !important;
+  color: var(--muted) !important;
   font-size: 10px !important;
   letter-spacing: 0.12em !important;
 }
@@ -8694,18 +8692,19 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .auth-tabs {
   height: 48px !important;
   padding: 4px !important;
-  border-radius: 15px !important;
-  background: rgba(244, 244, 242, 0.92) !important;
+  border-radius: 10px !important;
+  background: var(--panel-bg-soft) !important;
 }
 
 .auth-tabs button {
   min-height: 38px !important;
-  border-radius: 12px !important;
+  border-radius: 8px !important;
   font-weight: 620 !important;
 }
 
 .auth-tabs button.active {
-  box-shadow: 0 7px 20px rgba(17, 24, 39, 0.08) !important;
+  border: 1px solid var(--control-border) !important;
+  box-shadow: none !important;
 }
 
 .auth-form {
@@ -8713,21 +8712,21 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .auth-form label {
-  color: #1f2937 !important;
+  color: var(--text-soft) !important;
   font-size: 13px !important;
   font-weight: 520 !important;
 }
 
 .auth-form input {
   height: 40px !important;
-  border-radius: 8px !important;
-  background: rgba(255, 255, 255, 0.72) !important;
+  border-radius: 10px !important;
+  background: var(--control-bg) !important;
 }
 
 .auth-form button[type="submit"],
 .auth-provider-button {
   min-height: 44px !important;
-  border-radius: 9px !important;
+  border-radius: 10px !important;
   font-weight: 680 !important;
 }
 
@@ -8737,12 +8736,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .auth-provider-button {
   gap: 9px !important;
-  border-color: rgba(17, 24, 39, 0.14) !important;
-  background: rgba(255, 255, 255, 0.74) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-bg) !important;
 }
 
 .auth-provider-button:hover:not(:disabled) {
-  background: #f4f4f2 !important;
+  background: var(--control-bg-hover) !important;
 }
 
 .auth-provider-button strong {
@@ -8770,14 +8769,13 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 :root[data-theme="mono-dark"] .auth-screen {
-  background:
-    linear-gradient(135deg, #101010, #171717 46%, #0d0d0d) !important;
+  background: var(--workspace-bg) !important;
 }
 
 :root[data-theme="mono-dark"] .auth-card {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: rgba(31, 31, 31, 0.88) !important;
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.32) !important;
+  border-color: var(--control-border) !important;
+  background: var(--panel-bg) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme="mono-dark"] .auth-brand .eyebrow,
@@ -8789,8 +8787,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 :root[data-theme="mono-dark"] .auth-tabs,
 :root[data-theme="mono-dark"] .auth-form input,
 :root[data-theme="mono-dark"] .auth-provider-button {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-bg) !important;
 }
 
 .sidebar #sidebar-toggle svg,
