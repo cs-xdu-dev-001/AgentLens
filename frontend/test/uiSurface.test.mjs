@@ -114,3 +114,11 @@ test("mobile navigation keeps the active page in view and exposes current semant
   assert.match(source, /prefers-reduced-motion/);
   assert.match(source, /aria-current={activePage === tool\.page \? "page" : undefined}/);
 });
+
+test("page entry motion stays opacity-only and honors reduced motion", async () => {
+  const css = await readCss("refinement.css");
+  assert.match(css, /\.main-stage > \.page\.active:not\(\.deferred-page-loading\)/);
+  assert.match(css, /@keyframes agentlens-page-enter[\s\S]*opacity:\s*0\.72[\s\S]*opacity:\s*1/);
+  assert.doesNotMatch(css, /agentlens-page-enter[\s\S]*transform:/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*agentlens-page-enter/);
+});
