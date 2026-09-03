@@ -4880,6 +4880,34 @@ body.sidebar-collapsed .sidebar {
     min-width: 44px !important;
     min-height: 44px !important;
   }
+
+  /* Keep the current task visible on narrow empty chats; the actions may
+     shrink, but the user's working context should not disappear. */
+  #page-chat.chat-empty .chat-topbar {
+    gap: 8px !important;
+    padding: 0 8px 0 12px !important;
+  }
+
+  #page-chat.chat-empty .chat-session-heading {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  #page-chat.chat-empty .chat-session-heading h1 {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px !important;
+    font-weight: 650 !important;
+  }
+
+  #page-chat.chat-empty .chat-topbar-actions {
+    flex: 0 0 auto !important;
+    margin-left: 0 !important;
+  }
 }
 
 /* Keep the four primary composer actions separated on very narrow phones.

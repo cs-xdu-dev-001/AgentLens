@@ -88,6 +88,11 @@ try {
   await page.setViewportSize({ width: 375, height: 812 });
   // Read the responsive layout after the workbench ResizeObserver has committed it.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(
+    await page.locator("#page-chat.chat-empty .chat-topbar h1").isVisible(),
+    true,
+    "the current task title stays visible in the mobile empty-state header",
+  );
   const sendBounds = await page.locator("#chat-submit-btn").boundingBox();
   assert.ok(sendBounds && sendBounds.y >= 0 && sendBounds.y + sendBounds.height <= 812, JSON.stringify(sendBounds));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
