@@ -1971,7 +1971,7 @@ export function createChatFlow({
           publishAgentComposerState({
             mode: "failed",
             label: "运行连接中断",
-            detail: "运行可能仍在继续，点击恢复将重新连接，不会重复启动",
+            detail: "网络恢复或回到前台后会自动尝试重连，也可手动继续，不会重复启动",
             actionable: true,
             messageId,
             runId: state.activeRunId || runId,

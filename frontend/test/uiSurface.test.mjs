@@ -71,6 +71,14 @@ test("chat page owns its empty-state class across navigation", async () => {
   assert.doesNotMatch(messages, /classList\.(toggle|remove)\("chat-empty"/);
 });
 
+test("interrupted runs resume once after connectivity or foreground recovery", async () => {
+  const source = await readSource("components/ChatComposerForm.jsx");
+  assert.match(source, /window\.addEventListener\("online", requestResume\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
+  assert.match(source, /autoResumeKeyRef\.current === recoveryKey/);
+  assert.match(source, /action: "resume"/);
+});
+
 test("responsive workbench respects short mobile viewports and reduced motion", async () => {
   const css = await readCss("refinement.css");
   assert.match(css, /min-height:\s*min\(360px,\s*calc\(100dvh\s*-\s*48px\)\)/);

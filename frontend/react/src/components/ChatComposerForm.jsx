@@ -136,6 +136,7 @@ export function ChatComposerForm() {
   const mentionsLoadedAtRef = useRef(0);
   const requestGenerationRef = useRef(0);
   const agentStateResetRef = useRef(null);
+  const autoResumeKeyRef = useRef("");
   const promptStashRef = useRef(null);
   const historySearchDraftRef = useRef(null);
   const composerHistoryRef = useRef(initialHistoryRef.current.entries);
@@ -1489,6 +1490,36 @@ export function ChatComposerForm() {
     && visibleAgentState.recoveryActions?.includes("continue")
     && visibleAgentState.runId
     && visibleAgentState.messageId);
+  useEffect(() => {
+    const recoveryKey = directRecoveryAvailable
+      ? `${visibleAgentState.runId}:${visibleAgentState.messageId}`
+      : "";
+    if (!recoveryKey) {
+      autoResumeKeyRef.current = "";
+      return undefined;
+    }
+    const requestResume = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      if (autoResumeKeyRef.current === recoveryKey) return;
+      autoResumeKeyRef.current = recoveryKey;
+      window.dispatchEvent(new CustomEvent("knowflow:react-agent-run-action", {
+        detail: {
+          action: "resume",
+          messageId: visibleAgentState.messageId,
+          runId: visibleAgentState.runId,
+        },
+      }));
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") requestResume();
+    };
+    window.addEventListener("online", requestResume);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("online", requestResume);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [directRecoveryAvailable, visibleAgentState.messageId, visibleAgentState.runId]);
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
       {commandHelpOpen ? (
