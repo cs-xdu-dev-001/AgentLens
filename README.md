@@ -51,6 +51,15 @@
 
 在项目目录直接运行`agentlens`会把当前目录作为工作区；首次使用该目录时只询问一次，确认后直接进入Chat。需要高级参数时仍可使用显式的`agentlens chat`。
 
+安装后，日常只需：
+
+```bash
+cd /path/to/your/project
+agentlens
+```
+
+不必先选模式、配置工作区或运行doctor。模型尚未配置也能进入Chat；首次发送消息前，在Ink界面输入`/configure`配置模型即可，Textual回退界面则使用终端命令`agentlens configure`。
+
 CLI默认是本地BYOK Agent：不需要AgentLens账号，使用你自己的模型API Key，并在当前目录运行LangGraph Agent。写入工具会先请求确认；安装Anthropic Sandbox Runtime后才会开放Shell工具。
 
 Linux安装Node.js 22+后，在项目目录直接输入`agentlens`即可确认一次当前目录并进入与Claude Code同技术路线的React/Ink Chat界面；Python/LangGraph仍负责模型、工具和权限，两层通过脱敏JSONL事件通信。显式的`agentlens chat`仍兼容，缺少Node.js 22时自动回退Textual，也可用`KNOWFLOW_TUI=textual agentlens`主动切换。脚本或管道场景使用`agentlens chat --plain`。
@@ -65,10 +74,6 @@ Ink界面支持工具/Skill/MCP动态命令、模糊补全、输入历史、任�
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # 新版Ink界面需要v22+
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
-agentlens configure
-agentlens doctor --cli
-agentlens
-agentlens update
 ```
 
 安装脚本只写入当前用户目录，不会自行提权。非Ubuntu/Debian系统请先用系统包管理器安装Python venv和Git。Node.js不满足22时CLI仍可用，但会回退旧Textual界面。

@@ -257,9 +257,10 @@ def main() -> None:
     assert launch_chat.call_args.kwargs["resume_session"] is True
     assert launch_chat.call_args.kwargs["continue_session"] is False
 
-    default_workspace = Path.cwd().resolve()
+    default_workspace = (ROOT.parent / "Another project 工作区").resolve()
     with (
         patch.object(cli.sys, "argv", ["agentlens"]),
+        patch.object(cli.Path, "cwd", return_value=default_workspace),
         patch.object(cli, "_confirm_default_workspace", return_value=True) as trust,
         patch.object(cli, "app") as launch_default,
     ):
@@ -271,6 +272,21 @@ def main() -> None:
     )
 
     with (
+        patch.object(cli.sys, "argv", ["agentlens"]),
+        patch.object(cli.Path, "cwd", return_value=default_workspace),
+        patch.object(cli, "_confirm_default_workspace", return_value=False),
+        patch.object(cli.console, "print"),
+        patch.object(cli, "app") as launch_cancelled,
+    ):
+        try:
+            cli.main()
+        except SystemExit as exc:
+            assert exc.code == 1
+        else:
+            raise AssertionError("A rejected workspace must exit before chat starts")
+    launch_cancelled.assert_not_called()
+
+    with (
         patch.object(cli.sys, "argv", ["agentlens", "--help"]),
         patch.object(cli, "app") as launch_with_args,
     ):
@@ -278,7 +294,8 @@ def main() -> None:
     launch_with_args.assert_called_once_with()
 
     class FakeConfigStore:
-        public = {}
+        def __init__(self):
+            self.public = {}
 
         def load_public(self):
             return dict(self.public)
@@ -305,7 +322,24 @@ def main() -> None:
     ):
         assert cli._confirm_default_workspace(default_workspace) is True
         assert cli._confirm_default_workspace(default_workspace) is True
-    assert confirm.call_count == 1
+    confirm.assert_called_once_with("继续进入Chat", default=True)
+    assert fake_store.public["trusted_workspaces"] == [
+        cli._workspace_trust_id(default_workspace)
+    ]
+
+    other_workspace = default_workspace / "another-directory"
+    with (
+        patch(
+            "knowflow.services.local_cli_runtime.LocalCliConfigStore",
+            return_value=fake_store,
+        ),
+        patch.object(cli.sys, "stdin", InteractiveStream()),
+        patch.object(cli.sys, "stdout", InteractiveStream()),
+        patch.object(cli.console, "print"),
+        patch.object(cli.typer, "confirm", return_value=False) as confirm,
+    ):
+        assert cli._confirm_default_workspace(other_workspace) is False
+    confirm.assert_called_once_with("继续进入Chat", default=True)
     assert fake_store.public["trusted_workspaces"] == [
         cli._workspace_trust_id(default_workspace)
     ]

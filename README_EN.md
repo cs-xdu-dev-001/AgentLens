@@ -49,9 +49,18 @@ Chat, RAG, tools, MCP, Skills, long-term memory, and task execution in one inter
 
 ## Linux CLI
 
+After installation, run `agentlens` from your project directory:
+
+```bash
+cd /path/to/your/project
+agentlens
+```
+
+The current directory becomes the workspace. Confirm trust once for each new directory, then go straight to Chat. No mode picker, workspace setup, or doctor check is required. You can enter Chat before configuring a model; use `/configure` in Ink before your first message, or the terminal command `agentlens configure` when using the Textual fallback. Explicit `agentlens chat` remains available for advanced options.
+
 The CLI is a local BYOK agent by default. It needs no AgentLens account, uses your model API key, and runs the LangGraph agent in the current directory. Write tools require confirmation. Shell access is enabled only when Anthropic Sandbox Runtime is installed.
 
-With Node.js 22+ installed on Linux, `agentlens chat` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `agentlens chat --plain` for scripts and pipelines.
+With Node.js 22+ installed on Linux, `agentlens` starts a React/Ink interface built on the same UI stack as Claude Code. Python and LangGraph still own models, tools, and permissions; the two layers exchange redacted JSONL events. The CLI falls back to Textual when Node.js 22 is unavailable. Set `KNOWFLOW_TUI=textual` to force that fallback, or use `agentlens chat --plain` for scripts and pipelines.
 
 The Ink interface provides dynamic tool/Skill/MCP commands, fuzzy completion, prompt history, queued tasks, streaming Markdown answers, approvals, and in-place tool progress. Type `/`, navigate with the arrow keys, accept with Tab or →, and dismiss with Esc. `Alt+P` or `/model` opens a searchable chat-model picker: remote mode switches among the existing Web model configurations, while local mode uses `agentlens configure` for its single active configuration. Run `/update` to update the CLI inside the TUI, then exit and restart `agentlens chat`; use `/version` to verify the CLI and runtime protocol versions. The terminal emits one attention signal when a task completes, fails, or needs input; `/notifications on|off|status` controls it for the current session. The Web app sends redacted desktop notifications only after the user enables the top-bar notification control and grants browser permission. `Shift+Tab` cycles Ask, Auto edit, and Full access; `/permissions` opens the inline picker. `Ctrl+R` searches persistent history for the current workspace, while `/history clear` clears only that workspace; `Ctrl+S` stashes or restores the current draft. `Shift+Enter` or `Ctrl+J` inserts a newline, `Ctrl+_` or `Ctrl+Z` undoes composer edits; `Ctrl+U/K/W` kills to the line start, line end, or previous word, and `Ctrl+Y` yanks it back. Pasted text over two lines or 800 characters collapses to a reference while retaining the full source through submission, queuing, and draft restore, keeping large logs out of the live input layout. The default main-screen mode delegates scrollback, wheel navigation, text selection, and copy to the terminal; `Ctrl+O` opens the full transcript and `Ctrl+E` expands tool details. Run `KNOWFLOW_CLI_FULLSCREEN=1 agentlens chat` for a fixed-composer fullscreen mode with `PgUp/PgDn` scrolling. To capture the wheel there, also set `KNOWFLOW_CLI_MOUSE=1`; some terminals then require Shift-drag for native selection. Shell progress shows recent output, elapsed time, lines, and bytes. While a turn is running, `Ctrl+C` terminates the SRT process group and stops the agent at a safe boundary; on an empty composer, press `Ctrl+C` twice to exit. The advanced Allow/Ask/Deny rule editor remains available through the Textual fallback during migration.
 
@@ -63,10 +72,6 @@ The model context is stored separately from the full transcript. `/context` show
 sudo apt-get update && sudo apt-get install -y python3-venv git
 node --version  # The Ink interface requires v22+
 curl -fsSL https://raw.githubusercontent.com/cs-xdu-dev-001/AgentLens/main/install.sh | sh
-agentlens configure
-agentlens doctor --cli
-agentlens chat
-agentlens update
 ```
 
 The installer only writes to the current user's directories and never elevates privileges. On distributions other than Ubuntu or Debian, install Python venv and Git with the system package manager first. The CLI remains usable without Node.js 22, but falls back to Textual.
