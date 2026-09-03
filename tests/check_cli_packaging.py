@@ -106,10 +106,24 @@ assert "twine==6.2.0" in workflow
 assert "id-token: write" in workflow
 assert "gh release create" in workflow
 assert "Build and test Ink CLI" in workflow
+assert 'PIP_DEFAULT_TIMEOUT: "60"' in workflow
+assert 'PIP_RETRIES: "8"' in workflow
+assert 'cache: "pip"' in workflow
 
 ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 assert "package_version=" in ci_workflow
 assert '"${package_version}"' in ci_workflow
 assert 'knowflow" --version)" = "0.5.0"' not in ci_workflow
+assert 'PIP_DEFAULT_TIMEOUT: "60"' in ci_workflow
+assert 'PIP_RETRIES: "8"' in ci_workflow
+assert 'cache: "pip"' in ci_workflow
+for start, end in (
+    ("- name: Install backend dependencies", "- name: Check CLI entry point"),
+    ("- name: Check CLI entry point", "- name: Build and test Ink CLI"),
+    ("- name: Build and test Ink CLI", "- name: Build and smoke-test CLI package"),
+):
+    block = ci_workflow.split(start, 1)[1].split(end, 1)[0]
+    assert "shell: bash" in block
+    assert "set -euo pipefail" in block
 
 print("cli packaging checks passed")
