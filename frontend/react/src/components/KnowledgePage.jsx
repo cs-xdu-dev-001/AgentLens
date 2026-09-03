@@ -52,11 +52,18 @@ export function KnowledgePage({ active = false }) {
         <KnowledgeHeader onOpenRetrievalDrawer={handleOpenRetrievalDrawer} onOpenKnowledgeBaseModal={handleOpenKnowledgeBaseModal} />
         <KnowledgeSummary />
         <div className={"knowledge-shell"}>
-          <KnowledgeRail onOpenRetrievalDrawer={handleOpenRetrievalDrawer} />
+          <KnowledgeRail
+            onOpenRetrievalDrawer={handleOpenRetrievalDrawer}
+            onCreateKnowledgeBase={handleOpenKnowledgeBaseModal}
+          />
           <div className={"knowledge-primary"}>
             <KnowledgeTabBar activeTab={activeTab} onTabChange={setActiveTab} />
             <div className={activeTab === "documents" ? "knowledge-tab-panel documents-tab-panel active" : "knowledge-tab-panel documents-tab-panel"} data-kb-tab-panel={"documents"}>
-              <KnowledgeDocuments uploadModalOpen={uploadModalOpen} setUploadModalOpen={setUploadModalOpen} />
+              <KnowledgeDocuments
+                uploadModalOpen={uploadModalOpen}
+                setUploadModalOpen={setUploadModalOpen}
+                onCreateKnowledgeBase={handleOpenKnowledgeBaseModal}
+              />
             </div>
             <div className={activeTab === "retrieval" ? "knowledge-tab-panel retrieval-tab-panel active" : "knowledge-tab-panel retrieval-tab-panel"} data-kb-tab-panel={"retrieval"}>
               <KnowledgeRetrievalDrawer active={activeTab === "retrieval"} panel={true} onClose={handleCloseRetrievalDrawer} />

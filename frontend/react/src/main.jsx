@@ -6,6 +6,7 @@ import { AuthProvider } from "./auth/AuthProvider.jsx";
 import { TooltipProvider } from "./components/Tooltip.jsx";
 import "./styles.css";
 import "./refinement.css";
+import "./template.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

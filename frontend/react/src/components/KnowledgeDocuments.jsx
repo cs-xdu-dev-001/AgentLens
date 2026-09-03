@@ -1,5 +1,6 @@
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Database, FileText, Layers3, Plus, UploadCloud } from "lucide-react";
 import { documentApi } from "../api/client.js";
 
 const documentSteps = [
@@ -195,7 +196,7 @@ function DocumentSteps({ document }) {
   );
 }
 
-export function KnowledgeDocuments({ uploadModalOpen = false, setUploadModalOpen = () => {} }) {
+export function KnowledgeDocuments({ uploadModalOpen = false, setUploadModalOpen = () => {}, onCreateKnowledgeBase = () => {} }) {
   const [busyDocumentId, setBusyDocumentId] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [documents, setDocuments] = useState([]);
@@ -576,7 +577,23 @@ export function KnowledgeDocuments({ uploadModalOpen = false, setUploadModalOpen
               );
             })
           ) : (
-            <p className={"empty-state"}>{"暂无文档"}</p>
+            <div className={selectedKnowledgeBaseId ? "document-empty" : "document-empty unconfigured"}>
+              <span className={"document-empty-icon"} aria-hidden={"true"}>
+                {selectedKnowledgeBaseId ? <FileText size={24} strokeWidth={1.6} /> : <Database size={24} strokeWidth={1.6} />}
+              </span>
+              <h3>{selectedKnowledgeBaseId ? "这个空间还没有文档" : "先创建一个知识库"}</h3>
+              <p>{selectedKnowledgeBaseId ? "上传资料后，Agent会自动解析、切分并建立可检索索引。" : "知识库是Agent检索和引用资料的工作空间。"}</p>
+              <button type={"button"} onClick={selectedKnowledgeBaseId ? handleOpenUploadModal : onCreateKnowledgeBase}>
+                {selectedKnowledgeBaseId ? <UploadCloud size={16} strokeWidth={1.8} aria-hidden={"true"} /> : <Plus size={16} strokeWidth={2} aria-hidden={"true"} />}
+                {selectedKnowledgeBaseId ? "添加第一份文档" : "创建知识库"}
+              </button>
+              {selectedKnowledgeBaseId ? (
+                <span className={"document-empty-hint"}>
+                  <Layers3 size={14} strokeWidth={1.7} aria-hidden={"true"} />
+                  {"支持PDF、Markdown、DOCX、CSV等常用格式"}
+                </span>
+              ) : null}
+            </div>
           )}
         </div>
       </section>

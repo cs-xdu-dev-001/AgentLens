@@ -1,3 +1,4 @@
+import { Database, FileText, Layers3, ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
@@ -17,18 +18,21 @@ export function KnowledgeSummary() {
   }, []);
   const selectedKnowledgeBase = useMemo(() => knowledgeBases.find((kb) => valueOf(kb.id) === valueOf(selectedKnowledgeBaseId)) || null, [knowledgeBases, selectedKnowledgeBaseId]);
   const embeddingModel = useMemo(() => models.find((model) => valueOf(model.id) === valueOf(selectedKnowledgeBase?.embeddingModelConfigId || selectedKnowledgeBase?.embedding_model_config_id)) || null, [models, selectedKnowledgeBase]);
-  if (!selectedKnowledgeBase) return null;
-
   return (
-    <section className={"knowledge-summary panel"} id={"kb-detail"}>
+    <section className={selectedKnowledgeBase ? "knowledge-summary panel" : "knowledge-summary panel is-empty"} id={"kb-detail"}>
       <div className={"knowledge-summary-name"}>
-        <span>{"当前知识库"}</span>
-        <strong>{selectedKnowledgeBase.name}</strong>
+        <span className={"knowledge-summary-icon"} aria-hidden={"true"}>
+          <Database size={16} strokeWidth={1.8} />
+        </span>
+        <div>
+          <span>{"当前空间"}</span>
+          <strong>{selectedKnowledgeBase?.name || "尚未创建知识库"}</strong>
+        </div>
       </div>
       <div className={"knowledge-metrics"}>
-        <div><span>{"文档"}</span><strong>{selectedKnowledgeBase.document_count || 0}</strong></div>
-        <div><span>{"分段"}</span><strong>{selectedKnowledgeBase.chunk_count || 0}</strong></div>
-        <div><span>{"向量模型"}</span><strong>{embeddingModel?.name || "未绑定"}</strong></div>
+        <div><FileText size={15} strokeWidth={1.8} aria-hidden={"true"} /><span>{"文档"}</span><strong>{selectedKnowledgeBase?.document_count || 0}</strong></div>
+        <div><Layers3 size={15} strokeWidth={1.8} aria-hidden={"true"} /><span>{"分段"}</span><strong>{selectedKnowledgeBase?.chunk_count || 0}</strong></div>
+        <div><ScanSearch size={15} strokeWidth={1.8} aria-hidden={"true"} /><span>{"向量模型"}</span><strong>{embeddingModel?.name || "未绑定"}</strong></div>
       </div>
     </section>
   );

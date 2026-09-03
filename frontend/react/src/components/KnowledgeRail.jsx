@@ -1,5 +1,6 @@
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Database, FileText, MoreHorizontal, Plus, Search } from "lucide-react";
 import { knowledgeApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 
@@ -30,7 +31,7 @@ function syncKnowledgeSelection(selectedKnowledgeBaseId) {
   );
 }
 
-export function KnowledgeRail({ onOpenRetrievalDrawer = () => {} }) {
+export function KnowledgeRail({ onOpenRetrievalDrawer = () => {}, onCreateKnowledgeBase = () => {} }) {
   const { authenticated } = useAuth();
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState(null);
@@ -146,13 +147,22 @@ export function KnowledgeRail({ onOpenRetrievalDrawer = () => {} }) {
   return (
     <aside className={"knowledge-rail"} ref={railRef}>
       <div className={"kb-list-header"}>
-        <div>
-          <span className={"section-label"}>{"知识库"}</span>
-          <h2>{"知识库"}</h2>
+        <div className={"kb-list-heading"}>
+          <span className={"kb-list-icon"} aria-hidden={"true"}>
+            <Database size={16} strokeWidth={1.9} />
+          </span>
+          <div>
+            <span className={"section-label"}>{"空间"}</span>
+            <h2>{"知识库"}</h2>
+          </div>
         </div>
+        <button className={"kb-create-button"} type={"button"} onClick={onCreateKnowledgeBase} aria-label={"新建知识库"}>
+          <Plus size={16} strokeWidth={2} aria-hidden={"true"} />
+        </button>
       </div>
       <label className={"kb-search-box"}>
-        <span>{"搜索知识库"}</span>
+        <Search size={15} strokeWidth={1.9} aria-hidden={"true"} />
+        <span className={"visually-hidden"}>{"搜索知识库"}</span>
         <input id={"kb-search-input"} type={"search"} placeholder={"按名称或描述搜索"} value={searchQuery} onChange={handleKnowledgeSearch} />
       </label>
       <div className={"list kb-card-list"} id={"kb-list"}>
@@ -163,16 +173,17 @@ export function KnowledgeRail({ onOpenRetrievalDrawer = () => {} }) {
             return (
               <article className={["kb-row", isActive ? "active" : "", isOpen ? "menu-open" : ""].filter(Boolean).join(" ")} data-kb-row={kb.id} key={kb.id}>
                 <button className={"kb-row-main"} type={"button"} onClick={() => handleKnowledgeBaseSelect(kb.id)}>
-                  <span className={"kb-row-title"}>{kb.name}</span>
-                  <span className={"kb-row-desc"}>{kb.description || "暂无描述"}</span>
-                  <span className={"kb-row-meta"}>{`${kb.document_count || 0} 个文档 - ${kb.chunk_count || 0} 个分段`}</span>
+                  <span className={"kb-row-icon"} aria-hidden={"true"}>
+                    <FileText size={15} strokeWidth={1.8} />
+                  </span>
+                  <span className={"kb-row-copy"}>
+                    <span className={"kb-row-title"}>{kb.name}</span>
+                    <span className={"kb-row-desc"}>{kb.description || "暂无描述"}</span>
+                    <span className={"kb-row-meta"}>{`${kb.document_count || 0} 个文档 · ${kb.chunk_count || 0} 个分段`}</span>
+                  </span>
                 </button>
                 <button className={"session-menu-button"} type={"button"} onClick={(event) => handleKnowledgeMenuToggle(event, kb.id)} aria-label={"知识库操作"}>
-                  <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-                    <circle cx={"6"} cy={"12"} r={"1.7"} />
-                    <circle cx={"12"} cy={"12"} r={"1.7"} />
-                    <circle cx={"18"} cy={"12"} r={"1.7"} />
-                  </svg>
+                  <MoreHorizontal size={17} strokeWidth={1.9} aria-hidden={"true"} />
                 </button>
                 <div className={"session-popover kb-popover"}>
                   <button type={"button"} onClick={() => handleKnowledgeBaseSelect(kb.id)}>
@@ -189,7 +200,19 @@ export function KnowledgeRail({ onOpenRetrievalDrawer = () => {} }) {
             );
           })
         ) : (
-          <p className={"empty-state"}>{"暂无知识库"}</p>
+          <div className={"kb-empty"}>
+            <span className={"kb-empty-icon"} aria-hidden={"true"}>
+              <Database size={20} strokeWidth={1.7} />
+            </span>
+            <strong>{keyword ? "没有匹配的空间" : "还没有知识库"}</strong>
+            <span>{keyword ? "换个关键词试试" : "创建一个空间，把文档交给Agent检索"}</span>
+            {!keyword ? (
+              <button type={"button"} onClick={onCreateKnowledgeBase}>
+                <Plus size={15} strokeWidth={2} aria-hidden={"true"} />
+                {"创建知识库"}
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
     </aside>
