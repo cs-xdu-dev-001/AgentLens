@@ -5757,3 +5757,106 @@ body.sidebar-collapsed .sidebar {
     animation: none !important;
   }
 }
+
+/* Chat chrome finish: keep the workspace context legible without letting a
+   long branch name push the run controls out of the mobile header. */
+#page-chat .chat-topbar-actions {
+  gap: 6px;
+}
+
+#page-chat .chat-workspace-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar-actions {
+    gap: 6px !important;
+  }
+
+  #page-chat .chat-notification-toggle {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  #page-chat .chat-workspace-toggle {
+    position: relative;
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px;
+    min-height: 44px;
+    justify-content: center;
+    gap: 0;
+    padding: 0 !important;
+  }
+
+  #page-chat .chat-workspace-label {
+    display: none;
+  }
+
+  #page-chat .chat-workspace-toggle::after {
+    position: absolute;
+    right: 7px;
+    bottom: 7px;
+    width: 7px;
+    height: 7px;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--muted);
+    content: "";
+  }
+
+  #page-chat .chat-workspace-toggle.is-ready::after,
+  #page-chat .chat-workspace-toggle.is-available::after {
+    background: var(--success);
+  }
+
+  #page-chat .chat-workspace-toggle.is-dirty::after,
+  #page-chat .chat-workspace-toggle.is-behind::after {
+    background: var(--warning);
+  }
+
+  #page-chat .chat-workspace-toggle.is-conflict::after,
+  #page-chat .chat-workspace-toggle.is-error::after {
+    background: var(--danger);
+  }
+
+  #page-chat .chat-run-toggle {
+    min-width: 52px !important;
+    height: 44px;
+    min-height: 44px;
+    padding-inline: 10px !important;
+  }
+
+  #page-chat #refresh-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat .chat-run-toggle {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    justify-content: center;
+    padding-inline: 0 !important;
+  }
+
+  #page-chat .chat-run-toggle > span[aria-live="polite"] {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .chat-workspace-toggle::after {
+    animation: none !important;
+  }
+}

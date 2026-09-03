@@ -175,6 +175,11 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
     workspaceLoading,
     workspaceError,
   );
+  const workspaceTooltip = [
+    workspaceHeader.label,
+    workspaceHeader.title,
+    workspaceError ? "点击重试读取状态" : "点击打开工作区",
+  ].filter(Boolean).join("。 ");
   const runAccessibleLabel = [runLabel, runHeader.progress, "Alt+T打开运行详情"]
     .filter(Boolean)
     .join("，");
@@ -188,22 +193,23 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
       </div>
       <div className={"chat-topbar-actions"}>
         <AgentNotificationToggle />
-        <button
-          className={`chat-workspace-toggle is-${workspaceHeader.state}`}
-          type={"button"}
-          aria-busy={workspaceLoading}
-          disabled={workspaceLoading && Boolean(workspaceError)}
-          aria-label={workspaceError
-            ? `${workspaceHeader.label}，重试`
-            : `${workspaceHeader.label}，打开工作区`}
-          title={`${workspaceHeader.label}。${workspaceHeader.title || ""}。${workspaceError ? "重试读取状态" : "仅当前用户可见（打开工作区）"}`}
-          onClick={workspaceError ? handleWorkspaceRetry : handleWorkspaceOpen}
-        >
-          <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
-            <path d={"M2.8 5.4h5l1.4 1.7h8v8.2H2.8z"} />
-          </svg>
-          <span>{workspaceHeader.label}</span>
-        </button>
+        <Tooltip content={workspaceTooltip} side={"bottom"}>
+          <button
+            className={`chat-workspace-toggle is-${workspaceHeader.state}`}
+            type={"button"}
+            aria-busy={workspaceLoading}
+            disabled={workspaceLoading && Boolean(workspaceError)}
+            aria-label={workspaceError
+              ? `${workspaceHeader.label}，重试`
+              : `${workspaceHeader.label}，打开工作区`}
+            onClick={workspaceError ? handleWorkspaceRetry : handleWorkspaceOpen}
+          >
+            <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
+              <path d={"M2.8 5.4h5l1.4 1.7h8v8.2H2.8z"} />
+            </svg>
+            <span className={"chat-workspace-label"}>{workspaceHeader.label}</span>
+          </button>
+        </Tooltip>
         <Tooltip content={drawerCollapsed ? "打开运行详情" : "收起运行详情"} shortcut={"Alt+T"} side={"bottom"}>
           <button
             className={`chat-run-toggle is-${runHeader.state}`}
