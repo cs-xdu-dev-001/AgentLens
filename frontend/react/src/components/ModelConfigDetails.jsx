@@ -1,3 +1,4 @@
+import { Plus, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { connectionResultPresentation, connectionResultStatus } from "./modelConnectionState.js";
 
@@ -100,14 +101,22 @@ export function ModelConfigDetails({
   onModelTest,
   onProtocolApply,
   onSetDefaultModel,
+  onCreate,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   if (!model) {
     return (
       <div className={"settings-detail-empty"}>
-        <strong>{"选择一个模型配置"}</strong>
-        <span>{"连接状态和配置详情会显示在这里。"}</span>
+        <span className={"settings-empty-icon"} aria-hidden={"true"}>
+          <SlidersHorizontal size={21} strokeWidth={1.8} />
+        </span>
+        <strong>{"还没有可用的模型"}</strong>
+        <span>{"新建配置后，这里会显示连接状态、协议和模型详情。"}</span>
+        <button type={"button"} onClick={onCreate}>
+          <Plus size={15} strokeWidth={2} aria-hidden={"true"} />
+          <span>{"新建模型配置"}</span>
+        </button>
       </div>
     );
   }

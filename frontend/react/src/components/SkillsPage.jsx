@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Filter, PackagePlus, RefreshCw, Search } from "lucide-react";
 import { skillApi } from "../api/client.js";
 import { SkillDetailDrawer } from "./SkillDetailDrawer.jsx";
 import { SkillInstallDialog } from "./SkillInstallDialog.jsx";
@@ -168,14 +169,29 @@ export function SkillsPage({ active = false }) {
     <section className={active ? "page active" : "page"} id={"page-skills"}>
       <div className={"workspace-page skills-workspace"}>
         <header className={"settings-header skills-header"}>
-          <h1>{"Skills"}</h1>
-          <button
-            className={"skills-primary-button"}
-            type={"button"}
-            onClick={() => setInstallOpen(true)}
-          >
-            {"安装Skill"}
-          </button>
+          <div className={"skills-heading"}>
+            <h1>{"Skills"}</h1>
+            <span className={"skills-count"}>{`${skills.length}个Skill`}</span>
+          </div>
+          <div className={"skills-header-actions"}>
+            <button
+              className={"skills-refresh-button"}
+              type={"button"}
+              aria-label={"刷新Skills"}
+              disabled={loading}
+              onClick={loadSkills}
+            >
+              <RefreshCw className={loading ? "is-spinning" : ""} size={16} aria-hidden={"true"} />
+            </button>
+            <button
+              className={"skills-primary-button"}
+              type={"button"}
+              onClick={() => setInstallOpen(true)}
+            >
+              <PackagePlus size={16} strokeWidth={1.9} aria-hidden={"true"} />
+              <span>{"安装Skill"}</span>
+            </button>
+          </div>
         </header>
 
         <div className={"skills-content"}>
@@ -202,15 +218,18 @@ export function SkillsPage({ active = false }) {
 
           <div className={"skills-toolbar"}>
             <label className={"skills-search"}>
+              <Search size={16} strokeWidth={1.8} aria-hidden={"true"} />
               <span className={"visually-hidden"}>{"搜索Skills"}</span>
               <input
                 value={query}
                 type={"search"}
+                aria-label={"搜索Skills"}
                 placeholder={"搜索名称、依赖或来源"}
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
             <label className={"skills-filter"}>
+              <Filter className={"skills-filter-icon"} size={16} strokeWidth={1.8} aria-hidden={"true"} />
               <span className={"visually-hidden"}>{"按状态筛选"}</span>
               <select
                 value={statusFilter}
@@ -223,6 +242,9 @@ export function SkillsPage({ active = false }) {
                 <option value={"unavailable"}>{"依赖缺失"}</option>
               </select>
             </label>
+            <span className={"skills-results-count"} aria-live={"polite"}>
+              {loading ? "正在读取" : `${filteredSkills.length}个结果`}
+            </span>
           </div>
 
           <div className={"skills-list"} aria-live={"polite"}>
@@ -237,11 +259,22 @@ export function SkillsPage({ active = false }) {
             ) : null}
             {!loading && !loadError && !filteredSkills.length ? (
               <div className={"skills-list-state"}>
+                <span className={"skills-empty-icon"} aria-hidden={"true"}>
+                  <PackagePlus size={22} strokeWidth={1.7} />
+                </span>
+                <strong>
                 {query || statusFilter !== "all"
                   ? "没有符合筛选条件的Skill。"
                   : activeTab === "built-in"
                     ? "暂无内置Skill。"
                     : "尚未安装个人Skill。"}
+                </strong>
+                {!query && statusFilter === "all" && activeTab === "installed" ? (
+                  <button type={"button"} onClick={() => setInstallOpen(true)}>
+                    <PackagePlus size={15} strokeWidth={1.9} aria-hidden={"true"} />
+                    <span>{"安装第一个Skill"}</span>
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {!loading && !loadError

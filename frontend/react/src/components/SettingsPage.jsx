@@ -415,6 +415,7 @@ export function SettingsPage({ active = false }) {
       <div className={"workspace-page settings-workspace"}>
         <SettingsHeader
           disabled={submitting}
+          modelCount={models.length}
           onCreate={handleCreateModel}
         />
         <div className={"settings-workspace-shell"}>
@@ -422,6 +423,7 @@ export function SettingsPage({ active = false }) {
             busyModelId={busyModelId}
             models={models}
             selectedModelId={selectedModelId}
+            onCreate={handleCreateModel}
             onModelSelect={handleModelSelect}
           />
           <section className={"settings-workspace-detail"} aria-label={"配置工作区"}>
@@ -448,6 +450,7 @@ export function SettingsPage({ active = false }) {
                 onModelTest={handleModelTest}
                 onProtocolApply={handleProtocolApply}
                 onSetDefaultModel={handleSetDefaultModel}
+                onCreate={handleCreateModel}
               />
             )}
           </section>
