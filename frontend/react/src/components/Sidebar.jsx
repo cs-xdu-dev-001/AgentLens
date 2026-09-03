@@ -8,6 +8,7 @@ import { sidebarTools } from "../data/navigation.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { AgentLensLogo } from "./AgentLensLogo.jsx";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { Tooltip } from "./Tooltip.jsx";
 
 const sessionGroupLabels = [
   ["pinned", "已置顶"],
@@ -1220,12 +1221,14 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
           <span>{"搜索任务"}</span>
           <input ref={searchInputRef} id={"sidebar-session-search"} placeholder={"搜索任务"} value={searchQuery} onChange={handleSessionSearch} />
         </label>
-        <button className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新任务"} title={"刷新任务"} aria-busy={loadingSessions} disabled={loadingSessions} onClick={loadSessions}>
-          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"M20 11a8 8 0 1 0-2.34 5.66"} />
-            <path d={"M20 5v6h-6"} />
-          </svg>
-        </button>
+        <Tooltip content={"刷新任务"} disabled={loadingSessions}>
+          <button className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新任务"} aria-busy={loadingSessions} disabled={loadingSessions} onClick={loadSessions}>
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M20 11a8 8 0 1 0-2.34 5.66"} />
+              <path d={"M20 5v6h-6"} />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
       <div
         className={"sidebar-list chat-history-list"}
@@ -1692,63 +1695,69 @@ export function Sidebar({
             {"Agent工作台"}
           </span>
         </div>
+        <Tooltip content={sidebarToggleLabel} side={"right"}>
+          <button
+            className={"icon-button"}
+            id={"sidebar-toggle"}
+            type={"button"}
+            aria-label={sidebarToggleLabel}
+            onClick={handleSidebarToggle}
+          >
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <rect x={"3.5"} y={"4"} width={"17"} height={"16"} rx={"3"} />
+              <path d={"M8.5 4v16"} />
+              <path d={collapsed ? "m13 9 3 3-3 3" : "m16 9-3 3 3 3"} />
+            </svg>
+          </button>
+        </Tooltip>
+      </div>
+      <Tooltip content={"新对话"} side={"right"}>
+        <button className={"new-chat-button"} id={"new-chat-btn"} type={"button"} aria-label={"新对话"} onClick={handleNewChat}>
+          <span aria-hidden={"true"}>
+            <svg viewBox={"0 0 24 24"} focusable={"false"}>
+              <path d={"M5 5h8M5 5v14h14v-8"} />
+              <path d={"m12 13 6.7-6.7a1.4 1.4 0 0 0-2-2L10 11l-.8 3Z"} />
+            </svg>
+          </span>
+          <strong>
+            {"新对话"}
+          </strong>
+        </button>
+      </Tooltip>
+      <Tooltip content={"打开会话历史"} side={"bottom"} disabled={mobileHistoryOpen}>
         <button
-          className={"icon-button"}
-          id={"sidebar-toggle"}
+          className={"mobile-history-trigger"}
+          id={"mobile-history-btn"}
           type={"button"}
-          title={sidebarToggleLabel}
-          aria-label={sidebarToggleLabel}
-          onClick={handleSidebarToggle}
+          aria-label={"打开会话历史"}
+          aria-controls={"session-history"}
+          aria-expanded={Boolean(mobileHistoryOpen)}
+          onClick={() => onMobileHistoryToggle?.()}
         >
           <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <rect x={"3.5"} y={"4"} width={"17"} height={"16"} rx={"3"} />
-            <path d={"M8.5 4v16"} />
-            <path d={collapsed ? "m13 9 3 3-3 3" : "m16 9-3 3 3 3"} />
+            <rect x={"4"} y={"5"} width={"16"} height={"14"} rx={"3"} />
+            <path d={"M8 9h8M8 13h5"} />
           </svg>
         </button>
-      </div>
-      <button className={"new-chat-button"} id={"new-chat-btn"} type={"button"} title={"新对话"} aria-label={"新对话"} onClick={handleNewChat}>
-        <span aria-hidden={"true"}>
-          <svg viewBox={"0 0 24 24"} focusable={"false"}>
-            <path d={"M5 5h8M5 5v14h14v-8"} />
-            <path d={"m12 13 6.7-6.7a1.4 1.4 0 0 0-2-2L10 11l-.8 3Z"} />
-          </svg>
-        </span>
-        <strong>
-          {"新对话"}
-        </strong>
-      </button>
-      <button
-        className={"mobile-history-trigger"}
-        id={"mobile-history-btn"}
-        type={"button"}
-        aria-label={"打开会话历史"}
-        aria-controls={"session-history"}
-        aria-expanded={Boolean(mobileHistoryOpen)}
-        onClick={() => onMobileHistoryToggle?.()}
-      >
-        <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-          <rect x={"4"} y={"5"} width={"16"} height={"14"} rx={"3"} />
-          <path d={"M8 9h8M8 13h5"} />
-        </svg>
-      </button>
-      <button
-        className={"sidebar-tool command-palette-trigger"}
-        type={"button"}
-        aria-label={"打开命令面板"}
-        aria-keyshortcuts={"Control+k Meta+k"}
-        aria-haspopup={"dialog"}
-        title={"命令面板（Ctrl/⌘+K）"}
-        onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
-      >
-        <span className={"nav-icon"}>
-          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"m5 7 5 5-5 5M13 17h6"} />
-          </svg>
-        </span>
-        <span>{"命令面板"}</span>
-        <kbd>{"Ctrl/⌘ K"}</kbd>
-      </button>
+      </Tooltip>
+      <Tooltip content={"命令面板"} shortcut={"Ctrl/⌘+K"} side={"right"}>
+        <button
+          className={"sidebar-tool command-palette-trigger"}
+          type={"button"}
+          aria-label={"打开命令面板"}
+          aria-keyshortcuts={"Control+k Meta+k"}
+          aria-haspopup={"dialog"}
+          onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
+        >
+          <span className={"nav-icon"}>
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"m5 7 5 5-5 5M13 17h6"} />
+            </svg>
+          </span>
+          <span>{"命令面板"}</span>
+          <kbd>{"Ctrl/⌘ K"}</kbd>
+        </button>
+      </Tooltip>
       <PendingApprovals collapsed={collapsed} />
       <SessionHistory
         mobileOpen={mobileHistoryOpen}
@@ -1756,28 +1765,29 @@ export function Sidebar({
         onSessionIndexChange={onSessionIndexChange}
       />
       <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
-        {sidebarTools.map((tool) =>
-          tool.href ? (
-            <a key={tool.key} className={"sidebar-tool"} href={tool.href} target={"_blank"} rel={"noreferrer"}>
-              <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>
-              <span>{tool.label}</span>
-            </a>
-          ) : (
-            <button
-              key={tool.key}
-              className={activePage === tool.page ? "sidebar-tool active" : "sidebar-tool"}
-              data-page={tool.page}
-              type={"button"}
-              aria-label={tool.label}
-              onMouseEnter={() => onPageIntent?.(tool.page)}
-              onFocus={() => onPageIntent?.(tool.page)}
-              onClick={() => handlePageChange(tool.page)}
-            >
-              <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>
-              <span>{tool.label}</span>
-            </button>
-          ),
-        )}
+        {sidebarTools.map((tool) => (
+          <Tooltip key={tool.key} content={tool.label} side={"right"}>
+            {tool.href ? (
+              <a className={"sidebar-tool"} href={tool.href} target={"_blank"} rel={"noreferrer"} aria-label={tool.label}>
+                <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>
+                <span>{tool.label}</span>
+              </a>
+            ) : (
+              <button
+                className={activePage === tool.page ? "sidebar-tool active" : "sidebar-tool"}
+                data-page={tool.page}
+                type={"button"}
+                aria-label={tool.label}
+                onMouseEnter={() => onPageIntent?.(tool.page)}
+                onFocus={() => onPageIntent?.(tool.page)}
+                onClick={() => handlePageChange(tool.page)}
+              >
+                <span className={"nav-icon"}><SidebarToolIcon type={tool.icon} /></span>
+                <span>{tool.label}</span>
+              </button>
+            )}
+          </Tooltip>
+        ))}
       </div>
       <UserMenu />
       <RuntimeStatus />

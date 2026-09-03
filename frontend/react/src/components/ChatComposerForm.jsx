@@ -34,6 +34,7 @@ import {
   workspaceMentionSuggestions,
 } from "./composerMentions.js";
 import { WorkspaceMentionPicker } from "./WorkspaceMentionPicker.jsx";
+import { Tooltip } from "./Tooltip.jsx";
 
 const valueOf = (value) => (value === undefined || value === null ? "" : String(value));
 const slashPattern = /(^|\s)\/([^\s/]*)$/;
@@ -719,6 +720,13 @@ export function ChatComposerForm() {
     setMenuOpen((current) => !current);
   };
   const handleComposerMenuClick = (event) => event.stopPropagation();
+  const handleComposerMenuKeyDown = (event) => {
+    if (event.key !== "Escape" || !menuOpen || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuOpen(false);
+    document.getElementById("composer-plus-btn")?.focus();
+  };
 
   const handleChatFileChange = (event) => {
     setMenuOpen(false);
@@ -1670,12 +1678,14 @@ export function ChatComposerForm() {
           </button>
         </div>
       ) : null}
-      <div className={"composer-shell"}>
-        <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
-          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"M12 5v14M5 12h14"} />
-          </svg>
-        </button>
+      <div className={"composer-shell"} onKeyDown={handleComposerMenuKeyDown}>
+        <Tooltip content={"添加文件或工具"} disabled={menuOpen || sending || switchingSession}>
+          <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
+            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
+              <path d={"M12 5v14M5 12h14"} />
+            </svg>
+          </button>
+        </Tooltip>
           <div className={composerMenuClassName} id={"composer-menu"} aria-label={"文件与工具菜单"} onClick={handleComposerMenuClick}>
             <section>
               <label className={"menu-card upload-item"}>
@@ -1770,17 +1780,18 @@ export function ChatComposerForm() {
             }}
           />
         </div>
-        <button
-          className={"composer-send-button"}
-          id={"chat-submit-btn"}
-          type={"submit"}
-          disabled={switchingSession}
-          aria-label={sending ? "停止生成" : "发送消息"}
-          title={sending ? "停止生成" : "发送消息"}
-          onClick={sending ? handleStopClick : undefined}
-        >
-          {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
-        </button>
+        <Tooltip content={sending ? "停止生成" : "发送消息"} shortcut={sending ? undefined : "Enter"} disabled={switchingSession}>
+          <button
+            className={"composer-send-button"}
+            id={"chat-submit-btn"}
+            type={"submit"}
+            disabled={switchingSession}
+            aria-label={sending ? "停止生成" : "发送消息"}
+            onClick={sending ? handleStopClick : undefined}
+          >
+            {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
+          </button>
+        </Tooltip>
       </div>
     </form>
   );

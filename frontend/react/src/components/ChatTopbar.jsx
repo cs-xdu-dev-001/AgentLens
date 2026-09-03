@@ -4,6 +4,7 @@ import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
 import { AgentNotificationToggle } from "./AgentNotificationToggle.jsx";
 import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
+import { Tooltip } from "./Tooltip.jsx";
 
 
 const RUN_LABELS = {
@@ -203,33 +204,35 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
           </svg>
           <span>{workspaceHeader.label}</span>
         </button>
-        <button
-          className={`chat-run-toggle is-${runHeader.state}`}
-          id={"inspector-toggle"}
-          type={"button"}
-          aria-controls={"evidence-drawer"}
-          aria-expanded={!drawerCollapsed}
-          aria-keyshortcuts={"Alt+T"}
-          aria-label={runAccessibleLabel}
-          title={`${runLabel}${runHeader.progress ? ` · ${runHeader.progress}` : ""}（Alt+T）`}
-          onClick={handleDrawerToggle}
-        >
-          <span className={"chat-run-dot"} aria-hidden={"true"} />
-          <span aria-live={"polite"}>{runLabel}</span>
-          {runHeader.progress ? <span className={"chat-run-progress"}>{runHeader.progress}</span> : null}
-        </button>
-        <button
-          aria-label={"刷新当前会话"}
-          id={"refresh-btn"}
-          title={"刷新当前会话"}
-          type={"button"}
-          onClick={handleRefresh}
-        >
-          <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
-            <path d={"M15.7 7.3A6 6 0 1 0 16 11"} />
-            <path d={"M12.8 4.5h3.4v3.4"} />
-          </svg>
-        </button>
+        <Tooltip content={drawerCollapsed ? "打开运行详情" : "收起运行详情"} shortcut={"Alt+T"} side={"bottom"}>
+          <button
+            className={`chat-run-toggle is-${runHeader.state}`}
+            id={"inspector-toggle"}
+            type={"button"}
+            aria-controls={"evidence-drawer"}
+            aria-expanded={!drawerCollapsed}
+            aria-keyshortcuts={"Alt+T"}
+            aria-label={runAccessibleLabel}
+            onClick={handleDrawerToggle}
+          >
+            <span className={"chat-run-dot"} aria-hidden={"true"} />
+            <span aria-live={"polite"}>{runLabel}</span>
+            {runHeader.progress ? <span className={"chat-run-progress"}>{runHeader.progress}</span> : null}
+          </button>
+        </Tooltip>
+        <Tooltip content={"刷新当前会话"} side={"bottom"}>
+          <button
+            aria-label={"刷新当前会话"}
+            id={"refresh-btn"}
+            type={"button"}
+            onClick={handleRefresh}
+          >
+            <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
+              <path d={"M15.7 7.3A6 6 0 1 0 16 11"} />
+              <path d={"M12.8 4.5h3.4v3.4"} />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
     </header>
   );

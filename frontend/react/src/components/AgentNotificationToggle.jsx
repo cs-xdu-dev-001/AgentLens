@@ -5,6 +5,7 @@ import {
   saveAgentNotificationPreference,
 } from "./agentWindowFeedback.js";
 import { notifyToast } from "./errorFeedback.js";
+import { Tooltip } from "./Tooltip.jsx";
 
 const LABELS = {
   blocked: "浏览器已阻止桌面提醒，请在站点权限中重新允许",
@@ -58,20 +59,21 @@ export function AgentNotificationToggle() {
 
   const label = LABELS[preference.state] || LABELS.disabled;
   return (
-    <button
-      aria-label={label}
-      aria-pressed={preference.enabled}
-      className={`chat-notification-toggle is-${preference.state}`}
-      disabled={preference.state === "unsupported"}
-      onClick={handleClick}
-      title={label}
-      type={"button"}
-    >
-      <svg aria-hidden={"true"} focusable={"false"} viewBox={"0 0 20 20"}>
-        <path d={"M5.3 8.2a4.7 4.7 0 0 1 9.4 0v3.2l1.3 2H4l1.3-2z"} />
-        <path d={"M8.2 15.1a2 2 0 0 0 3.6 0"} />
-        {preference.state === "disabled" ? <path d={"M4 4l12 12"} /> : null}
-      </svg>
-    </button>
+    <Tooltip content={label} side={"bottom"}>
+      <button
+        aria-label={label}
+        aria-pressed={preference.enabled}
+        className={`chat-notification-toggle is-${preference.state}`}
+        aria-disabled={preference.state === "unsupported"}
+        onClick={handleClick}
+        type={"button"}
+      >
+        <svg aria-hidden={"true"} focusable={"false"} viewBox={"0 0 20 20"}>
+          <path d={"M5.3 8.2a4.7 4.7 0 0 1 9.4 0v3.2l1.3 2H4l1.3-2z"} />
+          <path d={"M8.2 15.1a2 2 0 0 0 3.6 0"} />
+          {preference.state === "disabled" ? <path d={"M4 4l12 12"} /> : null}
+        </svg>
+      </button>
+    </Tooltip>
   );
 }

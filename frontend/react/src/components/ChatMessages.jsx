@@ -745,7 +745,7 @@ function WelcomeSurface({ onSeed, workspaceState }) {
   );
 }
 
-export function ChatMessages({ workspaceState = { loading: true } }) {
+export function ChatMessages({ workspaceState = { loading: true }, onEmptyStateChange }) {
   const messagesRef = useRef(null);
   const virtuosoRef = useRef(null);
   const messageStateRef = useRef([]);
@@ -1063,9 +1063,8 @@ export function ChatMessages({ workspaceState = { loading: true } }) {
   };
 
   useEffect(() => {
-    document.querySelector("#page-chat")?.classList.toggle("chat-empty", showWelcome);
-    return () => document.querySelector("#page-chat")?.classList.remove("chat-empty");
-  }, [showWelcome]);
+    onEmptyStateChange?.(showWelcome);
+  }, [onEmptyStateChange, showWelcome]);
 
   useEffect(() => {
     mountedRef.current = true;

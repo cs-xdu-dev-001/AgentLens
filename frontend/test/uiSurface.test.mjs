@@ -38,6 +38,19 @@ test("distributed Lucide license matches the installed icon package", async () =
   assert.equal(distributed.replace(/\r\n/g, "\n"), upstream.replace(/\r\n/g, "\n"));
 });
 
+test("distributed tooltip licenses match their installed packages", async () => {
+  for (const [dependency, license] of [
+    ["@radix-ui/react-tooltip", "radix-ui"],
+    ["@floating-ui/react-dom", "floating-ui"],
+  ]) {
+    const [upstream, distributed] = await Promise.all([
+      readFile(new URL(`node_modules/${dependency}/LICENSE`, cssRoot), "utf8"),
+      readFile(new URL(`react/public/licenses/${license}.txt`, cssRoot), "utf8"),
+    ]);
+    assert.equal(distributed.replace(/\r\n/g, "\n"), upstream.replace(/\r\n/g, "\n"));
+  }
+});
+
 test("chat chrome shares workspace state and ignores superseded responses", async () => {
   const source = await readSource("components/ChatTopbar.jsx");
   assert.match(source, /"新任务"/);
@@ -45,6 +58,17 @@ test("chat chrome shares workspace state and ignores superseded responses", asyn
   assert.match(source, /request === latestRequest/);
   const page = await readSource("components/ChatPage.jsx");
   assert.match(page, /workspaceState=\{workspaceState\}/);
+});
+
+test("chat page owns its empty-state class across navigation", async () => {
+  const [page, messages] = await Promise.all([
+    readSource("components/ChatPage.jsx"),
+    readSource("components/ChatMessages.jsx"),
+  ]);
+  assert.match(page, /empty \? "chat-empty"/);
+  assert.match(page, /onEmptyStateChange=\{setEmpty\}/);
+  assert.match(messages, /onEmptyStateChange\?\.\(showWelcome\)/);
+  assert.doesNotMatch(messages, /classList\.(toggle|remove)\("chat-empty"/);
 });
 
 test("responsive workbench respects short mobile viewports and reduced motion", async () => {

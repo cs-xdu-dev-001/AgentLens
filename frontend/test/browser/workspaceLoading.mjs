@@ -86,6 +86,8 @@ try {
     await page.screenshot({ path: process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH, fullPage: true });
   }
   await page.setViewportSize({ width: 375, height: 812 });
+  // Read the responsive layout after the workbench ResizeObserver has committed it.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const sendBounds = await page.locator("#chat-submit-btn").boundingBox();
   assert.ok(sendBounds && sendBounds.y >= 0 && sendBounds.y + sendBounds.height <= 812, JSON.stringify(sendBounds));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -152,6 +154,7 @@ try {
     await composer.inputValue(),
     "请检查当前工作区的未提交改动，指出可能的缺陷、风险和遗漏；发现明确问题时直接修复，并运行相关验证。",
   );
+  await page.waitForFunction(node => document.activeElement === node, await composer.elementHandle());
   assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-composer-reset")));
   await welcomeStatus.click();

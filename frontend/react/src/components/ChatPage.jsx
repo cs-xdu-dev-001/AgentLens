@@ -34,14 +34,14 @@ function readChatLayout() {
   }
 }
 
-function ChatPanelSurface({ active, drawerCollapsed }) {
+function ChatPanelSurface({ active, drawerCollapsed, onEmptyStateChange }) {
   const [workspaceState, setWorkspaceState] = useState({ status: null, loading: true, error: "" });
   return (
     <section className={"chat-panel"}>
       <ThemeToggle className={"chat-theme-toggle"} />
       <ChatTopbar drawerCollapsed={drawerCollapsed} onWorkspaceStateChange={setWorkspaceState} />
       <ChatContextToolbar />
-      <ChatMessages workspaceState={workspaceState} />
+      <ChatMessages workspaceState={workspaceState} onEmptyStateChange={onEmptyStateChange} />
       <ChatComposerForm active={active} />
     </section>
   );
@@ -49,6 +49,7 @@ function ChatPanelSurface({ active, drawerCollapsed }) {
 
 export function ChatPage({ active = false, drawerCollapsed = true }) {
   const [defaultLayout] = useState(readChatLayout);
+  const [empty, setEmpty] = useState(true);
   const evidencePanelRef = useRef(null);
   const handleLayoutChanged = useCallback((layout, meta) => {
     if (!meta?.isUserInteraction || typeof window === "undefined") return;
@@ -83,7 +84,7 @@ export function ChatPage({ active = false, drawerCollapsed = true }) {
   }, [drawerCollapsed]);
 
   return (
-    <section className={active ? "page active" : "page"} id={"page-chat"}>
+    <section className={["page", active ? "active" : "", empty ? "chat-empty" : ""].filter(Boolean).join(" ")} id={"page-chat"}>
       <Group
         className={"chat-layout chat-layout-resizable"}
         data-drawer-collapsed={drawerCollapsed ? "true" : "false"}
@@ -100,7 +101,7 @@ export function ChatPage({ active = false, drawerCollapsed = true }) {
           id={"chat-panel"}
           minSize={"520px"}
         >
-          <ChatPanelSurface active={active} drawerCollapsed={drawerCollapsed} />
+          <ChatPanelSurface active={active} drawerCollapsed={drawerCollapsed} onEmptyStateChange={setEmpty} />
         </Panel>
         {!drawerCollapsed ? (
           <Separator

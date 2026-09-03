@@ -29,6 +29,7 @@ export default defineConfig({
         manualChunks: {
           "markdown-vendor": ["markdown-it"],
           "virtuoso-vendor": ["react-virtuoso"],
+          "interaction-vendor": ["@radix-ui/react-tooltip"],
         },
       },
     },

@@ -15808,7 +15808,8 @@ select {
   color: var(--danger);
 }
 
-.chat-notification-toggle:disabled {
+.chat-notification-toggle:disabled,
+.chat-notification-toggle[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.5;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Tooltip } from "./Tooltip.jsx";
 
 const THEME_STORAGE_KEY = "knowflow-theme";
 const LIGHT_THEME = "mono-light";
@@ -45,16 +46,17 @@ export function ThemeToggle({ className = "" }) {
   };
 
   return (
-    <button
-      className={["theme-toggle", className].filter(Boolean).join(" ")}
-      id={"theme-toggle-btn"}
-      type={"button"}
-      aria-pressed={isDark}
-      aria-label={isDark ? "切换到日间模式" : "切换到夜间模式"}
-      title={isDark ? "夜间模式" : "日间模式"}
-      onClick={handleThemeToggle}
-    >
-      {isDark ? <MoonIcon /> : <SunIcon />}
-    </button>
+    <Tooltip content={isDark ? "切换到日间模式" : "切换到夜间模式"} side={"bottom"}>
+      <button
+        className={["theme-toggle", className].filter(Boolean).join(" ")}
+        id={"theme-toggle-btn"}
+        type={"button"}
+        aria-pressed={isDark}
+        aria-label={isDark ? "切换到日间模式" : "切换到夜间模式"}
+        onClick={handleThemeToggle}
+      >
+        {isDark ? <MoonIcon /> : <SunIcon />}
+      </button>
+    </Tooltip>
   );
 }

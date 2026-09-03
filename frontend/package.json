@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@formkit/auto-animate": "0.10.0",
+    "@radix-ui/react-tooltip": "1.2.16",
     "@vitejs/plugin-react": "4.7.0",
     "fuse.js": "7.1.0",
     "highlight.js": "11.12.0",
