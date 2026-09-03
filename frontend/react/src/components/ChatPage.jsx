@@ -35,12 +35,13 @@ function readChatLayout() {
 }
 
 function ChatPanelSurface({ active, drawerCollapsed }) {
+  const [workspaceState, setWorkspaceState] = useState({ status: null, loading: true, error: "" });
   return (
     <section className={"chat-panel"}>
       <ThemeToggle className={"chat-theme-toggle"} />
-      <ChatTopbar drawerCollapsed={drawerCollapsed} />
+      <ChatTopbar drawerCollapsed={drawerCollapsed} onWorkspaceStateChange={setWorkspaceState} />
       <ChatContextToolbar />
-      <ChatMessages />
+      <ChatMessages workspaceState={workspaceState} />
       <ChatComposerForm active={active} />
     </section>
   );

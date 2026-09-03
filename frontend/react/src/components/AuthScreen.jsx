@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BACKEND_UNAVAILABLE_MESSAGE, normalizeErrorMessage } from "../api/errors.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { copyTextToClipboard } from "../controller/clipboard.js";
-import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
+import { AgentLensLogo } from "./AgentLensLogo.jsx";
 
 export function AuthScreen() {
   const { authenticated, loading, login, oauthProviders, register } = useAuth();
@@ -102,15 +102,20 @@ export function AuthScreen() {
   return (
     <section className={authScreenClassName} id="auth-screen" data-backend-error={backendUnavailableMessage}>
       {loading ? (
-        <div className="auth-card auth-loading-card">
+        <div className="auth-card auth-loading-card" role="status" aria-live="polite" aria-busy="true">
           <div className="auth-brand">
             <div className="brand-mark">
-              <KnowFlowLogo />
+              <AgentLensLogo />
             </div>
             <div>
               <span className="eyebrow">AGENTLENS</span>
               <h1>正在检查登录状态</h1>
             </div>
+          </div>
+          <div className="auth-loading-progress" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
         </div>
       ) : null}
@@ -118,7 +123,7 @@ export function AuthScreen() {
       <div className="auth-card">
         <div className="auth-brand">
           <div className="brand-mark">
-            <KnowFlowLogo />
+            <AgentLensLogo />
           </div>
           <div>
             <span className="eyebrow">AGENTLENS</span>

@@ -1,4 +1,5 @@
 import { Virtuoso } from "react-virtuoso";
+import { ChevronRight, CircleCheck, FolderTree, GitCompareArrows, History } from "lucide-react";
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
@@ -657,27 +658,94 @@ function sameInteractionOwner(previous, next) {
 const WELCOME_ACTIONS = [
   {
     id: "understand",
+    icon: FolderTree,
     label: "梳理项目结构",
     prompt: "请梳理当前工作区的项目结构、技术栈、关键入口和运行方式，并告诉我最值得先关注的部分。",
   },
   {
     id: "review",
+    icon: GitCompareArrows,
     label: "检查当前改动",
     prompt: "请检查当前工作区的未提交改动，指出可能的缺陷、风险和遗漏；发现明确问题时直接修复，并运行相关验证。",
   },
   {
     id: "test",
+    icon: CircleCheck,
     label: "运行测试并修复",
     prompt: "请运行与当前项目相关的测试，定位失败原因并修复问题，完成后汇报验证结果。",
   },
   {
     id: "continue",
+    icon: History,
     label: "继续最近的工作",
     prompt: "请结合当前工作区状态和最近的Git提交判断上次工作进展，并从最合理的下一步继续。",
   },
 ];
 
-export function ChatMessages() {
+function WelcomeSurface({ onSeed, workspaceState }) {
+  const workspaceMode = workspaceState?.loading
+    ? "loading"
+    : workspaceState?.error
+      ? "error"
+      : workspaceState?.status?.enabled
+        ? "ready"
+        : "disabled";
+  const workspaceCopy = workspaceMode === "error"
+    ? "工作区状态异常"
+    : workspaceMode === "disabled"
+      ? "工作区未启用"
+      : workspaceMode === "loading"
+        ? "正在连接工作区"
+        : "打开当前工作区";
+  const openWorkspace = () => window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+    detail: { page: "workspace" },
+  }));
+  return (
+    <div className={"welcome-card"} data-welcome-surface={"true"}>
+      <h2>{"有什么可以帮你？"}</h2>
+      <button
+        className={["welcome-context", workspaceMode].join(" ")}
+        data-workspace-state={workspaceMode}
+        type={"button"}
+        disabled={workspaceMode === "loading"}
+        aria-busy={workspaceMode === "loading"}
+        aria-live={"polite"}
+        onClick={openWorkspace}
+      >
+        <span className={"welcome-context-dot"} aria-hidden={"true"}></span>
+        <span>{workspaceCopy}</span>
+        {workspaceMode !== "loading" ? <ChevronRight size={16} aria-hidden={"true"} /> : null}
+      </button>
+      <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
+        {WELCOME_ACTIONS.map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              className={"welcome-action"}
+              data-welcome-action={action.id}
+              key={action.id}
+              type={"button"}
+              onClick={() => onSeed(action.prompt)}
+            >
+              <span className={"welcome-action-icon"}>
+                <Icon size={18} strokeWidth={1.7} aria-hidden={"true"} />
+              </span>
+              <span className={"welcome-action-label"}>{action.label}</span>
+              <ChevronRight className={"welcome-action-arrow"} size={16} aria-hidden={"true"} />
+            </button>
+          );
+        })}
+      </nav>
+      <div className={"welcome-shortcuts"} aria-hidden={"true"}>
+        <span><kbd>/</kbd>{"命令"}</span>
+        <span><kbd>@</kbd>{"文件"}</span>
+        <span><kbd>Enter</kbd>{"发送"}</span>
+      </div>
+    </div>
+  );
+}
+
+export function ChatMessages({ workspaceState = { loading: true } }) {
   const messagesRef = useRef(null);
   const virtuosoRef = useRef(null);
   const messageStateRef = useRef([]);
@@ -1458,25 +1526,7 @@ export function ChatMessages() {
         >
           <SessionSwitchState sessionSwitch={sessionSwitch} onRetry={retrySessionSwitch} />
           {showWelcome ? (
-            <div className={"welcome-card"}>
-              <h2>{"有什么可以帮你？"}</h2>
-              <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
-                {WELCOME_ACTIONS.map((action) => (
-                  <button
-                    className={"welcome-action"}
-                    data-welcome-action={action.id}
-                    key={action.id}
-                    type={"button"}
-                    onClick={() => seedComposer(action.prompt)}
-                  >
-                    <span>{action.label}</span>
-                    <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-                      <path d={"m7 4 6 6-6 6"}></path>
-                    </svg>
-                  </button>
-                ))}
-              </nav>
-            </div>
+            <WelcomeSurface onSeed={seedComposer} workspaceState={workspaceState} />
           ) : null}
         </div>
       )}

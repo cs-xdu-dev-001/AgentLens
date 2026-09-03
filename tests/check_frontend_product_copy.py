@@ -122,7 +122,7 @@ def main() -> None:
         for needle in needles:
             forbid(path, needle, "documentation-style product copy")
 
-    require("frontend/react/src/components/ChatTopbar.jsx", "问答", "short chat title")
+    require("frontend/react/src/components/ChatTopbar.jsx", "新任务", "short task title")
     require("frontend/react/src/components/KnowledgeHeader.jsx", "知识库", "short knowledge title")
     require("frontend/react/src/components/SettingsHeader.jsx", "模型配置", "short settings title")
     require("frontend/react/src/components/KnowledgeDocuments.jsx", "添加文档", "short upload action")

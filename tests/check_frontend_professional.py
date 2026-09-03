@@ -76,7 +76,7 @@ def main() -> None:
         ('src="/src/main.jsx"', "React Vite entry script"),
         ("data-provider={provider.key}", "custom provider card"),
         ("model-provider", "editable provider identifier"),
-        ("\u95ee\u7b54", "chat title"),
+        ("\u65b0\u4efb\u52a1", "new task title"),
         ("\u4e0d\u4f7f\u7528\u77e5\u8bc6\u5e93", "optional knowledge-base selection"),
         ("\u5f15\u7528\u6765\u6e90", "reference panel"),
         ("\u6dfb\u52a0\u6587\u6863", "compact document upload action"),

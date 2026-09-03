@@ -16,6 +16,8 @@ const errors = [];
 let workspaceStatusCalls = 0;
 let listingCalls = 0;
 let previewCalls = 0;
+let statusMode = "ready";
+let statusGate = null;
 page.on("pageerror", (error) => errors.push(error.message));
 
 await page.route("**/api/**", async (route) => {
@@ -45,6 +47,14 @@ await page.route("**/api/**", async (route) => {
   };
   if (path === "/api/workspace") {
     workspaceStatusCalls += 1;
+    if (statusMode === "error") return route.fulfill({ status: 503, json: { message: "Workspace unavailable" } });
+    if (statusGate) {
+      const gate = statusGate;
+      statusGate = null;
+      gate(route);
+      return;
+    }
+    if (statusMode === "disabled") fixtures[path] = { enabled: false };
     if (workspaceStatusCalls <= 2) await new Promise((resolve) => setTimeout(resolve, 280));
   }
   if (path === "/api/workspace/files") {
@@ -64,14 +74,79 @@ try {
   const welcomeActions = page.getByRole("navigation", { name: "常用起始任务" });
   await welcomeActions.waitFor({ state: "visible" });
   assert.equal(await welcomeActions.getByRole("button").count(), 4);
+  const welcomeStatus = page.locator(".welcome-context");
+  await page.locator('.welcome-context[data-workspace-state="ready"]').waitFor();
+  assert.equal(await welcomeStatus.innerText(), "打开当前工作区");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.locator(".welcome-card").evaluate((node) => getComputedStyle(node).animationName), "none");
+  await welcomeActions.getByRole("button", { name: "梳理项目结构", exact: true }).focus();
+  assert.notEqual(await page.locator(".welcome-action:focus-visible").evaluate((node) => getComputedStyle(node).outlineStyle), "none");
+  await composer.focus();
   if (process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH) {
     await page.screenshot({ path: process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH, fullPage: true });
   }
+  await page.setViewportSize({ width: 375, height: 812 });
+  const sendBounds = await page.locator("#chat-submit-btn").boundingBox();
+  assert.ok(sendBounds && sendBounds.y >= 0 && sendBounds.y + sendBounds.height <= 812, JSON.stringify(sendBounds));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH) {
-    await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH, fullPage: true });
-    await page.setViewportSize({ width: 1280, height: 800 });
   }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole("button", { name: "切换到夜间模式", exact: true }).click();
+  await page.locator('body[data-theme="mono-dark"]').waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem("knowflow-theme")), "mono-dark");
+  const welcomeContrast = await welcomeStatus.evaluate((node) => {
+    const channels = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const luminance = (color) => channels(color).map((value) => {
+      const channel = value / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    let surface = node;
+    while (surface.parentElement && getComputedStyle(surface).backgroundColor === "rgba(0, 0, 0, 0)") surface = surface.parentElement;
+    const foreground = luminance(getComputedStyle(node).color);
+    const background = luminance(getComputedStyle(surface).backgroundColor);
+    return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+  });
+  assert.ok(welcomeContrast >= 4.5, `Dark workspace status contrast: ${welcomeContrast}`);
+  if (process.env.AGENTLENS_EMPTY_DARK_SCREENSHOT_PATH) {
+    await page.screenshot({ path: process.env.AGENTLENS_EMPTY_DARK_SCREENSHOT_PATH, fullPage: true });
+  }
+  await page.getByRole("button", { name: "切换到日间模式", exact: true }).click();
+
+  statusMode = "error";
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated")));
+  await page.locator('.welcome-context[data-workspace-state="error"]').waitFor();
+  assert.match(await page.locator(".chat-workspace-toggle").getAttribute("aria-label"), /重试/);
+  statusMode = "ready";
+  const retryRequest = new Promise((resolve) => { statusGate = resolve; });
+  await page.locator(".chat-workspace-toggle").click();
+  const retryRoute = await retryRequest;
+  await page.locator('.welcome-context[data-workspace-state="loading"]').waitFor();
+  assert.equal(await welcomeStatus.isDisabled(), true);
+  assert.equal(await welcomeStatus.innerText(), "正在连接工作区");
+  await retryRoute.fulfill({ json: { code: 0, data: { enabled: true, sandboxReady: true } } });
+  await page.locator('.welcome-context[data-workspace-state="ready"]').waitFor();
+
+  // A superseded response must not overwrite a newer disabled workspace.
+  const staleRequest = new Promise((resolve) => { statusGate = resolve; });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated")));
+  const staleRoute = await staleRequest;
+  statusMode = "disabled";
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated")));
+  await page.locator('.welcome-context[data-workspace-state="disabled"]').waitFor();
+  const staleFinished = page.waitForEvent("requestfinished", (request) => request === staleRoute.request());
+  await staleRoute.fulfill({ json: { code: 0, data: { enabled: true, sandboxReady: true } } });
+  await staleFinished;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await welcomeStatus.getAttribute("data-workspace-state"), "disabled");
+  assert.equal(await page.locator(".chat-workspace-toggle").innerText(), "工作区关闭");
+  const disabledDot = await welcomeStatus.locator(".welcome-context-dot").evaluate((node) => getComputedStyle(node).backgroundColor);
+  assert.notEqual(disabledDot, "rgba(0, 0, 0, 0)");
+  statusMode = "ready";
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-workspace-updated")));
+  await page.locator('.welcome-context[data-workspace-state="ready"]').waitFor();
+  assert.notEqual(await welcomeStatus.locator(".welcome-context-dot").evaluate((node) => getComputedStyle(node).backgroundColor), disabledDot);
   await welcomeActions.getByRole("button", { name: "检查当前改动", exact: true }).click();
   assert.equal(
     await composer.inputValue(),
@@ -79,9 +154,7 @@ try {
   );
   assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-composer-reset")));
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
-    detail: { page: "workspace" },
-  })));
+  await welcomeStatus.click();
   const workspace = page.locator("#page-workspace.active");
   await workspace.waitFor({ state: "visible" });
   const fileList = workspace.locator(".workspace-file-list");
@@ -128,7 +201,7 @@ try {
   const bounds = await workspace.boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
   assert.deepEqual(errors, []);
-  console.log("workspace browser checks passed: loading states, in-app preview, reduced motion, mobile bounds");
+  console.log("workspace browser checks passed: welcome actions, retry/loading/disabled states, stale response guard, keyboard focus, real theme toggle/contrast, in-app preview, reduced motion, mobile composer bounds");
 } catch (error) {
   console.error({ errors, page: (await page.locator("body").innerText()).slice(0, 1200) });
   throw error;

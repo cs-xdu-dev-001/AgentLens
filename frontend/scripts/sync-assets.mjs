@@ -13,6 +13,7 @@ const assets = [
 const vendorAssets = [
   ["node_modules/react/umd/react.production.min.js", "react/public/vendor/react.production.min.js"],
   ["node_modules/react-dom/umd/react-dom.production.min.js", "react/public/vendor/react-dom.production.min.js"],
+  ["node_modules/lucide-react/LICENSE", "react/public/licenses/lucide-react.txt"],
 ];
 
 for (const [sourcePath, targetPath] of [...assets, ...vendorAssets]) {

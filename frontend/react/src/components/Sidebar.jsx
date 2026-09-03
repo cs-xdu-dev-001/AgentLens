@@ -6,7 +6,7 @@ import { approvalApi, runtimeApi, sessionApi } from "../api/client.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { sidebarTools } from "../data/navigation.js";
 import { safeAgentText } from "../controller/agentEvents.js";
-import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
+import { AgentLensLogo } from "./AgentLensLogo.jsx";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 
 const sessionGroupLabels = [
@@ -1682,7 +1682,7 @@ export function Sidebar({
     <aside className={sidebarClassName} id={"sidebar"}>
       <div className={"sidebar-brand"}>
         <div className={"brand-mark"}>
-          <KnowFlowLogo />
+          <AgentLensLogo />
         </div>
         <div className={"brand-copy"}>
           <strong>

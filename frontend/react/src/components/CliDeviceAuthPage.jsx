@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { authApi } from "../api/client.js";
 import { normalizeErrorMessage } from "../api/errors.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
-import { KnowFlowLogo } from "./KnowFlowLogo.jsx";
+import { AgentLensLogo } from "./AgentLensLogo.jsx";
 
 
 function readUserCode() {
@@ -40,7 +40,7 @@ export function CliDeviceAuthPage({ active }) {
   return (
     <section className="cli-device-page" id="page-cli-auth" aria-labelledby="cli-device-title">
       <div className="cli-device-card">
-        <div className="cli-device-brand" aria-hidden="true"><KnowFlowLogo /></div>
+        <div className="cli-device-brand" aria-hidden="true"><AgentLensLogo /></div>
         {finished ? (
           <>
             <h1 id="cli-device-title">{state === "approved" ? "CLI已连接" : "已拒绝登录"}</h1>

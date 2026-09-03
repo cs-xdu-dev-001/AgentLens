@@ -68,7 +68,7 @@ export function workspaceHeaderState(status, loading = false, error = "") {
   };
 }
 
-export function ChatTopbar({ drawerCollapsed = true }) {
+export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [pendingTitle, setPendingTitle] = useState("");
   const [switching, setSwitching] = useState(false);
@@ -80,18 +80,28 @@ export function ChatTopbar({ drawerCollapsed = true }) {
 
   useEffect(() => {
     let active = true;
+    let latestRequest = 0;
     const loadWorkspace = async ({ showLoading = false } = {}) => {
-      if (active && showLoading) setWorkspaceLoading(true);
+      const request = ++latestRequest;
+      if (active && showLoading) {
+        setWorkspaceLoading(true);
+        onWorkspaceStateChange?.({ status: null, loading: true, error: "" });
+      }
       try {
         const status = await workspaceApi.status();
-        if (active) {
+        if (active && request === latestRequest) {
           setWorkspaceStatus(status);
           setWorkspaceError("");
+          onWorkspaceStateChange?.({ status, loading: false, error: "" });
         }
       } catch {
-        if (active) setWorkspaceError("工作区状态读取失败，请重试。");
+        if (active && request === latestRequest) {
+          const error = "工作区状态读取失败，请重试。";
+          setWorkspaceError(error);
+          onWorkspaceStateChange?.({ status: null, loading: false, error });
+        }
       } finally {
-        if (active) setWorkspaceLoading(false);
+        if (active && request === latestRequest) setWorkspaceLoading(false);
       }
     };
     workspaceReloadRef.current = () => void loadWorkspace({ showLoading: true });
@@ -103,7 +113,7 @@ export function ChatTopbar({ drawerCollapsed = true }) {
       workspaceReloadRef.current = () => {};
       window.removeEventListener("knowflow:react-workspace-updated", handleWorkspaceUpdated);
     };
-  }, []);
+  }, [onWorkspaceStateChange]);
 
   useEffect(() => {
     const handleActiveSession = (event) => {
@@ -170,8 +180,8 @@ export function ChatTopbar({ drawerCollapsed = true }) {
   return (
     <header className={"chat-topbar"}>
       <div className={"chat-session-heading"} aria-busy={switching}>
-        <h1 title={pendingTitle || sessionTitle || "问答"}>
-          {pendingTitle || sessionTitle || "问答"}
+        <h1 title={pendingTitle || sessionTitle || "新任务"}>
+          {pendingTitle || sessionTitle || "新任务"}
         </h1>
         {switching ? <span className={"chat-session-switching"} role={"status"}>{"打开中"}</span> : null}
       </div>
@@ -180,6 +190,8 @@ export function ChatTopbar({ drawerCollapsed = true }) {
         <button
           className={`chat-workspace-toggle is-${workspaceHeader.state}`}
           type={"button"}
+          aria-busy={workspaceLoading}
+          disabled={workspaceLoading && Boolean(workspaceError)}
           aria-label={workspaceError
             ? `${workspaceHeader.label}，重试`
             : `${workspaceHeader.label}，打开工作区`}

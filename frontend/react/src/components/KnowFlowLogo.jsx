@@ -1,6 +1,7 @@
-export function KnowFlowLogo({ className = "" }) {
+// Keep the previous component and CSS names compatible during the brand rename.
+export function AgentLensLogo({ className = "" }) {
   return (
-    <svg className={["knowflow-logo", className].filter(Boolean).join(" ")} viewBox={"0 0 48 48"} aria-hidden={"true"} focusable={"false"}>
+    <svg className={["knowflow-logo", "agentlens-logo", className].filter(Boolean).join(" ")} viewBox={"0 0 48 48"} aria-hidden={"true"} focusable={"false"}>
       <rect className={"knowflow-logo-frame"} x={"4"} y={"4"} width={"40"} height={"40"} rx={"12"} />
       <circle className={"knowflow-logo-lens"} cx={"21"} cy={"21"} r={"10.5"} />
       <path className={"knowflow-logo-lens"} d={"m28.4 28.4 7.4 7.4"} />
@@ -12,3 +13,5 @@ export function KnowFlowLogo({ className = "" }) {
     </svg>
   );
 }
+
+export const KnowFlowLogo = AgentLensLogo;
