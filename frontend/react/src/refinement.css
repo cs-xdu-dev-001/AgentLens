@@ -5860,3 +5860,330 @@ body.sidebar-collapsed .sidebar {
     animation: none !important;
   }
 }
+
+/* Chat finish pass: one reading axis, visible message actions, and a calmer
+   control row that keeps the real workbench usable on narrow screens. */
+#page-chat {
+  --chat-content-width: min(860px, calc(100% - 32px));
+  --chat-answer-width: min(760px, 100%);
+}
+
+#page-chat.chat-empty .welcome-card,
+#page-chat.chat-empty #chat-form.composer {
+  width: var(--chat-content-width) !important;
+  max-width: none !important;
+  box-sizing: border-box;
+}
+
+#page-chat:not(.chat-empty) .messages {
+  padding-right: max(16px, calc((100% - var(--chat-content-width)) / 2)) !important;
+  padding-left: max(16px, calc((100% - var(--chat-content-width)) / 2)) !important;
+}
+
+#page-chat:not(.chat-empty) .message-row {
+  width: var(--chat-content-width);
+  max-width: 100%;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+#page-chat:not(.chat-empty) #chat-form.composer {
+  width: var(--chat-content-width);
+  max-width: none;
+  box-sizing: border-box;
+  margin-right: auto;
+  margin-left: auto;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+#page-chat .message-row.assistant {
+  width: var(--chat-content-width);
+  max-width: 100%;
+  justify-items: start;
+}
+
+#page-chat .message-row.assistant .message {
+  width: var(--chat-answer-width);
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#page-chat .message-row.assistant .agent-turn-answer,
+#page-chat .message-row.assistant .message-markdown {
+  width: 100%;
+  min-width: 0;
+}
+
+#page-chat .message-row.assistant .message-code-block,
+#page-chat .message-row.assistant .message-table-scroll {
+  width: 100%;
+}
+
+#page-chat .message-row.user .message {
+  max-width: min(72ch, 84%);
+}
+
+#page-chat .message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  margin-top: 0;
+  opacity: 0;
+  translate: 0 -2px;
+  transition: opacity 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    translate 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#page-chat .message-actions button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+
+#page-chat .message-actions button:focus-visible {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  #page-chat .message-row:hover .message-actions,
+  #page-chat .message-row:focus-within .message-actions {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  #page-chat .message-actions button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--control-bg-hover);
+  }
+}
+
+#page-chat .message-row:focus-within .message-actions {
+  opacity: 1;
+  translate: 0 0;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  grid-template-columns: 36px minmax(0, 1fr) auto auto 36px !important;
+  grid-template-rows: minmax(50px, auto) 36px !important;
+  column-gap: 4px !important;
+  row-gap: 4px !important;
+  padding: 10px 10px 10px 12px !important;
+  border-radius: 18px !important;
+}
+
+#page-chat #chat-form.composer .composer-permission-picker {
+  grid-column: 3 !important;
+  grid-row: 2 !important;
+  justify-self: end;
+}
+
+#page-chat #chat-form.composer .composer-model-picker:not(.composer-permission-picker) {
+  grid-column: 4 !important;
+  grid-row: 2 !important;
+  justify-self: end;
+  min-width: 0;
+}
+
+#page-chat #chat-form.composer .composer-permission-trigger,
+#page-chat #chat-form.composer .composer-model-trigger {
+  min-height: 36px !important;
+  max-width: 220px;
+  padding: 4px 8px !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  color: var(--text-soft) !important;
+  background: transparent !important;
+  font-size: 13px;
+  font-weight: 640;
+  transition: background-color var(--kf-transition), color var(--kf-transition),
+    border-color var(--kf-transition), transform var(--kf-transition);
+}
+
+#page-chat #chat-form.composer .composer-permission-trigger > span:nth-child(2),
+#page-chat #chat-form.composer .composer-model-trigger > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-chat #chat-form.composer .composer-permission-trigger:focus-visible,
+#page-chat #chat-form.composer .composer-model-trigger:focus-visible {
+  outline: 2px solid var(--kf-focus-ring) !important;
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  #page-chat #chat-form.composer .composer-permission-trigger:hover:not(:disabled),
+  #page-chat #chat-form.composer .composer-model-trigger:hover:not(:disabled) {
+    color: var(--text) !important;
+    background: var(--control-bg-hover) !important;
+  }
+}
+
+#page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+  grid-column: 5 !important;
+  grid-row: 2 !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 11px !important;
+  transition: transform var(--kf-transition), background-color var(--kf-transition),
+    opacity var(--kf-transition);
+}
+
+#page-chat #chat-form.composer #chat-submit-btn.composer-send-button:focus-visible {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  #page-chat #chat-form.composer #chat-submit-btn.composer-send-button:hover:not(:disabled) {
+    translate: 0 -1px;
+    background: color-mix(in srgb, var(--inverse-bg) 88%, var(--text)) !important;
+  }
+}
+
+#page-chat #chat-form.composer #chat-submit-btn.composer-send-button:active:not(:disabled) {
+  scale: 0.96;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #page-chat #chat-submit-btn.composer-send-button:has(.stop-square) .stop-square {
+    animation: agentlens-stop-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes agentlens-stop-pulse {
+    0%, 100% { opacity: 0.72; scale: 0.88; }
+    50% { opacity: 1; scale: 1; }
+  }
+}
+
+@media (max-width: 760px) {
+  #page-chat {
+    --chat-content-width: min(860px, calc(100% - 24px));
+    --chat-answer-width: 100%;
+  }
+
+  #page-chat:not(.chat-empty) .messages {
+    padding-right: 12px !important;
+    padding-left: 12px !important;
+  }
+
+  #page-chat:not(.chat-empty) .message-row {
+    width: 100%;
+  }
+
+  #page-chat:not(.chat-empty) #chat-form.composer {
+    width: 100%;
+    padding: 10px 12px 12px !important;
+  }
+
+  #page-chat .message-actions {
+    min-height: 40px;
+    opacity: 0.72;
+    translate: 0 0;
+  }
+
+  #page-chat .message-actions button {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    grid-template-columns: 44px minmax(0, 1fr) 44px minmax(72px, auto) 44px !important;
+    grid-template-rows: minmax(44px, auto) 44px !important;
+    column-gap: 4px !important;
+    row-gap: 4px !important;
+    padding: 9px !important;
+    border-radius: 16px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-permission-trigger,
+  #page-chat #chat-form.composer .composer-model-trigger,
+  #page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+    min-height: 44px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-permission-trigger {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  #page-chat #chat-form.composer .composer-permission-trigger > span:nth-child(2),
+  #page-chat #chat-form.composer .composer-permission-trigger > .composer-model-chevron {
+    display: none;
+  }
+
+  #page-chat #chat-form.composer .composer-model-trigger {
+    width: auto;
+    min-width: 44px;
+    max-width: 116px;
+    padding-right: 6px !important;
+    padding-left: 6px !important;
+  }
+
+  #page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat #chat-form.composer .composer-shell {
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px 44px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-model-picker:not(.composer-permission-picker),
+  #page-chat #chat-form.composer .composer-model-trigger {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    justify-content: center;
+    padding-right: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  #page-chat #chat-form.composer .composer-model-trigger > span:nth-child(2),
+  #page-chat #chat-form.composer .composer-model-trigger > .composer-model-chevron {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .message-actions,
+  #page-chat #chat-form.composer .composer-permission-trigger,
+  #page-chat #chat-form.composer .composer-model-trigger,
+  #page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+    transition: none !important;
+  }
+
+  #page-chat #chat-submit-btn.composer-send-button:has(.stop-square) .stop-square {
+    animation: none !important;
+  }
+}
