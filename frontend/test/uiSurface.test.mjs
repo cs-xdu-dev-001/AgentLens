@@ -122,3 +122,17 @@ test("page entry motion stays opacity-only and honors reduced motion", async () 
   assert.doesNotMatch(css, /agentlens-page-enter[\s\S]*transform:/);
   assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*agentlens-page-enter/);
 });
+
+test("web navigation preserves deep links and browser history", async () => {
+  const [source, bridge] = await Promise.all([
+    readSource("App.jsx"),
+    readSource("controller/bridgeBindings.js"),
+  ]);
+  assert.match(source, /syncPageLocation/);
+  assert.match(source, /mode === "push" \? "pushState" : "replaceState"/);
+  assert.match(source, /window\.history\[method\]/);
+  assert.match(source, /addEventListener\("popstate"/);
+  assert.match(source, /document\.title = pageTitles/);
+  assert.match(bridge, /source: "page-change-bridge"/);
+  assert.match(source, /mirroredPageChange/);
+});

@@ -134,7 +134,11 @@ export function bindReactControllerEvents({
 
   window.addEventListener("knowflow:react-page-change", (event) => {
     const page = event.detail?.page;
-    if (page) window.dispatchEvent(new CustomEvent("knowflow:react-page-activated", { detail: { page } }));
+    if (page) {
+      window.dispatchEvent(new CustomEvent("knowflow:react-page-activated", {
+        detail: { page, source: "page-change-bridge" },
+      }));
+    }
   });
 
   window.addEventListener("knowflow:react-new-chat", () => startNewChat());

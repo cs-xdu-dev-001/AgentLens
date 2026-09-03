@@ -11,6 +11,16 @@ import { useAuth } from "./auth/AuthProvider.jsx";
 
 const pageKeys = new Set(["chat", "knowledge", "skills", "workspace", "memory", "tools", "settings", "cli-auth"]);
 const palettePageActions = new Set(["knowledge", "workspace", "tools", "skills", "memory", "settings"]);
+const pageTitles = Object.freeze({
+  chat: "AgentLens",
+  knowledge: "知识库 · AgentLens",
+  skills: "Skills · AgentLens",
+  workspace: "工作区 · AgentLens",
+  memory: "记忆 · AgentLens",
+  tools: "工具与MCP · AgentLens",
+  settings: "模型设置 · AgentLens",
+  "cli-auth": "CLI授权 · AgentLens",
+});
 const SIDEBAR_LAYOUT_VERSION = "20260522-chatgpt-sidebar";
 const pageModuleLoaders = Object.freeze({
   knowledge: () => import("./components/KnowledgePage.jsx"),
@@ -99,6 +109,18 @@ function readInitialPage() {
   return page === "tools" || pageKeys.has(page) ? page : "chat";
 }
 
+function syncPageLocation(page, mode = "replace") {
+  if (typeof window === "undefined" || !pageKeys.has(page)) return;
+  const url = new URL(window.location.href);
+  if (page === "chat") url.searchParams.delete("page");
+  else url.searchParams.set("page", page);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next === current) return;
+  const method = mode === "push" ? "pushState" : "replaceState";
+  window.history[method]({}, "", next);
+}
+
 function currentFocusOutsideWorkbench() {
   if (typeof document === "undefined" || typeof HTMLElement === "undefined") return null;
   const element = document.activeElement;
@@ -164,15 +186,35 @@ function WorkbenchShell() {
       const page = event.detail?.page;
       if (pageKeys.has(page)) {
         setActivePage(page);
+        const mirroredPageChange = event.type === "knowflow:react-page-activated"
+          && event.detail?.source === "page-change-bridge";
+        if (!mirroredPageChange) {
+          syncPageLocation(
+            page,
+            event.type === "knowflow:react-page-change" ? "push" : "replace",
+          );
+        }
       }
+    };
+    const handlePopState = () => {
+      setActivePage(readInitialPage());
     };
     window.addEventListener("knowflow:react-page-change", handlePageEvent);
     window.addEventListener("knowflow:react-page-activated", handlePageEvent);
+    window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener("knowflow:react-page-change", handlePageEvent);
       window.removeEventListener("knowflow:react-page-activated", handlePageEvent);
+      window.removeEventListener("popstate", handlePopState);
     };
   }, []);
+
+  useEffect(() => {
+    syncPageLocation(activePage, "replace");
+    if (typeof document !== "undefined") {
+      document.title = pageTitles[activePage] || pageTitles.chat;
+    }
+  }, [activePage]);
 
   useEffect(() => {
     const handleSessionIndex = (event) => {
