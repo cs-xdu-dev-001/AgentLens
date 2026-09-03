@@ -152,7 +152,10 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "mono-dark"; });
-  await page.getByRole("button", { name: "打开命令面板", exact: true }).click();
+  await page.getByRole("button", { name: /打开功能菜单/ }).click();
+  const mobileNavigation = page.locator('.mobile-navigation-content[role="menu"]');
+  await mobileNavigation.waitFor({ state: "visible" });
+  await mobileNavigation.getByRole("menuitem", { name: /命令面板/ }).click();
   await palette.waitFor({ state: "visible" });
   await page.screenshot({ path: resolve(artifacts, "mobile-dark.png") });
   const bounds = await palette.boundingBox();

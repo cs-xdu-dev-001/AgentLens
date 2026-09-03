@@ -77,6 +77,13 @@ try {
   const welcomeStatus = page.locator(".welcome-context");
   await page.locator('.welcome-context[data-workspace-state="ready"]').waitFor();
   assert.equal(await welcomeStatus.innerText(), "打开当前工作区");
+  if (process.env.AGENTLENS_EMPTY_WIDE_SCREENSHOT_PATH) {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.screenshot({ path: process.env.AGENTLENS_EMPTY_WIDE_SCREENSHOT_PATH, fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 800 });
+  }
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await page.locator(".welcome-card").evaluate((node) => getComputedStyle(node).animationName), "none");
   await welcomeActions.getByRole("button", { name: "梳理项目结构", exact: true }).focus();
@@ -99,6 +106,44 @@ try {
   if (process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH) {
     await page.screenshot({ path: process.env.AGENTLENS_EMPTY_MOBILE_SCREENSHOT_PATH, fullPage: true });
   }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  if (process.env.AGENTLENS_EMPTY_MOBILE_390_SCREENSHOT_PATH) {
+    await page.screenshot({ path: process.env.AGENTLENS_EMPTY_MOBILE_390_SCREENSHOT_PATH, fullPage: true });
+  }
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-toast", {
+    detail: { message: "移动端反馈", duration: 160 },
+  })));
+  const mobileToast = page.locator(".toast.show");
+  await mobileToast.waitFor({ state: "visible" });
+  const [mobileToastBounds, mobileComposerBounds] = await Promise.all([
+    mobileToast.boundingBox(),
+    page.locator("#chat-form").boundingBox(),
+  ]);
+  assert.ok(
+    mobileToastBounds
+    && mobileComposerBounds
+    && mobileToastBounds.y + mobileToastBounds.height <= mobileComposerBounds.y - 8,
+    JSON.stringify({ mobileToastBounds, mobileComposerBounds }),
+  );
+  await page.waitForFunction(() => !document.getElementById("toast")?.classList.contains("show"));
+  const mobileMenuTrigger = page.getByRole("button", { name: /打开功能菜单，当前：对话/ });
+  await mobileMenuTrigger.click();
+  const mobileMenu = page.locator('.mobile-navigation-content[role="menu"]');
+  await mobileMenu.waitFor({ state: "visible" });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const mobileMenuBounds = await mobileMenu.boundingBox();
+  assert.ok(mobileMenuBounds && mobileMenuBounds.x >= 0 && mobileMenuBounds.x + mobileMenuBounds.width <= 390);
+  assert.ok(
+    mobileMenuBounds && mobileMenuBounds.y >= 0 && mobileMenuBounds.y + mobileMenuBounds.height <= 844,
+    JSON.stringify(mobileMenuBounds),
+  );
+  assert.equal(await mobileMenu.getByRole("menuitem", { name: "对话", exact: true }).getAttribute("aria-current"), "page");
+  if (process.env.AGENTLENS_MOBILE_MENU_SCREENSHOT_PATH) {
+    await page.screenshot({ path: process.env.AGENTLENS_MOBILE_MENU_SCREENSHOT_PATH, fullPage: true });
+  }
+  await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByRole("button", { name: "切换到夜间模式", exact: true }).click();
   await page.locator('body[data-theme="mono-dark"]').waitFor();
@@ -203,22 +248,23 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const activeMobileNav = page.locator('#sidebar-bottom-tools [data-page="workspace"]');
+  const mobileNavigationTrigger = page.getByRole("button", { name: /打开功能菜单，当前：工作区/ });
+  await mobileNavigationTrigger.click();
+  const mobileNavigation = page.locator('.mobile-navigation-content[role="menu"]');
+  await mobileNavigation.waitFor({ state: "visible" });
+  const activeMobileNav = mobileNavigation.getByRole("menuitem", { name: "工作区", exact: true });
   assert.equal(await activeMobileNav.getAttribute("aria-current"), "page");
   const navVisibility = await activeMobileNav.evaluate((node) => {
-    const container = node.parentElement;
     const nodeRect = node.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
     return {
       left: nodeRect.left,
       right: nodeRect.right,
-      containerLeft: containerRect.left,
-      containerRight: containerRect.right,
-      scrollLeft: container.scrollLeft,
+      viewportWidth: window.innerWidth,
     };
   });
-  assert.ok(navVisibility.left >= navVisibility.containerLeft - 1, JSON.stringify(navVisibility));
-  assert.ok(navVisibility.right <= navVisibility.containerRight + 1, JSON.stringify(navVisibility));
+  assert.ok(navVisibility.left >= 0, JSON.stringify(navVisibility));
+  assert.ok(navVisibility.right <= navVisibility.viewportWidth, JSON.stringify(navVisibility));
+  await page.keyboard.press("Escape");
   await fileList.getByRole("button", { name: /README\.md.*预览/ }).click();
   await preview.waitFor({ state: "visible" });
   const previewBounds = await preview.boundingBox();

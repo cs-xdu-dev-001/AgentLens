@@ -702,20 +702,22 @@ function WelcomeSurface({ onSeed, workspaceState }) {
   }));
   return (
     <div className={"welcome-card"} data-welcome-surface={"true"}>
-      <h2>{"有什么可以帮你？"}</h2>
-      <button
-        className={["welcome-context", workspaceMode].join(" ")}
-        data-workspace-state={workspaceMode}
-        type={"button"}
-        disabled={workspaceMode === "loading"}
-        aria-busy={workspaceMode === "loading"}
-        aria-live={"polite"}
-        onClick={openWorkspace}
-      >
-        <span className={"welcome-context-dot"} aria-hidden={"true"}></span>
-        <span>{workspaceCopy}</span>
-        {workspaceMode !== "loading" ? <ChevronRight size={16} aria-hidden={"true"} /> : null}
-      </button>
+      <div className={"welcome-heading"}>
+        <h2>{"开始一项任务"}</h2>
+        <button
+          className={["welcome-context", workspaceMode].join(" ")}
+          data-workspace-state={workspaceMode}
+          type={"button"}
+          disabled={workspaceMode === "loading"}
+          aria-busy={workspaceMode === "loading"}
+          aria-live={"polite"}
+          onClick={openWorkspace}
+        >
+          <span className={"welcome-context-dot"} aria-hidden={"true"}></span>
+          <span>{workspaceCopy}</span>
+          {workspaceMode !== "loading" ? <ChevronRight size={16} aria-hidden={"true"} /> : null}
+        </button>
+      </div>
       <nav className={"welcome-actions"} aria-label={"常用起始任务"}>
         {WELCOME_ACTIONS.map((action) => {
           const Icon = action.icon;

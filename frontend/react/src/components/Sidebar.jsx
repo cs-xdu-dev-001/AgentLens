@@ -1,4 +1,15 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  Bell,
+  Check,
+  ChevronDown,
+  ClipboardCopy,
+  Command,
+  LogOut,
+  Menu,
+  MessageSquare,
+} from "lucide-react";
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Virtuoso } from "react-virtuoso";
@@ -185,6 +196,128 @@ function SidebarToolIcon({ type }) {
       <path d={"M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7"} />
       <path d={"M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"} />
     </svg>
+  );
+}
+
+function MobileNavigationMenu({ activePage, onPageIntent, onPageChange }) {
+  const { loading, logout, user } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const activeTool = sidebarTools.find((tool) => tool.page === activePage);
+  const currentLabel = activePage === "chat" ? "对话" : (activeTool?.label || "功能");
+  const displayName = user?.displayName || user?.username || (loading ? "正在连接" : "账户");
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+      window.dispatchEvent(new CustomEvent("knowflow:react-auth-logout", {
+        detail: { message: "已退出登录" },
+      }));
+    } catch (error) {
+      notifyError(error, "退出登录失败");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  const selectPage = (page) => {
+    onPageIntent?.(page);
+    onPageChange(page);
+  };
+
+  return (
+    <div className={"mobile-navigation"}>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button
+            className={"mobile-navigation-trigger"}
+            id={"mobile-navigation-trigger"}
+            type={"button"}
+            aria-label={`打开功能菜单，当前：${currentLabel}`}
+          >
+            <Menu size={18} strokeWidth={1.8} aria-hidden={"true"} />
+            <span className={"mobile-navigation-trigger-label"}>{currentLabel}</span>
+            <ChevronDown className={"mobile-navigation-chevron"} size={15} strokeWidth={1.8} aria-hidden={"true"} />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align={"end"}
+            aria-label={"功能导航"}
+            aria-labelledby={"mobile-navigation-trigger"}
+            className={"mobile-navigation-content"}
+            collisionPadding={8}
+            sideOffset={8}
+          >
+            <DropdownMenu.Label className={"mobile-navigation-label"}>
+              <span>{"AgentLens"}</span>
+              <strong>{displayName}</strong>
+            </DropdownMenu.Label>
+            <DropdownMenu.Item
+              aria-current={activePage === "chat" ? "page" : undefined}
+              className={"mobile-navigation-item"}
+              onSelect={() => selectPage("chat")}
+            >
+              <span className={"mobile-navigation-item-icon"}><MessageSquare size={18} aria-hidden={"true"} /></span>
+              <span>{"对话"}</span>
+              {activePage === "chat" ? <Check className={"mobile-navigation-check"} size={16} aria-hidden={"true"} /> : null}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={"mobile-navigation-item"}
+              onSelect={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
+            >
+              <span className={"mobile-navigation-item-icon"}><Command size={18} aria-hidden={"true"} /></span>
+              <span>{"命令面板"}</span>
+              <kbd>{"Ctrl K"}</kbd>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={"mobile-navigation-item"}
+              onSelect={() => window.dispatchEvent(new CustomEvent("knowflow:react-pending-approvals-open"))}
+            >
+              <span className={"mobile-navigation-item-icon"}><Bell size={18} aria-hidden={"true"} /></span>
+              <span>{"待处理审批"}</span>
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator className={"mobile-navigation-separator"} />
+            {sidebarTools.map((tool) => (
+              <DropdownMenu.Item
+                aria-current={activePage === tool.page ? "page" : undefined}
+                className={"mobile-navigation-item"}
+                data-page={tool.page}
+                key={tool.key}
+                onFocus={() => onPageIntent?.(tool.page)}
+                onSelect={() => {
+                  if (tool.href) {
+                    window.open(tool.href, "_blank", "noopener,noreferrer");
+                    return;
+                  }
+                  selectPage(tool.page);
+                }}
+              >
+                <span className={"mobile-navigation-item-icon"}><SidebarToolIcon type={tool.icon} /></span>
+                <span>{tool.label}</span>
+                {activePage === tool.page ? <Check className={"mobile-navigation-check"} size={16} aria-hidden={"true"} /> : null}
+              </DropdownMenu.Item>
+            ))}
+            <DropdownMenu.Separator className={"mobile-navigation-separator"} />
+            <DropdownMenu.Item
+              className={"mobile-navigation-item"}
+              onSelect={() => window.dispatchEvent(new CustomEvent("knowflow:react-diagnostic-copy-request"))}
+            >
+              <span className={"mobile-navigation-item-icon"}><ClipboardCopy size={18} aria-hidden={"true"} /></span>
+              <span>{"复制脱敏诊断"}</span>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={"mobile-navigation-item danger"}
+              disabled={loggingOut}
+              onSelect={() => void handleLogout()}
+            >
+              <span className={"mobile-navigation-item-icon"}><LogOut size={18} aria-hidden={"true"} /></span>
+              <span>{loggingOut ? "正在退出…" : "退出登录"}</span>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
   );
 }
 
@@ -1581,6 +1714,14 @@ function PendingApprovals({ collapsed = false }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open]);
+  useEffect(() => {
+    const handleOpenRequest = () => {
+      setOpen(true);
+      void load({ silent: true });
+    };
+    window.addEventListener("knowflow:react-pending-approvals-open", handleOpenRequest);
+    return () => window.removeEventListener("knowflow:react-pending-approvals-open", handleOpenRequest);
+  }, [load]);
   const openApproval = (approval) => {
     const sessionId = approval?.sessionId || approval?.session_id;
     setOpen(false);
@@ -1627,31 +1768,44 @@ function PendingApprovals({ collapsed = false }) {
         <span className={"pending-approvals-label"}>{"待处理审批"}</span>
         {items.length ? <span className={"pending-approvals-badge"}>{countLabel}</span> : null}
       </button>
-      {open ? (
-        <div className={"pending-approvals-list"} id={"pending-approvals-list"} role={"region"} aria-label={"待处理审批列表"} aria-live={"polite"}>
-          <div className={"pending-approvals-list-heading"}>
-            <strong>{"需要你的确认"}</strong>
-            {loading ? <span>{"同步中"}</span> : null}
-          </div>
-          {error ? (
-            <button className={"pending-approvals-retry"} type={"button"} onClick={() => load()}>
-              {"加载失败 · 重试"}
-            </button>
-          ) : items.length ? (
-            <>
-              {items.slice(0, 6).map((item) => (
-                <button type={"button"} className={"pending-approval-item"} key={item.approvalId} onClick={() => openApproval(item)}>
-                  <strong>{item.toolName || "工具操作"}</strong>
-                  <span>{item.sessionTitle || item.goalSummary || item.serverName || "等待确认"}</span>
+        {open ? (
+          <>
+            <button
+              aria-label={"关闭待处理审批"}
+              className={"pending-approvals-backdrop"}
+              type={"button"}
+              onClick={() => setOpen(false)}
+            />
+            <div className={"pending-approvals-list"} id={"pending-approvals-list"} role={"region"} aria-label={"待处理审批列表"} aria-live={"polite"}>
+              <div className={"pending-approvals-list-heading"}>
+                <strong>{"需要你的确认"}</strong>
+                <span>
+                  {loading ? "同步中" : null}
+                  <button type={"button"} aria-label={"关闭待处理审批"} onClick={() => setOpen(false)}>
+                    {"关闭"}
+                  </button>
+                </span>
+              </div>
+              {error ? (
+                <button className={"pending-approvals-retry"} type={"button"} onClick={() => load()}>
+                  {"加载失败 · 重试"}
                 </button>
-              ))}
-              {items.length > 6 ? <span className={"pending-approvals-more"}>{`还有${items.length - 6}项`}</span> : null}
-            </>
-          ) : (
-            <span className={"pending-approvals-empty"}>{"暂无待处理审批"}</span>
-          )}
-        </div>
-      ) : null}
+              ) : items.length ? (
+                <>
+                  {items.slice(0, 6).map((item) => (
+                    <button type={"button"} className={"pending-approval-item"} key={item.approvalId} onClick={() => openApproval(item)}>
+                      <strong>{item.toolName || "工具操作"}</strong>
+                      <span>{item.sessionTitle || item.goalSummary || item.serverName || "等待确认"}</span>
+                    </button>
+                  ))}
+                  {items.length > 6 ? <span className={"pending-approvals-more"}>{`还有${items.length - 6}项`}</span> : null}
+                </>
+              ) : (
+                <span className={"pending-approvals-empty"}>{"暂无待处理审批"}</span>
+              )}
+            </div>
+          </>
+        ) : null}
     </div>
   );
 }
@@ -1670,41 +1824,7 @@ export function Sidebar({
     collapsed ? "collapsed" : "",
     mobileHistoryOpen ? "mobile-history-open" : "",
   ].filter(Boolean).join(" ");
-  const bottomToolsRef = useRef(null);
   const sidebarToggleLabel = collapsed ? "展开侧边栏" : "收起侧边栏";
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    let frame = 0;
-    const alignActiveTool = () => {
-      if (window.innerWidth > 760) return;
-      if (frame) window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        const container = bottomToolsRef.current;
-        const target = Array.from(container?.querySelectorAll("[data-page]") || [])
-          .find((item) => item.dataset.page === activePage);
-        if (!container || !target) return;
-        const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-        const containerRect = container.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const targetCenter = targetRect.left - containerRect.left
-          + container.scrollLeft
-          + targetRect.width / 2;
-        const nextScrollLeft = Math.min(
-          maxScroll,
-          Math.max(0, targetCenter - container.clientWidth / 2),
-        );
-        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-        container.scrollTo({ left: nextScrollLeft, behavior: reduceMotion ? "auto" : "smooth" });
-      });
-    };
-    alignActiveTool();
-    window.addEventListener("resize", alignActiveTool);
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", alignActiveTool);
-    };
-  }, [activePage]);
   const handlePageChange = (page) => {
     window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page } }));
   };
@@ -1774,6 +1894,11 @@ export function Sidebar({
           </svg>
         </button>
       </Tooltip>
+      <MobileNavigationMenu
+        activePage={activePage}
+        onPageChange={handlePageChange}
+        onPageIntent={onPageIntent}
+      />
       <Tooltip content={"命令面板"} shortcut={"Ctrl/⌘+K"} side={"right"}>
         <button
           className={"sidebar-tool command-palette-trigger"}
@@ -1798,7 +1923,7 @@ export function Sidebar({
         onMobileClose={onMobileHistoryClose}
         onSessionIndexChange={onSessionIndexChange}
       />
-      <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"} ref={bottomToolsRef}>
+      <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
         {sidebarTools.map((tool) => (
           <Tooltip key={tool.key} content={tool.label} side={"right"}>
             {tool.href ? (

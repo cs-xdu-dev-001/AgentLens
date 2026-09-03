@@ -80,18 +80,26 @@ try {
   assert.equal(await page.title(), "Skills · AgentLens");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('#sidebar-bottom-tools [data-page="workspace"]').click();
+  const mobileNavigationTrigger = page.getByRole("button", { name: /打开功能菜单/ });
+  await mobileNavigationTrigger.click();
+  const mobileNavigation = page.locator('.mobile-navigation-content[role="menu"]');
+  await mobileNavigation.waitFor({ state: "visible" });
+  assert.equal(await mobileNavigation.getByRole("menuitem", { name: /命令面板/ }).count(), 1);
+  assert.equal(await mobileNavigation.getByRole("menuitem", { name: "待处理审批", exact: true }).count(), 1);
+  await mobileNavigation.getByRole("menuitem", { name: "工作区", exact: true }).click();
   await waitForPage("workspace");
   await waitForUrlPage("workspace");
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const activeWorkspace = page.locator('#sidebar-bottom-tools [data-page="workspace"]');
+  assert.match(await mobileNavigationTrigger.getAttribute("aria-label"), /当前：工作区/);
+  await mobileNavigationTrigger.click();
+  const activeWorkspace = page.locator('.mobile-navigation-content[role="menu"]').getByRole("menuitem", { name: "工作区", exact: true });
   assert.equal(await activeWorkspace.getAttribute("aria-current"), "page");
   const visibleBounds = await activeWorkspace.evaluate((node) => {
-    const container = node.parentElement.getBoundingClientRect();
     const target = node.getBoundingClientRect();
-    return target.left >= container.left - 1 && target.right <= container.right + 1;
+    return target.left >= 0 && target.right <= window.innerWidth;
   });
   assert.equal(visibleBounds, true);
+  await page.keyboard.press("Escape");
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);
   console.log("page navigation browser checks passed: deep link, title, pushState, popstate, chat root, mobile active-item alignment");

@@ -38,9 +38,10 @@ test("distributed Lucide license matches the installed icon package", async () =
   assert.equal(distributed.replace(/\r\n/g, "\n"), upstream.replace(/\r\n/g, "\n"));
 });
 
-test("distributed tooltip licenses match their installed packages", async () => {
+test("distributed Radix and Floating UI licenses match their installed packages", async () => {
   for (const [dependency, license] of [
     ["@radix-ui/react-tooltip", "radix-ui"],
+    ["@radix-ui/react-dropdown-menu", "radix-ui"],
     ["@floating-ui/react-dom", "floating-ui"],
   ]) {
     const [upstream, distributed] = await Promise.all([
@@ -107,11 +108,12 @@ test("mobile run details expose a dismissible backdrop without changing desktop 
   assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*chat-mobile-drawer-backdrop/);
 });
 
-test("mobile navigation keeps the active page in view and exposes current semantics", async () => {
+test("mobile navigation uses the maintained Radix menu and exposes current semantics", async () => {
   const source = await readSource("components/Sidebar.jsx");
-  assert.match(source, /bottomToolsRef/);
-  assert.match(source, /container\.scrollTo\(/);
-  assert.match(source, /prefers-reduced-motion/);
+  assert.match(source, /@radix-ui\/react-dropdown-menu/);
+  assert.match(source, /function MobileNavigationMenu/);
+  assert.match(source, /mobile-navigation-trigger/);
+  assert.match(source, /aria-label=\{`打开功能菜单，当前：\$\{currentLabel\}`\}/);
   assert.match(source, /aria-current={activePage === tool\.page \? "page" : undefined}/);
 });
 
