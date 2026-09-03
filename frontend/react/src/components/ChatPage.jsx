@@ -125,6 +125,18 @@ export function ChatPage({ active = false, drawerCollapsed = true }) {
           <ChatEvidenceDrawer />
         </Panel>
       </Group>
+      {!drawerCollapsed ? (
+        <button
+          aria-label={"关闭运行详情"}
+          className={"chat-mobile-drawer-backdrop"}
+          data-mobile-drawer-backdrop={"true"}
+          tabIndex={-1}
+          type={"button"}
+          onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-drawer-close", {
+            detail: { restoreFocus: true },
+          }))}
+        />
+      ) : null}
     </section>
   );
 }

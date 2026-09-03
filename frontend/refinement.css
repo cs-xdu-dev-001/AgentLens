@@ -5241,6 +5241,33 @@ body.sidebar-collapsed .sidebar {
 }
 
 @media (max-width: 760px) {
+  #page-chat {
+    position: relative;
+  }
+
+  .chat-mobile-drawer-backdrop {
+    position: fixed;
+    z-index: 39;
+    top: 56px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(15, 23, 42, 0.28);
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .chat-mobile-drawer-backdrop {
+      animation: chat-mobile-drawer-backdrop-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+  }
+
   #page-chat .chat-layout-resizable > [data-panel]#evidence-panel {
     position: fixed !important;
     top: auto !important;
@@ -5261,7 +5288,16 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+@keyframes chat-mobile-drawer-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .chat-mobile-drawer-backdrop {
+    animation: none !important;
+  }
+
   #page-chat .chat-layout-resizable > [data-panel]#evidence-panel {
     transition: none !important;
   }

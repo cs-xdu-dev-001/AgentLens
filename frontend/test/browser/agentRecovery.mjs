@@ -186,11 +186,21 @@ try {
   assert.ok(mobileEvidenceBox && mobileEvidenceBox.x >= 0 && mobileEvidenceBox.width >= 374 && mobileEvidenceBox.x + mobileEvidenceBox.width <= 375);
   assert.equal(await mobileEvidencePanel.evaluate((node) => getComputedStyle(node).position), "fixed");
   assert.equal(await resizeSeparator.evaluate((node) => getComputedStyle(node).display), "none");
+  const mobileBackdrop = page.locator("[data-mobile-drawer-backdrop='true']");
+  await mobileBackdrop.waitFor({ state: "visible" });
+  const backdropBounds = await mobileBackdrop.boundingBox();
+  assert.ok(backdropBounds && backdropBounds.y >= 56 && backdropBounds.width >= 374 && backdropBounds.x >= 0);
+  assert.equal(await mobileBackdrop.evaluate((node) => getComputedStyle(node).zIndex), "39");
   for (const button of await panel.locator("button").all()) {
     const box = await button.boundingBox();
     assert.ok(box && box.x >= 0 && box.x + box.width <= 375);
   }
   await screenshot("recovery-mobile.png");
+  await mobileBackdrop.click({ position: { x: 12, y: 12 } });
+  await mobileEvidencePanel.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.id === "inspector-toggle");
+  await page.locator("#inspector-toggle").click();
+  await mobileBackdrop.waitFor({ state: "visible" });
   await continueButton().click();
   await page.getByText("已恢复任务并完成回归验证。", { exact: true }).first().waitFor();
   assert.deepEqual(cursors, [{ runId: "run-browser-recovery", after: 3 }]);

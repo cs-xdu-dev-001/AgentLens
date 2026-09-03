@@ -95,3 +95,14 @@ test("thinking orb follows the mono theme instead of pinning light ink", async (
   assert.doesNotMatch(source, /theme=\{"light"\}/);
   assert.match(css, /\.agent-thinking-orb[\s\S]*color:\s*var\(--text-soft/);
 });
+
+test("mobile run details expose a dismissible backdrop without changing desktop structure", async () => {
+  const [page, css] = await Promise.all([
+    readSource("components/ChatPage.jsx"),
+    readCss("refinement.css"),
+  ]);
+  assert.match(page, /chat-mobile-drawer-backdrop/);
+  assert.match(page, /关闭运行详情/);
+  assert.match(css, /\.chat-mobile-drawer-backdrop[\s\S]*z-index:\s*39/);
+  assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*chat-mobile-drawer-backdrop/);
+});
