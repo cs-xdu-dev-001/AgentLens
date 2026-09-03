@@ -1670,7 +1670,41 @@ export function Sidebar({
     collapsed ? "collapsed" : "",
     mobileHistoryOpen ? "mobile-history-open" : "",
   ].filter(Boolean).join(" ");
+  const bottomToolsRef = useRef(null);
   const sidebarToggleLabel = collapsed ? "展开侧边栏" : "收起侧边栏";
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let frame = 0;
+    const alignActiveTool = () => {
+      if (window.innerWidth > 760) return;
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const container = bottomToolsRef.current;
+        const target = Array.from(container?.querySelectorAll("[data-page]") || [])
+          .find((item) => item.dataset.page === activePage);
+        if (!container || !target) return;
+        const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const targetCenter = targetRect.left - containerRect.left
+          + container.scrollLeft
+          + targetRect.width / 2;
+        const nextScrollLeft = Math.min(
+          maxScroll,
+          Math.max(0, targetCenter - container.clientWidth / 2),
+        );
+        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        container.scrollTo({ left: nextScrollLeft, behavior: reduceMotion ? "auto" : "smooth" });
+      });
+    };
+    alignActiveTool();
+    window.addEventListener("resize", alignActiveTool);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", alignActiveTool);
+    };
+  }, [activePage]);
   const handlePageChange = (page) => {
     window.dispatchEvent(new CustomEvent("knowflow:react-page-change", { detail: { page } }));
   };
@@ -1764,7 +1798,7 @@ export function Sidebar({
         onMobileClose={onMobileHistoryClose}
         onSessionIndexChange={onSessionIndexChange}
       />
-      <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
+      <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"} ref={bottomToolsRef}>
         {sidebarTools.map((tool) => (
           <Tooltip key={tool.key} content={tool.label} side={"right"}>
             {tool.href ? (
@@ -1774,9 +1808,10 @@ export function Sidebar({
               </a>
             ) : (
               <button
-                className={activePage === tool.page ? "sidebar-tool active" : "sidebar-tool"}
-                data-page={tool.page}
-                type={"button"}
+                  className={activePage === tool.page ? "sidebar-tool active" : "sidebar-tool"}
+                  data-page={tool.page}
+                  aria-current={activePage === tool.page ? "page" : undefined}
+                  type={"button"}
                 aria-label={tool.label}
                 onMouseEnter={() => onPageIntent?.(tool.page)}
                 onFocus={() => onPageIntent?.(tool.page)}

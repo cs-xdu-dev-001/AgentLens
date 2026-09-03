@@ -106,3 +106,11 @@ test("mobile run details expose a dismissible backdrop without changing desktop 
   assert.match(css, /\.chat-mobile-drawer-backdrop[\s\S]*z-index:\s*39/);
   assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*chat-mobile-drawer-backdrop/);
 });
+
+test("mobile navigation keeps the active page in view and exposes current semantics", async () => {
+  const source = await readSource("components/Sidebar.jsx");
+  assert.match(source, /bottomToolsRef/);
+  assert.match(source, /container\.scrollTo\(/);
+  assert.match(source, /prefers-reduced-motion/);
+  assert.match(source, /aria-current={activePage === tool\.page \? "page" : undefined}/);
+});

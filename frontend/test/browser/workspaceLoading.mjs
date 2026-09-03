@@ -202,6 +202,23 @@ try {
   await preview.waitFor({ state: "detached" });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const activeMobileNav = page.locator('#sidebar-bottom-tools [data-page="workspace"]');
+  assert.equal(await activeMobileNav.getAttribute("aria-current"), "page");
+  const navVisibility = await activeMobileNav.evaluate((node) => {
+    const container = node.parentElement;
+    const nodeRect = node.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    return {
+      left: nodeRect.left,
+      right: nodeRect.right,
+      containerLeft: containerRect.left,
+      containerRight: containerRect.right,
+      scrollLeft: container.scrollLeft,
+    };
+  });
+  assert.ok(navVisibility.left >= navVisibility.containerLeft - 1, JSON.stringify(navVisibility));
+  assert.ok(navVisibility.right <= navVisibility.containerRight + 1, JSON.stringify(navVisibility));
   await fileList.getByRole("button", { name: /README\.md.*预览/ }).click();
   await preview.waitFor({ state: "visible" });
   const previewBounds = await preview.boundingBox();
