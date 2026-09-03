@@ -16,6 +16,13 @@ function currentThinkingStep(trace) {
   );
 }
 
+function resolveOrbTheme() {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement?.dataset?.theme === "mono-dark"
+    ? "dark"
+    : "light";
+}
+
 export function agentThinkingState(trace = []) {
   const step = currentThinkingStep(trace);
   const signature = [
@@ -54,7 +61,18 @@ export function AgentThinkingOrb({ trace = [], state: requestedState = "", label
     };
   }, [requestedLabel, requestedState, trace]);
   const [stable, setStable] = useState(next);
+  const [orbTheme, setOrbTheme] = useState(resolveOrbTheme);
   const committedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const updateTheme = () => setOrbTheme(resolveOrbTheme());
+    updateTheme();
+    if (typeof MutationObserver === "undefined") return undefined;
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (stable.state === next.state && stable.label === next.label) return undefined;
@@ -79,7 +97,7 @@ export function AgentThinkingOrb({ trace = [], state: requestedState = "", label
         size={20}
         speed={0.9}
         state={stable.state}
-        theme={"light"}
+        theme={orbTheme}
       />
       <span>{stable.label}</span>
     </div>

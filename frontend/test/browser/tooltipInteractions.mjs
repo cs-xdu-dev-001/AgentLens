@@ -116,6 +116,36 @@ try {
   assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 1440 && bounds.y >= 0);
   assert.match(await page.getByRole("tooltip").innerText(), /切换到日间模式/);
   await page.screenshot({ path: resolve(artifacts, "desktop-dark.png"), animations: "disabled" });
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-message-append", {
+      detail: {
+        role: "assistant",
+        rawContent: "",
+        thinking: true,
+        trace: [{ kind: "tool", name: "read_workspace_file", status: "running" }],
+      },
+    }));
+  });
+  const thinkingOrb = page.locator(".agent-thinking-orb").last();
+  await thinkingOrb.waitFor({ state: "visible" });
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "mono-dark");
+  const orbTextColor = await thinkingOrb.evaluate(node => getComputedStyle(node).color);
+  assert.notEqual(orbTextColor, "rgb(48, 48, 48)", "dark mode must not keep the light-theme orb label color");
+  await page.screenshot({ path: resolve(artifacts, "desktop-dark-orb.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "切换到日间模式", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "mono-light");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".agent-thinking-orb")).color === "rgb(48, 48, 48)");
+  await page.getByRole("button", { name: "切换到夜间模式", exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "mono-dark");
+  await page.evaluate(() => {
+    const detail = { showWelcome: true };
+    window.dispatchEvent(new CustomEvent("knowflow:react-messages-reset", { detail }));
+  });
+  await draft.waitFor({ state: "visible" });
+  await page.mouse.move(800, 400);
+  await draft.focus();
+  await page.getByRole("button", { name: "切换到日间模式", exact: true }).focus();
+  await tooltip.waitFor({ state: "visible" });
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await tooltip.evaluate(node => getComputedStyle(node).animationName), "none");
   await page.keyboard.press("Escape");

@@ -85,3 +85,13 @@ test("responsive workbench respects short mobile viewports and reduced motion", 
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /welcome-action-arrow/);
 });
+
+test("thinking orb follows the mono theme instead of pinning light ink", async () => {
+  const source = await readSource("components/AgentThinkingOrb.jsx");
+  const css = await readCss("styles.css");
+  assert.match(source, /resolveOrbTheme/);
+  assert.match(source, /MutationObserver/);
+  assert.match(source, /theme=\{orbTheme\}/);
+  assert.doesNotMatch(source, /theme=\{"light"\}/);
+  assert.match(css, /\.agent-thinking-orb[\s\S]*color:\s*var\(--text-soft/);
+});

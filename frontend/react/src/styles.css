@@ -1360,7 +1360,7 @@ p {
   align-items: center;
   gap: 9px;
   min-width: 0;
-  color: #303030;
+  color: var(--text-soft, #303030);
   font-size: 14px;
   font-weight: 600;
   line-height: 20px;
