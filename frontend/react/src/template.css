@@ -3067,6 +3067,254 @@ select:focus {
   }
 }
 
+/* Compact knowledge rail on phones: keep the current space and create action
+ * visible without pushing the document surface below the first screen. */
+@media (max-width: 760px) {
+  #page-knowledge .knowledge-rail {
+    gap: 7px !important;
+    padding: 10px 12px !important;
+  }
+
+  #page-knowledge .kb-list-header {
+    min-height: 32px;
+    padding-bottom: 0 !important;
+  }
+
+  #page-knowledge .kb-list-heading {
+    gap: 7px;
+  }
+
+  #page-knowledge .kb-list-icon {
+    width: 26px;
+    height: 26px;
+    flex-basis: 26px;
+    border-radius: 7px;
+  }
+
+  #page-knowledge .kb-list-header .section-label {
+    font-size: 9px !important;
+  }
+
+  #page-knowledge .kb-list-header h2 {
+    font-size: 14px !important;
+  }
+
+  #page-knowledge .kb-create-button {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  #page-knowledge .kb-search-box {
+    min-height: 36px;
+    padding-inline: 9px !important;
+  }
+
+  #page-knowledge .kb-search-box input {
+    min-height: 34px !important;
+  }
+
+  #page-knowledge .kb-card-list {
+    max-height: 156px !important;
+  }
+
+  #page-knowledge .kb-empty {
+    min-height: 142px;
+    gap: 5px;
+    padding: 12px 8px;
+  }
+
+  #page-knowledge .kb-empty-icon {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 1px;
+    border-radius: 10px;
+  }
+
+  #page-knowledge .kb-empty > span:not(.kb-empty-icon) {
+    max-width: 220px;
+  }
+
+  #page-knowledge .kb-empty button {
+    min-height: 32px;
+    margin-top: 3px;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding-inline: 12px !important;
+  }
+
+  #page-knowledge .knowledge-tabbar,
+  #page-knowledge .knowledge-tab {
+    min-height: 50px !important;
+  }
+
+  #page-knowledge .knowledge-tab {
+    padding-inline: 10px !important;
+  }
+
+  #page-knowledge .knowledge-primary .document-toolbar {
+    gap: 8px;
+    padding-block: 12px !important;
+  }
+
+  #page-knowledge .document-table-panel {
+    margin-top: 12px !important;
+  }
+
+  #page-knowledge .document-empty {
+    min-height: 180px;
+    padding: 22px 12px;
+  }
+}
+
+/* Workspace browser finish: give the file area a deliberate reading width
+ * and keep status signals useful without turning the page into a dashboard. */
+#page-workspace .workspace-browser {
+  width: min(1120px, calc(100% - 32px));
+  min-height: calc(100dvh - 24px);
+  box-sizing: border-box;
+  padding: 28px 36px 42px;
+}
+
+#page-workspace .workspace-browser-header {
+  padding-bottom: 18px;
+}
+
+#page-workspace .workspace-browser-header h1 {
+  font-size: 26px;
+  font-weight: 740;
+  letter-spacing: -0.025em;
+}
+
+#page-workspace .workspace-runtime-strip {
+  gap: 0;
+  padding: 14px 0 10px;
+}
+
+#page-workspace .workspace-runtime-strip span {
+  padding: 4px 10px 4px 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--al-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+#page-workspace .workspace-runtime-strip span + span {
+  padding-left: 10px;
+  border-left: 1px solid var(--al-line);
+}
+
+#page-workspace .workspace-runtime-strip span.ready {
+  color: var(--al-success);
+}
+
+#page-workspace .workspace-runtime-strip span.warning {
+  color: color-mix(in srgb, var(--al-accent-strong) 78%, var(--al-ink));
+}
+
+#page-workspace .workspace-runtime-strip span.danger {
+  color: var(--al-danger);
+}
+
+#page-workspace .workspace-boundary-card {
+  margin: 4px 0 16px;
+  padding: 16px 16px 14px;
+  border-color: var(--al-line) !important;
+  border-radius: 14px;
+  background: var(--al-surface);
+  box-shadow: none;
+}
+
+#page-workspace .workspace-boundary-head {
+  margin-bottom: 14px;
+}
+
+#page-workspace .workspace-boundary-head strong {
+  font-size: 14px;
+  font-weight: 720;
+}
+
+#page-workspace .workspace-boundary-grid {
+  gap: 16px;
+}
+
+#page-workspace .workspace-boundary-grid span {
+  color: var(--al-muted);
+  font-size: 11px;
+}
+
+#page-workspace .workspace-boundary-grid strong {
+  color: var(--al-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#page-workspace .workspace-file-row {
+  min-height: 58px;
+  border-bottom-color: var(--al-line);
+}
+
+#page-workspace .workspace-file-open {
+  min-height: 44px;
+  gap: 10px;
+  padding-inline: 4px;
+  border-radius: 9px;
+}
+
+#page-workspace .workspace-file-open:hover {
+  background: var(--al-surface-soft);
+}
+
+#page-workspace .workspace-file-actions a,
+#page-workspace .workspace-file-actions button {
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+@media (max-width: 720px) {
+  #page-workspace .workspace-browser {
+    width: 100%;
+    min-height: 0;
+    padding: 20px 18px 34px;
+  }
+
+  #page-workspace .workspace-browser-header {
+    gap: 12px;
+    padding-bottom: 14px;
+  }
+
+  #page-workspace .workspace-browser-header h1 {
+    font-size: 24px;
+  }
+
+  #page-workspace .workspace-runtime-strip {
+    padding-top: 12px;
+  }
+
+  #page-workspace .workspace-runtime-strip span {
+    padding: 4px 9px 4px 0;
+  }
+
+  #page-workspace .workspace-runtime-strip span + span {
+    padding-left: 9px;
+  }
+
+  #page-workspace .workspace-boundary-card {
+    margin-top: 4px;
+    padding: 14px;
+  }
+
+  #page-workspace .workspace-boundary-grid {
+    gap: 12px;
+  }
+
+  #page-workspace .workspace-file-row {
+    min-height: 56px;
+  }
+}
+
 /* Chat workbench detail pass: make the chrome read as one calm instrument. */
 #page-chat .chat-topbar {
   position: relative;
