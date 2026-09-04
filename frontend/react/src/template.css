@@ -3166,6 +3166,40 @@ select:focus {
     min-height: 180px;
     padding: 22px 12px;
   }
+
+  /* The unconfigured document surface is an orientation cue, not a second
+   * hero. Use an icon rail plus a text stack so the title and explanation do
+   * not compete for the same horizontal line on narrow screens. */
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
+    min-height: 108px;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    justify-items: start;
+    gap: 4px 10px;
+    padding: 16px 10px;
+    text-align: left;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured .document-empty-icon {
+    grid-row: 1 / -1;
+    align-self: center;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured h3,
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured p {
+    min-width: 0;
+    margin: 0 !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured p {
+    overflow-wrap: anywhere;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-table-panel {
+    min-height: 0;
+  }
 }
 
 /* Workspace browser finish: give the file area a deliberate reading width
@@ -3503,6 +3537,215 @@ select:focus {
   border-color: var(--al-line) !important;
 }
 
+/* Composer operational surfaces: queues and run state belong to the same
+ * work lane as the input, so keep their density and controls consistent with
+ * the composer instead of letting them read like loose debug text. */
+#page-chat #chat-form.composer .composer-queue,
+#page-chat #chat-form.composer .composer-agent-state,
+#page-chat #chat-form.composer .composer-follow-up,
+#page-chat #chat-form.composer .composer-stash-notice {
+  box-sizing: border-box;
+  margin-right: 4px;
+  margin-left: 4px;
+  border: 1px solid var(--al-line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--al-surface-raised) 92%, var(--al-canvas));
+  box-shadow: none;
+}
+
+#page-chat #chat-form.composer .composer-queue {
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 7px 8px 8px;
+  border-top: 1px solid var(--al-line);
+}
+
+#page-chat #chat-form.composer .composer-queue-heading {
+  min-height: 30px;
+  padding: 0 2px 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--al-line) 82%, transparent);
+}
+
+#page-chat #chat-form.composer .composer-queue-heading strong {
+  color: var(--al-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#page-chat #chat-form.composer .composer-queue-heading > span {
+  align-items: center;
+  gap: 3px;
+}
+
+#page-chat #chat-form.composer .composer-queue-storage {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--al-surface-soft);
+  color: var(--al-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+#page-chat #chat-form.composer .composer-queue-row {
+  grid-template-columns: 22px minmax(0, 1fr) 84px 42px 42px;
+  gap: 5px;
+  min-height: 36px;
+  padding: 3px 2px;
+  border-radius: 8px;
+}
+
+#page-chat #chat-form.composer .composer-queue-row:hover {
+  background: var(--al-surface-soft);
+}
+
+#page-chat #chat-form.composer .composer-queue-index {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--al-accent-soft);
+  color: var(--al-accent-strong);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+#page-chat #chat-form.composer .composer-queue-row p {
+  color: var(--al-ink-soft);
+  font-size: 13px;
+}
+
+#page-chat #chat-form.composer .composer-queue-priority,
+#page-chat #chat-form.composer .composer-queue-action,
+#page-chat #chat-form.composer .composer-queue-heading button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--al-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+#page-chat #chat-form.composer .composer-queue-priority {
+  min-width: 84px;
+  padding: 0 22px 0 8px;
+  border-color: var(--al-line);
+  background: var(--al-surface-raised);
+}
+
+#page-chat #chat-form.composer .composer-queue-priority.priority-now {
+  border-color: color-mix(in srgb, var(--al-accent) 34%, var(--al-line));
+  color: var(--al-accent-strong);
+}
+
+#page-chat #chat-form.composer .composer-queue-action:hover:not(:disabled),
+#page-chat #chat-form.composer .composer-queue-heading button:hover:not(:disabled) {
+  border-color: var(--al-line);
+  color: var(--al-ink);
+  background: var(--al-surface-soft);
+}
+
+#page-chat #chat-form.composer .composer-queue :is(button, select):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--al-accent) 72%, transparent);
+  outline-offset: 1px;
+}
+
+#page-chat #chat-form.composer .composer-agent-state {
+  min-height: 40px;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 9px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  color: var(--al-muted);
+}
+
+#page-chat #chat-form.composer .composer-agent-state.running,
+#page-chat #chat-form.composer .composer-agent-state.approval,
+#page-chat #chat-form.composer .composer-agent-state.question,
+#page-chat #chat-form.composer .composer-agent-state.waiting {
+  border-color: color-mix(in srgb, var(--al-accent) 26%, var(--al-line));
+  background: color-mix(in srgb, var(--al-accent-soft) 34%, var(--al-surface-raised));
+}
+
+#page-chat #chat-form.composer .composer-agent-state.failed {
+  border-color: color-mix(in srgb, var(--al-danger) 28%, var(--al-line));
+  background: color-mix(in srgb, var(--al-danger) 6%, var(--al-surface-raised));
+}
+
+#page-chat #chat-form.composer .composer-agent-state.completed {
+  border-color: color-mix(in srgb, var(--al-success) 26%, var(--al-line));
+  background: color-mix(in srgb, var(--al-success) 6%, var(--al-surface-raised));
+}
+
+#page-chat #chat-form.composer .composer-agent-state-copy {
+  gap: 7px;
+}
+
+#page-chat #chat-form.composer .composer-agent-state-copy strong {
+  color: var(--al-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#page-chat #chat-form.composer .composer-agent-state-copy span {
+  color: var(--al-muted);
+  font-size: 12px;
+}
+
+#page-chat #chat-form.composer .composer-agent-state > button {
+  min-height: 30px;
+  padding-inline: 9px;
+  border: 1px solid var(--al-line);
+  border-radius: 8px;
+  background: var(--al-surface-raised);
+  color: var(--al-ink-soft);
+  font-size: 12px;
+}
+
+#page-chat #chat-form.composer .composer-follow-up {
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 3px;
+}
+
+#page-chat #chat-form.composer .composer-follow-up-accept {
+  min-height: 34px;
+  padding-inline: 8px;
+}
+
+#page-chat #chat-form.composer .composer-follow-up-dismiss {
+  width: 34px;
+  height: 34px;
+}
+
+#page-chat #chat-form.composer .composer-stash-notice {
+  min-height: 38px;
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  color: var(--al-muted);
+  font-size: 12px;
+}
+
+#page-chat #chat-form.composer .attachment-tray {
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+
+#page-chat #chat-form.composer .attachment-pill {
+  min-height: 40px;
+  max-width: min(320px, 100%);
+  border-color: var(--al-line);
+  border-radius: 11px;
+  background: var(--al-surface-raised);
+  box-shadow: none;
+}
+
 @media (max-width: 760px) {
   #page-chat .chat-topbar {
     min-height: 56px !important;
@@ -3523,6 +3766,58 @@ select:focus {
 
   #page-chat #chat-form.composer .composer-shell:focus-within {
     transform: none;
+  }
+
+  #page-chat #chat-form.composer .composer-queue,
+  #page-chat #chat-form.composer .composer-agent-state,
+  #page-chat #chat-form.composer .composer-follow-up,
+  #page-chat #chat-form.composer .composer-stash-notice {
+    margin-right: 0;
+    margin-left: 0;
+    border-radius: 10px;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row {
+    grid-template-columns: 22px minmax(0, 1fr) 44px 44px;
+    gap: 4px;
+    padding-block: 5px;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row p {
+    grid-column: 2 / -1;
+    white-space: normal;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-priority {
+    grid-column: 2;
+    justify-self: start;
+    min-width: 84px;
+    min-height: 36px;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-action {
+    min-width: 44px;
+    min-height: 40px;
+  }
+
+  #page-chat #chat-form.composer .composer-agent-state {
+    grid-template-columns: 8px minmax(0, 1fr);
+    padding: 8px 9px;
+  }
+
+  #page-chat #chat-form.composer .composer-agent-state-copy {
+    display: grid;
+    gap: 1px;
+  }
+
+  #page-chat #chat-form.composer .composer-agent-state-copy span {
+    white-space: normal;
+  }
+
+  #page-chat #chat-form.composer .composer-agent-state > button {
+    grid-column: 2;
+    justify-self: start;
+    min-height: 36px;
   }
 }
 
