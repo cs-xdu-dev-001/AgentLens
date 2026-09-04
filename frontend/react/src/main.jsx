@@ -7,6 +7,7 @@ import { TooltipProvider } from "./components/Tooltip.jsx";
 import "./styles.css";
 import "./refinement.css";
 import "./template.css";
+import "./sidebar-polish.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
