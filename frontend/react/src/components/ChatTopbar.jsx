@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder, RefreshCw } from "lucide-react";
+import { Activity, Folder, RefreshCw } from "lucide-react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
@@ -220,6 +220,7 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
             aria-label={runAccessibleLabel}
             onClick={handleDrawerToggle}
           >
+            <Activity className={"chat-run-icon"} size={17} strokeWidth={1.8} aria-hidden={"true"} />
             <span className={"chat-run-dot"} aria-hidden={"true"} />
             <span aria-live={"polite"}>{runLabel}</span>
             {runHeader.progress ? <span className={"chat-run-progress"}>{runHeader.progress}</span> : null}
