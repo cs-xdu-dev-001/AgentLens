@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CornerUpLeft, FileText, Folder } from "lucide-react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { copyTextToClipboard } from "../controller/clipboard.js";
@@ -392,7 +393,7 @@ export function WorkbenchPage({
             ) : null}
             {path ? (
               <button className="workspace-file-row directory" type="button" onClick={() => navigateTo(parentPath(path))} disabled={loading}>
-                <span className="workspace-file-icon">↰</span><strong>返回上一级</strong>
+                <span className="workspace-file-icon" aria-hidden="true"><CornerUpLeft size={17} strokeWidth={1.7} /></span><strong>返回上一级</strong>
               </button>
             ) : null}
             {!loading && !entries.length ? <div className="workspace-empty">工作区为空。上传文件，或让Agent在这里生成产物。</div> : null}
@@ -409,7 +410,11 @@ export function WorkbenchPage({
                     disabled={loading}
                     aria-pressed={entry.kind === "file" ? selected : undefined}
                   >
-                    <span className="workspace-file-icon">{entry.kind === "directory" ? "▢" : "·"}</span>
+                    <span className="workspace-file-icon" aria-hidden="true">
+                      {entry.kind === "directory"
+                        ? <Folder size={17} strokeWidth={1.7} />
+                        : <FileText size={17} strokeWidth={1.7} />}
+                    </span>
                     <strong>{fileName(entry.path)}</strong>
                     <span>{entry.kind === "directory" ? "文件夹" : "预览"}</span>
                   </button>

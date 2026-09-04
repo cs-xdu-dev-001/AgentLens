@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import { approvalApi } from "../api/client.js";
 import {
   allowApprovalForSession,
@@ -267,7 +268,7 @@ export function AgentApprovalPrompt({
     >
       <div className={"agent-approval-heading"}>
         <span className={"agent-approval-icon"} aria-hidden={"true"}>
-          {"!"}
+          <ShieldAlert size={17} strokeWidth={1.8} aria-hidden={"true"} />
         </span>
         <div>
           <strong>{pending ? "等待你的确认" : resolvedLabel}</strong>

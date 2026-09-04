@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
@@ -246,7 +247,9 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
                     <strong>{toolLabels[item.name] || item.name}</strong>
                     <small>{item.statusLabel}{meta ? ` · ${meta}` : ""}</small>
                   </span>
-                  <span className={"agent-tool-output-chevron"} aria-hidden={"true"}>{"›"}</span>
+                  <span className={"agent-tool-output-chevron"} aria-hidden={"true"}>
+                    <ChevronRight size={16} strokeWidth={1.8} />
+                  </span>
                 </button>
               );
             }}

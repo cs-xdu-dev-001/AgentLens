@@ -4669,6 +4669,17 @@ select:focus {
   .toast {
     bottom: calc(154px + env(safe-area-inset-bottom)) !important;
   }
+
+  /* The mobile run drawer owns the lower surface. Keep transient feedback in
+     the narrow band immediately above it so both the app bar and recovery
+     actions remain reachable. */
+  body:not(.drawer-collapsed) #toast {
+    bottom: calc(max(360px, min(74dvh, 680px)) + 12px + env(safe-area-inset-bottom)) !important;
+    right: 12px !important;
+    left: 12px;
+    z-index: 90;
+    max-width: none !important;
+  }
 }
 
 /* Conversation finishing pass: keep message actions attached to the reading

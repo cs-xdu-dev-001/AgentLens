@@ -6193,3 +6193,74 @@ body.sidebar-collapsed .sidebar {
     animation: none !important;
   }
 }
+
+/* Final icon and mobile workbench polish. Keep every status surface on the
+   same Lucide vocabulary and give the bottom drawer a quiet grab affordance. */
+.agent-approval-icon {
+  font-size: 0;
+}
+
+.agent-approval-icon svg,
+.agent-tool-output-chevron svg,
+.workspace-file-icon svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.agent-tool-output-chevron {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+}
+
+.workspace-file-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+}
+
+#page-chat.chat-empty .welcome-shortcuts kbd {
+  min-width: 22px;
+  height: 21px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  color: var(--text-soft);
+  background: var(--control-bg);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--control-border) 75%, transparent);
+  font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > .drawer-header {
+    position: relative;
+    padding-top: 24px !important;
+    padding-bottom: 8px !important;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > .drawer-header::before {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--control-border);
+    content: "";
+    translate: -50% 0;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > .drawer-tabs {
+    margin-top: 0;
+  }
+}
