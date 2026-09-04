@@ -5924,6 +5924,12 @@ body.sidebar-collapsed .sidebar {
   width: 100%;
 }
 
+#page-chat .message-row.assistant .message-actions {
+  width: var(--chat-answer-width);
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
 #page-chat .message-row.user .message {
   max-width: min(72ch, 84%);
 }
@@ -5956,7 +5962,7 @@ body.sidebar-collapsed .sidebar {
 
 #page-chat .message-actions button:focus-visible {
   outline: 2px solid var(--kf-focus-ring);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 @media (hover: hover) {
