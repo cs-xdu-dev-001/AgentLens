@@ -3067,6 +3067,224 @@ select:focus {
   }
 }
 
+/* Chat workbench detail pass: make the chrome read as one calm instrument. */
+#page-chat .chat-topbar {
+  position: relative;
+  z-index: 4;
+  min-height: 58px !important;
+  padding-inline: clamp(16px, 2.2vw, 28px) !important;
+  border-bottom-color: color-mix(in srgb, var(--al-line) 88%, transparent) !important;
+  background: color-mix(in srgb, var(--al-canvas) 94%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-session-heading {
+  min-width: 0;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(42vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-chat .chat-topbar-actions {
+  gap: 6px !important;
+}
+
+#page-chat .chat-notification-toggle,
+#page-chat .chat-workspace-toggle,
+#page-chat .chat-run-toggle,
+#page-chat #refresh-btn {
+  min-height: 38px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  color: var(--al-ink-soft) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#page-chat .chat-notification-toggle,
+#page-chat #refresh-btn {
+  width: 38px;
+  min-width: 38px;
+  padding: 0 !important;
+  border-color: var(--al-line) !important;
+  background: var(--al-surface-raised) !important;
+}
+
+#page-chat .chat-notification-toggle:hover,
+#page-chat .chat-notification-toggle[aria-pressed="true"],
+#page-chat #refresh-btn:hover,
+#page-chat .chat-workspace-toggle:hover,
+#page-chat .chat-run-toggle:hover {
+  border-color: var(--al-line) !important;
+  color: var(--al-ink) !important;
+  background: var(--al-surface-soft) !important;
+}
+
+#page-chat .chat-notification-toggle.is-enabled {
+  border-color: color-mix(in srgb, var(--al-success) 30%, var(--al-line)) !important;
+  color: var(--al-success) !important;
+  background: color-mix(in srgb, var(--al-success) 8%, transparent) !important;
+}
+
+#page-chat .chat-workspace-toggle {
+  max-width: min(260px, 28vw);
+  gap: 8px;
+  padding-inline: 11px !important;
+  border-color: var(--al-line) !important;
+  background: var(--al-surface-raised) !important;
+  font-weight: 640;
+}
+
+#page-chat .chat-workspace-toggle.is-ready,
+#page-chat .chat-workspace-toggle.is-available {
+  color: var(--al-ink) !important;
+}
+
+#page-chat .chat-workspace-toggle.is-dirty,
+#page-chat .chat-workspace-toggle.is-behind {
+  border-color: color-mix(in srgb, var(--al-accent) 36%, var(--al-line)) !important;
+  color: var(--al-accent-strong) !important;
+  background: color-mix(in srgb, var(--al-accent-soft) 52%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-workspace-toggle.is-error,
+#page-chat .chat-workspace-toggle.is-conflict {
+  border-color: color-mix(in srgb, var(--al-danger) 34%, var(--al-line)) !important;
+  color: var(--al-danger) !important;
+  background: color-mix(in srgb, var(--al-danger) 7%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-run-toggle {
+  gap: 8px;
+  padding-inline: 11px !important;
+  border-color: var(--al-line) !important;
+  background: var(--al-surface-soft) !important;
+  font-weight: 650;
+}
+
+#page-chat .chat-run-toggle.is-running,
+#page-chat .chat-run-toggle.is-waiting {
+  border-color: color-mix(in srgb, var(--al-accent) 34%, var(--al-line)) !important;
+  background: color-mix(in srgb, var(--al-accent-soft) 48%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-run-toggle.is-completed {
+  border-color: color-mix(in srgb, var(--al-success) 28%, var(--al-line)) !important;
+  background: color-mix(in srgb, var(--al-success) 7%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-run-toggle.is-failed {
+  border-color: color-mix(in srgb, var(--al-danger) 30%, var(--al-line)) !important;
+  background: color-mix(in srgb, var(--al-danger) 7%, var(--al-surface)) !important;
+}
+
+#page-chat .chat-run-dot {
+  width: 6px;
+  height: 6px;
+  flex-basis: 6px;
+}
+
+#page-chat .chat-run-toggle.is-running .chat-run-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--al-accent) 16%, transparent);
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  border-color: color-mix(in srgb, var(--al-line-strong) 92%, transparent) !important;
+  box-shadow: 0 1px 2px oklch(0.18 0.01 80 / 0.05), 0 14px 34px oklch(0.18 0.01 80 / 0.08) !important;
+  transition: border-color 160ms var(--al-ease), box-shadow 160ms var(--al-ease), transform 160ms var(--al-ease) !important;
+}
+
+#page-chat #chat-form.composer .composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--al-accent) 46%, var(--al-line-strong)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--al-accent) 10%, transparent), 0 16px 38px oklch(0.18 0.01 80 / 0.1) !important;
+  transform: translateY(-1px);
+}
+
+#page-chat #chat-form.composer textarea {
+  caret-color: var(--al-accent-strong) !important;
+}
+
+#page-chat #chat-form.composer .composer-plus,
+#page-chat #chat-form.composer .composer-permission-trigger,
+#page-chat #chat-form.composer .composer-model-trigger {
+  color: var(--al-ink-soft) !important;
+}
+
+#page-chat #chat-form.composer .composer-plus:hover:not(:disabled),
+#page-chat #chat-form.composer .composer-plus.active,
+#page-chat #chat-form.composer .composer-permission-trigger:hover:not(:disabled),
+#page-chat #chat-form.composer .composer-model-trigger:hover:not(:disabled) {
+  color: var(--al-ink) !important;
+  background: var(--al-surface-soft) !important;
+}
+
+#page-chat #chat-form.composer .composer-permission-trigger,
+#page-chat #chat-form.composer .composer-model-trigger {
+  border-radius: 9px !important;
+}
+
+#page-chat #chat-form.composer .composer-model-mark,
+#page-chat #chat-form.composer .composer-permission-mark {
+  background: var(--al-surface-soft) !important;
+  color: var(--al-ink-soft) !important;
+}
+
+#page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--al-surface-raised) 18%, transparent) !important;
+  transition: transform 150ms var(--al-ease), background-color 150ms var(--al-ease), box-shadow 150ms var(--al-ease) !important;
+}
+
+#page-chat #chat-form.composer #chat-submit-btn.composer-send-button:hover:not(:disabled) {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--al-ink) 22%, transparent) !important;
+  transform: translateY(-1px);
+}
+
+#page-chat .message-row.assistant .message-actions {
+  padding-top: 2px;
+}
+
+#page-chat .message-row.assistant .message-actions button {
+  border: 1px solid transparent;
+}
+
+#page-chat .message-row.assistant .message-actions button:hover:not(:disabled),
+#page-chat .message-row.user .message-actions button:hover:not(:disabled) {
+  border-color: var(--al-line) !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    min-height: 56px !important;
+    padding-inline: 12px 8px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: min(42vw, 180px);
+  }
+
+  #page-chat .chat-workspace-toggle,
+  #page-chat .chat-run-toggle,
+  #page-chat .chat-notification-toggle,
+  #page-chat #refresh-btn {
+    border-color: var(--al-line) !important;
+    background: var(--al-surface-raised) !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell:focus-within {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat #chat-form.composer .composer-shell,
+  #page-chat #chat-form.composer #chat-submit-btn.composer-send-button {
+    transition: none !important;
+  }
+}
+
 /* Keep the inventory controls content-sized. CSS grid's default stretch
  * behavior otherwise turns the two small control rows into large blank bands. */
 #page-skills .skills-content {
