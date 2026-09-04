@@ -23,6 +23,21 @@ test("empty chat surface exposes task-first onboarding affordances", async () =>
   assert.doesNotMatch(source, /welcome-kicker/);
 });
 
+test("knowledge empty state keeps the rail secondary to the workspace action", async () => {
+  const [rail, documents] = await Promise.all([
+    readSource("components/KnowledgeRail.jsx"),
+    readSource("components/KnowledgeDocuments.jsx"),
+  ]);
+  const emptyStart = rail.indexOf('className={keyword ? "kb-empty is-search-empty" : "kb-empty is-unconfigured"}');
+  const emptyEnd = rail.indexOf("</div>", emptyStart);
+  assert.ok(emptyStart >= 0 && emptyEnd > emptyStart);
+  const railEmpty = rail.slice(emptyStart, emptyEnd);
+  assert.match(railEmpty, /role=\{"status"\}/);
+  assert.doesNotMatch(railEmpty, /<button/);
+  assert.match(documents, /"document-empty unconfigured"/);
+  assert.match(documents, /onClick=\{selectedKnowledgeBaseId \? handleOpenUploadModal : onCreateKnowledgeBase\}/);
+});
+
 test("AgentLens branding keeps a compatibility logo export", async () => {
   const source = await readSource("components/KnowFlowLogo.jsx");
   assert.match(source, /export function AgentLensLogo/);

@@ -200,18 +200,12 @@ export function KnowledgeRail({ onOpenRetrievalDrawer = () => {}, onCreateKnowle
             );
           })
         ) : (
-          <div className={"kb-empty"}>
-            <span className={"kb-empty-icon"} aria-hidden={"true"}>
-              <Database size={20} strokeWidth={1.7} />
-            </span>
+          <div
+            className={keyword ? "kb-empty is-search-empty" : "kb-empty is-unconfigured"}
+            role={"status"}
+          >
             <strong>{keyword ? "没有匹配的空间" : "还没有知识库"}</strong>
-            <span>{keyword ? "换个关键词试试" : "创建一个空间，把文档交给Agent检索"}</span>
-            {!keyword ? (
-              <button type={"button"} onClick={onCreateKnowledgeBase}>
-                <Plus size={15} strokeWidth={2} aria-hidden={"true"} />
-                {"创建知识库"}
-              </button>
-            ) : null}
+            <span>{keyword ? "换个关键词试试" : "新建后会显示在这里"}</span>
           </div>
         )}
       </div>
