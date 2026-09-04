@@ -1,5 +1,12 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { X } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  Database,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { skillApi, workspaceApi } from "../api/client.js";
@@ -1640,15 +1647,7 @@ export function ChatComposerForm() {
                 aria-label={`移除附件：${attachment.filename}`}
                 onClick={() => handleRemoveAttachment(attachment.attachmentId)}
               >
-                <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-                  <path
-                    d={"M6 6l12 12M18 6 6 18"}
-                    fill={"none"}
-                    stroke={"currentColor"}
-                    strokeWidth={"2"}
-                    strokeLinecap={"round"}
-                  />
-                </svg>
+                <X size={16} strokeWidth={1.9} aria-hidden={"true"} />
               </button>
             </span>
           );
@@ -1704,18 +1703,14 @@ export function ChatComposerForm() {
             title={"忽略建议（Esc）"}
             onClick={dismissFollowUpSuggestion}
           >
-            <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-              <path d={"M5 5l10 10M15 5 5 15"}></path>
-            </svg>
+            <X size={16} strokeWidth={1.9} aria-hidden={"true"} />
           </button>
         </div>
       ) : null}
       <div className={"composer-shell"} onKeyDown={handleComposerMenuKeyDown}>
         <Tooltip content={"添加文件或工具"} disabled={menuOpen || sending || switchingSession}>
           <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
-            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-              <path d={"M12 5v14M5 12h14"} />
-            </svg>
+            <Plus size={20} strokeWidth={1.9} aria-hidden={"true"} />
           </button>
         </Tooltip>
           <div className={composerMenuClassName} id={"composer-menu"} aria-label={"文件与工具菜单"} onClick={handleComposerMenuClick}>
@@ -1723,10 +1718,7 @@ export function ChatComposerForm() {
               <label className={"menu-card upload-item"}>
               <input id={"chat-file-input"} type={"file"} multiple accept={".txt,.md,.markdown,.pdf,.docx,.xlsx,.xlsm,.pptx,.html,.htm,.json,.csv,.tsv,.yaml,.yml,.xml,.log,.rtf,.png,.jpg,.jpeg,.webp,.gif,.bmp"} onChange={handleChatFileChange} />
               <span className={"menu-icon"} aria-hidden={"true"}>
-                <svg viewBox={"0 0 24 24"} focusable={"false"}>
-                  <path d={"M12 15V4m0 0L8 8m4-4 4 4"} />
-                  <path d={"M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"} />
-                </svg>
+                <Upload size={18} strokeWidth={1.8} />
               </span>
               <strong className={"menu-item-label"}>{"上传文件"}</strong>
             </label>
@@ -1734,18 +1726,12 @@ export function ChatComposerForm() {
           <section className={"composer-settings-panel"} id={"composer-settings-panel"}>
             <label className={"menu-select-card knowledge-select-card"}>
               <span className={"menu-icon"} aria-hidden={"true"}>
-                <svg viewBox={"0 0 24 24"} focusable={"false"}>
-                  <ellipse cx={"12"} cy={"6"} rx={"7"} ry={"3"} />
-                  <path d={"M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6"} />
-                  <path d={"M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"} />
-                </svg>
+                <Database size={18} strokeWidth={1.8} />
               </span>
               <strong className={"menu-item-label"}>{"知识库"}</strong>
               <span className={"menu-item-current"}>{selectedKnowledgeBaseName}</span>
               <span className={"menu-select-chevron"} aria-hidden={"true"}>
-                <svg viewBox={"0 0 24 24"} focusable={"false"}>
-                  <path d={"M8 10l4 4 4-4"} />
-                </svg>
+                <ChevronDown size={16} strokeWidth={1.8} />
               </span>
               <select id={"composer-kb-select"} aria-label={"选择知识库"} value={selectedKnowledgeBaseId} onChange={handleComposerKnowledgeBaseChange}>
                 <option value={""}>{"不使用知识库"}</option>
@@ -1821,7 +1807,11 @@ export function ChatComposerForm() {
             aria-label={sending ? "停止生成" : "发送消息"}
             onClick={sending ? handleStopClick : undefined}
           >
-            {sending ? <span className={"stop-square"} aria-hidden={"true"}></span> : <svg className={"send-arrow"} viewBox={"0 0 24 24"} aria-hidden={"true"}><path d={"M12 19V5m0 0-6 6m6-6 6 6"} fill={"none"} stroke={"currentColor"} strokeWidth={"2.35"} strokeLinecap={"round"} strokeLinejoin={"round"}></path></svg>}
+            {sending ? (
+              <span className={"stop-square"} aria-hidden={"true"}></span>
+            ) : (
+              <ArrowUp className={"send-arrow"} size={20} strokeWidth={2.2} aria-hidden={"true"} />
+            )}
           </button>
         </Tooltip>
       </div>

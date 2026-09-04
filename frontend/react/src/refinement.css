@@ -6264,3 +6264,128 @@ body.sidebar-collapsed .sidebar {
     margin-top: 0;
   }
 }
+
+/* Chat polish pass: compress the mobile context rail without removing the
+   current task, and keep secondary controls quiet until they are needed. */
+#page-chat .message-code-block pre {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (hover: none), (pointer: coarse) {
+  #page-chat .message-actions {
+    color: var(--al-ink-soft);
+    opacity: 0.92;
+  }
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar-actions {
+    gap: 4px !important;
+    padding-right: 40px !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    .chat-run-toggle
+  ) {
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+
+  #page-chat .chat-notification-toggle {
+    width: 44px !important;
+    min-width: 44px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat .chat-workspace-toggle {
+    width: 44px !important;
+    min-width: 44px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat .chat-run-toggle {
+    min-width: 48px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat .chat-notification-toggle:hover,
+  #page-chat .chat-notification-toggle[aria-pressed="true"],
+  #page-chat .chat-workspace-toggle:hover,
+  #page-chat .chat-run-toggle:hover {
+    border-color: var(--al-line) !important;
+    background: var(--al-surface-soft) !important;
+  }
+
+  #page-chat .chat-theme-toggle,
+  #page-chat #theme-toggle-btn.chat-theme-toggle,
+  #page-chat #theme-toggle-btn.chat-theme-toggle[aria-pressed="true"] {
+    top: 4px !important;
+    right: 8px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat .chat-theme-toggle:hover,
+  #page-chat #theme-toggle-btn.chat-theme-toggle:focus-visible {
+    border-color: var(--al-line) !important;
+    background: var(--al-surface-soft) !important;
+  }
+
+  #page-chat .chat-workspace-toggle::after {
+    right: 6px;
+    bottom: 6px;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat .chat-topbar {
+    padding-left: 10px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 2px !important;
+    padding-right: 40px !important;
+  }
+
+  #page-chat .chat-run-toggle {
+    min-width: 44px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .message-code-block pre {
+    scroll-behavior: auto;
+  }
+}
+
+/* User prompts should remain distinct without turning every turn into a
+   high-contrast floating card. Assistant answers stay on the bare reading
+   surface; prompts use the same quiet raised surface in both themes. */
+#page-chat .message-row.user .message {
+  padding: 11px 14px !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: 14px 14px 5px 14px !important;
+  color: var(--text) !important;
+  background: var(--control-bg) !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat .message-row.user .message {
+    max-width: min(88%, 72ch);
+    padding: 10px 13px !important;
+  }
+}

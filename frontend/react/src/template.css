@@ -4765,3 +4765,52 @@ select:focus {
     min-height: 284px;
   }
 }
+
+/* Final mobile chat rail: keep the task title and touch targets while
+   reclaiming a small amount of vertical space from the duplicate chrome. */
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    height: 52px !important;
+    min-height: 52px !important;
+    padding: 0 8px 0 12px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 4px !important;
+    padding-right: 40px !important;
+  }
+
+  #page-chat .chat-topbar .chat-notification-toggle,
+  #page-chat .chat-topbar .chat-workspace-toggle,
+  #page-chat .chat-topbar .chat-run-toggle {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat .chat-topbar .chat-notification-toggle:hover,
+  #page-chat .chat-topbar .chat-notification-toggle[aria-pressed="true"],
+  #page-chat .chat-topbar .chat-workspace-toggle:hover,
+  #page-chat .chat-topbar .chat-run-toggle:hover {
+    border-color: var(--al-line) !important;
+    background: var(--al-surface-soft) !important;
+  }
+
+  #page-chat .chat-topbar .chat-notification-toggle.is-enabled,
+  #page-chat .chat-topbar .chat-workspace-toggle.is-dirty,
+  #page-chat .chat-topbar .chat-workspace-toggle.is-behind,
+  #page-chat .chat-topbar .chat-run-toggle.is-running,
+  #page-chat .chat-topbar .chat-run-toggle.is-waiting {
+    border-color: color-mix(in srgb, var(--al-accent) 34%, var(--al-line)) !important;
+    background: color-mix(in srgb, var(--al-accent-soft) 48%, var(--al-surface)) !important;
+  }
+
+  #page-chat .chat-topbar .chat-run-toggle.is-completed {
+    border-color: color-mix(in srgb, var(--al-success) 28%, var(--al-line)) !important;
+    background: color-mix(in srgb, var(--al-success) 7%, var(--al-surface)) !important;
+  }
+
+  #page-chat .chat-topbar .chat-run-toggle.is-failed {
+    border-color: color-mix(in srgb, var(--al-danger) 30%, var(--al-line)) !important;
+    background: color-mix(in srgb, var(--al-danger) 7%, var(--al-surface)) !important;
+  }
+}

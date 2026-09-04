@@ -127,10 +127,7 @@ const MessageListHeader = memo(function MessageListHeader({ context }) {
           <span className={`active-task-anchor-state ${currentTask.presentation?.status?.className || "running"}`}>
             {currentTask.presentation?.status?.label || "执行中"}
           </span>
-          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"M7 4h9v9"}></path>
-            <path d={"M16 4 5 15"}></path>
-          </svg>
+          <ArrowUpRight size={18} strokeWidth={1.8} aria-hidden={"true"} />
         </button>
       ) : null}
       <SessionSwitchState sessionSwitch={sessionSwitch} onRetry={retrySessionSwitch} />
@@ -1539,9 +1536,7 @@ export function ChatMessages({ workspaceState = { loading: true }, onEmptyStateC
           aria-live={"polite"}
           onClick={jumpToLatest}
         >
-          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"M5 8l5 5 5-5"} fill={"none"} stroke={"currentColor"} strokeWidth={"1.8"} strokeLinecap={"round"} strokeLinejoin={"round"} />
-          </svg>
+          <ChevronDown size={18} strokeWidth={1.8} aria-hidden={"true"} />
           <span>{hasNewOutput ? "查看最新输出" : "回到最新"}</span>
           {hasNewOutput ? <i aria-hidden={"true"}></i> : null}
         </button>
