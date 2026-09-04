@@ -4670,3 +4670,87 @@ select:focus {
     bottom: calc(154px + env(safe-area-inset-bottom)) !important;
   }
 }
+
+/* Conversation finishing pass: keep message actions attached to the reading
+ * axis and make the narrow shell resilient to long task titles. */
+#page-chat .chat-session-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#page-chat .chat-session-heading h1 {
+  min-width: 0;
+}
+
+#page-chat .chat-topbar-actions {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+#page-chat .message-row {
+  row-gap: 4px;
+}
+
+#page-chat .message-row.assistant .message-actions {
+  justify-content: flex-start;
+}
+
+#page-chat .message-row.user .message-actions {
+  justify-content: flex-end;
+}
+
+#page-chat .message-actions {
+  margin-top: -1px;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    gap: 8px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    width: 100%;
+    max-width: none !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 4px !important;
+  }
+
+  #page-chat .message-row {
+    row-gap: 3px;
+  }
+
+  #page-chat .message-actions {
+    margin-top: -4px;
+    margin-bottom: -2px;
+  }
+
+  #page-chat .message-row.assistant .message-actions {
+    justify-content: flex-start;
+  }
+
+  #page-chat .message-row.user .message-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* An empty knowledge space needs room for its next action, not a full-height
+ * management canvas. Keep populated workspaces unchanged. */
+@media (min-width: 761px) {
+  #page-knowledge .knowledge-shell:has(.kb-empty) {
+    min-height: 0 !important;
+    height: auto !important;
+    align-items: start;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .knowledge-rail,
+  #page-knowledge .knowledge-shell:has(.kb-empty) .knowledge-primary {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-table-panel {
+    min-height: 284px;
+  }
+}
