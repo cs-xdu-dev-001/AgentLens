@@ -1,14 +1,33 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  Archive,
   Bell,
+  BrainCircuit,
+  Boxes,
   Check,
+  Code2,
   ChevronDown,
   ClipboardCopy,
   Command,
+  Database,
+  Download,
+  GitBranch,
   LogOut,
   Menu,
   MessageSquare,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Pin,
+  RefreshCw,
+  Search,
+  SquarePen,
+  Settings2,
+  Trash2,
+  Workflow,
+  X,
 } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -74,129 +93,30 @@ const sessionMenuItems = (pinned, archived) => [
 ];
 
 function SessionMenuIcon({ type }) {
-  if (type === "pin") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"m14 4 6 6-3 1-4 4-1 5-2-2-4 4-1-1 4-4-2-2 5-1 4-4 1-3Z"} />
-      </svg>
-    );
-  }
-
-  if (type === "branch") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <circle cx={"6"} cy={"5"} r={"2"} />
-        <circle cx={"18"} cy={"7"} r={"2"} />
-        <circle cx={"18"} cy={"18"} r={"2"} />
-        <path d={"M6 7v5a6 6 0 0 0 6 6h4M8 7a6 6 0 0 0 6 6h2"} />
-      </svg>
-    );
-  }
-
-  if (type === "download") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M12 4v10m-4-4 4 4 4-4"} />
-        <path d={"M5 18v2h14v-2"} />
-      </svg>
-    );
-  }
-
-  if (type === "pencil") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M4 20h4.4L19.2 9.2a2.1 2.1 0 0 0 0-3L17.8 4.8a2.1 2.1 0 0 0-3 0L4 15.6V20Z"} />
-        <path d={"M13.7 5.9l4.4 4.4"} />
-      </svg>
-    );
-  }
-
-  if (type === "trash") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M4.5 7h15"} />
-        <path d={"M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"} />
-        <path d={"M7 7l.8 12.1A2 2 0 0 0 9.8 21h4.4a2 2 0 0 0 2-1.9L17 7"} />
-        <path d={"M10 11v6M14 11v6"} />
-      </svg>
-    );
-  }
-
-  if (type === "archive") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M4 6h16v3H4V6Z"} />
-        <path d={"M6 9v10h12V9M9 13h6"} />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-      <path d={"M5 6.8A3.8 3.8 0 0 1 8.8 3h6.4A3.8 3.8 0 0 1 19 6.8v4.4a3.8 3.8 0 0 1-3.8 3.8H10l-5 4V6.8Z"} />
-      <path d={"M9 8h6M9 11.5h4"} />
-    </svg>
-  );
+  const icons = {
+    pin: Pin,
+    branch: GitBranch,
+    download: Download,
+    pencil: Pencil,
+    trash: Trash2,
+    archive: Archive,
+    message: MessageSquare,
+  };
+  const Icon = icons[type] || MessageSquare;
+  return <Icon aria-hidden={"true"} focusable={"false"} size={16} strokeWidth={1.8} />;
 }
 
 function SidebarToolIcon({ type }) {
-  if (type === "memory") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M9 5.5A3.5 3.5 0 0 0 5.5 9v1.2A3.8 3.8 0 0 0 4 13.3 3.7 3.7 0 0 0 7.7 17H9"} />
-        <path d={"M15 5.5A3.5 3.5 0 0 1 18.5 9v1.2a3.8 3.8 0 0 1 1.5 3.1 3.7 3.7 0 0 1-3.7 3.7H15"} />
-        <path d={"M9 4v16M15 4v16M9 8h2M13 12h2M9 16h2"} />
-      </svg>
-    );
-  }
-
-  if (type === "skills") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"m12 3 7 4v10l-7 4-7-4V7l7-4Z"} />
-        <path d={"m5.5 7.3 6.5 3.8 6.5-3.8M12 11.1V21"} />
-        <path d={"M18.8 2.8v3M17.3 4.3h3"} />
-      </svg>
-    );
-  }
-
-  if (type === "tools") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <circle cx={"6"} cy={"6"} r={"2"} />
-        <circle cx={"18"} cy={"6"} r={"2"} />
-        <circle cx={"12"} cy={"18"} r={"2"} />
-        <path d={"M8 6h8M7.4 7.5l3.6 8.7M16.6 7.5 13 16.2"} />
-      </svg>
-    );
-  }
-
-  if (type === "settings") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"} />
-        <path d={"M19.4 13.7a7.8 7.8 0 0 0 .1-1.7l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-1.5-.9L15.2 4H8.8l-.4 3.1c-.5.2-1 .5-1.5.9l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 0 1.8l-2 1.5 2 3.5 2.4-1c.5.4 1 .7 1.5.9l.4 3.1h6.4l.4-3.1c.5-.2 1-.5 1.5-.9l2.4 1 2-3.5-2.1-1.6Z"} />
-      </svg>
-    );
-  }
-
-  if (type === "code") {
-    return (
-      <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-        <path d={"M8.2 8 4.4 12l3.8 4"} />
-        <path d={"M15.8 8 19.6 12l-3.8 4"} />
-        <path d={"M13.4 5.5 10.6 18.5"} />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden={"true"} viewBox={"0 0 24 24"} focusable={"false"}>
-      <path d={"M5 7c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3Z"} />
-      <path d={"M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7"} />
-      <path d={"M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"} />
-    </svg>
-  );
+  const icons = {
+    database: Database,
+    skills: Boxes,
+    code: Code2,
+    memory: BrainCircuit,
+    tools: Workflow,
+    settings: Settings2,
+  };
+  const Icon = icons[type] || Database;
+  return <Icon aria-hidden={"true"} focusable={"false"} size={18} strokeWidth={1.7} />;
 }
 
 function MobileNavigationMenu({ activePage, onPageIntent, onPageChange }) {
@@ -653,11 +573,7 @@ function SessionHistoryRow({
             title={`会话操作：${sessionTitle(session)}`}
             onClick={(event) => onSessionMenuToggle(event, session.id)}
           >
-            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-              <circle cx={"6"} cy={"12"} r={"1.7"} />
-              <circle cx={"12"} cy={"12"} r={"1.7"} />
-              <circle cx={"18"} cy={"12"} r={"1.7"} />
-            </svg>
+            <MoreHorizontal size={17} strokeWidth={1.8} aria-hidden={"true"} />
           </button>
         </>
       )}
@@ -1341,7 +1257,7 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
             aria-label={"关闭会话历史"}
             onClick={() => onMobileClose?.()}
           >
-            {"×"}
+            <X size={17} strokeWidth={1.8} aria-hidden={"true"} />
           </button>
         </div>
       ) : null}
@@ -1351,15 +1267,13 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
       </div>
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
+          <Search size={15} strokeWidth={1.8} aria-hidden={"true"} />
           <span>{"搜索任务"}</span>
           <input ref={searchInputRef} id={"sidebar-session-search"} placeholder={"搜索任务"} value={searchQuery} onChange={handleSessionSearch} />
         </label>
         <Tooltip content={"刷新任务"} disabled={loadingSessions}>
           <button className={loadingSessions ? "sidebar-refresh-button loading" : "sidebar-refresh-button"} id={"history-refresh-btn"} type={"button"} aria-label={"刷新任务"} aria-busy={loadingSessions} disabled={loadingSessions} onClick={loadSessions}>
-            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-              <path d={"M20 11a8 8 0 1 0-2.34 5.66"} />
-              <path d={"M20 5v6h-6"} />
-            </svg>
+            <RefreshCw size={16} strokeWidth={1.7} aria-hidden={"true"} />
           </button>
         </Tooltip>
       </div>
@@ -1527,7 +1441,14 @@ function UserMenu() {
 
   return (
     <div className={menuOpen ? "user-menu open" : "user-menu"} id={"user-menu"} ref={menuRef}>
-      <button className={"user-menu-button"} id={"user-menu-btn"} type={"button"} onClick={handleUserMenuToggle}>
+      <button
+        className={"user-menu-button"}
+        id={"user-menu-btn"}
+        type={"button"}
+        aria-haspopup={"menu"}
+        aria-expanded={menuOpen}
+        onClick={handleUserMenuToggle}
+      >
         <span className={user?.avatarUrl ? "user-avatar with-image" : "user-avatar"} id={"user-avatar"} style={avatarStyle}>
           {user?.avatarUrl ? "" : avatarText}
         </span>
@@ -1535,6 +1456,7 @@ function UserMenu() {
           <strong id={"user-display-name"}>{displayName}</strong>
           <small id={"user-email"}>{email}</small>
         </span>
+        <ChevronDown className={"user-menu-chevron"} size={15} strokeWidth={1.8} aria-hidden={"true"} />
       </button>
       <div className={"user-popover"} id={"user-popover"}>
         <button id={"diagnostic-copy-btn"} type={"button"} onClick={handleDiagnosticCopy}>
@@ -1760,10 +1682,7 @@ function PendingApprovals({ collapsed = false }) {
         }}
       >
         <span className={"nav-icon"} aria-hidden={"true"}>
-          <svg viewBox={"0 0 24 24"} focusable={"false"}>
-            <path d={"M12 4a6 6 0 0 0-6 6v3.2l-1.4 2.1h14.8L18 13.2V10a6 6 0 0 0-6-6Z"} />
-            <path d={"M9.8 18a2.4 2.4 0 0 0 4.4 0"} />
-          </svg>
+          <Bell size={17} strokeWidth={1.7} aria-hidden={"true"} />
         </span>
         <span className={"pending-approvals-label"}>{"待处理审批"}</span>
         {items.length ? <span className={"pending-approvals-badge"}>{countLabel}</span> : null}
@@ -1857,21 +1776,16 @@ export function Sidebar({
             aria-label={sidebarToggleLabel}
             onClick={handleSidebarToggle}
           >
-            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-              <rect x={"3.5"} y={"4"} width={"17"} height={"16"} rx={"3"} />
-              <path d={"M8.5 4v16"} />
-              <path d={collapsed ? "m13 9 3 3-3 3" : "m16 9-3 3 3 3"} />
-            </svg>
+            {collapsed
+              ? <PanelLeftOpen size={17} strokeWidth={1.7} aria-hidden={"true"} />
+              : <PanelLeftClose size={17} strokeWidth={1.7} aria-hidden={"true"} />}
           </button>
         </Tooltip>
       </div>
       <Tooltip content={"新对话"} side={"right"}>
         <button className={"new-chat-button"} id={"new-chat-btn"} type={"button"} aria-label={"新对话"} onClick={handleNewChat}>
           <span aria-hidden={"true"}>
-            <svg viewBox={"0 0 24 24"} focusable={"false"}>
-              <path d={"M5 5h8M5 5v14h14v-8"} />
-              <path d={"m12 13 6.7-6.7a1.4 1.4 0 0 0-2-2L10 11l-.8 3Z"} />
-            </svg>
+            <SquarePen size={17} strokeWidth={1.7} aria-hidden={"true"} />
           </span>
           <strong>
             {"新对话"}
@@ -1888,10 +1802,7 @@ export function Sidebar({
           aria-expanded={Boolean(mobileHistoryOpen)}
           onClick={() => onMobileHistoryToggle?.()}
         >
-          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <rect x={"4"} y={"5"} width={"16"} height={"14"} rx={"3"} />
-            <path d={"M8 9h8M8 13h5"} />
-          </svg>
+          <MessageSquare size={17} strokeWidth={1.7} aria-hidden={"true"} />
         </button>
       </Tooltip>
       <MobileNavigationMenu
@@ -1909,9 +1820,7 @@ export function Sidebar({
           onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
         >
           <span className={"nav-icon"}>
-            <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-              <path d={"m5 7 5 5-5 5M13 17h6"} />
-            </svg>
+            <Command size={17} strokeWidth={1.7} aria-hidden={"true"} />
           </span>
           <span>{"命令面板"}</span>
           <kbd>{"Ctrl/⌘ K"}</kbd>

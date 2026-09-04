@@ -1785,18 +1785,20 @@ export function ChatComposerForm() {
             onPaste={handleChatPaste}
             onKeyDown={handleChatKeyDown}
           />
-          <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
-          <ComposerModelPicker
-            contextOperation={contextOperation}
-            contextStatus={contextStatus}
-            disabled={sending || switchingSession}
-            inputRef={textareaRef}
-            onCompactContext={() => {
-              window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
-                detail: { action: "compact", args: "" },
-              }));
-            }}
-          />
+          <div className={"composer-control-strip"}>
+            <ComposerPermissionPicker disabled={switchingSession} inputRef={textareaRef} />
+            <ComposerModelPicker
+              contextOperation={contextOperation}
+              contextStatus={contextStatus}
+              disabled={sending || switchingSession}
+              inputRef={textareaRef}
+              onCompactContext={() => {
+                window.dispatchEvent(new CustomEvent("knowflow:react-session-command", {
+                  detail: { action: "compact", args: "" },
+                }));
+              }}
+            />
+          </div>
         </div>
         <Tooltip content={sending ? "停止生成" : "发送消息"} shortcut={sending ? undefined : "Enter"} disabled={switchingSession}>
           <button
