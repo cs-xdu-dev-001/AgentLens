@@ -1,5 +1,20 @@
 import { Virtuoso } from "react-virtuoso";
-import { ChevronRight, CircleCheck, FolderTree, GitCompareArrows, History } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  CircleCheck,
+  Copy,
+  CornerUpLeft,
+  FolderTree,
+  GitCompareArrows,
+  History,
+  Pencil,
+  RotateCcw,
+  Search,
+  X,
+} from "lucide-react";
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
@@ -353,7 +368,7 @@ function MemoryActivityStatus({ initialActivity, messageId }) {
       <button type={"button"} onClick={openDetails}>
         <span className={"memory-activity-signal"} aria-hidden={"true"}></span>
         <span>{statusText}</span>
-        <span aria-hidden={"true"}>{"↗"}</span>
+        <ArrowUpRight size={15} strokeWidth={1.8} aria-hidden={"true"} />
       </button>
       {write?.status === "failed" ? (
         <button
@@ -598,10 +613,7 @@ const MessageRow = memo(function MessageRow({
               aria-label={"从此处继续"}
               title={"从此处继续（原会话和文件不变）"}
             >
-              <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
-                <path d={"M9 14 4 9l5-5"}></path>
-                <path d={"M4 9h9a7 7 0 0 1 7 7v4"}></path>
-              </svg>
+              <CornerUpLeft size={18} strokeWidth={1.8} aria-hidden={"true"} />
             </button>
           ) : null}
           <button
@@ -610,20 +622,14 @@ const MessageRow = memo(function MessageRow({
             aria-label={"编辑并重新发送"}
             title={"编辑并重新发送"}
           >
-            <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
-              <path d={"M12 20h9"}></path>
-              <path d={"M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"}></path>
-            </svg>
+            <Pencil size={18} strokeWidth={1.8} aria-hidden={"true"} />
           </button>
         </div>
       ) : null}
       {message.role === "assistant" && !message.thinking && !message.streaming ? (
         <div className={"message-actions"} role={"group"} aria-label={"消息操作"}>
           <button type={"button"} data-message-action={"copy"} aria-label={"复制答案"} title={"复制答案"}>
-            <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
-              <rect x={"9"} y={"9"} width={"11"} height={"11"} rx={"2"}></rect>
-              <path d={"M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"}></path>
-            </svg>
+            <Copy size={18} strokeWidth={1.8} aria-hidden={"true"} />
           </button>
           {message.retryable ? (
             <button
@@ -633,10 +639,7 @@ const MessageRow = memo(function MessageRow({
               aria-label={"重新生成"}
               title={"重新生成"}
             >
-              <svg viewBox={"0 0 24 24"} width={"18"} height={"18"} aria-hidden={"true"}>
-                <path d={"M20 11a8 8 0 1 0-2.34 5.66"}></path>
-                <path d={"M20 4v7h-7"}></path>
-              </svg>
+              <RotateCcw size={18} strokeWidth={1.8} aria-hidden={"true"} />
             </button>
           ) : null}
         </div>
@@ -1460,10 +1463,7 @@ export function ChatMessages({ workspaceState = { loading: true }, onEmptyStateC
     <>
       {searchOpen ? (
         <div className={"transcript-search-bar"} role={"search"} aria-label={"搜索当前对话"}>
-          <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
-            <circle cx={"8.5"} cy={"8.5"} r={"5.5"}></circle>
-            <path d={"m13 13 4 4"}></path>
-          </svg>
+          <Search size={16} strokeWidth={1.8} aria-hidden={"true"} />
           <input
             ref={searchInputRef}
             type={"search"}
@@ -1487,9 +1487,9 @@ export function ChatMessages({ workspaceState = { loading: true }, onEmptyStateC
               ? (searchMatches.length ? `${searchCursor + 1}/${searchMatches.length}` : "无结果")
               : ""}
           </span>
-          <button type={"button"} aria-label={"上一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(-1)}>↑</button>
-          <button type={"button"} aria-label={"下一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(1)}>↓</button>
-          <button type={"button"} aria-label={"关闭搜索"} onClick={closeSearch}>×</button>
+          <button type={"button"} aria-label={"上一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(-1)}><ChevronUp size={16} strokeWidth={1.8} aria-hidden={"true"} /></button>
+          <button type={"button"} aria-label={"下一个匹配"} disabled={!searchMatches.length} onClick={() => moveSearch(1)}><ChevronDown size={16} strokeWidth={1.8} aria-hidden={"true"} /></button>
+          <button type={"button"} aria-label={"关闭搜索"} onClick={closeSearch}><X size={16} strokeWidth={1.8} aria-hidden={"true"} /></button>
         </div>
       ) : null}
       {messages.length ? (

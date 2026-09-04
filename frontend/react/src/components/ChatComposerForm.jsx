@@ -1,4 +1,5 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { skillApi, workspaceApi } from "../api/client.js";
@@ -1765,7 +1766,7 @@ export function ChatComposerForm() {
                 aria-label={`移除Skill：${selectedSkill.name || selectedSkill.slug}`}
                 onClick={removeSelectedSkill}
               >
-                {"×"}
+                <X size={15} strokeWidth={1.9} aria-hidden={"true"} />
               </button>
             </span>
           ) : null}

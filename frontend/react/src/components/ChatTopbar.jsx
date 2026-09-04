@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Folder, RefreshCw } from "lucide-react";
 import { workspaceApi } from "../api/client.js";
 import { safeAgentText } from "../controller/agentEvents.js";
 import { agentWindowFeedback } from "./agentWindowFeedback.js";
@@ -204,9 +205,7 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
               : `${workspaceHeader.label}，打开工作区`}
             onClick={workspaceError ? handleWorkspaceRetry : handleWorkspaceOpen}
           >
-            <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
-              <path d={"M2.8 5.4h5l1.4 1.7h8v8.2H2.8z"} />
-            </svg>
+            <Folder size={16} strokeWidth={1.8} aria-hidden={"true"} />
             <span className={"chat-workspace-label"}>{workspaceHeader.label}</span>
           </button>
         </Tooltip>
@@ -233,10 +232,7 @@ export function ChatTopbar({ drawerCollapsed = true, onWorkspaceStateChange }) {
             type={"button"}
             onClick={handleRefresh}
           >
-            <svg aria-hidden={"true"} viewBox={"0 0 20 20"} focusable={"false"}>
-              <path d={"M15.7 7.3A6 6 0 1 0 16 11"} />
-              <path d={"M12.8 4.5h3.4v3.4"} />
-            </svg>
+            <RefreshCw size={16} strokeWidth={1.8} aria-hidden={"true"} />
           </button>
         </Tooltip>
       </div>
