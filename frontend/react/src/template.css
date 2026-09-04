@@ -1157,6 +1157,387 @@ select:focus {
   }
 }
 
+/* Management detail pass: let empty states end where their information ends,
+ * while giving real detail surfaces a calmer, more editorial reading rhythm. */
+#page-settings .settings-workspace:has(.settings-list-empty) {
+  min-height: 0 !important;
+  grid-template-rows: auto auto !important;
+}
+
+#page-settings .settings-workspace:has(.settings-list-empty) .settings-workspace-shell {
+  min-height: 420px !important;
+}
+
+#page-settings .settings-workspace-detail {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+#page-settings .model-config-details,
+#page-settings .model-config-form {
+  width: min(760px, 100%);
+  box-sizing: border-box;
+  margin-inline: auto;
+}
+
+#page-settings .model-config-detail-header,
+#page-settings .model-config-form-header {
+  align-items: flex-start;
+}
+
+#page-settings .model-config-heading h2,
+#page-settings .model-config-form-header h2 {
+  text-wrap: balance;
+}
+
+#page-settings .model-config-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+}
+
+#page-settings .model-config-detail-grid > div {
+  min-width: 0;
+}
+
+#page-settings .model-config-detail-grid dd {
+  overflow-wrap: anywhere;
+}
+
+#page-settings .model-config-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 16px;
+  border-top: 1px solid var(--al-line);
+}
+
+#page-settings .model-config-detail-actions > button {
+  min-height: 40px;
+}
+
+#page-settings .model-config-detail-actions .model-config-more-menu {
+  margin-left: auto;
+}
+
+#page-settings .model-config-connection-result {
+  padding: 14px 12px;
+  border: 1px solid var(--al-line);
+  border-radius: 10px;
+  background: var(--al-surface-soft);
+}
+
+#page-settings .model-config-connection-result[data-status="success"] {
+  border-color: color-mix(in srgb, var(--al-success) 30%, var(--al-line));
+  background: color-mix(in srgb, var(--al-success) 6%, var(--al-surface));
+}
+
+#page-settings .model-config-connection-result[data-status="error"] {
+  border-color: color-mix(in srgb, var(--al-danger) 30%, var(--al-line));
+  background: color-mix(in srgb, var(--al-danger) 5%, var(--al-surface));
+}
+
+#page-settings .model-config-form .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+#page-settings .model-config-form .form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+#page-settings .model-config-form .button-row {
+  margin-top: 2px;
+  padding-top: 16px;
+  border-top: 1px solid var(--al-line);
+}
+
+#page-memory .memory-workspace:has(.memory-unavailable, .memory-error) {
+  min-height: 0 !important;
+}
+
+#page-memory .memory-workspace:has(.memory-unavailable, .memory-error) .memory-content {
+  padding-bottom: 24px;
+}
+
+#page-memory .memory-empty {
+  border-bottom: 1px solid var(--al-line);
+}
+
+#page-memory .memory-item-content {
+  text-wrap: pretty;
+}
+
+#page-skills .skills-list-row {
+  transition: background-color 150ms var(--al-ease), border-color 150ms var(--al-ease);
+}
+
+#page-skills .skills-list-row.selected {
+  border-color: color-mix(in srgb, var(--al-accent) 34%, var(--al-line));
+  background: color-mix(in srgb, var(--al-accent-soft) 32%, var(--al-surface));
+}
+
+#page-skills .skill-row-detail {
+  min-width: 0;
+}
+
+#page-skills .skill-row-main p,
+#page-skills .skill-row-deps strong {
+  overflow-wrap: anywhere;
+}
+
+.skill-detail-backdrop {
+  background: color-mix(in srgb, var(--al-ink) 26%, transparent) !important;
+  backdrop-filter: blur(2px);
+}
+
+.skill-detail-drawer {
+  width: min(540px, 100vw) !important;
+  border-left: 1px solid var(--al-line) !important;
+  background: var(--al-surface) !important;
+  box-shadow: var(--al-shadow-float) !important;
+}
+
+.skill-detail-head {
+  min-height: 72px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 18px 20px !important;
+  border-bottom: 1px solid var(--al-line) !important;
+  background: color-mix(in srgb, var(--al-surface) 96%, transparent) !important;
+  backdrop-filter: blur(10px);
+}
+
+.skill-detail-head .skill-detail-kicker {
+  color: var(--al-muted) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.skill-detail-head h2 {
+  margin-top: 4px;
+  color: var(--al-ink) !important;
+  font-size: 20px !important;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.skill-detail-head .icon-button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 9px;
+  color: var(--al-ink-soft);
+  background: var(--al-surface-raised) !important;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.skill-detail-body {
+  scrollbar-color: var(--al-line-strong) transparent;
+}
+
+.skill-detail-summary,
+.skill-detail-section {
+  padding: 20px !important;
+  background: transparent;
+}
+
+.skill-detail-summary {
+  background: var(--al-surface-soft);
+}
+
+.skill-detail-summary > p,
+.skill-detail-section > p {
+  color: var(--al-ink-soft) !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+.skill-detail-summary dl {
+  margin-top: 18px;
+  border-top-color: var(--al-line) !important;
+}
+
+.skill-detail-summary dt {
+  color: var(--al-muted) !important;
+}
+
+.skill-detail-summary dd {
+  color: var(--al-ink) !important;
+}
+
+.skill-detail-section h3 {
+  font-size: 13px !important;
+  letter-spacing: 0.01em;
+}
+
+.skill-detail-actions {
+  gap: 8px !important;
+}
+
+.skill-detail-actions button,
+.skill-detail-section-head button {
+  min-height: 40px !important;
+  border-radius: 9px !important;
+  background: var(--al-surface-raised) !important;
+  color: var(--al-ink-soft) !important;
+}
+
+.skill-detail-actions .skill-detail-primary {
+  border-color: var(--al-ink) !important;
+  background: var(--al-ink) !important;
+  color: var(--al-surface-raised) !important;
+}
+
+.skill-detail-actions button.danger {
+  color: var(--al-danger) !important;
+}
+
+.skill-source-view {
+  border: 1px solid var(--al-line) !important;
+  border-radius: 10px !important;
+  background: var(--al-surface-soft) !important;
+  color: var(--al-ink-soft) !important;
+}
+
+@media (max-width: 900px) {
+  #page-settings .model-config-detail-grid,
+  #page-settings .model-config-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #page-settings .model-config-form .form-grid .wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  #page-settings .settings-workspace:has(.settings-list-empty) {
+    grid-template-rows: auto auto !important;
+  }
+
+  #page-settings .settings-workspace:has(.settings-list-empty) .settings-workspace-shell {
+    min-height: 0 !important;
+  }
+
+  #page-settings .settings-workspace-detail {
+    display: block;
+  }
+
+  #page-settings .model-config-details,
+  #page-settings .model-config-form {
+    width: 100%;
+  }
+
+  #page-settings .model-config-detail-actions {
+    align-items: stretch;
+  }
+
+  #page-settings .model-config-detail-actions .model-config-more-menu {
+    margin-left: 0;
+  }
+
+  .skill-detail-drawer {
+    position: relative;
+    border-left: 0 !important;
+  }
+
+  .skill-detail-drawer::before {
+    width: 38px;
+    height: 4px;
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    z-index: 3;
+    border-radius: 999px;
+    background: var(--al-line-strong);
+    content: "";
+    transform: translateX(-50%);
+  }
+
+  .skill-detail-head {
+    padding-top: 24px !important;
+  }
+
+  .skill-detail-summary,
+  .skill-detail-section {
+    padding: 18px 16px !important;
+  }
+}
+
+/* Toasts share the same state vocabulary as the workbench. Keep the surface
+ * quiet, but make success, warning and failure immediately distinguishable. */
+.toast {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--al-ink) 18%, transparent);
+  border-radius: 11px;
+  background: var(--al-ink) !important;
+  color: var(--al-surface-raised) !important;
+  box-shadow: var(--al-shadow-float) !important;
+  font-size: 13px;
+  font-weight: 640;
+  line-height: 1.45;
+}
+
+.toast.success {
+  border-color: color-mix(in srgb, var(--al-success) 36%, var(--al-line));
+  background: color-mix(in srgb, var(--al-success) 88%, var(--al-ink)) !important;
+}
+
+.toast.warning {
+  border-color: color-mix(in srgb, var(--al-accent) 42%, var(--al-line));
+  background: color-mix(in srgb, var(--al-accent) 86%, var(--al-ink)) !important;
+}
+
+.toast.neutral {
+  border-color: var(--al-line-strong);
+  background: var(--al-ink) !important;
+}
+
+.toast.error {
+  border-color: color-mix(in srgb, var(--al-danger) 44%, var(--al-line));
+  background: color-mix(in srgb, var(--al-danger) 86%, var(--al-ink)) !important;
+}
+
+.toast::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  margin-right: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  opacity: 0.82;
+}
+
+.toast.success::before {
+  background: var(--al-success);
+}
+
+.toast.warning::before {
+  background: var(--al-accent);
+}
+
+.toast.error::before {
+  background: var(--al-danger);
+}
+
+@media (max-width: 760px) {
+  .toast {
+    right: 12px !important;
+    left: 12px;
+    bottom: calc(154px + env(safe-area-inset-bottom)) !important;
+    max-width: none !important;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 420px) {
   #page-memory .memory-clear {
     width: 40px;
@@ -4278,5 +4659,14 @@ select:focus {
     opacity: 0;
     appearance: none;
     cursor: pointer;
+  }
+}
+
+/* Keep mobile feedback above the full composer, including its optional
+ * attachment and queue rows. This is intentionally last so it wins over the
+ * legacy mobile toast offset in styles.css. */
+@media (max-width: 760px) {
+  .toast {
+    bottom: calc(154px + env(safe-area-inset-bottom)) !important;
   }
 }

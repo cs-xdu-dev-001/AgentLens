@@ -23,11 +23,16 @@ export function Toast() {
     };
   }, []);
 
-  const baseClassName = tone === "error" ? "toast error" : "toast";
+  const normalizedTone = ["error", "success", "warning", "neutral"].includes(tone)
+    ? tone
+    : "neutral";
+  const baseClassName = normalizedTone === "error"
+    ? "toast error"
+    : `toast ${normalizedTone}`;
   const className = visible ? `${baseClassName} show` : baseClassName;
 
   return (
-    <div className={className} id={"toast"} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
+    <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"}>
       {message}
     </div>
   );
