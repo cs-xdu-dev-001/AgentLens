@@ -740,52 +740,60 @@ export function ChatEvidenceDrawer() {
           data-workbench-tab={"trace"}
           type={"button"}
           role={"tab"}
+          aria-label={`过程 ${trace.length}`}
           aria-keyshortcuts={"Alt+E 1"}
           aria-selected={activeTab === "trace"}
           aria-controls={"agent-trace-panel"}
           tabIndex={activeTab === "trace" ? 0 : -1}
           onClick={() => selectTab("trace", { manual: true })}
         >
-          {`过程 ${trace.length}`}
+          <span className={"drawer-tab-label"}>过程</span>{" "}
+          <span className={"drawer-tab-count"}>{trace.length}</span>
         </button>
         <button
           id={"agent-output-tab"}
           data-workbench-tab={"output"}
           type={"button"}
           role={"tab"}
+          aria-label={`输出 ${toolCalls.length}`}
           aria-keyshortcuts={"2"}
           aria-selected={activeTab === "output"}
           aria-controls={"agent-output-panel"}
           tabIndex={activeTab === "output" ? 0 : -1}
           onClick={() => selectTab("output", { manual: true })}
         >
-          {`输出 ${toolCalls.length}`}
+          <span className={"drawer-tab-label"}>输出</span>{" "}
+          <span className={"drawer-tab-count"}>{toolCalls.length}</span>
         </button>
         <button
           id={"agent-evidence-tab"}
           data-workbench-tab={"evidence"}
           type={"button"}
           role={"tab"}
+          aria-label={`引用 ${references.length}`}
           aria-keyshortcuts={"3"}
           aria-selected={activeTab === "evidence"}
           aria-controls={"agent-evidence-panel"}
           tabIndex={activeTab === "evidence" ? 0 : -1}
           onClick={() => selectTab("evidence", { manual: true })}
         >
-          {`引用 ${references.length}`}
+          <span className={"drawer-tab-label"}>引用</span>{" "}
+          <span className={"drawer-tab-count"}>{references.length}</span>
         </button>
         <button
           id={"agent-artifacts-tab"}
           data-workbench-tab={"artifacts"}
           type={"button"}
           role={"tab"}
+          aria-label={`变更 ${artifacts.length}`}
           aria-keyshortcuts={"Alt+G 4"}
           aria-selected={activeTab === "artifacts"}
           aria-controls={"agent-artifacts-panel"}
           tabIndex={activeTab === "artifacts" ? 0 : -1}
           onClick={() => selectTab("artifacts", { manual: true })}
         >
-          {`变更 ${artifacts.length}`}
+          <span className={"drawer-tab-label"}>变更</span>{" "}
+          <span className={"drawer-tab-count"}>{artifacts.length}</span>
         </button>
       </div>
       {activeTab === "trace" ? (

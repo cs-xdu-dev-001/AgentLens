@@ -4941,3 +4941,106 @@ select:focus {
     padding-right: 44px !important;
   }
 }
+
+/* Final workbench detail finish. template.css is loaded after refinement.css,
+   so keep the same narrow-sheet and tab rules here to preserve the intended
+   cascade when the generated asset is refreshed. */
+.evidence-drawer > .drawer-tabs button {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-inline: 4px;
+  white-space: nowrap;
+}
+
+.drawer-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-tab-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.evidence-drawer > .drawer-tabs button[aria-selected="true"] .drawer-tab-count {
+  color: var(--text-soft);
+}
+
+@media (max-width: 760px) {
+  .chat-mobile-drawer-backdrop {
+    top: 56px;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel {
+    height: min(80dvh, 700px) !important;
+    min-height: min(380px, calc(100dvh - 48px)) !important;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer {
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  #page-chat .agent-output-section {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  #page-chat .agent-tool-output-list {
+    max-height: 174px !important;
+  }
+
+  #page-chat .agent-tool-console {
+    height: min(300px, calc(100dvh - 350px));
+    min-height: 240px;
+    grid-template-rows: auto auto minmax(124px, 1fr) auto;
+  }
+
+  #page-chat .agent-tool-console-scroll {
+    min-height: 124px;
+    max-height: none;
+  }
+
+  .agent-recovery-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-recovery-metrics > div,
+  .agent-recovery-metrics > div:first-child {
+    padding: 6px 10px;
+    border-left: 1px solid var(--control-border);
+  }
+
+  .agent-recovery-metrics > div:first-child,
+  .agent-recovery-metrics > div:only-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .agent-recovery-metrics > div:only-child {
+    grid-column: 1 / -1;
+  }
+
+  .agent-recovery-metrics > div:nth-child(3):last-child {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    padding-top: 10px;
+    padding-left: 0;
+    border-top: 1px solid var(--control-border);
+    border-left: 0;
+  }
+
+  body:not(.drawer-collapsed) #toast {
+    bottom: calc(max(380px, min(80dvh, 700px)) + 12px + env(safe-area-inset-bottom)) !important;
+  }
+}
