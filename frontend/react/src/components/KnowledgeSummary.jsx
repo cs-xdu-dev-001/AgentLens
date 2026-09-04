@@ -18,6 +18,7 @@ export function KnowledgeSummary() {
   }, []);
   const selectedKnowledgeBase = useMemo(() => knowledgeBases.find((kb) => valueOf(kb.id) === valueOf(selectedKnowledgeBaseId)) || null, [knowledgeBases, selectedKnowledgeBaseId]);
   const embeddingModel = useMemo(() => models.find((model) => valueOf(model.id) === valueOf(selectedKnowledgeBase?.embeddingModelConfigId || selectedKnowledgeBase?.embedding_model_config_id)) || null, [models, selectedKnowledgeBase]);
+  if (!selectedKnowledgeBase) return null;
   return (
     <section className={selectedKnowledgeBase ? "knowledge-summary panel" : "knowledge-summary panel is-empty"} id={"kb-detail"}>
       <div className={"knowledge-summary-name"}>

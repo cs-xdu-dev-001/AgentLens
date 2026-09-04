@@ -703,7 +703,7 @@ function WelcomeSurface({ onSeed, workspaceState }) {
   return (
     <div className={"welcome-card"} data-welcome-surface={"true"}>
       <div className={"welcome-heading"}>
-        <h2>{"开始一项任务"}</h2>
+        <h2>{"有什么可以帮你？"}</h2>
         <button
           className={["welcome-context", workspaceMode].join(" ")}
           data-workspace-state={workspaceMode}

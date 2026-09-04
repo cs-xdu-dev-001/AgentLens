@@ -89,7 +89,7 @@ export function ModelListPanel({
             <span className={"settings-empty-icon"} aria-hidden={"true"}>
               <SlidersHorizontal size={19} strokeWidth={1.8} />
             </span>
-            <strong>{"还没有模型配置"}</strong>
+            <strong>{"暂无配置"}</strong>
             <span>{"添加一个模型后，聊天页就能直接使用。"}</span>
             <button type={"button"} onClick={onCreate}>
               <Plus size={15} strokeWidth={2} aria-hidden={"true"} />
