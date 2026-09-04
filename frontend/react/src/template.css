@@ -5045,6 +5045,45 @@ select:focus {
   }
 }
 
+@media (min-width: 761px) and (max-width: 1180px) {
+  #page-chat .chat-mobile-drawer-backdrop {
+    position: fixed;
+    z-index: 39;
+    top: 56px;
+    right: 0;
+    bottom: 0;
+    left: clamp(232px, 24vw, 264px);
+    display: block;
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--inverse-bg) 20%, transparent);
+    cursor: pointer;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel {
+    top: 68px !important;
+    right: 16px !important;
+    bottom: 16px !important;
+    width: min(var(--drawer-width), calc(100% - 32px)) !important;
+    max-width: calc(100% - 32px) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--al-shadow-float, 0 14px 36px rgba(19, 26, 34, 0.16));
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer {
+    border-radius: 16px !important;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  body.sidebar-collapsed #page-chat .chat-mobile-drawer-backdrop {
+    left: 72px;
+  }
+}
+
 
 /* Chat polish v2: stabilize the shell, protect the reading axis from the
    sticky composer, and make live run state visible without adding chrome. */

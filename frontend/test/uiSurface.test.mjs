@@ -108,6 +108,13 @@ test("mobile run details expose a dismissible backdrop without changing desktop 
   assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*chat-mobile-drawer-backdrop/);
 });
 
+test("tablet run details stay below the chat rail and expose a backdrop", async () => {
+  const css = await readCss("refinement.css");
+  assert.match(css, /@media\s*\(min-width:\s*761px\)\s*and\s*\(max-width:\s*1180px\)[\s\S]*chat-mobile-drawer-backdrop/);
+  assert.match(css, /@media\s*\(min-width:\s*761px\)\s*and\s*\(max-width:\s*1180px\)[\s\S]*top:\s*68px\s*!important/);
+  assert.match(css, /@media\s*\(min-width:\s*761px\)\s*and\s*\(max-width:\s*1180px\)[\s\S]*background:\s*color-mix/);
+});
+
 test("mobile navigation uses the maintained Radix menu and exposes current semantics", async () => {
   const source = await readSource("components/Sidebar.jsx");
   assert.match(source, /@radix-ui\/react-dropdown-menu/);
