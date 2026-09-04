@@ -137,7 +137,7 @@ def main() -> None:
     assert 'label: "记忆"' in navigation
     assert 'icon: "memory"' in navigation
     assert 'page: "memory"' in navigation
-    assert 'type === "memory"' in sidebar
+    assert "memory: BrainCircuit" in sidebar
 
     assert "await Promise.all([" in catalog
     assert "knowflow:react-model-options-updated" in settings_page

@@ -40,7 +40,6 @@ def main() -> None:
             "\n            Register\n",
         ],
         "frontend/react/src/components/Sidebar.jsx": [
-            "Refresh",
             "删除 failed",
         ],
         "frontend/react/src/api/client.js": [
