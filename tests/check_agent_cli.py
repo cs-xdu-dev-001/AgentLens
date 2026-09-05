@@ -322,7 +322,7 @@ def main() -> None:
     ):
         assert cli._confirm_default_workspace(default_workspace) is True
         assert cli._confirm_default_workspace(default_workspace) is True
-    confirm.assert_called_once_with("继续进入Chat", default=True)
+    confirm.assert_called_once_with("开始Chat", default=True)
     assert fake_store.public["trusted_workspaces"] == [
         cli._workspace_trust_id(default_workspace)
     ]
@@ -339,7 +339,7 @@ def main() -> None:
         patch.object(cli.typer, "confirm", return_value=False) as confirm,
     ):
         assert cli._confirm_default_workspace(other_workspace) is False
-    confirm.assert_called_once_with("继续进入Chat", default=True)
+    confirm.assert_called_once_with("开始Chat", default=True)
     assert fake_store.public["trusted_workspaces"] == [
         cli._workspace_trust_id(default_workspace)
     ]

@@ -228,10 +228,8 @@ def _confirm_default_workspace(workspace_root: Path) -> bool:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return True
 
-    console.print("[bold]信任此工作目录？[/bold]")
-    console.print(f"[cyan]{workspace_root}[/cyan]")
-    console.print("[dim]AgentLens可在此目录读取、编辑文件并运行命令。[/dim]")
-    if not typer.confirm("继续进入Chat", default=True):
+    console.print(f"[bold]进入当前工作目录？[/bold] [cyan]{workspace_root}[/cyan]")
+    if not typer.confirm("开始Chat", default=True):
         return False
 
     def remember(value: dict[str, Any]) -> None:
