@@ -7174,11 +7174,33 @@ select:focus {
 }
 
 .command-palette-option {
-  min-height: 44px !important;
-  padding: 8px 10px !important;
+  min-height: 48px !important;
+  padding: 7px 10px !important;
   border-radius: 9px !important;
   color: var(--al-ink) !important;
   font-size: 13px !important;
+}
+
+.palette-command-copy {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 2px !important;
+}
+
+.palette-command-label {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.palette-command-copy small {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: var(--al-muted) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
 }
 
 .command-palette-option[aria-selected="true"] {
@@ -7229,7 +7251,16 @@ select:focus {
   }
 
   .command-palette-list {
-    max-height: min(440px, 58dvh) !important;
+    max-height: min(400px, 52dvh) !important;
+  }
+
+  .command-palette-option {
+    min-height: 46px !important;
+  }
+
+  .palette-command-copy small,
+  .palette-session-copy small {
+    max-width: 34ch !important;
   }
 }
 

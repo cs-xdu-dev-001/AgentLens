@@ -238,9 +238,16 @@ export function CommandPalette({
         <div className={"command-palette-list"} id={"command-palette-list"} role={"listbox"} aria-label={"可用命令与最近任务"} aria-busy={disabled}>
           {items.map((item, index) => (
             <div key={item.kind === "session" ? `session-${item.session.id}` : item.command.value}>
-              {item.kind === "session" && (index === 0 || items[index - 1]?.kind !== "session") ? (
-                <div className={"command-palette-group-label"}>最近任务</div>
-              ) : null}
+              {item.kind === "session"
+                && (index === 0 || items[index - 1]?.kind !== "session") ? (
+                  <div className={"command-palette-group-label"}>最近任务</div>
+                ) : null}
+              {item.kind === "command"
+                && (index === 0
+                  || items[index - 1]?.kind !== "command"
+                  || items[index - 1]?.command?.category !== item.command.category) ? (
+                  <div className={"command-palette-group-label"}>{item.command.category || "命令"}</div>
+                ) : null}
               <button
                 id={optionId(item)}
                 type={"button"}
@@ -259,7 +266,14 @@ export function CommandPalette({
                       <small>{String(item.session.latest_run.goalSummary)}</small>
                     ) : null}
                   </span>
-                ) : <span>{item.command.label}</span>}
+                ) : (
+                  <span className={"palette-command-copy"}>
+                    <span className={"palette-command-label"}>{item.command.label}</span>
+                    {item.command.description ? (
+                      <small>{item.command.description}</small>
+                    ) : null}
+                  </span>
+                )}
                 <code>{item.kind === "session" ? "任务" : item.command.value}</code>
               </button>
             </div>
