@@ -8476,6 +8476,19 @@ select:focus {
     border-bottom: 1px solid var(--al-line) !important;
   }
 
+  /* The page header already names the knowledge workspace. On phones the
+     rail should spend that line on search and selection, not repeat the same
+     title a second time. */
+  #page-knowledge .knowledge-rail .kb-list-heading > div {
+    display: none !important;
+  }
+
+  #page-knowledge .knowledge-rail .kb-list-header {
+    min-height: 28px !important;
+    justify-content: flex-end !important;
+    padding-bottom: 6px !important;
+  }
+
   #page-knowledge .knowledge-primary {
     padding: 0 2px 14px !important;
   }

@@ -1307,3 +1307,268 @@
     padding-top: 9px !important;
   }
 }
+
+/* Final rail finish: one continuous work surface.
+   Keep the existing navigation and behavior; remove the stacked-admin feel. */
+@media (min-width: 761px) {
+  #sidebar.sidebar-workbench {
+    width: 272px !important;
+    padding: 14px 12px 10px !important;
+    gap: 0 !important;
+    background: color-mix(in srgb, var(--al-rail) 96%, var(--al-ink) 4%) !important;
+    border-right: 1px solid color-mix(in srgb, var(--al-line-strong) 34%, transparent) !important;
+  }
+
+  :root[data-theme="mono-dark"] #sidebar.sidebar-workbench {
+    background: #171817 !important;
+    border-right-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 36px !important;
+    margin: 0 0 14px !important;
+    padding: 0 2px !important;
+    gap: 8px !important;
+    border: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-mark {
+    width: 30px !important;
+    height: 30px !important;
+    flex-basis: 30px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 10px !important;
+    background: var(--al-sidebar-surface) !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-copy strong {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.025em !important;
+  }
+
+  #sidebar.sidebar-workbench #sidebar-toggle {
+    width: 30px !important;
+    height: 30px !important;
+    flex-basis: 30px !important;
+    margin-left: auto !important;
+    border-radius: 9px !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button {
+    min-height: 42px !important;
+    height: 42px !important;
+    margin: 0 0 6px !important;
+    padding: 0 12px !important;
+    border: 1px solid transparent !important;
+    border-radius: 11px !important;
+    background: var(--al-sidebar-primary-bg) !important;
+    color: var(--al-sidebar-primary-text) !important;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--al-sidebar-primary-bg) 32%, transparent) !important;
+  }
+
+  :root[data-theme="mono-dark"] #sidebar.sidebar-workbench .new-chat-button {
+    background: #f2f2ed !important;
+    color: #171817 !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button:hover {
+    filter: brightness(0.96);
+  }
+
+  :root[data-theme="mono-dark"] #sidebar.sidebar-workbench .new-chat-button:hover {
+    filter: brightness(0.92);
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button > span {
+    width: 22px !important;
+    height: 22px !important;
+    flex-basis: 22px !important;
+    border-radius: 7px !important;
+    background: color-mix(in srgb, currentColor 14%, transparent) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-utility-tools {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger,
+  #sidebar.sidebar-workbench .pending-approvals-trigger {
+    min-height: 35px !important;
+    height: 35px !important;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    border-radius: 9px !important;
+    color: var(--al-ink-soft) !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger:hover,
+  #sidebar.sidebar-workbench .pending-approvals-trigger:hover,
+  #sidebar.sidebar-workbench .pending-approvals-trigger[aria-expanded="true"] {
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-ink) !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger kbd {
+    padding: 2px 6px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 5px !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+    font-size: 10px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell {
+    margin-top: 13px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs {
+    min-height: 31px !important;
+    padding: 0 2px !important;
+    gap: 3px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button {
+    min-height: 30px !important;
+    padding: 0 10px !important;
+    border-radius: 8px !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button.active {
+    background: var(--al-sidebar-active) !important;
+    color: var(--al-ink) !important;
+    font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search-row {
+    margin-top: 3px !important;
+    gap: 4px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input {
+    min-height: 35px !important;
+    height: 35px !important;
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+    background: var(--al-sidebar-surface) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input:focus {
+    border-color: var(--al-line-strong) !important;
+    background: var(--al-sidebar-surface) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-refresh-button {
+    width: 35px !important;
+    min-width: 35px !important;
+    height: 35px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .history-group-title {
+    padding: 13px 10px 5px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row {
+    min-height: 40px !important;
+    margin: 2px 0 !important;
+    border-radius: 10px !important;
+  }
+
+  #sidebar.sidebar-workbench :is(.session-row, .session-row.completed, .session-row.cancelled) .sidebar-list-item {
+    min-height: 40px !important;
+    padding: 7px 10px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row.active {
+    background: var(--al-sidebar-active) !important;
+    box-shadow: inset 2px 0 0 var(--al-ink-soft) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row.active .session-title {
+    font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools {
+    margin-top: auto !important;
+    padding: 16px 0 0 !important;
+    border-top: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-section-label {
+    padding: 0 10px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
+    min-height: 32px !important;
+    height: 32px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool:hover,
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool.active {
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-ink) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu {
+    margin-top: 9px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button {
+    min-height: 38px !important;
+    padding: 5px 10px !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button:hover,
+  #sidebar.sidebar-workbench .user-menu.open .user-menu-button {
+    background: var(--al-sidebar-hover) !important;
+  }
+
+  #sidebar.sidebar-workbench .runtime-card {
+    margin: 1px 10px 0 !important;
+    min-height: 16px !important;
+  }
+}
+
+@media (min-width: 761px) {
+  #sidebar.sidebar-workbench.collapsed {
+    padding: 14px 8px 10px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .sidebar-utility-tools {
+    gap: 4px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .sidebar-bottom-tools {
+    padding-top: 16px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .new-chat-button {
+    background: var(--al-sidebar-primary-bg) !important;
+    color: var(--al-sidebar-primary-text) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #sidebar .sidebar-utility-tools {
+    display: contents !important;
+  }
+}

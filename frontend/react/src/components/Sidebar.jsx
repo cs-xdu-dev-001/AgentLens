@@ -1815,23 +1815,25 @@ export function Sidebar({
         onPageChange={handlePageChange}
         onPageIntent={onPageIntent}
       />
-      <Tooltip content={"命令面板"} shortcut={"Ctrl/⌘+K"} side={"right"}>
-        <button
-          className={"sidebar-tool command-palette-trigger"}
-          type={"button"}
-          aria-label={"打开命令面板"}
-          aria-keyshortcuts={"Control+k Meta+k"}
-          aria-haspopup={"dialog"}
-          onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
-        >
-          <span className={"nav-icon"}>
-            <Command size={17} strokeWidth={1.7} aria-hidden={"true"} />
-          </span>
-          <span>{"命令面板"}</span>
-          <kbd>{"Ctrl/⌘ K"}</kbd>
-        </button>
-      </Tooltip>
-      <PendingApprovals collapsed={collapsed} />
+      <div className={"sidebar-utility-tools"}>
+        <Tooltip content={"命令面板"} shortcut={"Ctrl/⌘+K"} side={"right"}>
+          <button
+            className={"sidebar-tool command-palette-trigger"}
+            type={"button"}
+            aria-label={"打开命令面板"}
+            aria-keyshortcuts={"Control+k Meta+k"}
+            aria-haspopup={"dialog"}
+            onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-command-palette-open"))}
+          >
+            <span className={"nav-icon"}>
+              <Command size={17} strokeWidth={1.7} aria-hidden={"true"} />
+            </span>
+            <span>{"命令面板"}</span>
+            <kbd>{"Ctrl/⌘ K"}</kbd>
+          </button>
+        </Tooltip>
+        <PendingApprovals collapsed={collapsed} />
+      </div>
       <SessionHistory
         mobileOpen={mobileHistoryOpen}
         onMobileClose={onMobileHistoryClose}
