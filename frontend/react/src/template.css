@@ -6998,6 +6998,12 @@ select:focus {
   color: var(--al-muted) !important;
 }
 
+.command-palette-search input:focus {
+  border-color: transparent !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--al-ink) 14%, transparent) !important;
+}
+
 .command-palette-search button {
   min-width: 42px !important;
   min-height: 30px !important;
