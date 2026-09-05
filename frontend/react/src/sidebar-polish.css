@@ -4,25 +4,25 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 272px;
+  --sidebar-width: 264px;
   --sidebar-collapsed-width: 68px;
-  --al-sidebar-bg: #f5f4f0;
+  --al-sidebar-bg: #f7f6f2;
   --al-sidebar-surface: #fffefa;
-  --al-sidebar-hover: #ebe9e2;
-  --al-sidebar-active: #e7e5de;
-  --al-sidebar-divider: #d7d5cd;
-  --al-sidebar-text: #1b1b19;
-  --al-sidebar-muted: #686862;
-  --al-sidebar-primary-bg: #1c1c1a;
+  --al-sidebar-hover: #ecebe5;
+  --al-sidebar-active: #e5e4de;
+  --al-sidebar-divider: #d1d0c8;
+  --al-sidebar-text: #1a1a18;
+  --al-sidebar-muted: #74736d;
+  --al-sidebar-primary-bg: #20201e;
   --al-sidebar-primary-text: #fafaf5;
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #151614;
-  --al-sidebar-surface: #1d1f1c;
-  --al-sidebar-hover: #272925;
-  --al-sidebar-active: #30332e;
-  --al-sidebar-divider: #343731;
+  --al-sidebar-bg: #171815;
+  --al-sidebar-surface: #20221f;
+  --al-sidebar-hover: #292b27;
+  --al-sidebar-active: #32352f;
+  --al-sidebar-divider: #383b34;
   --al-sidebar-text: #f0f0e9;
   --al-sidebar-muted: #aaa9a0;
   --al-sidebar-primary-bg: #f0f0e9;
@@ -379,7 +379,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 12px 10px 10px !important;
+    padding: 14px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -387,20 +387,20 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 40px !important;
+    min-height: 42px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 12px !important;
+    margin: 0 0 14px !important;
     padding: 0 2px !important;
-    gap: 8px !important;
+    gap: 9px !important;
     border: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 30px !important;
-    height: 30px !important;
-    flex: 0 0 30px !important;
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
@@ -418,7 +418,7 @@
     flex: 0 0 32px !important;
     margin-left: auto !important;
     border: 0 !important;
-    border-radius: 8px !important;
+    border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-muted) !important;
     border: 1px solid transparent !important;
@@ -430,13 +430,13 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: 38px !important;
+    height: 38px !important;
     margin: 0 !important;
-    padding: 0 9px !important;
-    gap: 8px !important;
+    padding: 0 10px !important;
+    gap: 9px !important;
     border: 0 !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     font-size: 13.5px !important;
@@ -449,11 +449,11 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 40px !important;
-    height: 40px !important;
-    margin-bottom: 10px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin-bottom: 12px !important;
     border: 1px solid var(--al-sidebar-primary-bg) !important;
-    border-radius: 10px !important;
+    border-radius: 11px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
     box-shadow: none !important;
@@ -482,9 +482,11 @@
     flex: 0 0 auto !important;
     flex-direction: column !important;
     margin: 0 !important;
-    padding: 0 !important;
-    gap: 1px !important;
-    border: 0 !important;
+    padding: 6px !important;
+    gap: 2px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 12px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 68%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .pending-approvals {
@@ -510,8 +512,8 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 10px 0 0 !important;
-    padding: 9px 0 4px !important;
+    margin: 12px 0 0 !important;
+    padding: 11px 0 4px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
@@ -527,9 +529,9 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 10px 0 0 !important;
-    padding: 11px 0 0 !important;
-    gap: 1px !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
+    gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
   }
@@ -541,10 +543,10 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 8px 6px !important;
+    margin: 0 9px 7px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 650 !important;
     letter-spacing: 0.02em !important;
     line-height: 18px !important;
@@ -552,11 +554,11 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool .nav-icon {
-    width: 24px !important;
-    height: 24px !important;
-    flex-basis: 24px !important;
-    border-radius: 7px !important;
-    background: color-mix(in srgb, var(--al-sidebar-hover) 72%, transparent) !important;
+    width: 26px !important;
+    height: 26px !important;
+    flex-basis: 26px !important;
+    border-radius: 8px !important;
+    background: color-mix(in srgb, var(--al-sidebar-hover) 60%, transparent) !important;
     color: var(--al-sidebar-muted) !important;
   }
 
@@ -573,23 +575,23 @@
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"]) {
     background: var(--al-sidebar-active) !important;
     font-weight: 600 !important;
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--al-sidebar-text) 78%, transparent) !important;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--al-sidebar-text) 78%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu {
     flex: 0 0 auto !important;
-    margin: 8px 0 0 !important;
-    padding: 8px 0 0 !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 0 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 42px !important;
-    padding: 6px 9px !important;
+    min-height: 44px !important;
+    padding: 7px 10px !important;
     gap: 9px !important;
     border: 1px solid transparent !important;
-    border-radius: 10px !important;
-    background: transparent !important;
+    border-radius: 11px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 72%, transparent) !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
@@ -614,7 +616,7 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 20px !important;
     flex: 0 0 auto !important;
-    margin: 4px 10px 0 !important;
+    margin: 5px 10px 0 !important;
     padding: 0 0 2px !important;
     border: 0 !important;
     background: transparent !important;
