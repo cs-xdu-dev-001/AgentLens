@@ -99,7 +99,7 @@ body,
 body {
   background: var(--al-canvas) !important;
   color: var(--al-ink) !important;
-  font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -2788,6 +2788,261 @@ select:focus {
 
   #page-chat.chat-empty .welcome-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Sidebar visual pass: a quieter, denser command rail. */
+@media (min-width: 761px) {
+  .app-shell,
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 248px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  .sidebar,
+  .sidebar.collapsed {
+    width: 248px !important;
+    gap: 6px !important;
+    padding: 12px 10px 10px !important;
+    background: var(--al-rail) !important;
+  }
+
+  body.sidebar-collapsed .sidebar {
+    width: 64px !important;
+  }
+
+  .sidebar-brand {
+    min-height: 42px !important;
+    padding: 0 2px 9px !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--al-line) 78%, transparent) !important;
+    gap: 9px !important;
+  }
+
+  .sidebar .brand-mark {
+    width: 30px !important;
+    height: 30px !important;
+    flex-basis: 30px !important;
+    border: 1px solid var(--al-line-strong) !important;
+    border-radius: 9px !important;
+    background: var(--al-surface-raised) !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar .brand-copy strong {
+    font-size: 14px !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  .sidebar #sidebar-toggle {
+    width: 28px !important;
+    height: 28px !important;
+    margin-left: auto !important;
+    border-radius: 8px !important;
+  }
+
+  .sidebar .new-chat-button {
+    min-height: 38px !important;
+    margin: 5px 0 2px !important;
+    padding: 8px 10px !important;
+    border: 1px solid var(--al-ink) !important;
+    border-radius: 10px !important;
+    background: var(--al-ink) !important;
+    color: var(--al-surface-raised) !important;
+    font-size: 13px !important;
+    font-weight: 680 !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar .new-chat-button:hover {
+    border-color: var(--al-ink-soft) !important;
+    background: var(--al-ink-soft) !important;
+  }
+
+  .sidebar .new-chat-button > span {
+    color: currentColor !important;
+  }
+
+  .sidebar .command-palette-trigger,
+  .sidebar .sidebar-tool,
+  .sidebar .user-menu-button {
+    min-height: 36px !important;
+    padding: 7px 9px !important;
+    border-radius: 9px !important;
+    color: var(--al-ink-soft) !important;
+    font-size: 13px !important;
+    font-weight: 580 !important;
+  }
+
+  .sidebar .command-palette-trigger:hover,
+  .sidebar .sidebar-tool:hover,
+  .sidebar .user-menu-button:hover,
+  .sidebar .sidebar-list-item:hover,
+  .sidebar .session-row.active .sidebar-list-item {
+    border-color: transparent !important;
+    background: var(--al-surface-soft) !important;
+    color: var(--al-ink) !important;
+  }
+
+  .sidebar .sidebar-tool.active,
+  .sidebar .nav-item.active,
+  .sidebar .sidebar-list-item.active,
+  .sidebar .session-row.active .sidebar-list-item {
+    background: var(--al-surface-active) !important;
+    color: var(--al-ink) !important;
+    font-weight: 680 !important;
+  }
+
+  .sidebar .sidebar-tool.active .nav-icon,
+  .sidebar .nav-item.active .nav-icon {
+    color: var(--al-accent-strong) !important;
+  }
+
+  .sidebar .nav-icon,
+  .sidebar .new-chat-button span {
+    width: 20px !important;
+    height: 20px !important;
+    flex-basis: 20px !important;
+  }
+
+  .sidebar .sidebar-bottom-tools {
+    gap: 2px !important;
+    margin-top: auto !important;
+    padding-top: 10px !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-line) 78%, transparent) !important;
+  }
+
+  .sidebar .sidebar-section-label {
+    padding: 0 8px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: none !important;
+  }
+
+  .sidebar .chat-history-shell {
+    padding-top: 5px !important;
+  }
+
+  .sidebar .session-scope-tabs {
+    margin: 0 0 6px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--al-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  .sidebar .session-scope-tabs button {
+    min-height: 30px !important;
+    border-radius: 7px 7px 0 0 !important;
+    font-size: 12px !important;
+  }
+
+  .sidebar .session-scope-tabs button.active {
+    background: transparent !important;
+    color: var(--al-ink) !important;
+    box-shadow: inset 0 -2px 0 var(--al-ink) !important;
+  }
+
+  .sidebar .sidebar-search-row {
+    gap: 4px !important;
+  }
+
+  .sidebar .sidebar-search {
+    min-height: 34px !important;
+    border: 1px solid transparent !important;
+    border-radius: 8px !important;
+    background: var(--al-surface-soft) !important;
+  }
+
+  .sidebar .sidebar-search:focus-within {
+    border-color: var(--al-line-strong) !important;
+    background: var(--al-surface-raised) !important;
+  }
+
+  .sidebar .sidebar-refresh-button {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 8px !important;
+  }
+
+  .sidebar .history-group-title {
+    padding: 8px 8px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+  }
+
+  .sidebar .sidebar-list-item {
+    min-height: 34px !important;
+    padding: 6px 8px !important;
+    border-radius: 8px !important;
+  }
+
+  .sidebar .user-menu {
+    margin-top: 5px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-line) 78%, transparent) !important;
+  }
+
+  .sidebar .user-menu-button {
+    min-height: 40px !important;
+    padding: 6px 8px !important;
+  }
+
+  .sidebar .user-avatar {
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+    background: var(--al-surface-active) !important;
+    color: var(--al-ink) !important;
+    font-size: 12px !important;
+  }
+
+  .sidebar .user-menu-button small {
+    color: var(--al-muted) !important;
+    font-size: 10px !important;
+  }
+
+  .sidebar .runtime-card {
+    min-height: 20px !important;
+    padding: 3px 8px 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--al-muted) !important;
+    font-size: 10px !important;
+  }
+
+  .sidebar .runtime-card strong {
+    color: var(--al-success) !important;
+    font-size: 10px !important;
+  }
+
+  .sidebar .runtime-card strong::before {
+    width: 5px !important;
+    height: 5px !important;
+    margin-right: 5px !important;
+  }
+
+  .sidebar .runtime-card span {
+    margin-left: auto !important;
+    color: var(--al-muted) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar .new-chat-button {
+    min-height: 38px !important;
+    padding: 7px 10px !important;
+    border-radius: 9px !important;
+  }
+
+  .sidebar .brand-mark {
+    box-shadow: none !important;
   }
 }
 
@@ -6345,6 +6600,265 @@ select:focus {
   #sidebar .runtime-card {
     min-height: 18px !important;
     margin-top: 1px !important;
+  }
+}
+
+/* Final sidebar pass — keep the rail visually quiet and make the task list
+   feel intentional even when there are no sessions yet. */
+:root {
+  --al-sidebar-bg: color-mix(in srgb, var(--al-rail) 92%, var(--al-canvas));
+  --al-sidebar-hover: color-mix(in srgb, var(--al-ink) 5%, transparent);
+  --al-sidebar-active: color-mix(in srgb, var(--al-ink) 8%, transparent);
+  --al-sidebar-divider: color-mix(in srgb, var(--al-line-strong) 48%, transparent);
+}
+
+:root[data-theme="mono-dark"] {
+  --al-sidebar-bg: color-mix(in srgb, var(--al-rail) 94%, #000);
+  --al-sidebar-hover: color-mix(in srgb, #fff 7%, transparent);
+  --al-sidebar-active: color-mix(in srgb, #fff 11%, transparent);
+  --al-sidebar-divider: color-mix(in srgb, var(--al-line-strong) 66%, transparent);
+}
+
+@media (min-width: 761px) {
+  .app-shell,
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 252px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  #sidebar,
+  #sidebar.collapsed,
+  body.sidebar-collapsed #sidebar {
+    width: 252px !important;
+    padding: 12px 10px 9px !important;
+    background: var(--al-sidebar-bg) !important;
+  }
+
+  #sidebar.collapsed,
+  body.sidebar-collapsed #sidebar {
+    width: 64px !important;
+    padding-inline: 8px !important;
+  }
+
+  #sidebar .sidebar-brand {
+    min-height: 44px !important;
+    margin: 0 1px 7px !important;
+    padding: 0 2px 8px !important;
+    gap: 8px !important;
+  }
+
+  #sidebar .brand-mark {
+    width: 32px !important;
+    height: 32px !important;
+    flex-basis: 32px !important;
+    border-radius: 9px !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar .brand-copy strong {
+    font-size: 15px !important;
+    font-weight: 720 !important;
+  }
+
+  #sidebar #sidebar-toggle {
+    width: 28px !important;
+    height: 28px !important;
+    flex-basis: 28px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar .new-chat-button {
+    min-height: 39px !important;
+    height: 39px !important;
+    margin: 0 0 4px !important;
+    padding: 0 10px !important;
+    gap: 8px !important;
+    border-radius: 9px !important;
+    font-size: 13.5px !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar .new-chat-button > span {
+    width: 21px !important;
+    height: 21px !important;
+    flex-basis: 21px !important;
+  }
+
+  #sidebar > .command-palette-trigger,
+  #sidebar > .pending-approvals .pending-approvals-trigger {
+    min-height: 33px !important;
+    height: 33px !important;
+    padding: 0 8px !important;
+    gap: 8px !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+  }
+
+  #sidebar > .pending-approvals {
+    padding-bottom: 7px !important;
+    border-bottom: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar .chat-history-shell {
+    margin-top: 8px !important;
+    gap: 7px !important;
+  }
+
+  #sidebar .session-scope-tabs {
+    min-height: 30px !important;
+    margin: 0 2px !important;
+    padding: 0 0 4px !important;
+    gap: 2px !important;
+  }
+
+  #sidebar .session-scope-tabs button {
+    min-height: 26px !important;
+    padding: 0 6px !important;
+    font-size: 11.5px !important;
+  }
+
+  #sidebar .sidebar-search-row {
+    grid-template-columns: minmax(0, 1fr) 30px !important;
+    gap: 3px !important;
+    margin: 0 2px !important;
+  }
+
+  #sidebar .sidebar-search input {
+    min-height: 33px !important;
+    height: 33px !important;
+    padding: 5px 8px 5px 29px !important;
+    border-radius: 8px !important;
+    background: color-mix(in srgb, var(--al-surface-raised) 35%, transparent) !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar .sidebar-refresh-button {
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 33px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar .sidebar-list.chat-history-list {
+    padding: 0 1px 2px !important;
+  }
+
+  #sidebar .sidebar-list.chat-history-list > .empty-state {
+    display: block !important;
+    margin: 6px 4px 0 !important;
+    padding: 12px 10px !important;
+    border: 1px dashed var(--al-sidebar-divider) !important;
+    border-radius: 8px !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    text-align: left !important;
+  }
+
+  #sidebar .history-group-title {
+    padding: 9px 8px 3px !important;
+    font-size: 9.5px !important;
+    letter-spacing: 0.06em !important;
+  }
+
+  #sidebar .sidebar-list-item,
+  #sidebar .session-row.active .sidebar-list-item {
+    min-height: 40px !important;
+    padding: 6px 8px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar .sidebar-list-item .session-title {
+    font-size: 12.5px !important;
+  }
+
+  #sidebar .session-title-row time,
+  #sidebar .session-run-status,
+  #sidebar .session-run-meta,
+  #sidebar .session-run-summary {
+    font-size: 10px !important;
+  }
+
+  #sidebar .sidebar-bottom-tools {
+    gap: 1px !important;
+    padding-top: 8px !important;
+  }
+
+  #sidebar .sidebar-section-label {
+    min-height: 14px !important;
+    padding: 0 8px 2px !important;
+    font-size: 9.5px !important;
+    letter-spacing: 0.06em !important;
+  }
+
+  #sidebar .sidebar-bottom-tools .sidebar-tool {
+    min-height: 29px !important;
+    height: 29px !important;
+    padding: 0 8px !important;
+    gap: 8px !important;
+    border-radius: 7px !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar .sidebar-bottom-tools .nav-icon {
+    width: 18px !important;
+    height: 18px !important;
+    flex-basis: 18px !important;
+  }
+
+  #sidebar .user-menu {
+    margin-top: 6px !important;
+    padding-top: 6px !important;
+  }
+
+  #sidebar .user-menu-button {
+    min-height: 40px !important;
+    padding: 5px 7px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar .user-avatar {
+    width: 27px !important;
+    height: 27px !important;
+    flex-basis: 27px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar .user-menu-button strong {
+    font-size: 12px !important;
+  }
+
+  #sidebar .user-menu-button small {
+    font-size: 10px !important;
+  }
+
+  #sidebar .runtime-card {
+    min-height: 16px !important;
+    margin: 1px 7px 0 !important;
+    font-size: 9.5px !important;
+  }
+
+  #sidebar .runtime-card strong {
+    font-size: 9.5px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #sidebar .new-chat-button {
+    min-height: 38px !important;
+    height: 38px !important;
+    border-radius: 9px !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar .mobile-history-trigger,
+  #sidebar .mobile-navigation-trigger {
+    height: 38px !important;
+    min-height: 38px !important;
+    border-radius: 9px !important;
   }
 }
 
