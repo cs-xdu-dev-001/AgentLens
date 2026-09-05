@@ -648,6 +648,37 @@ body {
   border-bottom: 1px solid var(--control-border);
 }
 
+/* The configuration form is a sibling work surface, not another card inside
+   the tools page. Keep its controls aligned with the inventory rail. */
+#page-tools #tool-config-form {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#page-tools #tool-config-form > .panel-title {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 0 0 2px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+#page-tools #tool-config-form > .panel-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+#page-tools #tool-config-form .form-grid {
+  padding: 16px 2px 0;
+}
+
+#page-tools #tool-config-form .button-row {
+  padding: 2px 2px 0;
+}
+
 #page-tools .mcp-server-grid {
   gap: 0;
   padding: 0;
@@ -7511,6 +7542,19 @@ body.sidebar-collapsed .sidebar {
     padding: 10px 14px !important;
   }
 
+  #page-tools #tool-config-form > .panel-title {
+    min-height: 50px !important;
+    padding-inline: 2px !important;
+  }
+
+  #page-tools #tool-config-form .form-grid {
+    padding: 14px 0 0 !important;
+  }
+
+  #page-tools #tool-config-form .button-row {
+    padding: 2px 0 0 !important;
+  }
+
   #page-memory .memory-header {
     min-height: 58px !important;
   }
@@ -8073,4 +8117,18 @@ body.sidebar-collapsed .sidebar {
   #page-chat .message-row.assistant .agent-task-capsule-progress > span {
     transition: none !important;
   }
+}
+
+/* Tools config is a sibling surface; late legacy rules must not re-wrap it
+   as a second rounded card on narrow screens. */
+#page-tools #tool-config-form {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#page-tools #tool-config-form > .panel-title {
+  border-radius: 0 !important;
+  background: transparent !important;
 }
