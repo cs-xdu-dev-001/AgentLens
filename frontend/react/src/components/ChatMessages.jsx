@@ -526,7 +526,10 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
           <>
             {message.streaming && !String(message.rawContent || "").trim() ? (
               <span className={"message-streaming-placeholder"} role={"status"} aria-label={"正在生成"}>
-                <i aria-hidden={"true"}></i>
+                <span className={"message-streaming-label"}>{"正在生成"}</span>
+                <span className={"message-streaming-dots"} aria-hidden={"true"}>
+                  <i></i><i></i><i></i>
+                </span>
               </span>
             ) : null}
             <MessageMarkdown

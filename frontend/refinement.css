@@ -6482,6 +6482,52 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* A streaming turn needs a readable state before the first token arrives. */
+#page-chat .message-streaming-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 0;
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+#page-chat .message-streaming-label {
+  color: var(--text-soft);
+  font-weight: 550;
+}
+
+#page-chat .message-streaming-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+#page-chat .message-streaming-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--terminal-accent, var(--accent));
+  animation: message-streaming-dot 1.05s ease-in-out infinite;
+}
+
+#page-chat .message-streaming-dots i:nth-child(2) { animation-delay: 120ms; }
+#page-chat .message-streaming-dots i:nth-child(3) { animation-delay: 240ms; }
+
+@keyframes message-streaming-dot {
+  0%, 60%, 100% { opacity: 0.32; }
+  30% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .message-streaming-dots i {
+    animation: none;
+    opacity: 0.72;
+  }
+}
+
 /* Final icon and mobile workbench polish. Keep every status surface on the
    same Lucide vocabulary and give the bottom drawer a quiet grab affordance. */
 .agent-approval-icon {
