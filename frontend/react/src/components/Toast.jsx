@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
 export function Toast() {
   const [message, setMessage] = useState("");
@@ -31,9 +32,17 @@ export function Toast() {
     : `toast ${normalizedTone}`;
   const className = visible ? `${baseClassName} show` : baseClassName;
 
+  const dismiss = () => {
+    window.clearTimeout(toastTimerRef.current);
+    setVisible(false);
+  };
+
   return (
-    <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"}>
-      {message}
+    <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"} aria-atomic={"true"}>
+      <span className={"toast-message"}>{message}</span>
+      <button className={"toast-dismiss"} type={"button"} aria-label={"关闭提示"} onClick={dismiss}>
+        <X size={15} strokeWidth={2} aria-hidden={"true"} />
+      </button>
     </div>
   );
 }

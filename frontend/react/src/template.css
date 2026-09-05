@@ -5704,6 +5704,53 @@ select:focus {
   }
 }
 
+/* Toasts are transient feedback, not dead-end banners: keep them readable
+   and give keyboard/touch users an explicit escape hatch. */
+.toast {
+  gap: 10px !important;
+  padding: 9px 10px 9px 12px !important;
+}
+
+.toast-message {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.toast-dismiss {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.78;
+  cursor: pointer;
+}
+
+.toast-dismiss:hover,
+.toast-dismiss:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.toast-dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .toast {
+    align-items: flex-start !important;
+  }
+
+  .toast-dismiss {
+    flex: 0 0 28px;
+  }
+}
+
 /* Knowledge empty-state finish: the rail only reports list state while the
    document workspace owns the next action. This removes the stacked empty
    cards without changing creation, upload, retrieval, or selection flows. */
