@@ -7097,6 +7097,203 @@ body.sidebar-collapsed .sidebar {
   display: none !important;
 }
 
+/* Management surfaces: keep the same information architecture, but make
+   narrow screens read like a workbench instead of a settings dashboard. */
+@media (max-width: 720px) {
+  .workspace-browser {
+    width: 100%;
+    padding: 18px 14px 34px !important;
+  }
+
+  .workspace-browser-header {
+    align-items: center !important;
+    gap: 10px !important;
+    padding-bottom: 14px !important;
+  }
+
+  .workspace-browser-header h1 {
+    font-size: 24px !important;
+    letter-spacing: -0.025em;
+  }
+
+  .workspace-browser-actions {
+    gap: 6px !important;
+  }
+
+  .workspace-browser-actions button {
+    min-height: 36px !important;
+    padding-inline: 10px !important;
+    border-radius: 9px !important;
+    font-size: 13px !important;
+  }
+
+  .workspace-runtime-strip {
+    gap: 5px 6px !important;
+    padding: 10px 0 8px !important;
+  }
+
+  .workspace-runtime-strip span {
+    padding: 3px 6px !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+  }
+
+  .workspace-boundary-card {
+    margin: 3px 0 10px !important;
+    padding: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .workspace-boundary-head {
+    align-items: flex-start !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .workspace-boundary-head strong {
+    font-size: 14px !important;
+  }
+
+  .workspace-boundary-head span {
+    max-width: 56%;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px !important;
+  }
+
+  .workspace-boundary-grid {
+    gap: 9px 12px !important;
+  }
+
+  .workspace-boundary-grid span {
+    margin-bottom: 3px !important;
+    font-size: 11px !important;
+  }
+
+  .workspace-boundary-grid strong {
+    font-size: 12.5px !important;
+  }
+
+  .workspace-breadcrumb {
+    min-height: 38px !important;
+    gap: 2px !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .workspace-breadcrumb::-webkit-scrollbar {
+    display: none;
+  }
+
+  .workspace-breadcrumb button {
+    flex: 0 0 auto;
+    font-size: 12px;
+  }
+
+  .workspace-file-list {
+    min-height: 150px !important;
+    padding-top: 4px !important;
+  }
+
+  .workspace-file-row {
+    min-height: 48px !important;
+  }
+
+  .workspace-file-open {
+    gap: 8px !important;
+    font-size: 13px;
+  }
+
+  .workspace-file-open span:last-child {
+    font-size: 11px;
+  }
+
+  .workspace-file-actions,
+  .workspace-preview-actions {
+    gap: 0 !important;
+  }
+
+  .workspace-file-actions a,
+  .workspace-file-actions button,
+  .workspace-preview-actions a,
+  .workspace-preview-actions button {
+    min-height: 36px !important;
+    padding-inline: 6px !important;
+    font-size: 12px !important;
+  }
+
+  .workspace-empty {
+    padding: 44px 10px !important;
+    font-size: 13px;
+  }
+
+  .workspace-file-preview {
+    max-height: min(62dvh, 560px) !important;
+    border-radius: 14px !important;
+  }
+
+  #page-tools .tools-content {
+    gap: 10px !important;
+    margin: 10px 14px 18px !important;
+  }
+
+  #page-tools .tools-overview,
+  #page-tools :where(.tool-inventory, .mcp-panel, .stack-form) {
+    border-radius: 12px !important;
+  }
+
+  #page-tools .tools-overview > div {
+    min-height: 64px;
+    padding: 10px 12px !important;
+  }
+
+  #page-tools .tools-overview span {
+    font-size: 11px !important;
+  }
+
+  #page-tools .tools-overview strong {
+    font-size: 18px !important;
+  }
+
+  #page-tools :where(.tool-inventory, .mcp-panel) > :where(.panel-title, .mcp-panel-heading) {
+    min-height: 50px !important;
+    padding-inline: 14px !important;
+  }
+
+  #page-tools .tool-inventory-row,
+  #page-tools .mcp-server-card {
+    min-height: 64px !important;
+    padding: 10px 14px !important;
+  }
+
+  #page-memory .memory-header {
+    min-height: 58px !important;
+  }
+
+  #page-memory .memory-title {
+    min-width: 0;
+  }
+
+  #page-memory .memory-title h1 {
+    font-size: 23px !important;
+  }
+
+  #page-memory .memory-title span {
+    font-size: 12px !important;
+  }
+
+  #page-memory :where(.memory-unavailable, .memory-empty) {
+    min-height: 0 !important;
+    padding: 18px 0 !important;
+    text-align: left !important;
+  }
+}
+
 /* Knowledge empty-state finish: the rail only reports list state while the
    document workspace owns the next action. This removes the stacked empty
    cards without changing creation, upload, retrieval, or selection flows. */
