@@ -9674,6 +9674,14 @@ select:focus {
   #page-knowledge .knowledge-primary {
     padding: 0 2px 14px !important;
   }
+
+  #page-knowledge .knowledge-rail {
+    padding-top: 8px !important;
+  }
+
+  #page-knowledge .knowledge-rail .kb-list-header {
+    display: none !important;
+  }
 }
 
 /* Workspace final pass: reserve borders for real boundaries (preview and
