@@ -6862,6 +6862,127 @@ select:focus {
   }
 }
 
+/* Command palette: one focused surface with a clear search-to-action rhythm. */
+.command-palette {
+  width: min(620px, calc(100vw - 28px)) !important;
+  margin: min(13vh, 104px) auto auto !important;
+  border: 1px solid var(--al-line-strong) !important;
+  border-radius: 16px !important;
+  background: var(--al-surface-raised) !important;
+  box-shadow: 0 20px 58px color-mix(in srgb, var(--al-ink) 20%, transparent) !important;
+}
+
+.command-palette-search {
+  min-height: 60px !important;
+  padding: 8px 10px 8px 16px !important;
+  border-bottom-color: var(--al-line) !important;
+  background: color-mix(in srgb, var(--al-surface-soft) 64%, var(--al-surface-raised)) !important;
+}
+
+.command-palette-search svg {
+  color: var(--al-muted) !important;
+}
+
+.command-palette-search input {
+  min-height: 42px !important;
+  font-size: 15px !important;
+  letter-spacing: -0.01em !important;
+}
+
+.command-palette-search input::placeholder {
+  color: var(--al-muted) !important;
+}
+
+.command-palette-search button {
+  min-width: 42px !important;
+  min-height: 30px !important;
+  padding: 5px 8px !important;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 7px !important;
+  background: var(--al-surface-raised) !important;
+  color: var(--al-muted) !important;
+  font-size: 11px !important;
+}
+
+.command-palette-search button:hover,
+.command-palette-search button:focus-visible {
+  border-color: var(--al-line-strong) !important;
+  background: var(--al-surface-soft) !important;
+  color: var(--al-ink) !important;
+}
+
+.command-palette-list {
+  max-height: min(420px, 54dvh) !important;
+  padding: 8px !important;
+}
+
+.command-palette-group-label {
+  padding: 10px 10px 5px !important;
+  color: var(--al-muted) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.08em !important;
+}
+
+.command-palette-option {
+  min-height: 44px !important;
+  padding: 8px 10px !important;
+  border-radius: 9px !important;
+  color: var(--al-ink) !important;
+  font-size: 13px !important;
+}
+
+.command-palette-option[aria-selected="true"] {
+  background: var(--al-sidebar-active) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--al-line-strong) 52%, transparent) !important;
+}
+
+.command-palette-option code {
+  padding: 3px 6px !important;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 5px !important;
+  color: var(--al-muted) !important;
+  font-size: 10px !important;
+}
+
+.palette-session-copy small {
+  color: var(--al-muted) !important;
+  font-size: 11px !important;
+}
+
+.command-palette-footer {
+  min-height: 42px !important;
+  padding: 8px 14px !important;
+  border-top-color: var(--al-line) !important;
+  color: var(--al-muted) !important;
+  font-size: 11px !important;
+}
+
+.command-palette-footer kbd {
+  color: var(--al-muted) !important;
+  font-size: 10px !important;
+}
+
+@media (max-width: 760px) {
+  .command-palette {
+    width: calc(100vw - 20px) !important;
+    margin: 10px auto auto !important;
+    border-radius: 14px !important;
+  }
+
+  .command-palette-search {
+    min-height: 56px !important;
+    padding-left: 12px !important;
+  }
+
+  .command-palette-search input {
+    font-size: 14px !important;
+  }
+
+  .command-palette-list {
+    max-height: min(440px, 58dvh) !important;
+  }
+}
+
 /* Chat workbench finish: align the chrome with the quiet command-rail
    language, then let the composer read as one continuous control. */
 #page-chat .chat-topbar {
