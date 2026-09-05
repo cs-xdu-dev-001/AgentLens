@@ -5653,6 +5653,57 @@ select:focus {
   }
 }
 
+/* Chat workbench precision: keep the empty state useful on short screens.
+   The composer remains anchored to the safe-area edge, while the first
+   action enters the reading path instead of floating in the middle of a
+   mostly empty viewport. */
+@media (max-width: 760px) {
+  #page-chat.chat-empty .messages {
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    padding: clamp(34px, 9vh, 72px) 12px 24px !important;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    width: min(100%, 520px) !important;
+    margin: 0 auto !important;
+  }
+
+  #page-chat.chat-empty .welcome-heading {
+    gap: 6px !important;
+    padding-bottom: 9px !important;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    font-size: 17px !important;
+    line-height: 1.3 !important;
+  }
+
+  #page-chat.chat-empty .welcome-context {
+    min-height: 30px !important;
+    font-size: 12px !important;
+  }
+
+  #page-chat.chat-empty .welcome-actions {
+    margin-top: 2px !important;
+  }
+
+  #page-chat.chat-empty .welcome-action {
+    min-height: 46px !important;
+    grid-template-columns: 22px minmax(0, 1fr) 14px !important;
+    gap: 9px !important;
+    padding: 8px 4px !important;
+  }
+
+  #page-chat.chat-empty .welcome-action-label {
+    font-size: 13px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-control-strip {
+    min-height: 42px !important;
+  }
+}
+
 /* Knowledge empty-state finish: the rail only reports list state while the
    document workspace owns the next action. This removes the stacked empty
    cards without changing creation, upload, retrieval, or selection flows. */
