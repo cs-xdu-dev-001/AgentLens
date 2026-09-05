@@ -5781,10 +5781,16 @@ select:focus {
   outline-offset: 2px;
 }
 
+.toast.show {
+  z-index: 120 !important;
+  pointer-events: auto !important;
+}
+
 @media (max-width: 760px) {
   .toast {
     align-items: flex-start !important;
     bottom: calc(230px + env(safe-area-inset-bottom)) !important;
+    touch-action: manipulation;
   }
 
   .toast-dismiss {
