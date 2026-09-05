@@ -9785,6 +9785,48 @@ select:focus {
 
 /* Workspace final pass: reserve borders for real boundaries (preview and
    file rows), not the whole viewport. */
+#page-workspace .workspace-empty {
+  display: grid !important;
+  gap: 6px !important;
+}
+
+#page-workspace .workspace-empty strong {
+  color: var(--al-ink) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+}
+
+#page-workspace .workspace-empty span {
+  color: var(--al-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+#page-workspace .workspace-empty-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 6px !important;
+}
+
+#page-workspace .workspace-empty-actions button {
+  min-height: 34px !important;
+  padding: 0 11px !important;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 8px !important;
+  background: var(--al-surface) !important;
+  color: var(--al-ink) !important;
+  font: inherit !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+#page-workspace .workspace-empty-actions button:first-child {
+  border-color: var(--al-ink) !important;
+  background: var(--al-ink) !important;
+  color: var(--al-surface) !important;
+}
+
 @media (min-width: 721px) {
   #page-workspace .workspace-browser {
     width: 100% !important;
@@ -9811,6 +9853,8 @@ select:focus {
   }
 
   #page-workspace .workspace-empty {
+    display: grid !important;
+    gap: 6px !important;
     max-width: none !important;
     margin: 14px 0 0 !important;
     padding: 18px 12px !important;
@@ -9820,9 +9864,59 @@ select:focus {
     background: transparent !important;
     text-align: left !important;
   }
+
+  #page-workspace .workspace-empty strong {
+    color: var(--al-ink) !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+  }
+
+  #page-workspace .workspace-empty span {
+    color: var(--al-muted) !important;
+    font-size: 13px !important;
+  }
+
+  #page-workspace .workspace-empty-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin-top: 6px !important;
+  }
+
+  #page-workspace .workspace-empty-actions button {
+    min-height: 34px !important;
+    padding: 0 11px !important;
+    border: 1px solid var(--al-line) !important;
+    border-radius: 8px !important;
+    background: var(--al-surface) !important;
+    color: var(--al-ink) !important;
+    font: inherit !important;
+    font-size: 12px !important;
+    font-weight: 650 !important;
+  }
+
+  #page-workspace .workspace-empty-actions button:first-child {
+    border-color: var(--al-ink) !important;
+    background: var(--al-ink) !important;
+    color: var(--al-surface) !important;
+  }
 }
 
 @media (max-width: 720px) {
+  #page-workspace .workspace-empty {
+    gap: 5px !important;
+    padding: 16px 0 !important;
+  }
+
+  #page-workspace .workspace-empty span {
+    max-width: 30ch;
+    line-height: 1.45;
+  }
+
+  #page-workspace .workspace-empty-actions {
+    margin-top: 7px !important;
+  }
+
   #page-workspace .workspace-boundary-card {
     margin-inline: 0 !important;
     padding: 12px 0 13px !important;

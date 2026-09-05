@@ -396,7 +396,23 @@ export function WorkbenchPage({
                 <span className="workspace-file-icon" aria-hidden="true"><CornerUpLeft size={17} strokeWidth={1.7} /></span><strong>返回上一级</strong>
               </button>
             ) : null}
-            {!loading && !entries.length ? <div className="workspace-empty">工作区为空。上传文件，或让Agent在这里生成产物。</div> : null}
+            {!loading && !entries.length ? (
+              <div className="workspace-empty">
+                <strong>工作区还没有文件</strong>
+                <span>上传文件，或回到对话让Agent在这里生成产物。</span>
+                <div className="workspace-empty-actions">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}>上传文件</button>
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent("knowflow:react-page-change", {
+                      detail: { page: "chat" },
+                    }))}
+                  >
+                    去对话
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {entries.map((entry) => {
               const selected = entry.kind === "file" && preview?.path === entry.path;
               return (
