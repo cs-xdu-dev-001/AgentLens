@@ -142,6 +142,9 @@ const MESSAGE_VIRTUOSO_COMPONENTS = Object.freeze({
 });
 
 function messageItemContent(_index, message, context) {
+  // Virtuoso can briefly request an out-of-range item while a streamed list is
+  // being replaced. Keep that transient hole from taking down the whole app.
+  if (!message || typeof message !== "object") return null;
   return (
     <MessageRow
       interactionOwner={context?.interactionOwner || null}
@@ -155,7 +158,7 @@ function messageItemContent(_index, message, context) {
 }
 
 function messageItemKey(_index, message) {
-  return message.id;
+  return message?.id || `message-placeholder-${_index}`;
 }
 
 let codeHighlighterPromise = null;

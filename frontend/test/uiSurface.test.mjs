@@ -23,6 +23,12 @@ test("empty chat surface exposes task-first onboarding affordances", async () =>
   assert.doesNotMatch(source, /welcome-kicker/);
 });
 
+test("virtualized transcript tolerates a transient missing item", async () => {
+  const source = await readSource("components/ChatMessages.jsx");
+  assert.match(source, /if \(!message \|\| typeof message !== "object"\) return null;/);
+  assert.match(source, /return message\?\.id \|\| `message-placeholder-\$\{_index\}`;/);
+});
+
 test("knowledge empty state keeps the rail secondary to the workspace action", async () => {
   const [rail, documents] = await Promise.all([
     readSource("components/KnowledgeRail.jsx"),
