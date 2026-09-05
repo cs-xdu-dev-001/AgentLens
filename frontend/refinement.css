@@ -2032,17 +2032,48 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-trace-section > .empty-state {
-  min-height: 88px;
-  display: grid;
-  place-content: center start;
+  position: relative;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
   margin: 4px 0 0;
-  padding: 16px;
-  border: 1px dashed var(--control-border);
-  border-radius: 12px;
-  background: var(--panel-bg-soft);
+  padding: 14px 14px 14px 38px;
+  border-top: 1px solid var(--control-border);
+  border-bottom: 1px solid var(--control-border);
+  background: transparent;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.agent-trace-section > .empty-state::before {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid color-mix(in srgb, var(--accent) 52%, var(--control-border));
+  border-radius: 50%;
+  content: "";
+  transform: translateY(-50%);
+}
+
+.agent-trace-section > .empty-state::after {
+  position: absolute;
+  top: calc(50% + 9px);
+  left: 20px;
+  width: 1px;
+  height: 22px;
+  background: color-mix(in srgb, var(--control-border) 78%, transparent);
+  content: "";
+}
+
+@media (max-width: 760px) {
+  .agent-trace-section > .empty-state {
+    min-height: 64px;
+    margin-inline: -4px;
+    padding-left: 36px;
+  }
 }
 
 .agent-trace-tree {
