@@ -6186,7 +6186,12 @@ body.sidebar-collapsed .sidebar {
   --chat-answer-width: min(760px, 100%);
 }
 
-#page-chat.chat-empty .welcome-card,
+#page-chat.chat-empty .welcome-card {
+  width: min(680px, calc(100% - 32px)) !important;
+  max-width: none !important;
+  box-sizing: border-box;
+}
+
 #page-chat.chat-empty #chat-form.composer {
   width: var(--chat-content-width) !important;
   max-width: none !important;
