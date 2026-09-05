@@ -5661,7 +5661,7 @@ select:focus {
   #page-chat.chat-empty .messages {
     align-items: stretch !important;
     justify-content: flex-start !important;
-    padding: clamp(34px, 9vh, 72px) 12px 24px !important;
+    padding: clamp(72px, 14vh, 116px) 12px 24px !important;
   }
 
   #page-chat.chat-empty .welcome-card {
