@@ -1,7 +1,3 @@
-/* AgentLens sidebar polish
-   One quiet command rail: flat surfaces, compact history, and a single
-   obvious action. Behaviour and the existing component tree stay intact. */
-
 :root {
   --sidebar-width: 268px;
   --sidebar-collapsed-width: 68px;
@@ -26,716 +22,6 @@
   --al-sidebar-primary-text: #181918;
   --al-sidebar-icon-bg: transparent;
   --al-sidebar-focus: rgba(240, 240, 235, 0.34);
-}
-
-@media (min-width: 761px) {
-  #sidebar.sidebar,
-  #sidebar.sidebar.collapsed,
-  body.sidebar-collapsed #sidebar.sidebar {
-    box-sizing: border-box !important;
-    width: var(--sidebar-width) !important;
-    min-width: 0 !important;
-    gap: 0 !important;
-    padding: 12px 12px 10px !important;
-    overflow: hidden !important;
-    border-right: 1px solid var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-bg) !important;
-  }
-
-  #sidebar .sidebar-brand {
-    min-height: 47px !important;
-    margin: 0 1px 10px !important;
-    padding: 0 3px 11px !important;
-    gap: 9px !important;
-    border-bottom: 1px solid var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .brand-mark {
-    width: 34px !important;
-    height: 34px !important;
-    flex-basis: 34px !important;
-    border: 0 !important;
-    border-radius: 10px !important;
-    background: var(--al-sidebar-surface) !important;
-    color: var(--al-ink) !important;
-    box-shadow: 0 1px 0 color-mix(in srgb, var(--al-ink) 8%, transparent), 0 0 0 1px var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .brand-copy {
-    min-width: 0 !important;
-    gap: 1px !important;
-  }
-
-  #sidebar .brand-copy strong {
-    overflow: hidden;
-    color: var(--al-ink) !important;
-    font-size: 15px !important;
-    font-weight: 760 !important;
-    letter-spacing: -0.02em !important;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  #sidebar.sidebar .brand-copy span {
-    display: block !important;
-    overflow: hidden !important;
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-    line-height: 1.15 !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  #sidebar #sidebar-toggle {
-    width: 30px !important;
-    height: 30px !important;
-    flex: 0 0 30px !important;
-    margin-left: auto !important;
-    border: 1px solid transparent !important;
-    border-radius: 9px !important;
-    background: transparent !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar #sidebar-toggle:hover,
-  #sidebar #sidebar-toggle:focus-visible {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar.sidebar .new-chat-button {
-    width: 100% !important;
-    min-height: 42px !important;
-    height: 42px !important;
-    margin: 0 0 8px !important;
-    padding: 0 10px !important;
-    justify-content: flex-start !important;
-    gap: 9px !important;
-    border: 1px solid transparent !important;
-    border-radius: 10px !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 1px 0 color-mix(in srgb, var(--al-ink) 18%, transparent) !important;
-    font-size: 13.5px !important;
-    font-weight: 720 !important;
-  }
-
-  #sidebar .new-chat-button > span {
-    width: 23px !important;
-    height: 23px !important;
-    flex-basis: 23px !important;
-    display: grid !important;
-    place-items: center !important;
-    border-radius: 7px !important;
-    background: color-mix(in srgb, var(--al-sidebar-primary-text) 15%, transparent) !important;
-    color: currentColor !important;
-  }
-
-  #sidebar.sidebar .new-chat-button:hover,
-  #sidebar.sidebar .new-chat-button:focus-visible {
-    border-color: transparent !important;
-    background: color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, var(--al-sidebar-bg)) !important;
-    color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 2px 0 color-mix(in srgb, var(--al-ink) 16%, transparent) !important;
-  }
-
-  #sidebar > .command-palette-trigger,
-  #sidebar > .pending-approvals .pending-approvals-trigger {
-    width: 100% !important;
-    min-height: 36px !important;
-    height: 36px !important;
-    margin: 0 !important;
-    padding: 0 9px !important;
-    gap: 8px !important;
-    border: 1px solid transparent !important;
-    border-radius: 9px !important;
-    background: transparent !important;
-    color: var(--al-ink-soft) !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-  }
-
-  #sidebar > .command-palette-trigger:hover,
-  #sidebar > .command-palette-trigger:focus-visible,
-  #sidebar > .pending-approvals .pending-approvals-trigger:hover,
-  #sidebar > .pending-approvals .pending-approvals-trigger:focus-visible,
-  #sidebar > .pending-approvals .pending-approvals-trigger[aria-expanded="true"] {
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar > .command-palette-trigger .nav-icon,
-  #sidebar > .pending-approvals .pending-approvals-trigger .nav-icon {
-    width: 23px !important;
-    height: 23px !important;
-    flex: 0 0 23px !important;
-    display: grid !important;
-    place-items: center !important;
-    border-radius: 7px !important;
-    background: var(--al-sidebar-icon-bg) !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar > .command-palette-trigger kbd {
-    margin-left: auto !important;
-    padding: 4px 6px !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 6px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 78%, transparent) !important;
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-    line-height: 1 !important;
-  }
-
-  #sidebar > .pending-approvals {
-    margin-bottom: 0 !important;
-    padding-bottom: 10px !important;
-    border-bottom: 1px solid var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar > .pending-approvals .pending-approvals-badge {
-    min-width: 18px !important;
-    height: 18px !important;
-    margin-left: auto !important;
-    padding: 0 5px !important;
-    border-radius: 999px !important;
-    background: var(--al-accent-soft) !important;
-    color: var(--al-accent-strong) !important;
-    font-size: 10px !important;
-    line-height: 18px !important;
-  }
-
-  #sidebar .chat-history-shell {
-    min-height: 0 !important;
-    height: 0 !important;
-    flex: 1 1 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 8px !important;
-    margin: 11px 0 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    border: 0 !important;
-    background: transparent !important;
-  }
-
-  #sidebar .session-scope-tabs {
-    min-height: 35px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 4px !important;
-    margin: 0 2px !important;
-    padding: 2px !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 64%, transparent) !important;
-  }
-
-  #sidebar .session-scope-tabs button {
-    position: relative !important;
-    min-height: 29px !important;
-    flex: 1 1 0 !important;
-    padding: 0 7px !important;
-    border: 1px solid transparent !important;
-    border-radius: 7px !important;
-    background: transparent !important;
-    color: var(--al-muted) !important;
-    font-size: 11.5px !important;
-    font-weight: 700 !important;
-  }
-
-  #sidebar .session-scope-tabs button:first-child {
-    padding-left: 7px !important;
-  }
-
-  #sidebar .session-scope-tabs button:last-child {
-    margin-left: 0 !important;
-  }
-
-  #sidebar .session-scope-tabs button:hover,
-  #sidebar .session-scope-tabs button:focus-visible {
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .session-scope-tabs button.active {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-surface) !important;
-    color: var(--al-ink) !important;
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--al-ink) 8%, transparent) !important;
-  }
-
-  #sidebar .session-scope-tabs button.active::after {
-    display: none !important;
-  }
-
-  #sidebar .sidebar-search-row {
-    grid-template-columns: minmax(0, 1fr) 32px !important;
-    gap: 4px !important;
-    margin: 1px 2px 3px !important;
-    padding: 0 !important;
-  }
-
-  #sidebar .sidebar-search input {
-    min-height: 37px !important;
-    height: 37px !important;
-    padding: 6px 10px 6px 31px !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 82%, transparent) !important;
-    color: var(--al-ink) !important;
-    font-size: 12.5px !important;
-  }
-
-  #sidebar .sidebar-search input:hover,
-  #sidebar .sidebar-search input:focus {
-    border-color: var(--al-line-strong) !important;
-    background: var(--al-sidebar-surface) !important;
-  }
-
-  #sidebar .sidebar-refresh-button {
-    width: 32px !important;
-    min-width: 32px !important;
-    height: 36px !important;
-    border: 1px solid transparent !important;
-    border-radius: 9px !important;
-    background: color-mix(in srgb, var(--al-sidebar-icon-bg) 65%, transparent) !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar .sidebar-refresh-button:hover,
-  #sidebar .sidebar-refresh-button:focus-visible {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-list.chat-history-list {
-    min-height: 0 !important;
-    height: 0 !important;
-    flex: 1 1 0 !important;
-    padding: 0 1px 3px !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
-    scrollbar-color: color-mix(in srgb, var(--al-muted) 34%, transparent) transparent;
-    scrollbar-width: thin;
-  }
-
-  #sidebar .history-group {
-    gap: 1px !important;
-  }
-
-  #sidebar .history-group-title {
-    padding: 11px 9px 4px !important;
-    color: var(--al-muted) !important;
-    font-size: 10.5px !important;
-    font-weight: 740 !important;
-    letter-spacing: 0.025em !important;
-  }
-
-  #sidebar .session-row {
-    position: relative !important;
-    min-height: 0 !important;
-    margin: 1px 0 !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-    transition: background-color 150ms var(--al-ease), box-shadow 150ms var(--al-ease) !important;
-  }
-
-  #sidebar .session-row:hover,
-  #sidebar .session-row.menu-open {
-    background: var(--al-sidebar-hover) !important;
-  }
-
-  #sidebar .session-row.active,
-  #sidebar .session-row.active.running,
-  #sidebar .session-row.active.planning,
-  #sidebar .session-row.active.waiting_approval,
-  #sidebar .session-row.active.waiting_input,
-  #sidebar .session-row.active.failed,
-  #sidebar .session-row.active.interrupted,
-  #sidebar .session-row.active.completed {
-    background: var(--al-sidebar-active) !important;
-    box-shadow: inset 1px 0 0 var(--al-accent-strong) !important;
-  }
-
-  #sidebar .sidebar-list-item,
-  #sidebar .session-row.active .sidebar-list-item {
-    min-height: 43px !important;
-    padding: 6px 8px !important;
-    border: 0 !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .session-row.active .sidebar-list-item {
-    padding-left: 11px !important;
-  }
-
-  #sidebar .sidebar-list-item:hover,
-  #sidebar .sidebar-list-item:focus-visible {
-    background: transparent !important;
-  }
-
-  #sidebar .sidebar-list-item .session-title {
-    min-width: 0 !important;
-    overflow: hidden !important;
-    font-size: 13.25px !important;
-    font-weight: 600 !important;
-    line-height: 1.27 !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  #sidebar .session-row.active .session-title {
-    font-weight: 700 !important;
-  }
-
-  #sidebar .session-title-row time {
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-  }
-
-  #sidebar .session-run-summary {
-    margin-top: 2px !important;
-    gap: 2px 6px !important;
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-    line-height: 1.15 !important;
-  }
-
-  #sidebar .session-run-status,
-  #sidebar .session-run-meta {
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-  }
-
-  #sidebar .session-row.running .session-run-status,
-  #sidebar .session-row.planning .session-run-status {
-    color: var(--al-accent-strong) !important;
-  }
-
-  #sidebar .session-row.failed .session-run-status,
-  #sidebar .session-row.interrupted .session-run-status,
-  #sidebar .session-row.waiting_approval .session-run-status,
-  #sidebar .session-row.waiting_input .session-run-status {
-    color: var(--al-danger) !important;
-  }
-
-  #sidebar .session-row.completed:not(.active) .session-run-summary,
-  #sidebar .session-row.cancelled:not(.active) .session-run-summary {
-    display: none !important;
-  }
-
-  #sidebar .session-row.completed:not(.active) .sidebar-list-item,
-  #sidebar .session-row.cancelled:not(.active) .sidebar-list-item {
-    min-height: 36px !important;
-    padding-block: 5px !important;
-  }
-
-  #sidebar .session-row.completed:not(.active) .session-title::before {
-    width: 4px;
-    height: 4px;
-    display: inline-block;
-    margin: 0 7px 1px 1px;
-    border-radius: 50%;
-    background: var(--al-success);
-    content: "";
-    vertical-align: middle;
-  }
-
-  #sidebar .session-run-progress {
-    height: 2px !important;
-    margin-top: 3px !important;
-    border-radius: 999px !important;
-    background: color-mix(in srgb, var(--al-line) 78%, transparent) !important;
-  }
-
-  #sidebar .session-row.running .session-run-progress > span,
-  #sidebar .session-row.planning .session-run-progress > span {
-    background: var(--al-accent-strong) !important;
-  }
-
-  #sidebar .session-menu-button {
-    width: 28px !important;
-    height: 28px !important;
-    min-width: 28px !important;
-    min-height: 28px !important;
-    margin: auto 2px auto 0 !important;
-    border: 1px solid transparent !important;
-    border-radius: 7px !important;
-    background: transparent !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar .session-menu-button:hover,
-  #sidebar .session-menu-button:focus-visible,
-  #sidebar .session-row.menu-open .session-menu-button {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-surface) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools {
-    width: 100% !important;
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    flex: 0 0 auto !important;
-    gap: 2px 6px !important;
-    margin-top: auto !important;
-    padding: 10px 0 0 !important;
-    border-top: 1px solid var(--al-sidebar-divider) !important;
-  }
-
-  /* The legacy v4 block targets the same rail with a more specific selector;
-     keep the two-column utility cluster intentional at normal desktop sizes. */
-  #sidebar.sidebar:not(.collapsed) .sidebar-bottom-tools {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    flex-direction: initial !important;
-  }
-
-  #sidebar .sidebar-section-label {
-    min-height: 15px !important;
-    display: flex !important;
-    align-items: center !important;
-    padding: 0 8px 4px !important;
-    color: var(--al-muted) !important;
-    font-size: 10.5px !important;
-    font-weight: 740 !important;
-    letter-spacing: 0.04em !important;
-    line-height: 1 !important;
-    grid-column: 1 / -1 !important;
-  }
-
-  #sidebar.sidebar:not(.collapsed) .sidebar-section-label {
-    grid-column: 1 / -1 !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool {
-    width: 100% !important;
-    min-height: 32px !important;
-    height: 32px !important;
-    padding: 0 7px !important;
-    gap: 7px !important;
-    border: 1px solid transparent !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-    color: var(--al-ink-soft) !important;
-    font-size: 12.5px !important;
-    font-weight: 600 !important;
-    text-align: left !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool:hover,
-  #sidebar .sidebar-bottom-tools .sidebar-tool:focus-visible,
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active {
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active {
-    box-shadow: inset 1px 0 0 var(--al-accent-strong) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .nav-icon {
-    width: 22px !important;
-    height: 22px !important;
-    flex: 0 0 22px !important;
-    display: grid !important;
-    place-items: center !important;
-    border-radius: 7px !important;
-    background: var(--al-sidebar-icon-bg) !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active .nav-icon {
-    color: var(--al-accent-strong) !important;
-  }
-
-  #sidebar .user-menu {
-    margin-top: 9px !important;
-    padding-top: 9px !important;
-    border-top: 1px solid var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .user-menu-button {
-    min-height: 45px !important;
-    padding: 6px 7px !important;
-    gap: 8px !important;
-    border: 1px solid transparent !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-  }
-
-  #sidebar .user-menu-button:hover,
-  #sidebar .user-menu-button:focus-visible,
-  #sidebar .user-menu.open .user-menu-button {
-    background: var(--al-sidebar-hover) !important;
-  }
-
-  #sidebar .user-avatar {
-    width: 30px !important;
-    height: 30px !important;
-    flex-basis: 30px !important;
-    border: 1px solid var(--al-line-strong) !important;
-    border-radius: 9px !important;
-    background: var(--al-sidebar-surface) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .user-menu-button strong {
-    font-size: 12px !important;
-    font-weight: 700 !important;
-  }
-
-  #sidebar .user-menu-button small {
-    margin-top: 1px !important;
-    font-size: 10px !important;
-  }
-
-  #sidebar .runtime-card {
-    min-height: 20px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 8px !important;
-    margin: 2px 8px 0 !important;
-    padding: 0 1px !important;
-    font-size: 10px !important;
-  }
-
-  /* Collapsed rail: a real icon rail, not a narrow version of the full list. */
-  #sidebar.collapsed,
-  body.sidebar-collapsed #sidebar.sidebar {
-    width: var(--sidebar-collapsed-width) !important;
-    align-items: center !important;
-    padding: 11px 9px 10px !important;
-  }
-
-  #sidebar.collapsed .sidebar-brand,
-  body.sidebar-collapsed #sidebar .sidebar-brand {
-    width: 100% !important;
-    min-height: 0 !important;
-    flex-direction: column !important;
-    gap: 6px !important;
-    margin: 0 0 9px !important;
-    padding: 0 0 9px !important;
-  }
-
-  #sidebar.collapsed .brand-mark,
-  body.sidebar-collapsed #sidebar .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex-basis: 32px !important;
-  }
-
-  #sidebar.collapsed .brand-copy,
-  body.sidebar-collapsed #sidebar .brand-copy,
-  #sidebar.collapsed .chat-history-shell,
-  body.sidebar-collapsed #sidebar .chat-history-shell,
-  #sidebar.collapsed .command-palette-trigger > span:not(.nav-icon),
-  body.sidebar-collapsed #sidebar .command-palette-trigger > span:not(.nav-icon),
-  #sidebar.collapsed .pending-approvals-label,
-  body.sidebar-collapsed #sidebar .pending-approvals-label,
-  #sidebar.collapsed .sidebar-bottom-tools .sidebar-tool > span:not(.nav-icon),
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools .sidebar-tool > span:not(.nav-icon),
-  #sidebar.collapsed .new-chat-button strong,
-  body.sidebar-collapsed #sidebar .new-chat-button strong,
-  #sidebar.collapsed .user-menu-button > span:not(.user-avatar),
-  body.sidebar-collapsed #sidebar .user-menu-button > span:not(.user-avatar),
-  #sidebar.collapsed .runtime-card,
-  body.sidebar-collapsed #sidebar .runtime-card,
-  #sidebar.collapsed .sidebar-section-label,
-  body.sidebar-collapsed #sidebar .sidebar-section-label {
-    display: none !important;
-  }
-
-  #sidebar.collapsed .new-chat-button,
-  body.sidebar-collapsed #sidebar .new-chat-button,
-  #sidebar.collapsed > .command-palette-trigger,
-  body.sidebar-collapsed #sidebar > .command-palette-trigger,
-  #sidebar.collapsed > .pending-approvals .pending-approvals-trigger,
-  body.sidebar-collapsed #sidebar > .pending-approvals .pending-approvals-trigger,
-  #sidebar.collapsed .sidebar-bottom-tools .sidebar-tool,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools .sidebar-tool,
-  #sidebar.collapsed .user-menu-button,
-  body.sidebar-collapsed #sidebar .user-menu-button {
-    width: 42px !important;
-    min-width: 42px !important;
-    max-width: 42px !important;
-    justify-content: center !important;
-    padding: 0 !important;
-    border-radius: 9px !important;
-  }
-
-  #sidebar.collapsed .new-chat-button,
-  body.sidebar-collapsed #sidebar .new-chat-button {
-    height: 42px !important;
-    min-height: 42px !important;
-    margin: 0 0 7px !important;
-    border-color: transparent !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
-  }
-
-  #sidebar.collapsed .new-chat-button > span,
-  body.sidebar-collapsed #sidebar .new-chat-button > span {
-    background: transparent !important;
-    color: currentColor !important;
-  }
-
-  #sidebar.collapsed > .command-palette-trigger,
-  body.sidebar-collapsed #sidebar > .command-palette-trigger,
-  #sidebar.collapsed > .pending-approvals .pending-approvals-trigger,
-  body.sidebar-collapsed #sidebar > .pending-approvals .pending-approvals-trigger {
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  #sidebar.collapsed > .pending-approvals,
-  body.sidebar-collapsed #sidebar > .pending-approvals {
-    padding-bottom: 9px !important;
-    border-bottom: 1px solid var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar.collapsed .sidebar-bottom-tools,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools {
-    width: 42px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    grid-template-columns: none !important;
-    gap: 4px !important;
-    padding-top: 9px !important;
-  }
-
-  #sidebar.collapsed .sidebar-bottom-tools .sidebar-tool,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools .sidebar-tool {
-    height: 36px !important;
-    min-height: 36px !important;
-  }
-
-  #sidebar.collapsed .sidebar-bottom-tools .sidebar-tool.active,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools .sidebar-tool.active {
-    box-shadow: inset 1px 0 0 var(--al-accent-strong) !important;
-    background: var(--al-sidebar-active) !important;
-  }
-
-  #sidebar.collapsed .user-menu,
-  body.sidebar-collapsed #sidebar .user-menu {
-    margin-top: 9px !important;
-    padding-top: 9px !important;
-  }
-
-  #sidebar.collapsed .user-menu-button,
-  body.sidebar-collapsed #sidebar .user-menu-button {
-    height: 42px !important;
-    min-height: 42px !important;
-    display: grid !important;
-    place-items: center !important;
-  }
 }
 
 @media (max-width: 760px) {
@@ -893,512 +179,6 @@
   }
 }
 
-@media (min-width: 761px) and (max-height: 840px) {
-  #sidebar .sidebar-bottom-tools {
-    gap: 0 !important;
-    padding-top: 7px !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool {
-    min-height: 28px !important;
-    height: 28px !important;
-    font-size: 12px !important;
-  }
-
-  #sidebar .user-menu {
-    margin-top: 6px !important;
-    padding-top: 6px !important;
-  }
-
-  #sidebar .user-menu-button {
-    min-height: 41px !important;
-  }
-
-  #sidebar .runtime-card {
-    min-height: 16px !important;
-  }
-}
-
-/* Final rail pass: keep the useful density, remove the dashboard treatment. */
-#sidebar :is(button, a, input):focus-visible {
-  outline: 2px solid var(--al-sidebar-focus) !important;
-  outline-offset: 1px !important;
-  box-shadow: none !important;
-}
-
-@media (min-width: 761px) {
-  .app-shell,
-  body.sidebar-collapsed .app-shell {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) !important;
-  }
-
-  body.sidebar-collapsed .app-shell {
-    grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr) !important;
-  }
-
-  #sidebar.sidebar,
-  #sidebar.sidebar.collapsed,
-  body.sidebar-collapsed #sidebar.sidebar {
-    width: var(--sidebar-width) !important;
-    padding: 10px 10px 8px !important;
-    background: var(--al-sidebar-bg) !important;
-    border-right-color: var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .sidebar-brand {
-    min-height: 42px !important;
-    margin: 0 0 9px !important;
-    padding: 0 2px 9px !important;
-    gap: 8px !important;
-    border-bottom-color: var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex-basis: 32px !important;
-    border: 0 !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-
-  #sidebar .brand-mark > svg {
-    width: 32px !important;
-    height: 32px !important;
-  }
-
-  #sidebar.sidebar .brand-copy span {
-    display: none !important;
-  }
-
-  #sidebar .brand-copy strong {
-    font-size: 15.5px !important;
-    font-weight: 760 !important;
-    letter-spacing: -0.025em !important;
-  }
-
-  #sidebar #sidebar-toggle {
-    width: 28px !important;
-    height: 28px !important;
-    flex-basis: 28px !important;
-    border-radius: 8px !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar #sidebar-toggle:hover,
-  #sidebar #sidebar-toggle:focus-visible {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .new-chat-button {
-    min-height: 40px !important;
-    height: 40px !important;
-    margin: 0 0 7px !important;
-    padding: 0 10px !important;
-    gap: 8px !important;
-    border-radius: 9px !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.16) !important;
-    font-size: 13.5px !important;
-    font-weight: 720 !important;
-  }
-
-  #sidebar .new-chat-button > span {
-    width: 21px !important;
-    height: 21px !important;
-    flex-basis: 21px !important;
-    border-radius: 6px !important;
-    background: color-mix(in srgb, var(--al-sidebar-primary-text) 12%, transparent) !important;
-  }
-
-  #sidebar .new-chat-button:hover,
-  #sidebar .new-chat-button:focus-visible {
-    background: color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, var(--al-sidebar-bg)) !important;
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.16) !important;
-  }
-
-  #sidebar > .command-palette-trigger,
-  #sidebar > .pending-approvals .pending-approvals-trigger {
-    min-height: 34px !important;
-    height: 34px !important;
-    padding: 0 8px !important;
-    gap: 8px !important;
-    border-radius: 8px !important;
-    color: var(--al-ink-soft) !important;
-    font-size: 12.75px !important;
-    font-weight: 620 !important;
-  }
-
-  #sidebar > .command-palette-trigger:hover,
-  #sidebar > .command-palette-trigger:focus-visible,
-  #sidebar > .pending-approvals .pending-approvals-trigger:hover,
-  #sidebar > .pending-approvals .pending-approvals-trigger:focus-visible,
-  #sidebar > .pending-approvals .pending-approvals-trigger[aria-expanded="true"] {
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar > .command-palette-trigger .nav-icon,
-  #sidebar > .pending-approvals .pending-approvals-trigger .nav-icon {
-    width: 20px !important;
-    height: 20px !important;
-    flex-basis: 20px !important;
-    background: transparent !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar > .command-palette-trigger kbd {
-    padding: 2px 5px !important;
-    border: 0 !important;
-    border-radius: 5px !important;
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-muted) !important;
-    font-size: 9.5px !important;
-  }
-
-  #sidebar > .pending-approvals {
-    padding-bottom: 8px !important;
-    border-bottom-color: var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar > .pending-approvals .pending-approvals-badge {
-    min-width: 17px !important;
-    height: 17px !important;
-    padding: 0 5px !important;
-    background: var(--al-sidebar-active) !important;
-    color: var(--al-ink-soft) !important;
-    font-size: 9.5px !important;
-    line-height: 17px !important;
-  }
-
-  #sidebar .chat-history-shell {
-    margin-top: 8px !important;
-    gap: 6px !important;
-  }
-
-  #sidebar .session-scope-tabs {
-    min-height: 32px !important;
-    margin: 0 3px !important;
-    padding: 0 0 5px !important;
-    border: 0 !important;
-    border-bottom: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-  }
-
-  #sidebar .session-scope-tabs button {
-    min-height: 27px !important;
-    padding: 0 6px !important;
-    border: 0 !important;
-    border-radius: 6px !important;
-    color: var(--al-muted) !important;
-    font-size: 11.5px !important;
-    font-weight: 700 !important;
-  }
-
-  #sidebar .session-scope-tabs button:first-child {
-    padding-left: 2px !important;
-  }
-
-  #sidebar .session-scope-tabs button:last-child {
-    margin-left: auto !important;
-  }
-
-  #sidebar .session-scope-tabs button.active {
-    background: transparent !important;
-    color: var(--al-ink) !important;
-    box-shadow: none !important;
-  }
-
-  #sidebar .session-scope-tabs button.active::after {
-    right: 2px !important;
-    bottom: -6px !important;
-    left: 2px !important;
-    height: 2px !important;
-    background: var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-search-row {
-    grid-template-columns: minmax(0, 1fr) 30px !important;
-    gap: 3px !important;
-    margin: 0 2px 2px !important;
-  }
-
-  #sidebar .sidebar-search input {
-    min-height: 35px !important;
-    height: 35px !important;
-    padding: 6px 9px 6px 30px !important;
-    border: 1px solid transparent !important;
-    border-radius: 8px !important;
-    background: var(--al-sidebar-hover) !important;
-    font-size: 12.25px !important;
-  }
-
-  #sidebar .sidebar-search input:hover,
-  #sidebar .sidebar-search input:focus {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-surface) !important;
-  }
-
-  #sidebar .sidebar-refresh-button {
-    width: 30px !important;
-    min-width: 30px !important;
-    height: 35px !important;
-    border: 0 !important;
-    border-radius: 8px !important;
-    background: transparent !important;
-  }
-
-  #sidebar .sidebar-refresh-button:hover,
-  #sidebar .sidebar-refresh-button:focus-visible {
-    border-color: transparent !important;
-    background: var(--al-sidebar-hover) !important;
-  }
-
-  #sidebar .history-group-title {
-    padding: 10px 8px 4px !important;
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-    font-weight: 720 !important;
-    letter-spacing: 0.055em !important;
-  }
-
-  #sidebar .session-row {
-    margin: 1px 0 !important;
-    border-radius: 8px !important;
-  }
-
-  #sidebar .session-row.active,
-  #sidebar .session-row.active.running,
-  #sidebar .session-row.active.planning,
-  #sidebar .session-row.active.waiting_approval,
-  #sidebar .session-row.active.waiting_input,
-  #sidebar .session-row.active.failed,
-  #sidebar .session-row.active.interrupted,
-  #sidebar .session-row.active.completed {
-    background: var(--al-sidebar-active) !important;
-    box-shadow: inset 1px 0 0 var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-list-item,
-  #sidebar .session-row.active .sidebar-list-item {
-    min-height: 43px !important;
-    padding: 6px 8px !important;
-    border-radius: 8px !important;
-  }
-
-  #sidebar .session-row.active .sidebar-list-item {
-    padding-left: 10px !important;
-  }
-
-  #sidebar .sidebar-list-item .session-title {
-    font-size: 13px !important;
-    font-weight: 620 !important;
-  }
-
-  #sidebar .session-row.active .session-title {
-    font-weight: 720 !important;
-  }
-
-  #sidebar .session-title-row time,
-  #sidebar .session-run-status,
-  #sidebar .session-run-meta {
-    font-size: 10px !important;
-  }
-
-  #sidebar .session-menu-button {
-    width: 27px !important;
-    height: 27px !important;
-    min-width: 27px !important;
-    min-height: 27px !important;
-    border-radius: 7px !important;
-  }
-
-  #sidebar .session-menu-button:hover,
-  #sidebar .session-menu-button:focus-visible,
-  #sidebar .session-row.menu-open .session-menu-button {
-    border-color: var(--al-sidebar-divider) !important;
-    background: var(--al-sidebar-surface) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 2px !important;
-    margin-top: auto !important;
-    padding-top: 8px !important;
-    border-top-color: var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar.sidebar:not(.collapsed) .sidebar-bottom-tools {
-    display: flex !important;
-    flex-direction: column !important;
-    grid-template-columns: none !important;
-    gap: 2px !important;
-  }
-
-  #sidebar .sidebar-section-label {
-    min-height: 14px !important;
-    padding: 0 7px 3px !important;
-    color: var(--al-muted) !important;
-    font-size: 10px !important;
-    font-weight: 720 !important;
-    letter-spacing: 0.055em !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool {
-    min-height: 30px !important;
-    height: 30px !important;
-    padding: 0 6px !important;
-    gap: 6px !important;
-    border-radius: 7px !important;
-    color: var(--al-ink-soft) !important;
-    font-size: 11.75px !important;
-    font-weight: 620 !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool:hover,
-  #sidebar .sidebar-bottom-tools .sidebar-tool:focus-visible,
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active {
-    background: var(--al-sidebar-hover) !important;
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active {
-    box-shadow: inset 1px 0 0 var(--al-ink) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .nav-icon {
-    width: 19px !important;
-    height: 19px !important;
-    flex-basis: 19px !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    color: var(--al-muted) !important;
-  }
-
-  #sidebar .sidebar-bottom-tools .sidebar-tool.active .nav-icon {
-    color: var(--al-ink) !important;
-  }
-
-  #sidebar .user-menu {
-    margin-top: 7px !important;
-    padding-top: 7px !important;
-    border-top-color: var(--al-sidebar-divider) !important;
-  }
-
-  #sidebar .user-menu-button {
-    min-height: 42px !important;
-    padding: 5px 6px !important;
-    gap: 8px !important;
-    border-radius: 8px !important;
-  }
-
-  #sidebar .user-avatar {
-    width: 28px !important;
-    height: 28px !important;
-    flex-basis: 28px !important;
-    border-radius: 50% !important;
-    background: var(--al-sidebar-surface) !important;
-  }
-
-  #sidebar .user-menu-button strong {
-    font-size: 12px !important;
-    font-weight: 700 !important;
-  }
-
-  #sidebar .user-menu-button small {
-    display: none !important;
-  }
-
-  #sidebar .runtime-card {
-    min-height: 17px !important;
-    margin: 1px 6px 0 !important;
-    padding: 0 !important;
-    font-size: 10px !important;
-  }
-
-  #sidebar .runtime-card strong {
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 5px !important;
-  }
-
-  #sidebar .runtime-card strong::before {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--al-success);
-    content: "";
-  }
-
-  #sidebar .runtime-card-offline strong::before {
-    background: var(--al-danger);
-  }
-
-  #sidebar.collapsed,
-  body.sidebar-collapsed #sidebar.sidebar {
-    width: var(--sidebar-collapsed-width) !important;
-    padding: 10px 8px 8px !important;
-  }
-
-  #sidebar.collapsed .sidebar-brand,
-  body.sidebar-collapsed #sidebar .sidebar-brand {
-    margin-bottom: 8px !important;
-    padding-bottom: 8px !important;
-  }
-
-  #sidebar.collapsed .brand-mark,
-  body.sidebar-collapsed #sidebar .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex-basis: 32px !important;
-  }
-
-  #sidebar.collapsed .new-chat-button,
-  body.sidebar-collapsed #sidebar .new-chat-button,
-  #sidebar.collapsed > .command-palette-trigger,
-  body.sidebar-collapsed #sidebar > .command-palette-trigger,
-  #sidebar.collapsed > .pending-approvals .pending-approvals-trigger,
-  body.sidebar-collapsed #sidebar > .pending-approvals .pending-approvals-trigger,
-  #sidebar.collapsed .sidebar-bottom-tools .sidebar-tool,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools .sidebar-tool,
-  #sidebar.collapsed .user-menu-button,
-  body.sidebar-collapsed #sidebar .user-menu-button {
-    width: 42px !important;
-    min-width: 42px !important;
-    max-width: 42px !important;
-    justify-content: center !important;
-    padding: 0 !important;
-    border-radius: 9px !important;
-  }
-
-  #sidebar.collapsed .sidebar-bottom-tools,
-  body.sidebar-collapsed #sidebar .sidebar-bottom-tools {
-    width: 42px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 4px !important;
-    padding-top: 8px !important;
-  }
-}
-
-@media (min-width: 761px) and (max-height: 700px) {
-  #sidebar:not(.collapsed) .sidebar-bottom-tools {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 2px 7px !important;
-  }
-
-  #sidebar:not(.collapsed) .sidebar-section-label {
-    grid-column: 1 / -1 !important;
-  }
-}
-
 @media (max-width: 760px) {
   #sidebar.sidebar,
   #sidebar.sidebar.collapsed,
@@ -1480,5 +260,577 @@
 
   .chat-history-shell.mobile-history-open .sidebar-search input {
     background: var(--al-sidebar-surface) !important;
+  }
+}
+
+/* Sidebar surface: title-first history, stable single-column destinations.
+   Own the rail here; template.css remains the surrounding workbench system. */
+
+.sidebar-account-menu {
+  width: 248px;
+}
+
+.sidebar-account-label {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.sidebar-account-label strong,
+.sidebar-account-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-account-label span {
+  color: var(--al-muted);
+  font-size: 13px;
+}
+
+#sidebar.sidebar-workbench,
+.mobile-session-history-layer {
+  --al-sidebar-bg: var(--al-rail);
+  --al-sidebar-hover: color-mix(in srgb, var(--al-ink) 5%, transparent);
+  --al-sidebar-active: color-mix(in srgb, var(--al-ink) 9%, transparent);
+  --al-sidebar-divider: color-mix(in srgb, var(--al-line-strong) 50%, transparent);
+}
+
+#sidebar.sidebar-workbench .session-title,
+.mobile-session-history-layer .session-title {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sidebar.sidebar-workbench .session-title::before,
+.mobile-session-history-layer .session-title::before {
+  content: none !important;
+}
+
+@media (min-width: 761px) {
+  .app-shell {
+    grid-template-columns: 272px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  #sidebar.sidebar-workbench {
+    box-sizing: border-box !important;
+    width: 272px !important;
+    min-width: 0 !important;
+    padding: 12px !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    border-right: 1px solid var(--al-sidebar-divider) !important;
+    background: var(--al-sidebar-bg) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 40px !important;
+    margin: 0 0 12px !important;
+    padding: 0 0 0 8px !important;
+    gap: 8px !important;
+    border: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-mark {
+    width: 26px !important;
+    height: 26px !important;
+    flex: 0 0 26px !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-copy strong {
+    font-size: 16px !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  #sidebar.sidebar-workbench #sidebar-toggle {
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button,
+  #sidebar.sidebar-workbench .command-palette-trigger,
+  #sidebar.sidebar-workbench .pending-approvals-trigger,
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
+    width: 100% !important;
+    min-height: 36px !important;
+    height: 36px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    gap: 10px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--al-ink-soft) !important;
+    font-size: 14px !important;
+    font-weight: 450 !important;
+    text-align: left !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button {
+    min-height: 40px !important;
+    height: 40px !important;
+    color: var(--al-ink) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button strong {
+    font-size: inherit !important;
+    font-weight: 550 !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button > span,
+  #sidebar.sidebar-workbench .nav-icon {
+    width: 20px !important;
+    height: 20px !important;
+    flex: 0 0 20px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: currentColor !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger kbd {
+    margin-left: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 400 !important;
+  }
+
+  #sidebar.sidebar-workbench > .pending-approvals {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell {
+    display: flex !important;
+    flex: 1 1 0 !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: 0 !important;
+    margin: 18px 0 0 !important;
+    padding: 0 !important;
+    gap: 4px !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    min-height: 32px !important;
+    margin: 0 !important;
+    padding: 0 2px !important;
+    gap: 4px !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button {
+    width: auto !important;
+    max-width: none !important;
+    flex: 0 0 auto !important;
+    min-height: 32px !important;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    color: var(--al-muted) !important;
+    background: transparent !important;
+    font-size: 13px !important;
+    font-weight: 450 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button.active {
+    color: var(--al-ink) !important;
+    background: var(--al-sidebar-hover) !important;
+    box-shadow: none !important;
+    font-weight: 550 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button::after {
+    content: none !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search-row {
+    grid-template-columns: minmax(0, 1fr) 36px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding: 6px 8px 6px 32px !important;
+    border: 1px solid transparent !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: var(--al-ink) !important;
+    font-size: 13px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search > svg {
+    left: 11px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-refresh-button {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-list.chat-history-list {
+    display: block !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    height: 0 !important;
+    padding: 0 0 8px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: var(--al-sidebar-divider) transparent;
+  }
+
+  #sidebar.sidebar-workbench .history-group-title {
+    padding: 14px 10px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+
+  #sidebar.sidebar-workbench .history-group {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .history-group:first-child .history-group-title {
+    padding-top: 6px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 32px !important;
+    gap: 0 !important;
+    min-height: 36px !important;
+    margin: 2px 0 !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row.active,
+  #sidebar.sidebar-workbench .sidebar-tool.active {
+    background: var(--al-sidebar-active) !important;
+    color: var(--al-ink) !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench :is(.session-row, .session-row.completed, .session-row.cancelled) .sidebar-list-item {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    min-height: 36px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 6px 10px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: var(--al-ink-soft) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-title-row {
+    width: 100% !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row .session-title {
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 1.45 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row.active .session-title {
+    color: var(--al-ink) !important;
+    font-weight: 500 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-title-row time {
+    display: none !important;
+  }
+
+  #sidebar.sidebar-workbench .session-run-summary {
+    margin-top: 3px !important;
+    gap: 2px 6px !important;
+    line-height: 1.4 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-run-status,
+  #sidebar.sidebar-workbench .session-run-meta {
+    font-size: 11px !important;
+    font-weight: 400 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-run-progress {
+    height: 2px !important;
+    margin-top: 3px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-menu-button {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    margin: 2px 2px 2px 0 !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    width: 100% !important;
+    margin-top: auto !important;
+    padding: 10px 0 0 !important;
+    gap: 0 !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools::before,
+  #sidebar.sidebar-workbench .sidebar-section-label {
+    display: none !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu {
+    margin-top: 8px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button {
+    min-height: 40px !important;
+    padding: 6px 10px !important;
+    gap: 10px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .user-avatar {
+    width: 26px !important;
+    height: 26px !important;
+    flex: 0 0 26px !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background-color: var(--al-sidebar-active) !important;
+    color: var(--al-ink-soft) !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button strong {
+    font-size: 14px !important;
+    font-weight: 450 !important;
+  }
+
+  #sidebar.sidebar-workbench .runtime-card {
+    min-height: 24px !important;
+    margin: 0 10px !important;
+    padding: 0 !important;
+    background: transparent !important;
+    font-size: 11px !important;
+  }
+
+  #sidebar.sidebar-workbench :is(button, input, a):focus-visible {
+    outline: 2px solid var(--al-ink-soft) !important;
+    outline-offset: -2px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed {
+    width: 64px !important;
+    padding: 12px 8px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .sidebar-brand {
+    flex-direction: column !important;
+    padding: 0 !important;
+    gap: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .brand-copy,
+  #sidebar.sidebar-workbench.collapsed .chat-history-shell,
+  #sidebar.sidebar-workbench.collapsed .command-palette-trigger > span:not(.nav-icon),
+  #sidebar.sidebar-workbench.collapsed .command-palette-trigger kbd,
+  #sidebar.sidebar-workbench.collapsed .pending-approvals-label,
+  #sidebar.sidebar-workbench.collapsed .sidebar-tool > span:not(.nav-icon),
+  #sidebar.sidebar-workbench.collapsed .new-chat-button strong,
+  #sidebar.sidebar-workbench.collapsed .user-menu-button > span:not(.user-avatar),
+  #sidebar.sidebar-workbench.collapsed .user-menu-chevron,
+  #sidebar.sidebar-workbench.collapsed .runtime-card {
+    display: none !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed :is(.new-chat-button, .sidebar-tool, .user-menu-button) {
+    width: 48px !important;
+    min-width: 48px !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+
+  @media (hover: hover) {
+    #sidebar.sidebar-workbench :is(.new-chat-button, .sidebar-tool, .user-menu-button, #sidebar-toggle):hover,
+    #sidebar.sidebar-workbench .session-row:hover,
+    #sidebar.sidebar-workbench .session-row.menu-open {
+      background: var(--al-sidebar-hover) !important;
+      color: var(--al-ink) !important;
+      box-shadow: none !important;
+    }
+
+    #sidebar.sidebar-workbench .sidebar-search input:hover,
+    #sidebar.sidebar-workbench .sidebar-refresh-button:hover {
+      background: var(--al-sidebar-hover) !important;
+    }
+  }
+}
+
+/* History is portalled on phones; it shares the title-first hierarchy. */
+
+@media (max-width: 760px) {
+  .chat-history-shell.mobile-history-open .sidebar-search {
+    position: relative !important;
+    display: block !important;
+  }
+
+  .chat-history-shell.mobile-history-open .sidebar-search > svg {
+    position: absolute !important;
+    top: 50% !important;
+    left: 12px !important;
+    width: 16px !important;
+    height: 16px !important;
+    transform: translateY(-50%) !important;
+    pointer-events: none;
+  }
+
+  .chat-history-shell.mobile-history-open .sidebar-search input {
+    min-height: 40px !important;
+    padding: 8px 10px 8px 36px !important;
+    font-size: 14px !important;
+  }
+
+  .chat-history-shell.mobile-history-open :is(input, button):focus-visible {
+    outline: 2px solid var(--al-ink-soft) !important;
+    outline-offset: 1px !important;
+    box-shadow: none !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-scope-tabs {
+    justify-content: flex-start !important;
+    gap: 4px !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-scope-tabs button {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    font-size: 14px !important;
+    font-weight: 450 !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-scope-tabs button.active {
+    background: var(--al-sidebar-active) !important;
+    color: var(--al-ink) !important;
+    box-shadow: none !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-scope-tabs button::after {
+    content: none !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-run-status,
+  .chat-history-shell.mobile-history-open .session-run-meta {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-row:is(.running, .planning) .session-run-status {
+    color: var(--al-accent-strong) !important;
+  }
+
+  .chat-history-shell.mobile-history-open .session-row:is(.running, .planning) .session-run-progress > span {
+    background: var(--al-accent-strong) !important;
+  }
+
+  .mobile-session-history-layer .session-title {
+    font-size: 14px !important;
+    font-weight: 400 !important;
+  }
+
+  .mobile-session-history-layer .session-row.active {
+    box-shadow: none !important;
+    background: var(--al-sidebar-active) !important;
+  }
+
+  .mobile-session-history-layer .session-menu-button {
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+
+  .mobile-session-history-layer .history-group-title {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
   }
 }

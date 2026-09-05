@@ -502,6 +502,7 @@ function SessionHistoryRow({
   const isEditing = session.id === editingSessionId;
   const run = sessionRunView(session);
   const age = formatSessionAge(session.updated_at || session.created_at);
+  const showRunSummary = run && (activeRunStatuses.has(run.status) || run.recoverable);
   const showIndeterminateProgress = run && activeRunStatuses.has(run.status) && !run.total;
   return (
     <div
@@ -528,6 +529,7 @@ function SessionHistoryRow({
             data-session-item={"true"}
             data-session-index={sessionIndex == null ? undefined : sessionIndex}
             aria-label={`${sessionTitle(session)}${run ? `，${run.label}` : ""}`}
+            title={sessionTitle(session)}
             aria-busy={isSwitching}
             aria-current={isActive ? "page" : undefined}
             disabled={isSwitching}
@@ -540,11 +542,11 @@ function SessionHistoryRow({
                     <SessionMenuIcon type={"pin"} />
                   </span>
                 ) : null}
-                {sessionTitle(session)}
+                <span className={"session-title-text"}>{sessionTitle(session)}</span>
               </span>
               {age ? <time>{age}</time> : null}
             </span>
-            {run ? (
+            {showRunSummary ? (
               <span className={"session-run-summary"}>
                 <span className={"session-run-status"}>
                   <i aria-hidden={"true"} />
@@ -1221,7 +1223,11 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
     let sessionIndex = 0;
     sessionGroupLabels.forEach(([key, label]) => {
       if (!groups[key]?.length) return;
-      items.push({ type: "heading", key: `heading:${key}`, label });
+      // Active/recoverable rows already name their status. Avoid repeating it
+      // in a second heading, particularly in short desktop windows.
+      if (key !== "active" && key !== "failed") {
+        items.push({ type: "heading", key: `heading:${key}`, label });
+      }
       groups[key].forEach((session) => {
         items.push({
           type: "session",
@@ -1261,9 +1267,15 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
           </button>
         </div>
       ) : null}
-      <div className={"session-scope-tabs"} role={"tablist"} aria-label={"任务范围"}>
-        <button type={"button"} role={"tab"} aria-selected={sessionScope === "active"} className={sessionScope === "active" ? "active" : ""} onClick={() => handleSessionScopeChange("active")}>{"任务"}</button>
-        <button type={"button"} role={"tab"} aria-selected={sessionScope === "archived"} className={sessionScope === "archived" ? "active" : ""} onClick={() => handleSessionScopeChange("archived")}>{"已归档"}</button>
+      <div className={"session-scope-tabs"} role={"tablist"} aria-label={"任务范围"} onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const nextScope = event.key === "Home" ? "active" : event.key === "End" ? "archived" : sessionScope === "active" ? "archived" : "active";
+        handleSessionScopeChange(nextScope);
+        event.currentTarget.querySelectorAll('[role="tab"]')[nextScope === "active" ? 0 : 1]?.focus();
+      }}>
+        <button type={"button"} role={"tab"} tabIndex={sessionScope === "active" ? 0 : -1} aria-controls={"session-list"} aria-selected={sessionScope === "active"} className={sessionScope === "active" ? "active" : ""} onClick={() => handleSessionScopeChange("active")}>{"任务"}</button>
+        <button type={"button"} role={"tab"} tabIndex={sessionScope === "archived" ? 0 : -1} aria-controls={"session-list"} aria-selected={sessionScope === "archived"} className={sessionScope === "archived" ? "active" : ""} onClick={() => handleSessionScopeChange("archived")}>{"已归档"}</button>
       </div>
       <div className={"sidebar-search-row"}>
         <label className={"sidebar-search"}>
@@ -1339,7 +1351,9 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
             .filter(([key]) => groups[key].length)
             .map(([key, label]) => (
               <section className={"history-group"} key={key}>
-                <div className={"history-group-title"} role={"heading"} aria-level={"3"}>{label}</div>
+                {key !== "active" && key !== "failed" ? (
+                  <div className={"history-group-title"} role={"heading"} aria-level={"3"}>{label}</div>
+                ) : null}
                 {groups[key].map((session) => (
                   <SessionHistoryRow
                     key={session.id}
@@ -1401,26 +1415,10 @@ function UserMenu() {
   const { loading, logout, user } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
   const displayName = user?.displayName || user?.username || (loading ? "正在连接" : "未登录");
   const email = user?.email || user?.username || (loading ? "请稍候" : "请先登录");
   const avatarText = displayName.slice(0, 1).toUpperCase() || "K";
   const avatarStyle = user?.avatarUrl ? { backgroundImage: `url("${user.avatarUrl}")` } : undefined;
-
-  useEffect(() => {
-    const closeMenu = (event) => {
-      if (!menuRef.current?.contains(event.target)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("click", closeMenu);
-    return () => document.removeEventListener("click", closeMenu);
-  }, []);
-
-  const handleUserMenuToggle = (event) => {
-    event.stopPropagation();
-    setMenuOpen((current) => !current);
-  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -1440,33 +1438,43 @@ function UserMenu() {
   };
 
   return (
-    <div className={menuOpen ? "user-menu open" : "user-menu"} id={"user-menu"} ref={menuRef}>
+    <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+    <div className={menuOpen ? "user-menu open" : "user-menu"} id={"user-menu"}>
+      <DropdownMenu.Trigger asChild>
       <button
         className={"user-menu-button"}
         id={"user-menu-btn"}
         type={"button"}
-        aria-haspopup={"menu"}
-        aria-expanded={menuOpen}
-        onClick={handleUserMenuToggle}
+        aria-label={`账户菜单：${displayName}`}
       >
         <span className={user?.avatarUrl ? "user-avatar with-image" : "user-avatar"} id={"user-avatar"} style={avatarStyle}>
           {user?.avatarUrl ? "" : avatarText}
         </span>
         <span>
           <strong id={"user-display-name"}>{displayName}</strong>
-          <small id={"user-email"}>{email}</small>
         </span>
         <ChevronDown className={"user-menu-chevron"} size={15} strokeWidth={1.8} aria-hidden={"true"} />
       </button>
-      <div className={"user-popover"} id={"user-popover"}>
-        <button id={"diagnostic-copy-btn"} type={"button"} onClick={handleDiagnosticCopy}>
-          {"复制脱敏诊断"}
-        </button>
-        <button className={"danger"} id={"logout-btn"} type={"button"} onClick={handleLogout} disabled={loggingOut}>
-          {loggingOut ? "正在退出..." : "退出登录"}
-        </button>
-      </div>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className={"mobile-navigation-content sidebar-account-menu"} id={"user-popover"} side={"top"} align={"start"} sideOffset={8} collisionPadding={12} aria-label={"账户操作"}>
+          <DropdownMenu.Label className={"sidebar-account-label"}>
+            <strong>{displayName}</strong>
+            <span id={"user-email"}>{email}</span>
+          </DropdownMenu.Label>
+          <DropdownMenu.Separator className={"mobile-navigation-separator"} />
+          <DropdownMenu.Item className={"mobile-navigation-item"} id={"diagnostic-copy-btn"} onSelect={handleDiagnosticCopy}>
+            <ClipboardCopy size={17} aria-hidden={"true"} />
+            <span>{"复制脱敏诊断"}</span>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={"mobile-navigation-item danger"} id={"logout-btn"} onSelect={() => void handleLogout()} disabled={loggingOut}>
+            <LogOut size={17} aria-hidden={"true"} />
+            <span>{loggingOut ? "正在退出…" : "退出登录"}</span>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
     </div>
+    </DropdownMenu.Root>
   );
 }
 
@@ -1739,7 +1747,7 @@ export function Sidebar({
   onSessionIndexChange = null,
 }) {
   const sidebarClassName = [
-    "sidebar",
+    "sidebar sidebar-workbench",
     collapsed ? "collapsed" : "",
     mobileHistoryOpen ? "mobile-history-open" : "",
   ].filter(Boolean).join(" ");
