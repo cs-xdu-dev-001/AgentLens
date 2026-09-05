@@ -7192,8 +7192,8 @@ select:focus {
 }
 
 #page-chat #chat-form.composer .composer-shell:focus-within {
-  border-color: color-mix(in srgb, var(--al-accent) 48%, var(--al-line-strong)) !important;
-  box-shadow: 0 14px 32px color-mix(in srgb, var(--al-ink) 9%, transparent), 0 0 0 3px color-mix(in srgb, var(--al-accent) 9%, transparent) !important;
+  border-color: var(--al-line-strong) !important;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--al-ink) 9%, transparent), 0 0 0 2px color-mix(in srgb, var(--al-ink) 14%, transparent) !important;
 }
 
 #page-chat #chat-form.composer .composer-input-stack textarea {
