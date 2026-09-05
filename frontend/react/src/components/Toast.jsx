@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 
 export function Toast() {
   const [message, setMessage] = useState("");
@@ -31,6 +31,11 @@ export function Toast() {
     ? "toast error"
     : `toast ${normalizedTone}`;
   const className = visible ? `${baseClassName} show` : baseClassName;
+  const ToneIcon = normalizedTone === "success"
+    ? CheckCircle2
+    : normalizedTone === "warning" || normalizedTone === "error"
+      ? AlertTriangle
+      : Info;
 
   const dismiss = () => {
     window.clearTimeout(toastTimerRef.current);
@@ -39,6 +44,7 @@ export function Toast() {
 
   return (
     <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"} aria-atomic={"true"}>
+      <ToneIcon className={"toast-icon"} size={16} strokeWidth={2} aria-hidden={"true"} />
       <span className={"toast-message"}>{message}</span>
       <button className={"toast-dismiss"} type={"button"} aria-label={"关闭提示"} onClick={dismiss}>
         <X size={15} strokeWidth={2} aria-hidden={"true"} />

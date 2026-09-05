@@ -10253,3 +10253,37 @@ select:focus {
     padding-inline: 0 !important;
   }
 }
+
+/* Toast final pass: use a semantic icon and keep feedback compact on phones. */
+.toast::before {
+  display: none !important;
+}
+
+.toast-icon {
+  flex: 0 0 auto;
+  color: currentColor;
+  opacity: 0.92;
+}
+
+.toast-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  body.drawer-collapsed #toast {
+    right: 12px !important;
+    left: auto !important;
+    bottom: calc(154px + env(safe-area-inset-bottom)) !important;
+    width: min(360px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .toast-message {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
