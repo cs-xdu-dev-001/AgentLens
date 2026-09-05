@@ -9833,3 +9833,106 @@ select:focus {
     background: transparent !important;
   }
 }
+
+/* Chat empty surface v5: keep the first-run task launcher as one deliberate
+   workbench surface. template.css is loaded after refinement.css, so this is
+   the final cascade owner for the welcome state. */
+#page-chat.chat-empty .welcome-card {
+  width: min(680px, calc(100% - 32px)) !important;
+  gap: 16px !important;
+  padding: 22px 24px 18px !important;
+  border: 1px solid color-mix(in srgb, var(--control-border) 88%, transparent) !important;
+  border-radius: 16px !important;
+  background: color-mix(in srgb, var(--surface) 94%, var(--workspace-bg)) !important;
+  box-shadow: 0 12px 30px rgba(18, 18, 16, 0.05) !important;
+}
+
+#page-chat.chat-empty .welcome-card h2 {
+  font-size: clamp(22px, 1.8vw, 26px) !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+}
+
+#page-chat.chat-empty .welcome-context {
+  min-height: 32px !important;
+  padding: 4px 8px !important;
+  font-size: 13px !important;
+}
+
+#page-chat.chat-empty .welcome-actions {
+  gap: 8px !important;
+  margin-top: 2px !important;
+}
+
+#page-chat.chat-empty .welcome-action {
+  min-height: 48px !important;
+  grid-template-columns: 24px minmax(0, 1fr) 16px !important;
+  gap: 10px !important;
+  padding: 8px 11px !important;
+  border: 1px solid color-mix(in srgb, var(--control-border) 82%, transparent) !important;
+  border-radius: 11px !important;
+  background: color-mix(in srgb, var(--control-bg) 72%, transparent) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+#page-chat.chat-empty .welcome-action-icon {
+  width: 24px !important;
+  height: 24px !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--control-bg-hover) 78%, transparent);
+}
+
+#page-chat.chat-empty .welcome-action-icon svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#page-chat.chat-empty .welcome-action-arrow {
+  color: var(--text-muted);
+}
+
+@media (hover: hover) {
+  #page-chat.chat-empty .welcome-action:hover {
+    border-color: color-mix(in srgb, var(--text) 22%, var(--control-border)) !important;
+    background: var(--control-bg-hover) !important;
+    box-shadow: 0 4px 12px rgba(18, 18, 16, 0.06);
+  }
+}
+
+@media (max-width: 760px) {
+  #page-chat.chat-empty .welcome-card {
+    width: calc(100% - 24px) !important;
+    gap: 12px !important;
+    padding: 18px 12px 14px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 24px rgba(18, 18, 16, 0.05) !important;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    min-width: 0;
+    font-size: 20px !important;
+    white-space: nowrap;
+  }
+
+  #page-chat.chat-empty .welcome-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100%;
+    gap: 6px !important;
+  }
+
+  #page-chat.chat-empty .welcome-action {
+    min-height: 46px !important;
+    padding-inline: 10px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat.chat-empty .welcome-card,
+  #page-chat.chat-empty .welcome-action {
+    transition: none !important;
+    animation: none !important;
+  }
+}
