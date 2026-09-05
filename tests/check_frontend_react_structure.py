@@ -148,7 +148,24 @@ def main() -> None:
     require("frontend/react/src/components/Sidebar.jsx", "sessionApi.delete", "React session delete API call")
     require("frontend/react/src/components/Sidebar.jsx", "useAuth", "user menu consumes auth provider state")
     require("frontend/react/src/components/Sidebar.jsx", "menuOpen", "React user menu owns open state")
-    require("frontend/react/src/components/Sidebar.jsx", "handleUserMenuToggle", "React user menu toggle handler")
+    # Account-menu interaction now belongs to Radix. Check the actual wiring,
+    # not the name of the retired hand-written toggle handler. Scope these
+    # assertions to UserMenu so the mobile menu cannot satisfy them by accident.
+    user_menu_source = read("frontend/react/src/components/Sidebar.jsx").split(
+        "function UserMenu()", 1
+    )[1].split("function RuntimeStatus()", 1)[0]
+    for needle, label in [
+        ("<DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>", "controlled account menu"),
+        ("<DropdownMenu.Trigger asChild>", "native account button trigger"),
+        ('id={"user-menu-btn"}', "stable account trigger"),
+        ("<DropdownMenu.Portal>", "unclipped account menu overlay"),
+        ('aria-label={"账户操作"}', "accessible account menu name"),
+        ("onSelect={handleDiagnosticCopy}", "diagnostic action binding"),
+        ("onSelect={() => void handleLogout()}", "logout action binding"),
+        ("disabled={loggingOut}", "duplicate logout protection"),
+    ]:
+        if needle not in user_menu_source:
+            raise AssertionError(f"missing {label} in React UserMenu: {needle}")
     require("frontend/react/src/components/Sidebar.jsx", "handleLogout", "React logout handler")
     require("frontend/react/src/components/Sidebar.jsx", "knowflow:react-auth-logout", "React logout event")
     require("frontend/react/src/components/Sidebar.jsx", "avatarUrl", "user menu renders avatar from auth state")
