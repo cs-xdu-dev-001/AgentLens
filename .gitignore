@@ -20,6 +20,7 @@ frontend/codex-*.png
 frontend/edge-profile-*/
 frontend/.edge*/
 frontend/.codex-edge*/
+.vite/
 
 # Python and test caches
 __pycache__/
