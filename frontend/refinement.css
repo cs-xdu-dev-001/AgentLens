@@ -4548,6 +4548,48 @@ body.sidebar-collapsed .sidebar {
   grid-row: 3 !important;
 }
 
+/* Attachments are evidence, not a second toolbar: keep them readable without
+   letting long names or many files push the composer off the viewport. */
+#chat-form.composer .attachment-tray {
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  scrollbar-width: thin;
+}
+
+#chat-form.composer .attachment-pill {
+  min-width: 0;
+  max-width: min(320px, 100%);
+}
+
+#chat-form.composer .attachment-pill > span:not(.attachment-thumb) {
+  min-width: 0;
+  max-width: min(220px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  #chat-form.composer .attachment-tray {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
+  }
+
+  #chat-form.composer .attachment-pill {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    max-width: min(280px, calc(100vw - 44px));
+  }
+
+  #chat-form.composer .attachment-pill > span:not(.attachment-thumb) {
+    max-width: min(178px, 45vw);
+  }
+}
+
 @media (hover: hover) {
   #chat-form.composer .composer-model-trigger:hover,
   #chat-form.composer .composer-permission-trigger:hover {
