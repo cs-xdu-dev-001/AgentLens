@@ -4,13 +4,13 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 264px;
-  --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f7f7f4;
+  --sidebar-width: 272px;
+  --sidebar-collapsed-width: 68px;
+  --al-sidebar-bg: #f4f3ee;
   --al-sidebar-surface: #fffefa;
-  --al-sidebar-hover: #ecece7;
-  --al-sidebar-active: #e3e3dd;
-  --al-sidebar-divider: #deded7;
+  --al-sidebar-hover: #ebe9e2;
+  --al-sidebar-active: #e4e2da;
+  --al-sidebar-divider: #d8d6ce;
   --al-sidebar-text: #1b1b19;
   --al-sidebar-muted: #686862;
   --al-sidebar-primary-bg: #1c1c1a;
@@ -184,6 +184,7 @@
   border-radius: 9px !important;
   background: transparent !important;
   box-shadow: none !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row:is(.active, .switching, .menu-open) {
@@ -207,6 +208,7 @@
   background: transparent !important;
   color: var(--al-sidebar-text) !important;
   box-shadow: none !important;
+  transition: color 150ms ease !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-title-row {
@@ -384,28 +386,28 @@
     background: var(--al-sidebar-bg) !important;
   }
 
-#sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 42px !important;
+  #sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 44px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 12px !important;
+    margin: 0 0 14px !important;
     padding: 0 2px !important;
     gap: 9px !important;
     border: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex: 0 0 32px !important;
+    width: 34px !important;
+    height: 34px !important;
+    flex: 0 0 34px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
+    border-radius: 11px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .brand-copy strong {
     color: var(--al-sidebar-text) !important;
-    font-size: 14px !important;
+    font-size: 15px !important;
     font-weight: 650 !important;
     letter-spacing: -0.02em !important;
   }
@@ -428,13 +430,13 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: 38px !important;
+    height: 38px !important;
     margin: 0 !important;
     padding: 0 10px !important;
     gap: 9px !important;
     border: 0 !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     font-size: 14px !important;
@@ -443,16 +445,17 @@
     box-shadow: none !important;
     transform: none !important;
     filter: none !important;
+    transition: background-color 150ms ease, color 150ms ease, transform 150ms ease !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 38px !important;
-    height: 38px !important;
-    margin-bottom: 10px !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
-    background: var(--al-sidebar-surface) !important;
-    color: var(--al-sidebar-text) !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin-bottom: 12px !important;
+    border: 1px solid var(--al-sidebar-primary-bg) !important;
+    border-radius: 10px !important;
+    background: var(--al-sidebar-primary-bg) !important;
+    color: var(--al-sidebar-primary-text) !important;
     box-shadow: none !important;
   }
 
@@ -480,7 +483,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 1px !important;
+    gap: 2px !important;
     border: 0 !important;
   }
 
@@ -492,11 +495,12 @@
 
   #sidebar.sidebar-workbench .command-palette-trigger kbd {
     margin-left: auto !important;
-    padding: 0 !important;
-    border: 0 !important;
-    background: transparent !important;
+    padding: 2px 6px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 6px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 74%, transparent) !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
     font-weight: 400 !important;
   }
 
@@ -506,8 +510,8 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 10px 0 0 !important;
-    padding: 10px 0 0 !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
@@ -523,8 +527,8 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 8px 0 0 !important;
-    padding: 12px 0 0 !important;
+    margin: 10px 0 0 !important;
+    padding: 14px 0 0 !important;
     gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 72%, transparent) !important;
@@ -537,10 +541,10 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 10px 5px !important;
+    margin: 0 10px 7px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 650 !important;
     letter-spacing: 0.02em !important;
     line-height: 18px !important;
@@ -548,14 +552,14 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-quick-label {
-    margin-top: 1px !important;
-    margin-bottom: 4px !important;
+    margin-top: 0 !important;
+    margin-bottom: 5px !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"]) {
     background: var(--al-sidebar-active) !important;
     font-weight: 600 !important;
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--al-sidebar-text) 70%, transparent) !important;
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--al-sidebar-text) 78%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu {
@@ -566,11 +570,11 @@
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 40px !important;
+    min-height: 42px !important;
     padding: 6px 9px !important;
     gap: 9px !important;
     border: 1px solid transparent !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
@@ -606,7 +610,7 @@
 
   #sidebar.sidebar-workbench.collapsed {
     width: var(--sidebar-collapsed-width) !important;
-    padding: 12px 8px !important;
+    padding: 12px 10px !important;
   }
 
   #sidebar.sidebar-workbench.collapsed .sidebar-brand {
@@ -696,7 +700,7 @@
     margin: 0 !important;
     padding: 0 9px !important;
     gap: 6px !important;
-    border: 0 !important;
+    border: 1px solid var(--al-sidebar-primary-bg) !important;
     border-radius: 8px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
