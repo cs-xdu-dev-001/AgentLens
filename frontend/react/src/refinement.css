@@ -5061,6 +5061,63 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Composer control rail: keep secondary controls discoverable without
+   competing with the message field or send action. */
+#chat-form.composer .composer-control-strip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 4px;
+}
+
+#chat-form.composer .composer-control-strip > :is(.composer-permission-picker, .composer-model-picker) {
+  min-width: 0;
+}
+
+#chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger) {
+  border-radius: 9px !important;
+  color: var(--text-soft);
+  transition:
+    background-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+#chat-form.composer :is(.composer-model-trigger[aria-expanded="true"], .composer-permission-trigger[aria-expanded="true"]) {
+  border-color: var(--control-border) !important;
+  background: var(--control-bg-hover) !important;
+  color: var(--text) !important;
+}
+
+#chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger):focus-visible {
+  outline: 2px solid var(--kf-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (max-width: 760px) {
+  #chat-form.composer .composer-control-strip {
+    gap: 3px;
+    padding: 2px;
+    border: 1px solid color-mix(in srgb, var(--control-border) 72%, transparent);
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--panel-bg-soft) 78%, transparent);
+  }
+
+  #chat-form.composer .composer-control-strip > :is(.composer-permission-picker, .composer-model-picker) {
+    display: inline-flex;
+  }
+
+  #chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger) {
+    border-radius: 8px !important;
+  }
+
+  #chat-form.composer .composer-model-trigger:not(:disabled):hover,
+  #chat-form.composer .composer-permission-trigger:not(:disabled):hover {
+    background: var(--control-bg-hover) !important;
+  }
+}
+
 /* Desktop workbench resize rail: the maintained panel primitive owns pointer
    and keyboard mechanics; these rules only provide AgentLens surface styling. */
 @media (min-width: 1181px) {
