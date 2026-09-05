@@ -1841,7 +1841,7 @@ export function Sidebar({
         onSessionIndexChange={onSessionIndexChange}
       />
       <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
-        <div className={"sidebar-section-label"} role={"heading"} aria-level={"2"} aria-hidden={collapsed ? "true" : undefined}>{"功能"}</div>
+        <div className={"sidebar-section-label"} role={"heading"} aria-level={"2"} aria-hidden={collapsed ? "true" : undefined}>{"工作台"}</div>
         {sidebarTools.map((tool) => (
           <Tooltip key={tool.key} content={tool.label} side={"right"}>
             {tool.href ? (
