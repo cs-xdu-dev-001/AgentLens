@@ -158,7 +158,7 @@ try {
   await page.locator(".session-title-text").first().waitFor();
   historyState = "loading";
   const reload = page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator(".session-list-skeleton").waitFor();
+  await page.locator(".session-list-loading").waitFor();
   await screenshot("loading");
   historyState = "populated";
   releaseHistory();
