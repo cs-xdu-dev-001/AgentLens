@@ -9763,7 +9763,13 @@ select:focus {
   }
 
   #page-workspace .workspace-boundary-card {
-    border: 1px solid var(--al-line) !important;
+    margin-inline: 0 !important;
+    padding: 13px 2px 14px !important;
+    border: 0 !important;
+    border-top: 1px solid var(--al-line) !important;
+    border-bottom: 1px solid var(--al-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
     box-shadow: none !important;
   }
 
@@ -9776,5 +9782,17 @@ select:focus {
     border-radius: 0 !important;
     background: transparent !important;
     text-align: left !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #page-workspace .workspace-boundary-card {
+    margin-inline: 0 !important;
+    padding: 12px 0 13px !important;
+    border: 0 !important;
+    border-top: 1px solid var(--al-line) !important;
+    border-bottom: 1px solid var(--al-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
   }
 }

@@ -3109,9 +3109,9 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 /* Isolated workbench browser */
 .workspace-browser {
-  width: min(1120px, 100%);
+  width: min(1180px, 100%);
   margin: 0 auto;
-  padding: 34px 36px 64px;
+  padding: 28px 32px 56px;
 }
 
 .workspace-browser-header,
@@ -3127,13 +3127,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-browser-header {
   justify-content: space-between;
   gap: 20px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
 }
 
 .workspace-browser-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
+  letter-spacing: -0.025em;
   line-height: 1.2;
 }
 
@@ -3148,15 +3149,15 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-browser-actions .primary { color: white; background: var(--text); }
 
 .workspace-runtime-strip {
-  gap: 10px;
-  padding: 18px 0 12px;
+  gap: 8px;
+  padding: 14px 0 10px;
 }
 .workspace-runtime-strip span {
-  padding: 5px 9px;
+  padding: 4px 8px;
   border-radius: 999px;
   color: var(--muted);
   background: var(--control-bg);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 .workspace-runtime-strip span.ready { color: var(--success); }
@@ -3164,11 +3165,11 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-runtime-strip span.danger { color: var(--danger); }
 
 .workspace-boundary-card {
-  margin: 4px 0 14px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--panel-bg) 94%, var(--control-bg));
+  margin: 4px 0 12px;
+  padding: 13px 2px 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 .workspace-boundary-head,
 .workspace-boundary-grid {
@@ -3260,9 +3261,9 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .workspace-breadcrumb {
-  min-height: 44px;
+  min-height: 40px;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
 }
 .workspace-breadcrumb button {
   border: 0;
@@ -3283,14 +3284,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .workspace-file-list {
   min-width: 0;
   min-height: 180px;
-  padding-top: 10px;
+  padding-top: 8px;
 }
 .workspace-file-list.is-loading .workspace-file-row {
   opacity: .62;
   pointer-events: none;
 }
 .workspace-file-row {
-  min-height: 54px;
+  min-height: 50px;
   border-bottom: 1px solid var(--border);
 }
 .workspace-file-row.is-active {
