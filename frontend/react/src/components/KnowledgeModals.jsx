@@ -18,6 +18,7 @@ export function KnowledgeModals({ knowledgeModalOpen = false, setKnowledgeModalO
   const [selectedEmbeddingModelId, setSelectedEmbeddingModelId] = useState("0");
   const [creatingKnowledgeBase, setCreatingKnowledgeBase] = useState(false);
   const nameInputRef = useRef(null);
+  const returnFocusRef = useRef(null);
 
   useEffect(() => {
     const handleModelOptionsUpdated = (event) => {
@@ -33,8 +34,20 @@ export function KnowledgeModals({ knowledgeModalOpen = false, setKnowledgeModalO
 
   useEffect(() => {
     if (!knowledgeModalOpen) return undefined;
+    returnFocusRef.current = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const timer = window.setTimeout(() => nameInputRef.current?.focus(), 30);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      document.body.style.overflow = previousOverflow;
+      const previous = returnFocusRef.current;
+      window.requestAnimationFrame(() => {
+        if (previous && previous.isConnected && typeof previous.focus === "function") {
+          previous.focus();
+        }
+      });
+    };
   }, [knowledgeModalOpen]);
 
   const handleKnowledgeModalBackdrop = (event) => {

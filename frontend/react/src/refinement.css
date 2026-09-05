@@ -8269,3 +8269,125 @@ body.sidebar-collapsed .sidebar {
   border-radius: 0 !important;
   background: transparent !important;
 }
+
+/* Knowledge dialogs: keep the protected task surface quiet and compact. */
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) {
+  z-index: 90 !important;
+  padding: 20px !important;
+  background: color-mix(in srgb, var(--ink) 34%, transparent) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-panel {
+  width: min(100%, 680px) !important;
+  max-height: min(720px, calc(100dvh - 40px)) !important;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 84%, transparent) !important;
+  border-radius: 16px !important;
+  background: var(--surface-raised) !important;
+  box-shadow: 0 20px 56px color-mix(in srgb, var(--ink) 18%, transparent) !important;
+}
+
+#page-knowledge #chunk-modal .modal-panel {
+  width: min(900px, 100%) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head {
+  min-height: 60px !important;
+  align-items: center !important;
+  padding: 16px 18px !important;
+  border-bottom-color: var(--line) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head .eyebrow {
+  display: none !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head h2 {
+  margin: 0 !important;
+  font-size: 18px !important;
+  font-weight: 720 !important;
+  letter-spacing: -0.015em !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head .icon-button {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 9px !important;
+  background: var(--surface) !important;
+  color: var(--muted) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head .icon-button:hover,
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head .icon-button:focus-visible {
+  border-color: var(--line-strong) !important;
+  background: var(--surface-soft) !important;
+  color: var(--ink) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-form,
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .upload-modal-body,
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .chunk-list {
+  padding: 18px !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-form {
+  gap: 14px !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-form label {
+  gap: 6px !important;
+  color: var(--ink-soft) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) :is(input, textarea, select) {
+  border-radius: 10px !important;
+  background: var(--surface) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) :is(input, textarea, select):focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line-strong)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent) !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-actions {
+  margin-top: 2px !important;
+  padding-top: 2px !important;
+  gap: 8px !important;
+}
+
+#page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-actions > button {
+  min-height: 38px !important;
+  border-radius: 9px !important;
+  font-size: 13px !important;
+}
+
+@media (max-width: 760px) {
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) {
+    align-items: end !important;
+    padding: 10px !important;
+  }
+
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-panel {
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 16px !important;
+  }
+
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-head {
+    min-height: 56px !important;
+    padding: 14px !important;
+  }
+
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-form,
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .upload-modal-body,
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .chunk-list {
+    padding: 14px !important;
+  }
+
+  #page-knowledge :is(#kb-modal, #upload-modal, #chunk-modal) .modal-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

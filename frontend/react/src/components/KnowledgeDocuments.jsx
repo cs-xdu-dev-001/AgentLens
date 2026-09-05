@@ -209,6 +209,7 @@ export function KnowledgeDocuments({ uploadModalOpen = false, setUploadModalOpen
   const [selectedDocumentFile, setSelectedDocumentFile] = useState(null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const fileInputRef = useRef(null);
+  const modalReturnFocusRef = useRef(null);
 
   const loadDocuments = useCallback(async (knowledgeBaseId = selectedKnowledgeBaseId) => {
     if (!knowledgeBaseId) {
@@ -279,6 +280,26 @@ export function KnowledgeDocuments({ uploadModalOpen = false, setUploadModalOpen
   const handleCloseChunkModal = () => {
     setChunkModalOpen(false);
   };
+
+  useEffect(() => {
+    const modalOpen = uploadModalOpen || chunkModalOpen;
+    if (!modalOpen) return undefined;
+    modalReturnFocusRef.current = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (uploadModalOpen) {
+      window.requestAnimationFrame(() => fileInputRef.current?.focus());
+    }
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      const previous = modalReturnFocusRef.current;
+      window.requestAnimationFrame(() => {
+        if (previous && previous.isConnected && typeof previous.focus === "function") {
+          previous.focus();
+        }
+      });
+    };
+  }, [chunkModalOpen, uploadModalOpen]);
 
   useEffect(() => {
     if (!uploadModalOpen && !chunkModalOpen) return undefined;
