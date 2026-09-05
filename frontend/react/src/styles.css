@@ -12925,6 +12925,18 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 @media (max-width: 640px) {
   .agent-recovery-title-row {
+    gap: 8px;
+  }
+
+  .agent-recovery-title-row > strong {
+    min-width: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .agent-recovery-title-row {
     align-items: flex-start;
   }
 
@@ -12936,6 +12948,28 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   .agent-recovery-metrics > div:first-child {
     padding: 6px 0;
     border-left: 0;
+  }
+
+  .agent-recovery-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-left: 0;
+  }
+
+  .agent-recovery-actions button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+
+  .agent-recovery-actions:has(> button:nth-child(3)) > button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .agent-recovery-feedback {
+    padding-left: 0;
   }
 }
 
