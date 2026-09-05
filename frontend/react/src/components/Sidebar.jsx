@@ -1872,8 +1872,10 @@ export function Sidebar({
           </Tooltip>
         ))}
       </div>
-      <UserMenu />
-      <RuntimeStatus />
+      <div className={"sidebar-account-footer"}>
+        <UserMenu />
+        <RuntimeStatus />
+      </div>
     </aside>
   );
 }

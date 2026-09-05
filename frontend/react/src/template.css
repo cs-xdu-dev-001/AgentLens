@@ -9936,3 +9936,29 @@ select:focus {
     animation: none !important;
   }
 }
+
+/* Tools mobile finish: keep the fixed tool identity compact, while leaving
+   credentials and the real save/test actions fully reachable. */
+@media (max-width: 760px) {
+  #page-tools #tool-config-form .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  #page-tools #tool-config-form .form-grid label.wide {
+    grid-column: 1 / -1 !important;
+  }
+
+  #page-tools #tool-config-form .form-grid input {
+    min-height: 40px !important;
+  }
+
+  #page-tools #tool-config-form .button-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #page-tools #tool-config-form .button-row .danger {
+    grid-column: 1 / -1 !important;
+  }
+}
