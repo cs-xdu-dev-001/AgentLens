@@ -725,7 +725,8 @@
 
   #sidebar.sidebar-workbench .mobile-navigation-trigger {
     width: auto !important;
-    max-width: 96px !important;
+    min-width: 88px !important;
+    max-width: 112px !important;
     padding: 0 8px !important;
   }
 
