@@ -1764,9 +1764,6 @@ export function Sidebar({
           <strong>
             {"AgentLens"}
           </strong>
-          <span>
-            {"Agent工作台"}
-          </span>
         </div>
         <Tooltip content={sidebarToggleLabel} side={"right"}>
           <button
