@@ -1817,6 +1817,7 @@ export function Sidebar({
         onPageIntent={onPageIntent}
       />
       <div className={"sidebar-utility-tools"}>
+        <div className={"sidebar-section-label sidebar-quick-label"} role={"heading"} aria-level={"2"} aria-hidden={collapsed ? "true" : undefined}>{"快捷操作"}</div>
         <Tooltip content={"命令面板"} shortcut={"Ctrl/⌘+K"} side={"right"}>
           <button
             className={"sidebar-tool command-palette-trigger"}
