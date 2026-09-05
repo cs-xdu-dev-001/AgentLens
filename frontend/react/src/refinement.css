@@ -7389,3 +7389,127 @@ body.sidebar-collapsed .sidebar {
     margin-top: 6px;
   }
 }
+
+/* Chat chrome v4: give topbar actions and the composer one quiet control
+   language without changing their event flow or responsive structure. */
+#page-chat .chat-topbar {
+  padding-inline: 18px !important;
+  background: color-mix(in srgb, var(--workspace-bg) 88%, var(--surface) 12%) !important;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(58vw, 720px);
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.015em;
+}
+
+#page-chat .chat-topbar-actions {
+  align-items: center;
+  gap: 4px !important;
+}
+
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-workspace-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+) {
+  min-height: 36px !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  color: var(--text-soft);
+  background: transparent;
+  transition:
+    background-color var(--kf-transition),
+    border-color var(--kf-transition),
+    color var(--kf-transition),
+    transform var(--kf-transition);
+}
+
+#page-chat .chat-workspace-toggle {
+  max-width: min(32vw, 280px);
+  padding-inline: 10px !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-bg) !important;
+}
+
+#page-chat .chat-run-toggle {
+  padding-inline: 9px !important;
+}
+
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+):hover,
+#page-chat .chat-workspace-toggle:hover {
+  border-color: color-mix(in srgb, var(--text) 16%, var(--control-border)) !important;
+  background: var(--control-bg-hover) !important;
+  color: var(--text) !important;
+}
+
+#page-chat .chat-run-toggle:is(.is-running, .is-waiting, .is-failed) {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--control-border)) !important;
+  background: color-mix(in srgb, var(--warning) 9%, var(--control-bg)) !important;
+}
+
+#page-chat .chat-run-toggle.is-completed {
+  color: var(--success) !important;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  border-color: color-mix(in srgb, var(--text) 16%, var(--control-border)) !important;
+  background: var(--surface) !important;
+  box-shadow: 0 12px 32px rgba(18, 18, 16, 0.08) !important;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea {
+  font-size: 15px !important;
+  line-height: 1.55 !important;
+}
+
+#page-chat #chat-form.composer .composer-plus,
+#page-chat #chat-form.composer .composer-permission-trigger,
+#page-chat #chat-form.composer .composer-model-trigger {
+  border-color: transparent !important;
+  background: color-mix(in srgb, var(--control-bg) 72%, transparent) !important;
+}
+
+#page-chat #chat-form.composer .composer-plus:hover:not(:disabled),
+#page-chat #chat-form.composer .composer-permission-trigger:hover:not(:disabled),
+#page-chat #chat-form.composer .composer-model-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text) 14%, var(--control-border)) !important;
+  background: var(--control-bg-hover) !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    padding-inline: 10px 44px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: 100%;
+  }
+
+  #page-chat .chat-workspace-toggle {
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    box-shadow: 0 10px 26px rgba(18, 18, 16, 0.1) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    .chat-run-toggle,
+    #refresh-btn
+  ),
+  #page-chat #chat-form.composer .composer-shell {
+    transition: none !important;
+  }
+}
