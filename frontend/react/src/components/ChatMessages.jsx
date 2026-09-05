@@ -552,7 +552,15 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
 }
 
 function normalizeRawContent(value) {
-  return String(value ?? "");
+  const text = String(value ?? "");
+  // Some streaming/proxy paths serialize line breaks one extra time. Recover
+  // Markdown structure only when the whole payload has no real line breaks;
+  // ordinary code strings containing "\n" remain untouched in multiline text.
+  if (text.includes("\n") || !text.includes("\\n")) return text;
+  return text
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r");
 }
 
 const TRANSCRIPT_SEARCH_LIMIT = 1000;

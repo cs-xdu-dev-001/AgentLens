@@ -6971,6 +6971,60 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Chat surface v3: keep optional composer material inside a bounded,
+   touch-friendly rail instead of letting long filenames reshape the form. */
+#page-chat #chat-form.composer .attachment-tray {
+  min-width: 0;
+}
+
+#page-chat #chat-form.composer .attachment-pill {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  #page-chat #chat-form.composer .attachment-tray {
+    flex-wrap: nowrap !important;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 2px 2px !important;
+    scrollbar-width: none;
+    overscroll-behavior-inline: contain;
+  }
+
+  #page-chat #chat-form.composer .attachment-tray::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill {
+    flex: 0 0 auto;
+    max-width: min(78vw, 280px);
+  }
+
+  #page-chat .chat-session-heading {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 2px);
+  }
+
+  #page-chat .chat-topbar-actions {
+    flex: 0 0 auto;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: 100%;
+    font-size: 15px !important;
+    letter-spacing: -0.01em;
+  }
+
+  #page-chat .chat-session-switching {
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 
 #page-chat .chat-run-icon {
   display: none;
