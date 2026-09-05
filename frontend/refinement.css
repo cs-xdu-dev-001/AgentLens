@@ -7838,15 +7838,15 @@ body.sidebar-collapsed .sidebar {
 /* Composer surface v4: optional state stays attached to the input without
    becoming a stack of unrelated cards. */
 #page-chat #chat-form.composer {
-  gap: 6px;
+  gap: 4px;
 }
 
 #page-chat #chat-form.composer .composer-queue {
-  margin: 0 8px 8px !important;
-  padding: 9px 12px 8px !important;
-  border: 1px solid color-mix(in srgb, var(--border) 90%, var(--text)) !important;
-  border-radius: 13px !important;
-  background: color-mix(in srgb, var(--surface-soft) 82%, var(--surface)) !important;
+  margin: 0 8px 6px !important;
+  padding: 8px 11px 7px !important;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent) !important;
+  border-radius: 11px !important;
+  background: color-mix(in srgb, var(--surface-soft) 68%, var(--surface)) !important;
 }
 
 #page-chat #chat-form.composer .composer-queue-heading {
@@ -7870,6 +7870,11 @@ body.sidebar-collapsed .sidebar {
 }
 
 #page-chat #chat-form.composer .composer-queue-row {
+  display: grid !important;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto auto !important;
+  align-items: center !important;
+  column-gap: 7px !important;
+  min-width: 0 !important;
   min-height: 35px !important;
   padding: 4px 0 !important;
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
@@ -7888,10 +7893,16 @@ body.sidebar-collapsed .sidebar {
 }
 
 #page-chat #chat-form.composer .composer-queue-row p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13px;
 }
 
 #page-chat #chat-form.composer .composer-queue-priority {
+  min-width: 66px;
+  max-width: 78px;
   border-color: color-mix(in srgb, var(--border) 76%, transparent);
   background: var(--control-bg);
   font-size: 12px;
@@ -7906,13 +7917,21 @@ body.sidebar-collapsed .sidebar {
 }
 
 #page-chat #chat-form.composer .attachment-tray {
+  display: flex !important;
+  min-width: 0;
+  max-width: calc(100% - 16px);
   gap: 6px !important;
-  margin: 0 8px 8px !important;
-  padding: 2px !important;
+  margin: 0 8px 6px !important;
+  padding: 1px 2px 2px !important;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
 }
 
 #page-chat #chat-form.composer .attachment-pill {
+  flex: 0 0 auto;
   min-height: 31px;
+  max-width: min(320px, 100%);
   padding: 3px 5px 3px 6px;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 10px;
@@ -7940,11 +7959,11 @@ body.sidebar-collapsed .sidebar {
 }
 
 #page-chat #chat-form.composer .composer-agent-state {
-  margin: 0 8px 8px !important;
-  padding: 8px 10px !important;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--surface-soft) 78%, var(--surface));
+  margin: 0 8px 6px !important;
+  padding: 7px 10px !important;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, var(--surface));
 }
 
 #page-chat #chat-form.composer .composer-agent-state > button {
@@ -7954,11 +7973,11 @@ body.sidebar-collapsed .sidebar {
 }
 
 #page-chat #chat-form.composer .composer-follow-up {
-  margin: 0 8px 7px !important;
+  margin: 0 8px 6px !important;
   padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--surface-soft) 72%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 62%, var(--surface));
 }
 
 @media (max-width: 760px) {
@@ -7982,8 +8001,64 @@ body.sidebar-collapsed .sidebar {
   }
 
   #page-chat #chat-form.composer .composer-queue-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto auto !important;
     row-gap: 5px;
     padding-block: 6px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row p {
+    grid-column: 2 / -1;
+    grid-row: 1;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row .composer-queue-priority {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row .composer-queue-action {
+    grid-row: 2;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row .composer-queue-action:last-child {
+    grid-column: 4;
+  }
+
+  #page-chat #chat-form.composer .composer-queue-row .composer-queue-action:nth-last-child(2) {
+    grid-column: 3;
+  }
+
+  #page-chat #chat-form.composer .attachment-tray {
+    max-width: 100%;
+    padding-bottom: 3px !important;
+    scrollbar-width: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-tray::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill {
+    max-width: min(260px, calc(100vw - 64px));
+  }
+
+  #page-chat #chat-form.composer .composer-control-strip {
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  #page-chat #chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger) {
+    max-width: min(44vw, 180px);
+  }
+
+  #page-chat #chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger) > span:nth-child(2) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
