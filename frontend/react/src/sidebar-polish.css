@@ -4,28 +4,28 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 272px;
-  --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f7f7f4;
-  --al-sidebar-surface: #fcfcfa;
-  --al-sidebar-hover: #ecece8;
-  --al-sidebar-active: #e5e5df;
-  --al-sidebar-divider: #deded7;
-  --al-sidebar-text: #1a1a18;
-  --al-sidebar-muted: #74736d;
-  --al-sidebar-primary-bg: #1f1f1c;
+  --sidebar-width: 264px;
+  --sidebar-collapsed-width: 62px;
+  --al-sidebar-bg: #f4f4f1;
+  --al-sidebar-surface: #fbfbf8;
+  --al-sidebar-hover: #e9e9e4;
+  --al-sidebar-active: #e4e4de;
+  --al-sidebar-divider: #d7d7cf;
+  --al-sidebar-text: #1b1b18;
+  --al-sidebar-muted: #77766f;
+  --al-sidebar-primary-bg: #282824;
   --al-sidebar-primary-text: #fafaf5;
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #171815;
-  --al-sidebar-surface: #20221f;
-  --al-sidebar-hover: #292b27;
-  --al-sidebar-active: #32352f;
-  --al-sidebar-divider: #383b34;
+  --al-sidebar-bg: #151614;
+  --al-sidebar-surface: #1d1f1c;
+  --al-sidebar-hover: #272925;
+  --al-sidebar-active: #2d302b;
+  --al-sidebar-divider: #363932;
   --al-sidebar-text: #f0f0e9;
   --al-sidebar-muted: #aaa9a0;
-  --al-sidebar-primary-bg: #f0f0e9;
+  --al-sidebar-primary-bg: #e9e9e2;
   --al-sidebar-primary-text: #1b1d1a;
 }
 
@@ -396,7 +396,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 16px 14px 13px !important;
+    padding: 14px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -404,38 +404,38 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 40px !important;
+    min-height: 36px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 13px !important;
-    padding: 0 3px !important;
-    gap: 10px !important;
+    margin: 0 0 10px !important;
+    padding: 0 2px !important;
+    gap: 9px !important;
     border: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 30px !important;
-    height: 30px !important;
-    flex: 0 0 30px !important;
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
+    border-radius: 8px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .brand-copy strong {
     color: var(--al-sidebar-text) !important;
-    font-size: 16px !important;
-    font-weight: 680 !important;
-    letter-spacing: -0.02em !important;
+    font-size: 15px !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.015em !important;
   }
 
   #sidebar.sidebar-workbench #sidebar-toggle {
-    width: 32px !important;
-    height: 32px !important;
-    flex: 0 0 32px !important;
+    width: 30px !important;
+    height: 30px !important;
+    flex: 0 0 30px !important;
     margin-left: auto !important;
     border: 0 !important;
-    border-radius: 9px !important;
+    border-radius: 8px !important;
     background: transparent !important;
     color: var(--al-sidebar-muted) !important;
     border: 1px solid transparent !important;
@@ -447,16 +447,16 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: 35px !important;
+    height: 35px !important;
     margin: 0 !important;
-    padding: 0 9px !important;
-    gap: 10px !important;
+    padding: 0 8px !important;
+    gap: 9px !important;
     border: 0 !important;
-    border-radius: 9px !important;
+    border-radius: 8px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
-    font-size: 13.5px !important;
+    font-size: 13px !important;
     font-weight: 400 !important;
     text-align: left !important;
     box-shadow: none !important;
@@ -466,19 +466,19 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 38px !important;
-    height: 38px !important;
-    margin-bottom: 12px !important;
-    border: 0 !important;
-    border-radius: 9px !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
-    box-shadow: none !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    margin-bottom: 8px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 10px !important;
+    background: var(--al-sidebar-surface) !important;
+    color: var(--al-sidebar-text) !important;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--al-sidebar-text) 4%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
     font-size: inherit !important;
-    font-weight: 600 !important;
+    font-weight: 580 !important;
   }
 
   #sidebar.sidebar-workbench :is(.new-chat-button > span, .sidebar-tool .nav-icon) {
@@ -500,7 +500,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 1px !important;
+    gap: 2px !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -529,8 +529,8 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 14px 0 0 !important;
-    padding: 11px 0 4px !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 0 4px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
@@ -546,9 +546,9 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 12px 0 0 !important;
-    padding: 12px 0 0 !important;
-    gap: 1px !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 0 0 !important;
+    gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
   }
@@ -560,12 +560,12 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 9px 6px !important;
+    margin: 0 8px 5px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
+    letter-spacing: 0.08em !important;
     line-height: 18px !important;
     text-transform: none !important;
   }
@@ -592,31 +592,31 @@
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"]) {
     background: var(--al-sidebar-active) !important;
     font-weight: 600 !important;
-    box-shadow: inset 0 0 0 1px var(--al-sidebar-divider) !important;
+    box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .user-menu {
     flex: 0 0 auto !important;
-    margin: 14px 0 0 !important;
-    padding: 12px 0 0 !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 0 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 42px !important;
-    padding: 6px 9px !important;
-    gap: 9px !important;
+    min-height: 40px !important;
+    padding: 5px 8px !important;
+    gap: 8px !important;
     border: 1px solid transparent !important;
-    border-radius: 9px !important;
+    border-radius: 8px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .user-avatar {
-    width: 28px !important;
-    height: 28px !important;
-    flex: 0 0 28px !important;
+    width: 26px !important;
+    height: 26px !important;
+    flex: 0 0 26px !important;
     border: 0 !important;
     border-radius: 50% !important;
     background-color: var(--al-sidebar-active) !important;
@@ -626,19 +626,23 @@
 
   #sidebar.sidebar-workbench .user-menu-button strong {
     color: inherit !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
+    font-size: 13px !important;
+    font-weight: 550 !important;
   }
 
   #sidebar.sidebar-workbench .runtime-card {
-    min-height: 20px !important;
+    min-height: 18px !important;
     flex: 0 0 auto !important;
-    margin: 5px 10px 0 !important;
-    padding: 0 0 2px !important;
+    margin: 2px 10px 0 42px !important;
+    padding: 0 0 1px !important;
     border: 0 !important;
     background: transparent !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
   }
 
   #sidebar.sidebar-workbench.collapsed {
@@ -733,10 +737,10 @@
     margin: 0 !important;
     padding: 0 9px !important;
     gap: 6px !important;
-    border: 1px solid var(--al-sidebar-primary-bg) !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 8px !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
+    background: var(--al-sidebar-surface) !important;
+    color: var(--al-sidebar-text) !important;
     font-size: 13px !important;
     box-shadow: none !important;
   }
@@ -848,8 +852,8 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button:hover {
-    background: color-mix(in srgb, var(--al-sidebar-primary-bg) 90%, var(--al-sidebar-bg)) !important;
-    color: var(--al-sidebar-primary-text) !important;
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-sidebar-text) !important;
     transform: none !important;
     box-shadow: none !important;
   }
