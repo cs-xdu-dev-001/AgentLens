@@ -838,6 +838,14 @@
 /* Final rail pass: stronger hierarchy for the long-session desktop workspace.
    Keep the rail quiet, but give the primary action and current task a clear home. */
 @media (min-width: 761px) {
+  .app-shell {
+    grid-template-columns: 264px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
   #sidebar.sidebar-workbench {
     padding: 12px 12px 10px !important;
     background: var(--al-sidebar-bg) !important;
@@ -1570,6 +1578,264 @@
 @media (max-width: 760px) {
   #sidebar .sidebar-utility-tools {
     display: contents !important;
+  }
+}
+
+/* Rail vNext: one coherent workbench surface.
+   This is intentionally kept at the end of the file so the older compatibility
+   rules above cannot split the rail into competing visual systems. */
+@media (min-width: 761px) {
+  #sidebar.sidebar-workbench {
+    width: 264px !important;
+    padding: 12px 10px 10px !important;
+    gap: 0 !important;
+    background: var(--al-sidebar-bg) !important;
+    border-right: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  :root[data-theme="mono-dark"] #sidebar.sidebar-workbench {
+    --al-sidebar-bg: #171817;
+    --al-sidebar-surface: #202120;
+    --al-sidebar-hover: rgba(255, 255, 255, 0.07);
+    --al-sidebar-active: rgba(255, 255, 255, 0.11);
+    --al-sidebar-divider: rgba(255, 255, 255, 0.12);
+    --al-sidebar-primary-bg: #f2f2ed;
+    --al-sidebar-primary-text: #171817;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 34px !important;
+    margin: 0 2px 14px !important;
+    padding: 0 4px !important;
+    gap: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-mark {
+    width: 28px !important;
+    height: 28px !important;
+    flex-basis: 28px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 9px !important;
+    background: var(--al-sidebar-surface) !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-copy strong {
+    color: var(--al-ink) !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.025em !important;
+  }
+
+  #sidebar.sidebar-workbench #sidebar-toggle {
+    width: 30px !important;
+    height: 30px !important;
+    flex-basis: 30px !important;
+    margin-left: auto !important;
+    border-radius: 8px !important;
+    color: var(--al-muted) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button {
+    min-height: 42px !important;
+    height: 42px !important;
+    margin: 0 2px 8px !important;
+    padding: 0 12px !important;
+    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 80%, transparent) !important;
+    border-radius: 10px !important;
+    background: var(--al-sidebar-primary-bg) !important;
+    color: var(--al-sidebar-primary-text) !important;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--al-sidebar-primary-bg) 28%, transparent) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button:hover {
+    background: color-mix(in srgb, var(--al-sidebar-primary-bg) 90%, var(--al-sidebar-hover)) !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button > span {
+    width: 22px !important;
+    height: 22px !important;
+    flex-basis: 22px !important;
+    border-radius: 7px !important;
+    background: color-mix(in srgb, currentColor 14%, transparent) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-utility-tools {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+    margin: 0 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger,
+  #sidebar.sidebar-workbench .pending-approvals-trigger {
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 0 10px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger kbd {
+    padding: 2px 5px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 5px !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+    font-size: 10px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell {
+    margin: 14px 2px 0 !important;
+    padding: 11px 0 0 !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs {
+    min-height: 32px !important;
+    padding: 2px !important;
+    gap: 2px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 9px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 72%, transparent) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button {
+    flex: 1 1 0 !important;
+    min-height: 27px !important;
+    padding: 0 8px !important;
+    border-radius: 7px !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button.active {
+    background: var(--al-sidebar-surface) !important;
+    color: var(--al-ink) !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--al-ink) 9%, transparent) !important;
+    font-weight: 650 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search-row {
+    margin-top: 8px !important;
+    gap: 4px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input {
+    min-height: 35px !important;
+    height: 35px !important;
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+    background: var(--al-sidebar-surface) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input:focus {
+    border-color: var(--al-line-strong) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-refresh-button {
+    width: 35px !important;
+    min-width: 35px !important;
+    height: 35px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .empty-state {
+    margin: 12px 10px !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools {
+    margin: 10px 2px 0 !important;
+    padding: 12px 0 0 !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-section-label {
+    padding: 0 10px 5px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
+    min-height: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .nav-icon,
+  #sidebar.sidebar-workbench .new-chat-button > span {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-tool .nav-icon {
+    width: 20px !important;
+    height: 20px !important;
+    flex-basis: 20px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row .session-title {
+    font-weight: 500 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool:hover,
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool.active {
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-ink) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu {
+    margin: 9px 2px 0 !important;
+    padding-top: 9px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button {
+    min-height: 40px !important;
+    padding: 5px 10px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button:hover,
+  #sidebar.sidebar-workbench .user-menu.open .user-menu-button {
+    background: var(--al-sidebar-hover) !important;
+  }
+
+  #sidebar.sidebar-workbench .runtime-card {
+    margin: 2px 10px 0 !important;
+    min-height: 17px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed {
+    width: 64px !important;
+    padding: 12px 8px 10px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .sidebar-brand {
+    margin: 0 0 14px !important;
+    padding: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed :is(.new-chat-button, .sidebar-tool, .user-menu-button) {
+    width: 46px !important;
+    min-width: 46px !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .sidebar-utility-tools,
+  #sidebar.sidebar-workbench.collapsed .sidebar-bottom-tools,
+  #sidebar.sidebar-workbench.collapsed .user-menu {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 }
 
@@ -2369,5 +2635,109 @@
   #sidebar.sidebar-workbench .user-menu {
     margin-top: 8px !important;
     padding-top: 8px !important;
+  }
+}
+
+/* Last word: keep the rail visually consistent after legacy compatibility
+   layers.  All desktop overrides intentionally live here. */
+@media (min-width: 761px) {
+  .app-shell {
+    grid-template-columns: 264px minmax(0, 1fr) !important;
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+  }
+
+  #sidebar.sidebar-workbench {
+    width: 264px !important;
+    padding: 12px 10px 10px !important;
+    background: var(--al-sidebar-bg) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-brand {
+    padding: 0 4px !important;
+    border-bottom: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-utility-tools {
+    margin: 0 2px !important;
+    padding-bottom: 0 !important;
+    border-bottom: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger .nav-icon,
+  #sidebar.sidebar-workbench .pending-approvals-trigger .nav-icon,
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .nav-icon {
+    width: 20px !important;
+    height: 20px !important;
+    flex-basis: 20px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell {
+    margin: 14px 2px 0 !important;
+    padding-top: 11px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs {
+    min-height: 32px !important;
+    align-items: center !important;
+    gap: 2px !important;
+    padding: 2px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 9px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 72%, transparent) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button {
+    flex: 1 1 0 !important;
+    min-height: 27px !important;
+    padding: 0 8px !important;
+    border-radius: 7px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button.active {
+    background: var(--al-sidebar-surface) !important;
+    color: var(--al-ink) !important;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--al-ink) 9%, transparent) !important;
+    font-weight: 650 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search-row {
+    margin-top: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input {
+    border-color: transparent !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row .session-title {
+    font-weight: 500 !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools {
+    margin: 10px 2px 0 !important;
+    padding-top: 12px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool:hover,
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool.active {
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-ink) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu {
+    margin-left: 2px !important;
+    margin-right: 2px !important;
   }
 }
