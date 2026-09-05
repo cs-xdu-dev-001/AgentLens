@@ -3985,6 +3985,122 @@ select:focus {
   }
 }
 
+/* Final visual tokens. Keep these last so page-specific legacy layers cannot
+   reintroduce the old card stack or oversized empty states. */
+@media (min-width: 761px) {
+  #sidebar .sidebar-list.chat-history-list > .empty-state {
+    margin: 4px 1px 0 !important;
+    padding: 12px 8px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+    text-align: left !important;
+  }
+
+  #sidebar .session-row.completed:not(.active) .session-title::before {
+    display: none !important;
+  }
+
+  #sidebar .sidebar-bottom-tools {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    gap: 1px !important;
+  }
+
+  #sidebar .sidebar-bottom-tools::before {
+    display: none !important;
+  }
+
+  #sidebar .sidebar-section-label {
+    display: block !important;
+    padding: 0 8px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 10px !important;
+  }
+
+  #page-knowledge .knowledge-shell {
+    min-height: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #page-knowledge .knowledge-rail {
+    padding: 14px 14px 16px !important;
+    background: color-mix(in srgb, var(--al-surface-soft) 76%, var(--al-canvas)) !important;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding: 0 20px 18px !important;
+    background: var(--al-surface) !important;
+  }
+
+  #page-knowledge .knowledge-tabbar,
+  #page-knowledge .knowledge-tab {
+    min-height: 52px !important;
+  }
+
+  #page-knowledge .knowledge-primary .document-toolbar {
+    min-height: 66px !important;
+    padding: 14px 0 13px !important;
+  }
+
+  #page-knowledge .document-table-panel {
+    margin-top: 14px !important;
+    box-shadow: none !important;
+  }
+
+  #page-knowledge .document-empty {
+    min-height: 220px !important;
+    padding: 34px 20px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #page-knowledge .knowledge-shell {
+    display: block !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #page-knowledge .knowledge-rail {
+    margin-bottom: 10px !important;
+    padding: 12px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--al-line) !important;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding: 0 2px 14px !important;
+  }
+
+  #page-knowledge .knowledge-tabbar {
+    overflow-x: auto !important;
+    scrollbar-width: none;
+  }
+
+  #page-knowledge .knowledge-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-knowledge .knowledge-primary .document-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  #page-knowledge .document-toolbar > div {
+    grid-column: 1 / -1 !important;
+  }
+}
+
 /* Chat workbench detail pass: make the chrome read as one calm instrument. */
 #page-chat .chat-topbar {
   position: relative;
@@ -8206,6 +8322,99 @@ select:focus {
   }
 }
 
+/* Knowledge workspace finish: let the split workbench carry the hierarchy.
+   The page should feel like a file workspace, not one oversized admin card. */
+#page-knowledge .knowledge-shell {
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#page-knowledge .knowledge-rail {
+  padding: 14px 14px 16px !important;
+  background: color-mix(in srgb, var(--al-surface-soft) 76%, var(--al-canvas)) !important;
+}
+
+#page-knowledge .knowledge-primary {
+  padding: 0 20px 18px !important;
+  background: var(--al-surface) !important;
+}
+
+#page-knowledge .knowledge-tabbar {
+  min-height: 52px !important;
+}
+
+#page-knowledge .knowledge-tab {
+  min-height: 52px !important;
+  padding-inline: 12px !important;
+}
+
+#page-knowledge .knowledge-primary .document-toolbar {
+  min-height: 66px !important;
+  padding: 14px 0 13px !important;
+}
+
+#page-knowledge .document-table-panel {
+  margin-top: 14px !important;
+  box-shadow: none !important;
+}
+
+#page-knowledge .document-empty {
+  min-height: 220px !important;
+  padding: 34px 20px !important;
+}
+
+@media (max-width: 760px) {
+  #page-knowledge .workspace-page {
+    padding: 0 12px 18px !important;
+  }
+
+  #page-knowledge .knowledge-shell {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  #page-knowledge .knowledge-rail {
+    margin-bottom: 10px !important;
+    padding: 12px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--al-line) !important;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding: 0 2px 14px !important;
+  }
+
+  #page-knowledge .knowledge-tabbar {
+    overflow-x: auto !important;
+    scrollbar-width: none;
+  }
+
+  #page-knowledge .knowledge-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-knowledge .knowledge-primary .document-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  #page-knowledge .document-toolbar > div {
+    grid-column: 1 / -1 !important;
+  }
+
+  #page-knowledge .active-kb-select {
+    min-width: 0 !important;
+  }
+
+  #page-knowledge .upload-modal-trigger {
+    white-space: nowrap !important;
+  }
+}
+
 /* Short desktop windows must keep the last visible task readable. The rail
    compresses its chrome before it compresses the task list itself. */
 @media (min-width: 761px) and (max-height: 840px) {
@@ -10091,5 +10300,69 @@ select:focus {
   #page-workspace .workspace-empty {
     margin-top: 14px !important;
     padding: 18px 14px !important;
+  }
+}
+
+/* Last-mile overrides, intentionally at EOF. */
+@media (min-width: 761px) {
+  #sidebar .sidebar-list.chat-history-list > .empty-state {
+    margin: 4px 1px 0 !important;
+    padding: 12px 8px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    text-align: left !important;
+  }
+
+  #sidebar .session-row.completed:not(.active) .session-title::before {
+    display: none !important;
+  }
+
+  #sidebar .sidebar-bottom-tools {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    gap: 1px !important;
+  }
+
+  #sidebar .sidebar-bottom-tools::before {
+    display: none !important;
+  }
+
+  #page-knowledge .knowledge-shell {
+    min-height: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding: 0 20px 18px !important;
+  }
+
+  #page-knowledge .document-table-panel {
+    box-shadow: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  #page-knowledge .knowledge-shell {
+    display: block !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #page-knowledge .knowledge-rail {
+    margin-bottom: 10px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--al-line) !important;
+  }
+
+  #page-knowledge .knowledge-primary {
+    padding: 0 2px 14px !important;
   }
 }
