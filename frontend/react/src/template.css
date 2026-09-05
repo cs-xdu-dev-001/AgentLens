@@ -2352,6 +2352,10 @@ select:focus {
   transform: none;
 }
 
+#page-chat.chat-empty .welcome-action:hover .welcome-action-icon {
+  color: var(--al-ink) !important;
+}
+
 #page-chat.chat-empty .welcome-action-icon {
   width: 24px !important;
   height: 24px !important;
@@ -2360,7 +2364,7 @@ select:focus {
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
-  color: var(--al-accent-strong);
+  color: var(--al-ink-soft);
 }
 
 #page-chat.chat-empty .welcome-action-label {
