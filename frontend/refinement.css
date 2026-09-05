@@ -4278,6 +4278,51 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   overscroll-behavior: contain;
 }
 
+.command-palette-empty {
+  min-height: 156px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 24px 16px;
+  color: var(--text-soft);
+  text-align: center;
+}
+
+.command-palette-empty-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  color: var(--text-soft);
+  background: var(--control-bg-hover);
+}
+
+.command-palette-empty-mark svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.command-palette-empty strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.command-palette-empty > span:last-child {
+  max-width: 30ch;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .command-palette-option {
   width: 100%;
   min-height: 44px;
@@ -4332,6 +4377,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   line-height: 1.35;
 }
 
+.palette-session-option code,
+.command-palette-option > code {
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .command-palette-option[aria-selected="true"],
 .command-palette-search button:hover {
   background: var(--control-bg-hover);
@@ -4376,7 +4429,21 @@ body.sidebar-collapsed .command-palette-trigger kbd {
 }
 
 @media (max-width: 760px) {
-  .command-palette { margin-top: 12px; }
+  .command-palette {
+    width: min(100vw - 20px, 580px);
+    margin-top: 10px;
+    border-radius: 16px;
+  }
+
+  .command-palette-search {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .command-palette-list {
+    max-height: min(330px, 48dvh);
+  }
+
   .command-palette-footer kbd,
   .command-palette-trigger kbd { display: none; }
 }

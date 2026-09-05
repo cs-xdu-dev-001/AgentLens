@@ -264,6 +264,15 @@ export function CommandPalette({
               </button>
             </div>
           ))}
+          {!items.length ? (
+            <div className={"command-palette-empty"} role={"status"}>
+              <span className={"command-palette-empty-mark"} aria-hidden={"true"}>
+                <svg viewBox={"0 0 24 24"}><circle cx={"10.5"} cy={"10.5"} r={"6.5"} /><path d={"m16 16 4 4"} /></svg>
+              </span>
+              <strong>{disabled ? "正在打开任务" : "没有匹配结果"}</strong>
+              <span>{disabled ? "请稍候，任务列表正在同步。" : "换个关键词，或输入/查看可用命令。"}</span>
+            </div>
+          ) : null}
         </div>
         <div className={"command-palette-footer"} role={"status"}>
           <span>
