@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import { toolConfigApi } from "../api/client.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { McpServerPanel } from "./McpServerPanel.jsx";
@@ -144,7 +145,7 @@ export function ToolsPage({ active = false }) {
             </div>
             <div className={"tool-inventory-row"}>
               <span className={"tool-inventory-icon"} aria-hidden={"true"}>
-                {"⌕"}
+                <Search size={19} strokeWidth={1.8} />
               </span>
               <div>
                 <strong>{"web_search"}</strong>
