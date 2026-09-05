@@ -107,7 +107,12 @@ export function AgentRunSummary({ messageId = "", trace = [], run = null }) {
           <h2 title={headline}>{headline}</h2>
           <div className={"agent-run-summary-meta"}>
             <strong>{metrics || `${completed}/${total}`}</strong>
-            <span>{shortRunId(runId)}{" · "}{visibleStatus.freshness}</span>
+            <span
+              className={"agent-run-summary-freshness"}
+              title={runId ? `运行标识：${shortRunId(runId)}` : undefined}
+            >
+              {visibleStatus.freshness}
+            </span>
           </div>
           <p>{visibleProcessSummary}</p>
         </div>
