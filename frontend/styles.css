@@ -14090,6 +14090,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   #chat-form.composer .composer-queue-priority {
     grid-column: 2 / 3;
     justify-self: start;
+    width: max-content;
+    max-width: min(150px, 42vw);
   }
 
   #chat-form.composer .composer-queue-row p {
