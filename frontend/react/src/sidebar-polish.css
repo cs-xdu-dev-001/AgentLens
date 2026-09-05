@@ -4,28 +4,28 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 272px;
+  --sidebar-width: 280px;
   --sidebar-collapsed-width: 62px;
-  --al-sidebar-bg: #eeeee9;
-  --al-sidebar-surface: #fbfbf8;
-  --al-sidebar-hover: #e4e4de;
-  --al-sidebar-active: #e7e7e1;
-  --al-sidebar-divider: #d4d4cc;
-  --al-sidebar-text: #181816;
-  --al-sidebar-muted: #6f6f69;
-  --al-sidebar-primary-bg: #252522;
+  --al-sidebar-bg: #f4f4f1;
+  --al-sidebar-surface: #ffffff;
+  --al-sidebar-hover: #e9e9e5;
+  --al-sidebar-active: #e3e3dd;
+  --al-sidebar-divider: #dcdcd5;
+  --al-sidebar-text: #171716;
+  --al-sidebar-muted: #686862;
+  --al-sidebar-primary-bg: #20201e;
   --al-sidebar-primary-text: #fafaf6;
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #151614;
-  --al-sidebar-surface: #1d1f1c;
-  --al-sidebar-hover: #252722;
-  --al-sidebar-active: #2b2e29;
-  --al-sidebar-divider: #343730;
+  --al-sidebar-bg: #181917;
+  --al-sidebar-surface: #20211f;
+  --al-sidebar-hover: #292a27;
+  --al-sidebar-active: #30312d;
+  --al-sidebar-divider: #383a35;
   --al-sidebar-text: #f0f0e9;
   --al-sidebar-muted: #aaa9a0;
-  --al-sidebar-primary-bg: #e9e9e2;
+  --al-sidebar-primary-bg: #f0f0e9;
   --al-sidebar-primary-text: #1b1d1a;
 }
 
@@ -130,7 +130,7 @@
   min-height: 32px !important;
   padding: 5px 10px 5px 32px !important;
   border: 1px solid var(--al-sidebar-divider) !important;
-  border-radius: 9px !important;
+  border-radius: 8px !important;
   background: var(--al-sidebar-surface) !important;
   color: var(--al-sidebar-text) !important;
   font: inherit !important;
@@ -200,8 +200,8 @@
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row:is(.active, .switching, .menu-open) {
-  background: color-mix(in srgb, var(--al-sidebar-active) 86%, var(--al-sidebar-surface)) !important;
-  box-shadow: inset 2px 0 0 var(--al-sidebar-text) !important;
+  background: var(--al-sidebar-active) !important;
+  box-shadow: inset 1px 0 0 var(--al-sidebar-text) !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row .sidebar-list-item {
@@ -399,29 +399,28 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 12px 11px !important;
+    padding: 12px 12px 10px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--al-sidebar-surface) 28%, var(--al-sidebar-bg)), var(--al-sidebar-bg)) !important;
+    background: var(--al-sidebar-bg) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
     min-height: 40px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 10px !important;
+    margin: 0 0 12px !important;
     padding: 0 2px !important;
     gap: 9px !important;
     border: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex: 0 0 32px !important;
-    border: 1px solid color-mix(in srgb, var(--al-sidebar-text) 16%, transparent) !important;
-    border-radius: 10px !important;
+    width: 30px !important;
+    height: 30px !important;
+    flex: 0 0 30px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 9px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
@@ -439,7 +438,7 @@
     flex: 0 0 32px !important;
     margin-left: auto !important;
     border: 0 !important;
-    border-radius: 9px !important;
+    border-radius: 8px !important;
     background: transparent !important;
     color: var(--al-sidebar-muted) !important;
     border: 1px solid transparent !important;
@@ -451,8 +450,8 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 38px !important;
-    height: 38px !important;
+    min-height: 40px !important;
+    height: 40px !important;
     margin: 0 !important;
     padding: 0 10px !important;
     gap: 11px !important;
@@ -460,7 +459,7 @@
     border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
-    font-size: 13px !important;
+    font-size: 14px !important;
     font-weight: 450 !important;
     text-align: left !important;
     box-shadow: none !important;
@@ -470,11 +469,11 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 40px !important;
-    height: 40px !important;
-    margin-bottom: 12px !important;
-    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 86%, transparent) !important;
-    border-radius: 10px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin-bottom: 14px !important;
+    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 84%, transparent) !important;
+    border-radius: 9px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
     box-shadow: none !important;
@@ -504,7 +503,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 2px !important;
+    gap: 3px !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -523,7 +522,7 @@
     border-radius: 6px !important;
     background: color-mix(in srgb, var(--al-sidebar-surface) 74%, transparent) !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 400 !important;
   }
 
@@ -533,12 +532,12 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 11px 0 0 !important;
-    padding: 11px 0 4px !important;
+    margin: 13px 0 0 !important;
+    padding: 12px 0 4px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
-    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 82%, transparent) !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 72%, transparent) !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -550,11 +549,11 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 10px 0 0 !important;
-    padding: 11px 0 0 !important;
-    gap: 2px !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
+    gap: 3px !important;
     border: 0 !important;
-    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 72%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools::before {
@@ -567,9 +566,9 @@
     margin: 0 10px 5px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
+    letter-spacing: 0.01em !important;
     line-height: 18px !important;
     text-transform: none !important;
   }
@@ -596,23 +595,23 @@
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"]) {
     background: var(--al-sidebar-active) !important;
     font-weight: 600 !important;
-    box-shadow: inset 2px 0 0 var(--al-sidebar-text) !important;
+    box-shadow: inset 1px 0 0 var(--al-sidebar-text) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu {
     flex: 0 0 auto !important;
-    margin: 10px 0 0 !important;
-    padding: 10px 0 0 !important;
-    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 84%, transparent) !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 72%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 42px !important;
-    padding: 6px 9px !important;
+    min-height: 44px !important;
+    padding: 7px 9px !important;
     gap: 8px !important;
     border: 1px solid transparent !important;
-    border-radius: 10px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 56%, transparent) !important;
+    border-radius: 9px !important;
+    background: var(--al-sidebar-surface) !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
@@ -637,7 +636,7 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 18px !important;
     flex: 0 0 auto !important;
-    margin: 4px 11px 0 44px !important;
+    margin: 5px 11px 0 44px !important;
     padding: 0 0 1px !important;
     border: 0 !important;
     background: transparent !important;
