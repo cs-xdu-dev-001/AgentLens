@@ -6,27 +6,27 @@
 :root {
   --sidebar-width: 272px;
   --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f7f7f4;
-  --al-sidebar-surface: #ffffff;
-  --al-sidebar-hover: #efefeb;
-  --al-sidebar-active: #e7e7e1;
-  --al-sidebar-divider: #deded8;
-  --al-sidebar-text: #20201e;
-  --al-sidebar-muted: #787872;
-  --al-sidebar-primary-bg: #20201e;
-  --al-sidebar-primary-text: #fffef9;
+  --al-sidebar-bg: #f4f4f0;
+  --al-sidebar-surface: #fbfbf8;
+  --al-sidebar-hover: #e9e9e4;
+  --al-sidebar-active: #deded8;
+  --al-sidebar-divider: #d5d5ce;
+  --al-sidebar-text: #1b1b19;
+  --al-sidebar-muted: #70706a;
+  --al-sidebar-primary-bg: #1c1c1a;
+  --al-sidebar-primary-text: #fafaf5;
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #171816;
-  --al-sidebar-surface: #222320;
-  --al-sidebar-hover: #292b28;
-  --al-sidebar-active: #30322e;
-  --al-sidebar-divider: #363832;
-  --al-sidebar-text: #efefe8;
+  --al-sidebar-bg: #151614;
+  --al-sidebar-surface: #1d1f1c;
+  --al-sidebar-hover: #272925;
+  --al-sidebar-active: #30332e;
+  --al-sidebar-divider: #343731;
+  --al-sidebar-text: #f0f0e9;
   --al-sidebar-muted: #aaa9a0;
-  --al-sidebar-primary-bg: #efefe8;
-  --al-sidebar-primary-text: #1f201c;
+  --al-sidebar-primary-bg: #f0f0e9;
+  --al-sidebar-primary-text: #1b1d1a;
 }
 
 /* Shared history controls, including the phone portal. */
@@ -377,7 +377,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 12px 12px 10px !important;
+    padding: 14px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -385,22 +385,22 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 42px !important;
+    min-height: 44px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 12px !important;
-    padding: 0 5px !important;
+    margin: 0 0 14px !important;
+    padding: 0 4px !important;
     gap: 10px !important;
     border: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex: 0 0 32px !important;
+    width: 34px !important;
+    height: 34px !important;
+    flex: 0 0 34px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
+    border-radius: 11px !important;
     background: var(--al-sidebar-surface) !important;
-    box-shadow: 0 1px 1px rgba(20, 20, 18, 0.04) !important;
+    box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .brand-copy strong {
@@ -446,14 +446,14 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 40px !important;
-    height: 40px !important;
-    margin-bottom: 10px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin-bottom: 12px !important;
     border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 70%, transparent) !important;
     border-radius: 10px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 1px 2px rgba(20, 20, 18, 0.1) !important;
+    box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
@@ -480,7 +480,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 2px !important;
+    gap: 1px !important;
     border: 0 !important;
   }
 
@@ -506,11 +506,12 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 14px 0 0 !important;
-    padding: 0 !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -522,8 +523,8 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 12px 0 0 !important;
-    padding: 12px 0 0 !important;
+    margin: 10px 0 0 !important;
+    padding: 14px 0 0 !important;
     gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
@@ -536,12 +537,12 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 10px 5px !important;
+    margin: 0 10px 6px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.01em !important;
+    letter-spacing: 0.04em !important;
     line-height: 18px !important;
     text-transform: none !important;
   }
@@ -559,19 +560,18 @@
 
   #sidebar.sidebar-workbench .user-menu {
     flex: 0 0 auto !important;
-    margin: 12px 0 0 !important;
-    padding: 9px 0 0 !important;
+    margin: 10px 0 0 !important;
+    padding: 12px 0 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 44px !important;
+    min-height: 42px !important;
     padding: 7px 10px !important;
     gap: 10px !important;
-    border: 0 !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
-    background: var(--al-sidebar-surface) !important;
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+    background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
@@ -596,7 +596,7 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 20px !important;
     flex: 0 0 auto !important;
-    margin: 4px 10px 0 !important;
+    margin: 5px 10px 0 !important;
     padding: 0 0 2px !important;
     border: 0 !important;
     background: transparent !important;
