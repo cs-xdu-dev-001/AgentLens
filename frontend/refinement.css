@@ -7582,9 +7582,46 @@ body.sidebar-collapsed .sidebar {
     align-self: start;
   }
 
-  #page-knowledge .knowledge-shell:has(.kb-empty) .document-table-panel,
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-table-panel {
+    min-height: 0 !important;
+  }
+
   #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
-    min-height: 284px !important;
+    min-height: 184px !important;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 3px;
+    padding: 22px 24px !important;
+    border: 1px dashed var(--control-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface-soft) 58%, var(--surface));
+    text-align: left;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured .document-empty-icon {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured h3 {
+    margin: 0;
+    font-size: 15px;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured p {
+    margin: 0;
+    max-width: 46ch;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured button {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    margin: 0;
   }
 }
 
