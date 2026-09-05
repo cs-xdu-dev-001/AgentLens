@@ -1572,3 +1572,167 @@
     display: contents !important;
   }
 }
+
+/* Sidebar finish: keep the rail quiet, but make its hierarchy unmistakable. */
+.session-list-loading {
+  justify-content: flex-start !important;
+  min-height: 40px !important;
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  color: var(--al-muted) !important;
+}
+
+.session-list-loading svg {
+  flex: 0 0 auto;
+  animation: session-refresh-spin 1s linear infinite;
+}
+
+@media (min-width: 761px) {
+  #sidebar.sidebar-workbench {
+    width: 272px !important;
+    padding: 12px 12px 10px !important;
+    background: color-mix(in srgb, var(--al-rail) 97%, var(--al-ink) 3%) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 38px !important;
+    margin-bottom: 12px !important;
+    padding: 0 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-mark {
+    width: 29px !important;
+    height: 29px !important;
+    flex-basis: 29px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-copy strong {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button {
+    min-height: 40px !important;
+    height: 40px !important;
+    margin-bottom: 8px !important;
+    border-radius: 10px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-utility-tools {
+    gap: 1px !important;
+  }
+
+  #sidebar.sidebar-workbench .command-palette-trigger,
+  #sidebar.sidebar-workbench .pending-approvals-trigger {
+    min-height: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell {
+    margin-top: 12px !important;
+    padding-top: 9px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs {
+    min-height: 30px !important;
+    gap: 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-scope-tabs button {
+    min-height: 30px !important;
+    padding: 0 9px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-search input {
+    min-height: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-list.chat-history-list {
+    padding-top: 2px !important;
+  }
+
+  #sidebar.sidebar-workbench .empty-state,
+  #sidebar.sidebar-workbench .session-list-feedback {
+    margin: 4px 0 0 !important;
+    padding: 10px 12px !important;
+    color: var(--al-muted) !important;
+    font-size: 12px !important;
+  }
+
+  #sidebar.sidebar-workbench .history-group-title {
+    padding: 12px 10px 4px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row {
+    min-height: 38px !important;
+    margin: 1px 0 !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench :is(.session-row, .session-row.completed, .session-row.cancelled) .sidebar-list-item {
+    min-height: 38px !important;
+    padding: 6px 10px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .session-row.active {
+    box-shadow: inset 2px 0 0 var(--al-ink-soft) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools {
+    margin-top: auto !important;
+    padding-top: 12px !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-section-label {
+    display: block !important;
+    padding: 0 10px 5px !important;
+    color: var(--al-muted) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
+    min-height: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool.active {
+    background: var(--al-sidebar-active) !important;
+    color: var(--al-ink) !important;
+    box-shadow: inset 2px 0 0 var(--al-ink-soft) !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu {
+    margin-top: 8px !important;
+    padding-top: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .user-menu-button {
+    min-height: 38px !important;
+    border-radius: 9px !important;
+  }
+
+  #sidebar.sidebar-workbench .runtime-card {
+    margin-top: 2px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-list-loading svg {
+    animation: none !important;
+  }
+}

@@ -1301,8 +1301,9 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
         onKeyDown={handleSessionListKeyDown}
       >
         {loadingSessions && !sessions.length ? (
-          <div className={"session-list-skeleton"} aria-label={"正在加载任务"}>
-            {[0, 1, 2].map((item) => <span key={item} />)}
+          <div className={"session-list-feedback session-list-loading"} role={"status"} aria-label={"正在加载任务"}>
+            <RefreshCw size={14} strokeWidth={1.8} aria-hidden={"true"} />
+            <span>{"同步任务…"}</span>
           </div>
         ) : sessionLoadFailed && !sessions.length ? (
           <div className={"session-list-feedback"}>
