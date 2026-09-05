@@ -5313,6 +5313,42 @@ select:focus {
   }
 }
 
+/* Mobile empty chat finish: keep the task context and workspace entry on one
+   readable axis instead of turning the welcome state into a stacked banner. */
+@media (min-width: 361px) and (max-width: 760px) {
+  #page-chat.chat-empty .welcome-card {
+    position: relative;
+    top: -12px;
+  }
+
+  #page-chat.chat-empty .welcome-heading {
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
+    min-height: 40px;
+    padding: 0 2px 9px;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 18px !important;
+  }
+
+  #page-chat.chat-empty .welcome-context {
+    flex: 0 0 auto;
+    min-height: 32px;
+    margin-left: 0;
+    padding-inline: 3px;
+    font-size: 12px;
+  }
+
+  #page-chat.chat-empty .welcome-action {
+    min-height: 46px;
+    padding-block: 8px !important;
+  }
+}
+
 /* Final workbench detail finish. template.css is loaded after refinement.css,
    so keep the same narrow-sheet and tab rules here to preserve the intended
    cascade when the generated asset is refreshed. */
