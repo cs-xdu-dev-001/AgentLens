@@ -61,6 +61,17 @@ function preferredStep(rows) {
   );
 }
 
+const ACTIVE_TRACE_RUN_STATUSES = new Set([
+  "queued",
+  "pending",
+  "planning",
+  "running",
+  "waiting",
+  "waiting_approval",
+  "waiting_input",
+  "waiting_start",
+]);
+
 export function AgentTraceView({
   trace = [],
   messageId = "",
@@ -250,9 +261,19 @@ export function AgentTraceView({
   };
 
   if (!rows.length) {
+    const runStatus = String(
+      run?.runSummary?.status
+      || run?.status
+      || "",
+    ).toLowerCase();
+    const activeRun = ACTIVE_TRACE_RUN_STATUSES.has(runStatus);
     return (
-      <p className={"empty-state"}>
-        {"本次回答没有Agent运行记录。"}
+      <p className={"empty-state"} aria-live={"polite"}>
+        {activeRun
+          ? "正在等待Agent事件…"
+          : runStatus
+            ? "运行已结束，但没有可展示的过程记录。"
+            : "本次回答没有Agent运行记录。"}
       </p>
     );
   }
