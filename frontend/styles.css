@@ -15379,8 +15379,9 @@ select {
   }
 
   .composer-model-popover {
-    left: -60px;
-    width: min(320px, calc(100vw - 32px));
+    left: auto;
+    right: -57px;
+    width: min(350px, calc(100vw - 24px));
   }
 
   .composer-model-search input {
@@ -15950,8 +15951,14 @@ select {
   }
 
   .composer-permission-popover {
-    right: -112px;
+    right: -164px;
     width: min(350px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 360px) {
+  .composer-permission-popover {
+    right: -111px;
   }
 }
 

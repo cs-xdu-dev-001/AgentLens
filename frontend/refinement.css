@@ -815,6 +815,25 @@ body {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
 }
 
+@media (max-width: 520px) {
+  #chat-form.composer .composer-model-popover {
+    left: auto !important;
+    right: -57px !important;
+    width: min(350px, calc(100vw - 24px)) !important;
+  }
+
+  #chat-form.composer .composer-permission-popover {
+    right: -164px !important;
+    width: min(350px, calc(100vw - 24px)) !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #chat-form.composer .composer-permission-popover {
+    right: -111px !important;
+  }
+}
+
 .composer-reasoning-section {
   display: grid;
   gap: 8px;
