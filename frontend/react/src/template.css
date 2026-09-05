@@ -10178,3 +10178,78 @@ select:focus {
     display: none !important;
   }
 }
+
+/* Tools mobile: use one continuous work surface instead of stacked cards. */
+@media (max-width: 760px) {
+  #page-tools .tools-content {
+    gap: 0 !important;
+    padding: 8px 16px 28px !important;
+  }
+
+  #page-tools .tools-overview {
+    min-height: 0 !important;
+    margin: 0 0 18px !important;
+    border: 0 !important;
+    border-top: 1px solid var(--al-line) !important;
+    border-bottom: 1px solid var(--al-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  #page-tools .tools-overview > div {
+    padding: 11px 12px !important;
+  }
+
+  #page-tools :where(#tool-config-form, .tool-inventory, .mcp-panel) {
+    margin: 0 !important;
+    border: 0 !important;
+    border-top: 1px solid var(--al-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  #page-tools .tool-inventory {
+    padding-bottom: 8px !important;
+  }
+
+  #page-tools #tool-config-form {
+    overflow: visible !important;
+  }
+
+  #page-tools #tool-config-form .panel-title,
+  #page-tools .tool-inventory > .panel-title,
+  #page-tools .mcp-panel-heading {
+    min-height: 52px !important;
+    padding: 0 !important;
+    border-bottom: 0 !important;
+  }
+
+  #page-tools .tool-inventory-row {
+    min-height: 72px !important;
+    padding: 8px 0 14px !important;
+  }
+
+  #page-tools #tool-config-form .form-grid {
+    padding: 0 0 14px !important;
+  }
+
+  #page-tools #tool-config-form .tool-enabled-toggle {
+    background: var(--al-surface-soft) !important;
+  }
+
+  #page-tools #tool-config-form .button-row {
+    padding: 0 0 18px !important;
+  }
+
+  #page-tools .mcp-panel {
+    padding-bottom: 16px !important;
+  }
+
+  #page-tools .mcp-notion-preset {
+    margin: 8px 0 0 !important;
+  }
+
+  #page-tools .mcp-server-card {
+    padding-inline: 0 !important;
+  }
+}
