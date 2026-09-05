@@ -8391,3 +8391,125 @@ body.sidebar-collapsed .sidebar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+/* Final chat empty-state polish: flatten the suggestion rail after the
+   legacy surface layers so the last rule remains the visual authority. */
+#page-chat.chat-empty .welcome-card {
+  width: min(680px, calc(100% - 32px)) !important;
+  gap: 14px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#page-chat.chat-empty .welcome-heading {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 0 2px 12px !important;
+  border-bottom: 1px solid var(--control-border) !important;
+}
+
+#page-chat.chat-empty .welcome-card h2 {
+  font-size: clamp(22px, 1.8vw, 26px) !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.02em !important;
+}
+
+#page-chat.chat-empty .welcome-context {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: 48% !important;
+  padding: 3px 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text-soft) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+#page-chat.chat-empty .welcome-actions {
+  display: grid !important;
+  gap: 0 !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--control-border) !important;
+}
+
+#page-chat.chat-empty .welcome-action {
+  min-height: 48px !important;
+  padding: 0 2px !important;
+  border: 0 !important;
+  border-top: 1px solid var(--control-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+#page-chat.chat-empty .welcome-action-icon {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: 7px !important;
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface)) !important;
+  color: var(--accent-strong, var(--accent)) !important;
+}
+
+#page-chat.chat-empty .welcome-action-label {
+  font-size: 14px !important;
+  font-weight: 550 !important;
+}
+
+#page-chat.chat-empty .welcome-action-arrow {
+  color: var(--muted) !important;
+}
+
+@media (hover: hover) {
+  #page-chat.chat-empty .welcome-context:hover,
+  #page-chat.chat-empty .welcome-action:hover {
+    background: color-mix(in srgb, var(--control-bg-hover) 74%, transparent) !important;
+  }
+
+  #page-chat.chat-empty .welcome-action:hover .welcome-action-arrow {
+    margin-left: 2px;
+  }
+}
+
+#page-chat.chat-empty .welcome-shortcuts {
+  justify-content: flex-start !important;
+  padding: 0 2px !important;
+  color: var(--muted) !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat.chat-empty .welcome-card {
+    width: calc(100% - 32px) !important;
+  }
+
+  #page-chat.chat-empty .welcome-heading {
+    align-items: center !important;
+    gap: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    font-size: 21px !important;
+  }
+
+  #page-chat.chat-empty .welcome-context {
+    max-width: 52% !important;
+    font-size: 12px !important;
+  }
+
+  #page-chat.chat-empty .welcome-action {
+    min-height: 46px !important;
+  }
+
+  #page-chat.chat-empty .welcome-shortcuts {
+    display: none !important;
+  }
+}
