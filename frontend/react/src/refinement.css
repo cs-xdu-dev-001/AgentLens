@@ -4934,6 +4934,27 @@ body.sidebar-collapsed .sidebar {
     min-height: 44px !important;
   }
 
+  #page-chat .chat-topbar #inspector-toggle::before,
+  #page-chat .chat-topbar #inspector-toggle::after {
+    content: none !important;
+  }
+
+  #page-chat .chat-topbar #inspector-toggle > span:not(.chat-run-dot) {
+    display: none !important;
+  }
+
+  #page-chat .chat-topbar .chat-workspace-toggle {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    justify-content: center !important;
+    padding-inline: 0 !important;
+  }
+
+  #page-chat .chat-topbar .chat-workspace-label {
+    display: none !important;
+  }
+
   /* Keep the current task visible on narrow empty chats; the actions may
      shrink, but the user's working context should not disappear. */
   #page-chat.chat-empty .chat-topbar {
