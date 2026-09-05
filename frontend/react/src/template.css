@@ -6862,6 +6862,216 @@ select:focus {
   }
 }
 
+/* Chat workbench finish: align the chrome with the quiet command-rail
+   language, then let the composer read as one continuous control. */
+#page-chat .chat-topbar {
+  min-height: 54px !important;
+  padding: 0 18px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--al-line) 72%, transparent) !important;
+  background: color-mix(in srgb, var(--al-canvas) 92%, transparent) !important;
+}
+
+#page-chat .chat-session-heading {
+  min-width: 0 !important;
+  gap: 8px !important;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(52vw, 520px) !important;
+  color: var(--al-ink) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+
+#page-chat .chat-session-switching {
+  padding: 3px 7px !important;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 999px !important;
+  color: var(--al-muted) !important;
+  font-size: 10px !important;
+}
+
+#page-chat .chat-topbar-actions {
+  gap: 6px !important;
+}
+
+#page-chat .chat-topbar-actions > :is(button, [data-radix-tooltip-trigger]) {
+  min-width: 34px !important;
+  height: 34px !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: var(--al-muted) !important;
+}
+
+#page-chat .chat-topbar-actions > :is(button, [data-radix-tooltip-trigger]):hover,
+#page-chat .chat-topbar-actions > :is(button, [data-radix-tooltip-trigger]):focus-visible {
+  border-color: var(--al-line) !important;
+  background: var(--al-surface-soft) !important;
+  color: var(--al-ink) !important;
+}
+
+#page-chat .chat-workspace-toggle,
+#page-chat .chat-run-toggle {
+  max-width: min(220px, 28vw) !important;
+  padding: 0 10px !important;
+  gap: 7px !important;
+  border-color: var(--al-line) !important;
+  background: var(--al-surface-raised) !important;
+  color: var(--al-ink-soft) !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+#page-chat .chat-workspace-toggle:hover,
+#page-chat .chat-run-toggle:hover {
+  border-color: var(--al-line-strong) !important;
+  background: var(--al-surface-soft) !important;
+}
+
+#page-chat .chat-workspace-label {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#page-chat .chat-workspace-toggle::after {
+  width: 6px !important;
+  height: 6px !important;
+  flex: 0 0 6px !important;
+  margin-left: 1px !important;
+}
+
+#page-chat #inspector-toggle.is-running,
+#page-chat #inspector-toggle.is-waiting,
+#page-chat #inspector-toggle.is-failed {
+  border-color: color-mix(in srgb, var(--al-accent) 38%, var(--al-line)) !important;
+  background: color-mix(in srgb, var(--al-accent-soft) 64%, var(--al-surface-raised)) !important;
+  color: var(--al-ink) !important;
+}
+
+#page-chat #chat-form.composer {
+  padding: 12px 18px max(16px, env(safe-area-inset-bottom)) !important;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  width: min(100%, 900px) !important;
+  margin: 0 auto !important;
+  border: 1px solid var(--al-line-strong) !important;
+  border-radius: 16px !important;
+  background: var(--al-surface-raised) !important;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--al-ink) 9%, transparent) !important;
+}
+
+#page-chat #chat-form.composer .composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--al-accent) 48%, var(--al-line-strong)) !important;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--al-ink) 9%, transparent), 0 0 0 3px color-mix(in srgb, var(--al-accent) 9%, transparent) !important;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea {
+  min-height: 46px !important;
+  padding: 8px 0 !important;
+  color: var(--al-ink) !important;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea::placeholder {
+  color: var(--al-muted) !important;
+}
+
+#page-chat #chat-form.composer .composer-control-strip {
+  gap: 3px !important;
+}
+
+#page-chat #chat-form.composer .composer-control-strip button {
+  min-height: 32px !important;
+  border-radius: 8px !important;
+  color: var(--al-muted) !important;
+  font-size: 12px !important;
+}
+
+#page-chat #chat-form.composer .composer-control-strip button:hover,
+#page-chat #chat-form.composer .composer-control-strip button:focus-visible {
+  background: var(--al-surface-soft) !important;
+  color: var(--al-ink) !important;
+}
+
+#page-chat #chat-form.composer .composer-send-button {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border-radius: 11px !important;
+  background: var(--al-ink) !important;
+  color: var(--al-surface-raised) !important;
+}
+
+#page-chat #chat-form.composer .composer-send-button:hover:not(:disabled) {
+  background: var(--al-ink-soft) !important;
+  transform: translateY(-1px) !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    min-height: 48px !important;
+    padding: 0 10px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: 38vw !important;
+    font-size: 13px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 3px !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(button, [data-radix-tooltip-trigger]) {
+    min-width: 32px !important;
+    height: 32px !important;
+  }
+
+  #page-chat .chat-workspace-toggle,
+  #page-chat .chat-run-toggle {
+    max-width: 40px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+
+  #page-chat .chat-workspace-toggle .chat-workspace-label {
+    display: none !important;
+  }
+
+  #page-chat #chat-form.composer {
+    padding: 8px 10px max(12px, env(safe-area-inset-bottom)) !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    border-radius: 14px !important;
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--al-ink) 10%, transparent) !important;
+  }
+
+  #page-chat #chat-form.composer .composer-input-stack textarea {
+    min-height: 42px !important;
+    font-size: 14px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-send-button {
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat #chat-form.composer .composer-send-button:hover:not(:disabled) {
+    transform: none !important;
+  }
+}
+
 @media (max-width: 760px) {
   #sidebar,
   #sidebar.collapsed,
