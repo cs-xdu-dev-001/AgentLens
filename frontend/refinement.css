@@ -6391,7 +6391,7 @@ body.sidebar-collapsed .sidebar {
 
   #page-chat .message-actions {
     min-height: 40px;
-    opacity: 0.72;
+    opacity: 0.9;
     translate: 0 0;
   }
 
@@ -6400,6 +6400,7 @@ body.sidebar-collapsed .sidebar {
     min-width: 40px;
     height: 40px;
     min-height: 40px;
+    color: var(--text-soft);
   }
 
   #page-chat #chat-form.composer .composer-shell {
