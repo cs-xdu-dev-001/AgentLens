@@ -89,6 +89,11 @@ try {
   await welcomeActions.getByRole("button", { name: "梳理项目结构", exact: true }).focus();
   assert.notEqual(await page.locator(".welcome-action:focus-visible").evaluate((node) => getComputedStyle(node).outlineStyle), "none");
   await composer.focus();
+  const composerFocus = await page.locator("#chat-form .composer-shell").evaluate((node) => ({
+    border: getComputedStyle(node).borderTopColor,
+    shadow: getComputedStyle(node).boxShadow,
+  }));
+  assert.doesNotMatch(composerFocus.shadow, /var\(--al-accent\)|rgb\(.*(?:217|222|239).*?\)/i);
   if (process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH) {
     await page.screenshot({ path: process.env.AGENTLENS_EMPTY_DESKTOP_SCREENSHOT_PATH, fullPage: true });
   }
