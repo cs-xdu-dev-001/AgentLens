@@ -7090,6 +7090,13 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Once the composer owns an active queue or run state, onboarding is no
+   longer the primary task. Removing the welcome rail prevents it from being
+   covered by the taller execution controls on short viewports. */
+#page-chat.chat-empty:has(#chat-form .composer-queue, #chat-form .composer-agent-state, #chat-form .composer-follow-up) .welcome-card {
+  display: none !important;
+}
+
 /* Knowledge empty-state finish: the rail only reports list state while the
    document workspace owns the next action. This removes the stacked empty
    cards without changing creation, upload, retrieval, or selection flows. */
