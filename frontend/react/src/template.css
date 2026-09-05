@@ -5371,17 +5371,6 @@ select:focus {
     max-height: 174px !important;
   }
 
-  #page-chat .agent-tool-console {
-    height: min(300px, calc(100dvh - 350px));
-    min-height: 240px;
-    grid-template-rows: auto auto minmax(124px, 1fr) auto;
-  }
-
-  #page-chat .agent-tool-console-scroll {
-    min-height: 124px;
-    max-height: none;
-  }
-
   .agent-recovery-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

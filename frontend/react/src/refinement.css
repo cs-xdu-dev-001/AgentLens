@@ -2175,8 +2175,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-tool-output-status.running {
-  background: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+  background: var(--warning);
 }
 
 .agent-tool-output-call-copy {
@@ -2193,13 +2192,13 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-tool-output-call-copy strong {
-  font-size: 13px;
-  font-weight: 680;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .agent-tool-output-call-copy small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .agent-tool-output-chevron {
@@ -2215,14 +2214,22 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-tool-console {
-  min-height: 330px;
-  display: grid;
-  grid-template-rows: auto auto minmax(220px, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--control-border);
   border-radius: var(--kf-radius-panel);
-  background: #0d121a;
-  color: #e5edf7;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+.agent-tool-console-header,
+.agent-tool-console-command,
+.agent-tool-console-footer {
+  flex: 0 0 auto;
 }
 
 .agent-tool-console-header {
@@ -2232,8 +2239,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   justify-content: space-between;
   gap: 10px;
   padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-  background: #111823;
+  border-bottom: 1px solid var(--control-border);
+  background: var(--panel-bg-soft);
 }
 
 .agent-tool-console-header > div:first-child {
@@ -2245,28 +2252,28 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .agent-tool-console-header strong {
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 680;
+  font-size: 14px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .agent-tool-console-state {
   flex: 0 0 auto;
-  color: #94a3b8;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .agent-tool-console-state.success {
-  color: #86efac;
+  color: var(--success);
 }
 
 .agent-tool-console-state.danger {
-  color: #fca5a5;
+  color: var(--danger);
 }
 
 .agent-tool-console-state.running {
-  color: #93c5fd;
+  color: var(--warning);
 }
 
 .agent-tool-console-actions {
@@ -2277,14 +2284,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .agent-tool-console-actions button {
   min-width: 44px;
-  min-height: 32px;
+  min-height: 36px;
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-soft);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   transition:
     transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -2293,11 +2300,10 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     color 120ms ease;
 }
 
-.agent-tool-console-actions button.is-active,
-.agent-tool-console-actions button:hover:not(:disabled) {
-  border-color: rgba(148, 163, 184, 0.2);
-  background: rgba(148, 163, 184, 0.1);
-  color: #e5edf7;
+.agent-tool-console-actions button.is-active {
+  border-color: var(--control-border);
+  background: var(--panel-bg);
+  color: var(--text);
 }
 
 .agent-tool-console-actions button:active:not(:disabled) {
@@ -2315,14 +2321,14 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   grid-template-columns: 12px minmax(0, 1fr);
   gap: 7px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  background: #0f1620;
-  color: #cbd5e1;
-  font: 12px/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  border-bottom: 1px solid var(--control-border);
+  background: var(--panel-bg-soft);
+  color: var(--text-soft);
+  font: 14px/1.6 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
 
 .agent-tool-console-command > span {
-  color: #60a5fa;
+  color: var(--muted);
 }
 
 .agent-tool-console-command code {
@@ -2331,11 +2337,13 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 }
 
 .agent-tool-console-scroll {
-  min-height: 220px;
+  min-width: 0;
+  min-height: 0;
   max-height: min(52vh, 520px);
   overflow: auto;
   padding: 12px;
-  scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .agent-tool-console-section + .agent-tool-console-section {
@@ -2345,66 +2353,67 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 .agent-tool-console-section > span {
   display: block;
   margin-bottom: 6px;
-  color: #64748b;
-  font: 10px/1.2 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .agent-tool-console-section.warning > span {
-  color: #fbbf24;
+  color: var(--warning);
 }
 
 .agent-tool-console-section.danger > span {
-  color: #fb7185;
+  color: var(--danger);
 }
 
 .agent-tool-console-section pre {
   max-width: 100%;
   margin: 0;
   overflow: visible;
-  color: #dbe6f3;
-  font: 12px/1.62 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  color: var(--text);
+  font: 14px/1.65 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   overflow-wrap: anywhere;
   tab-size: 2;
   white-space: pre-wrap;
 }
 
 .agent-tool-console-section.warning pre {
-  color: #fde68a;
+  color: var(--text);
 }
 
 .agent-tool-console-section.danger pre {
-  color: #fecdd3;
+  color: var(--danger);
 }
 
 .agent-tool-console-empty {
-  min-height: 196px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: #64748b;
-  font-size: 12px;
+  color: var(--text-soft);
+  font-size: 14px;
 }
 
 .agent-tool-console-empty i {
   width: 6px;
   height: 14px;
-  background: #60a5fa;
+  background: var(--warning);
   animation: agent-output-cursor 900ms steps(1, end) infinite;
 }
 
 .agent-tool-console-footer {
-  min-height: 30px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 0 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-  color: #64748b;
-  font: 10px/1 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  border-top: 1px solid var(--control-border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .agent-tool-output-empty {
@@ -2437,6 +2446,12 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 @media (hover: hover) {
   .agent-tool-output-call:hover:not(.is-active) {
     background: var(--control-bg-hover);
+  }
+
+  .agent-tool-console-actions button:hover:not(:disabled) {
+    border-color: var(--control-border);
+    background: var(--panel-bg);
+    color: var(--text);
   }
 }
 
@@ -2900,12 +2915,8 @@ body.sidebar-collapsed .sidebar .user-menu-button {
     padding-inline: 10px;
   }
 
-  .agent-tool-console {
-    min-height: 300px;
-  }
-
   .agent-tool-console-scroll {
-    max-height: 46vh;
+    max-height: min(46dvh, 360px);
   }
 
   .agent-trace-row {
@@ -6614,17 +6625,6 @@ body.sidebar-collapsed .sidebar {
 
   #page-chat .agent-tool-output-list {
     max-height: 174px !important;
-  }
-
-  #page-chat .agent-tool-console {
-    height: min(300px, calc(100dvh - 350px));
-    min-height: 240px;
-    grid-template-rows: auto auto minmax(124px, 1fr) auto;
-  }
-
-  #page-chat .agent-tool-console-scroll {
-    min-height: 124px;
-    max-height: none;
   }
 
   .agent-recovery-metrics {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { mergeMemoryActivityTrace } from "../controller/memoryActivity.js";
 import { AgentApprovalPrompt } from "./AgentApprovalPrompt.jsx";
@@ -114,6 +114,7 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
   const virtuosoRef = useRef(null);
   const focusFrameRef = useRef(null);
   const copyTimerRef = useRef(null);
+  const copyRequestRef = useRef(0);
   const selectedIndex = presentations.findIndex((item) => item.id === selectedId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : presentations.length - 1;
   const selected = activeIndex >= 0 ? presentations[activeIndex] : null;
@@ -133,8 +134,15 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [autoFollow, selected?.copyText]);
 
+  useEffect(() => {
+    setCopyState("idle");
+    return () => {
+      copyRequestRef.current += 1;
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    };
+  }, [selected?.id]);
+
   useEffect(() => () => {
-    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
     if (focusFrameRef.current) window.cancelAnimationFrame(focusFrameRef.current);
   }, []);
 
@@ -188,8 +196,10 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
 
   const copyOutput = async () => {
     if (!selected?.copyText) return;
+    const request = ++copyRequestRef.current;
     try {
       await navigator.clipboard.writeText(selected.copyText);
+      if (request !== copyRequestRef.current) return;
       if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
       setCopyState("copied");
       copyTimerRef.current = window.setTimeout(() => {
@@ -197,6 +207,7 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
         setCopyState("idle");
       }, 1_600);
     } catch {
+      if (request !== copyRequestRef.current) return;
       setCopyState("error");
     }
   };
@@ -722,9 +733,7 @@ export function ChatEvidenceDrawer() {
       >
         <AgentRunSummary messageId={messageId} trace={trace} run={run} />
         <button className={"icon-button"} id={"inspector-close"} type={"button"} title={"收起运行面板"} aria-label={"收起运行面板"} onClick={handleDrawerClose}>
-          <svg viewBox={"0 0 24 24"} aria-hidden={"true"} focusable={"false"}>
-            <path d={"M6 6l12 12M18 6 6 18"} fill={"none"} stroke={"currentColor"} strokeWidth={"2"} strokeLinecap={"round"} />
-          </svg>
+          <X size={18} strokeWidth={1.8} aria-hidden={"true"} focusable={"false"} />
         </button>
       </div>
       <div

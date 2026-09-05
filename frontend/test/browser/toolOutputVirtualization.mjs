@@ -50,6 +50,33 @@ async function waitForConsoleText(text) {
   ), text);
 }
 
+async function assertCompactConsole() {
+  const dimensions = await page.locator(".agent-tool-console").evaluate((node) => {
+    const scroll = node.querySelector(".agent-tool-console-scroll");
+    const footer = node.querySelector(".agent-tool-console-footer");
+    return {
+      height: node.getBoundingClientRect().height,
+      footerHeight: footer.getBoundingClientRect().height,
+      outputFontSize: parseFloat(getComputedStyle(scroll.querySelector("pre")).fontSize),
+      labelFontSize: parseFloat(getComputedStyle(scroll.querySelector("span")).fontSize),
+    };
+  });
+  assert.ok(dimensions.height < 230, `two-line output should stay compact: ${JSON.stringify(dimensions)}`);
+  assert.ok(dimensions.footerHeight < 48, `metadata must not occupy a flexible content row: ${JSON.stringify(dimensions)}`);
+  assert.ok(dimensions.outputFontSize >= 14, JSON.stringify(dimensions));
+  assert.ok(dimensions.labelFontSize >= 12, JSON.stringify(dimensions));
+  const closeIcon = await page.locator("#inspector-close svg").boundingBox();
+  assert.ok(closeIcon && closeIcon.width <= 20 && closeIcon.height <= 20, JSON.stringify(closeIcon));
+}
+
+async function updateToolOutput(call) {
+  await page.evaluate((toolCall) => {
+    window.dispatchEvent(new CustomEvent("knowflow:react-tool-timeline-updated", {
+      detail: { messageId: "message-tool-output", toolCalls: toolCall ? [toolCall] : [] },
+    }));
+  }, call);
+}
+
 try {
   await page.goto(baseUrl);
   await page.getByRole("textbox", { name: "消息", exact: true }).waitFor({ state: "visible" });
@@ -146,6 +173,7 @@ try {
         `${name} should not overflow horizontally`,
       );
     }
+    await assertCompactConsole();
     await screenshot("tool-output-desktop.png");
 
     await page.setViewportSize({ width: 375, height: 812 });
@@ -156,14 +184,111 @@ try {
       assert.equal(await locator.evaluate((node) => node.scrollWidth > node.clientWidth + 1), false);
     }
     assert.ok(await toolList.locator('[data-workbench-item="tool"]').count() < 120);
+    await assertCompactConsole();
     await screenshot("tool-output-mobile.png");
+
+    for (const [width, height, theme] of [
+      [1440, 960, "mono-light"],
+      [1280, 800, "mono-dark"],
+      [390, 844, "mono-dark"],
+      [375, 812, "mono-light"],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+      // Panel layout reacts to the breakpoint on the next render.
+      await page.waitForFunction(() => {
+        const console = document.querySelector(".agent-tool-console");
+        return console && console.getBoundingClientRect().height < 230;
+      }, undefined, { timeout: 2_000 });
+      await assertCompactConsole();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await screenshot(`tool-output-${width}-${theme}.png`);
+    }
+
+    const longTool = {
+      toolCallId: "call-1000",
+      toolName: "读取用于检查国际化布局的超长工具名称".repeat(4),
+      status: "running",
+      arguments: { command: `node scripts/check-workspace.mjs --path=${"workspace/".repeat(14)}`, token: "SECRET_FIXTURE_VALUE" },
+      stdout: Array.from({ length: 400 }, (_, index) => `line-${index + 1}: 正在检查工作区文件与测试结果`).join("\n"),
+    };
+    await updateToolOutput(longTool);
+    await waitForConsoleText("line-400:");
+    const scroll = page.locator(".agent-tool-console-scroll");
+    await page.waitForFunction(() => {
+      const node = document.querySelector(".agent-tool-console-scroll");
+      return node.scrollHeight > node.clientHeight + 100
+        && node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+    });
+    assert.equal(await page.locator(".agent-tool-console").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+    assert.equal(await page.locator(".agent-tool-console-footer").evaluate((node) => node.getBoundingClientRect().height < 48), true);
+    await scroll.focus();
+    await scroll.press("Control+Home");
+    const followButton = page.locator(".agent-tool-console-actions").getByRole("button", { name: "跟随", exact: true });
+    await page.waitForFunction(() => (
+      document.querySelector(".agent-tool-console-actions button")?.getAttribute("aria-pressed") === "false"
+    ));
+    await page.waitForFunction(() => document.querySelector(".agent-tool-console-scroll").scrollTop < 1);
+    const readPosition = await scroll.evaluate((node) => node.scrollTop);
+    longTool.stdout += "\nline-401: 新增输出，不打断上文阅读";
+    await updateToolOutput(longTool);
+    await waitForConsoleText("line-401:");
+    assert.ok(Math.abs(await scroll.evaluate((node) => node.scrollTop) - readPosition) < 2);
+    await followButton.click();
+    await page.waitForFunction(() => {
+      const node = document.querySelector(".agent-tool-console-scroll");
+      return node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+    });
+    await screenshot("tool-output-mobile-long.png");
+
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseUrl });
+    await page.locator(".agent-tool-console-actions").getByRole("button", { name: "复制", exact: true }).click();
+    await page.getByRole("button", { name: "已复制", exact: true }).waitFor();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.match(copied, /line-401:/);
+    assert.match(copied, /\$ node scripts\/check-workspace.mjs/);
+    assert.doesNotMatch(copied, /SECRET_FIXTURE_VALUE/);
+
+    await updateToolOutput({ toolCallId: "waiting", toolName: "run_sandbox_command", status: "running" });
+    await page.getByText("等待输出", { exact: true }).waitFor();
+    assert.equal(await page.locator(".agent-tool-console-actions").getByRole("button", { name: "复制", exact: true }).isDisabled(), true);
+    await screenshot("tool-output-mobile-waiting.png");
+    await updateToolOutput({ toolCallId: "waiting", toolName: "run_sandbox_command", status: "completed", exitCode: 0 });
+    await page.getByText("没有可显示的输出", { exact: true }).waitFor();
+    await page.getByText("退出码 0", { exact: true }).waitFor();
+    assert.equal(await page.locator(".agent-tool-console-actions button").last().isDisabled(), true);
+
+    await updateToolOutput({
+      toolCallId: "failed",
+      toolName: "run_sandbox_command",
+      status: "failed",
+      stderr: "无法读取工作区文件，请检查路径是否存在。",
+      errorMessage: "工作区路径不可用",
+      exitCode: 1,
+    });
+    await page.getByText("工作区路径不可用", { exact: true }).waitFor();
+    await page.getByText("退出码 1", { exact: true }).waitFor();
+    assert.equal(await page.locator(".agent-tool-console-actions").getByRole("button", { name: "复制", exact: true }).isEnabled(), true);
+    await screenshot("tool-output-mobile-error.png");
+
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => new Promise((resolve) => { window.finishToolCopy = resolve; });
+    });
+    await page.locator(".agent-tool-console-actions").getByRole("button", { name: "复制", exact: true }).click();
+    await page.waitForFunction(() => typeof window.finishToolCopy === "function");
+    await updateToolOutput({ toolCallId: "next", toolName: "read_workspace_file", status: "completed", output: "切换后的工具结果" });
+    await waitForConsoleText("切换后的工具结果");
+    await page.evaluate(() => window.finishToolCopy());
+    assert.equal(await page.locator(".agent-tool-console-actions").getByRole("button", { name: "复制", exact: true }).count(), 1);
+    await updateToolOutput(null);
+    await page.getByText("还没有工具输出", { exact: true }).waitFor();
   }
 
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);
   console.log(measureOnly
     ? "tool output performance measured"
-    : "tool output browser checks passed: bounded DOM, logical keyboard navigation and 375px layout");
+    : "tool output browser checks passed: bounded DOM, keyboard navigation, compact adaptive layout, themes, long-output follow, copy, waiting and error states");
 } catch (error) {
   console.error({ errors, page: (await page.locator("body").innerText()).slice(0, 2400) });
   throw error;
