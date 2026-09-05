@@ -5661,7 +5661,7 @@ select:focus {
   #page-chat.chat-empty .messages {
     align-items: stretch !important;
     justify-content: flex-start !important;
-    padding: clamp(72px, 14vh, 116px) 12px 24px !important;
+    padding: clamp(88px, 17vh, 144px) 12px 24px !important;
   }
 
   #page-chat.chat-empty .welcome-card {
@@ -5744,6 +5744,7 @@ select:focus {
 @media (max-width: 760px) {
   .toast {
     align-items: flex-start !important;
+    bottom: calc(230px + env(safe-area-inset-bottom)) !important;
   }
 
   .toast-dismiss {
