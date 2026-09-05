@@ -5653,6 +5653,35 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Waiting-only mobile drawer: content-driven height keeps an empty run from
+   occupying the whole screen; active traces retain the full inspector sheet. */
+@media (max-width: 760px) {
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel:has(
+    .agent-trace-section > .empty-state
+  ) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: min(46dvh, 420px) !important;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel:has(
+    .agent-trace-section > .empty-state
+  ) .evidence-drawer {
+    height: auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel:has(
+    .agent-trace-section > .empty-state
+  ) .agent-trace-section {
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
 /* Session history keyboard rail and touch-safe mobile rows. */
 #session-list .session-row {
   transition: background-color 120ms cubic-bezier(0.16, 1, 0.3, 1);
