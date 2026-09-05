@@ -472,16 +472,20 @@
     min-height: 40px !important;
     height: 40px !important;
     margin: 0 2px 10px !important;
-    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 80%, transparent) !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 9px !important;
-    background: var(--al-sidebar-primary-bg) !important;
-    color: var(--al-sidebar-primary-text) !important;
+    background: var(--al-sidebar-surface) !important;
+    color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
     font-size: inherit !important;
     font-weight: 600 !important;
+  }
+
+  #sidebar.sidebar-workbench .new-chat-button > span {
+    color: var(--al-sidebar-text) !important;
   }
 
   #sidebar.sidebar-workbench :is(.new-chat-button > span, .sidebar-tool .nav-icon) {
@@ -565,12 +569,12 @@
     flex: 0 0 auto !important;
     margin: 0 10px 5px !important;
     padding: 0 !important;
-    color: color-mix(in srgb, var(--al-sidebar-muted) 84%, var(--al-sidebar-bg)) !important;
-    font-size: 10px !important;
-    font-weight: 650 !important;
-    letter-spacing: 0.08em !important;
+    color: var(--al-sidebar-muted) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
     line-height: 18px !important;
-    text-transform: uppercase !important;
+    text-transform: none !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool .nav-icon {
@@ -601,7 +605,7 @@
   #sidebar.sidebar-workbench .sidebar-account-footer {
     flex: 0 0 auto !important;
     margin: 8px 0 0 !important;
-    padding: 8px 0 0 !important;
+    padding: 8px 2px 0 !important;
     border-top: 0 !important;
   }
 
@@ -611,12 +615,12 @@
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 46px !important;
-    padding: 8px 9px !important;
+    min-height: 42px !important;
+    padding: 7px 8px !important;
     gap: 8px !important;
-    border: 1px solid transparent !important;
-    border-radius: 11px !important;
-    background: var(--al-sidebar-surface) !important;
+    border: 0 !important;
+    border-radius: 9px !important;
+    background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
@@ -641,7 +645,7 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 18px !important;
     flex: 0 0 auto !important;
-    margin: 5px 11px 0 44px !important;
+    margin: 4px 8px 0 42px !important;
     padding: 0 0 1px !important;
     border: 0 !important;
     background: transparent !important;
@@ -880,8 +884,8 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button:hover {
-    background: color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, white) !important;
-    color: var(--al-sidebar-primary-text) !important;
+    background: var(--al-sidebar-hover) !important;
+    color: var(--al-sidebar-text) !important;
     transform: none !important;
     box-shadow: none !important;
   }
