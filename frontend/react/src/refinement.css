@@ -6999,6 +6999,62 @@ body.sidebar-collapsed .sidebar {
   }
 }
 
+/* Reading-axis finish: keep prose comfortable while allowing evidence and
+   code to use the full answer column when they need it. */
+#page-chat .message-row.assistant .message-markdown {
+  max-width: 72ch;
+}
+
+#page-chat .message-row.assistant .message-markdown :is(.message-code-block, .message-table-scroll, pre) {
+  max-width: 100%;
+}
+
+#page-chat .message-row.assistant .message-markdown :is(p, li, blockquote) {
+  overflow-wrap: anywhere;
+}
+
+/* The run drawer keeps its task summary and tabs available while the trace or
+   console grows. Only the evidence body scrolls. */
+#page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer {
+  min-height: 0;
+  overflow: hidden;
+}
+
+#page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > .drawer-header,
+#page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > .drawer-tabs {
+  flex: 0 0 auto;
+}
+
+#page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > :is(
+  .agent-trace-section,
+  .agent-output-section,
+  .drawer-section
+) {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  #page-chat .message-row.assistant .message-markdown {
+    max-width: 72ch;
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .evidence-drawer > :is(
+    .agent-trace-section,
+    .agent-output-section,
+    .drawer-section
+  ) {
+    overscroll-behavior-y: contain;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel .agent-tool-console-scroll {
+    max-height: min(42dvh, 360px);
+  }
+}
+
 @media (max-width: 760px) {
   #page-chat.chat-empty .chat-topbar {
     height: 48px !important;
