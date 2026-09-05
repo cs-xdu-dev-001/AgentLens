@@ -9491,6 +9491,83 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--inverse-text) !important;
 }
 
+/* Knowledge upload finish: keep the modal quiet and task-oriented. */
+#page-knowledge .document-file-name {
+  max-width: min(100%, 420px);
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+#page-knowledge .upload-queue-summary {
+  border-color: var(--control-border);
+  border-radius: 12px;
+  background: var(--control-bg);
+}
+
+#page-knowledge .upload-queue-summary strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#page-knowledge .upload-queue-summary span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#page-knowledge .upload-queue-summary span::before {
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+}
+
+@media (max-width: 760px) {
+  #page-knowledge .upload-modal-panel {
+    width: min(342px, calc(100vw - 24px));
+  }
+
+  #page-knowledge .upload-modal-body {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  #page-knowledge .upload-modal-body .file-drop {
+    min-height: 142px;
+  }
+
+  #page-knowledge .upload-queue-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #page-knowledge .upload-queue-summary strong {
+    grid-column: 1 / -1;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--control-border);
+  }
+
+  #page-knowledge .upload-queue-summary span {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 22px;
+    border-bottom: 1px solid var(--control-border);
+  }
+
+  #page-knowledge .upload-queue-summary span:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  #page-knowledge .upload-queue-summary span:nth-child(odd) {
+    border-right: 1px solid var(--control-border);
+  }
+}
+
 /* Agent trace visualization pass: live status in chat, full tree in the drawer. */
 .evidence-drawer {
   grid-template-rows: auto minmax(0, 1fr);
