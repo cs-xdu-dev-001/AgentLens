@@ -7439,6 +7439,28 @@ select:focus {
   }
 }
 
+/* Attachments stay in one touch-scrollable lane on phones. Long filenames
+   should not force the composer to grow or leave a clipped second chip. */
+@media (max-width: 760px) {
+  #page-chat #chat-form.composer .attachment-tray {
+    max-width: 100%;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 0 4px 2px;
+    scrollbar-width: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-tray::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill {
+    flex: 0 0 auto;
+    max-width: min(250px, calc(100vw - 116px));
+  }
+}
+
 @media (max-width: 760px) {
   #sidebar,
   #sidebar.collapsed,
