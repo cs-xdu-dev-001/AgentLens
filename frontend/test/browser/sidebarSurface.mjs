@@ -86,7 +86,7 @@ try {
     assert.ok(Number(metrics.weight) <= 500);
     assert.equal(metrics.toolsDisplay, "flex");
     assert.equal(metrics.toolsDirection, "column");
-    assert.equal(metrics.newChatBackground, "rgba(0, 0, 0, 0)");
+    assert.equal(metrics.newChatBackground, "rgb(31, 31, 28)");
     assert.equal(metrics.sidebar.width, 272);
     assert.ok(metrics.archive.right <= metrics.sidebar.right && metrics.archive.left >= metrics.task.right);
     assert.ok(metrics.history.height > 170);
