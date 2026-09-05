@@ -123,7 +123,11 @@ function MobileNavigationMenu({ activePage, onPageIntent, onPageChange }) {
   const { loading, logout, user } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
   const activeTool = sidebarTools.find((tool) => tool.page === activePage);
-  const currentLabel = activePage === "chat" ? "对话" : (activeTool?.label || "功能");
+  const currentLabel = activePage === "chat"
+    ? "对话"
+    : activePage === "tools"
+      ? "工具"
+      : (activeTool?.label || "功能");
   const displayName = user?.displayName || user?.username || (loading ? "正在连接" : "账户");
 
   const handleLogout = async () => {
