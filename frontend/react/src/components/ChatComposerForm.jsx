@@ -1530,45 +1530,6 @@ export function ChatComposerForm() {
   }, [directRecoveryAvailable, visibleAgentState.messageId, visibleAgentState.runId]);
   return (
     <form className={"composer"} id={"chat-form"} onSubmit={handleChatSubmit}>
-      {commandHelpOpen ? (
-        <ComposerCommandHelp
-          commands={helpCommands}
-          skills={availableSkills}
-          skillsStatus={skillsStatus}
-          onClose={closeCommandHelp}
-          onCommand={takeHelpCommand}
-          onSkill={takeHelpSkill}
-          onRetrySkills={loadAvailableSkills}
-          onManageSkills={handleManageSkills}
-        />
-      ) : null}
-      {historySearchOpen ? (
-        <ComposerHistorySearch
-          entries={composerHistory}
-          onClear={clearComposerInputHistory}
-          onClose={closeComposerHistory}
-          onSelect={takeComposerHistory}
-        />
-      ) : null}
-      {mentionOpen ? (
-        <WorkspaceMentionPicker
-          paths={filteredMentionPaths}
-          status={mentionStatus}
-          activeIndex={mentionActiveIndex}
-          onSelect={selectWorkspaceMention}
-          onRetry={loadWorkspaceMentions}
-        />
-      ) : null}
-      {pickerOpen ? (
-        <ComposerSlashPicker
-          options={slashOptions}
-          status={skillsStatus}
-          activeIndex={activeIndex}
-          onSelect={selectSlashOption}
-          onRetry={loadAvailableSkills}
-          onManage={handleManageSkills}
-        />
-      ) : null}
       {queuedChats.length ? (
         <div className={"composer-queue"} aria-live={"polite"}>
           <div className={"composer-queue-heading"}>
@@ -1708,6 +1669,45 @@ export function ChatComposerForm() {
         </div>
       ) : null}
       <div className={"composer-shell"} onKeyDown={handleComposerMenuKeyDown}>
+        {commandHelpOpen ? (
+          <ComposerCommandHelp
+            commands={helpCommands}
+            skills={availableSkills}
+            skillsStatus={skillsStatus}
+            onClose={closeCommandHelp}
+            onCommand={takeHelpCommand}
+            onSkill={takeHelpSkill}
+            onRetrySkills={loadAvailableSkills}
+            onManageSkills={handleManageSkills}
+          />
+        ) : null}
+        {historySearchOpen ? (
+          <ComposerHistorySearch
+            entries={composerHistory}
+            onClear={clearComposerInputHistory}
+            onClose={closeComposerHistory}
+            onSelect={takeComposerHistory}
+          />
+        ) : null}
+        {mentionOpen ? (
+          <WorkspaceMentionPicker
+            paths={filteredMentionPaths}
+            status={mentionStatus}
+            activeIndex={mentionActiveIndex}
+            onSelect={selectWorkspaceMention}
+            onRetry={loadWorkspaceMentions}
+          />
+        ) : null}
+        {pickerOpen ? (
+          <ComposerSlashPicker
+            options={slashOptions}
+            status={skillsStatus}
+            activeIndex={activeIndex}
+            onSelect={selectSlashOption}
+            onRetry={loadAvailableSkills}
+            onManage={handleManageSkills}
+          />
+        ) : null}
         <Tooltip content={"添加文件或工具"} disabled={menuOpen || sending || switchingSession}>
           <button className={composerPlusClassName} id={"composer-plus-btn"} type={"button"} aria-label={"添加文件或工具"} onClick={handleComposerMenuToggle} disabled={sending || switchingSession}>
             <Plus size={20} strokeWidth={1.9} aria-hidden={"true"} />
