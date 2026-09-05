@@ -1355,6 +1355,33 @@ p {
   display: none;
 }
 
+.message-streaming-placeholder {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  color: var(--muted);
+}
+
+.message-streaming-placeholder i {
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: message-streaming-cursor 900ms steps(1, end) infinite;
+}
+
+@keyframes message-streaming-cursor {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-streaming-placeholder i {
+    animation: none;
+  }
+}
+
 .agent-thinking-orb {
   display: inline-flex;
   align-items: center;

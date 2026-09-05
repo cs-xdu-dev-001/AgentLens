@@ -522,8 +522,13 @@ function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 
           ) : null}
           {message.thinking ? (
           <AgentThinkingOrb trace={message.trace} />
-        ) : (
+          ) : (
           <>
+            {message.streaming && !String(message.rawContent || "").trim() ? (
+              <span className={"message-streaming-placeholder"} role={"status"} aria-label={"正在生成"}>
+                <i aria-hidden={"true"}></i>
+              </span>
+            ) : null}
             <MessageMarkdown
               rawContent={message.rawContent}
               streaming={message.streaming}
