@@ -7905,3 +7905,135 @@ body.sidebar-collapsed .sidebar {
     padding-block: 6px !important;
   }
 }
+
+/* Agent run capsule finish: keep the process visible without turning every
+   assistant turn into a nested dashboard card. */
+#page-chat .message-row.assistant .agent-task-capsule {
+  margin: 0 0 12px;
+  border-color: color-mix(in srgb, var(--border) 92%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 52%, var(--surface));
+}
+
+#page-chat .message-row.assistant .agent-task-capsule:is(.running, .waiting, .warning, .failed) {
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--surface));
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-head {
+  min-height: 54px;
+  gap: 10px;
+  padding: 7px 10px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-toggle {
+  min-height: 36px;
+  gap: 8px;
+  padding-inline: 4px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-toggle strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-summary {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-meta {
+  gap: 6px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-metrics,
+#page-chat .message-row.assistant .agent-task-capsule-status {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-status {
+  min-width: 0;
+  font-weight: 650;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-progress {
+  height: 2px;
+  margin-inline: 10px;
+  background: color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-progress > span {
+  border-radius: 999px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule.expanded .agent-task-capsule-body {
+  padding: 10px 12px 11px;
+  border-top-color: color-mix(in srgb, var(--border) 88%, transparent);
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-section-head {
+  padding-inline: 2px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-section-head strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-steps li.current {
+  background: color-mix(in srgb, var(--surface) 82%, var(--surface-soft));
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-step-button {
+  min-height: 36px;
+  padding-block: 5px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-outcomes {
+  padding-top: 9px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule-outcomes button,
+#page-chat .message-row.assistant .agent-task-capsule-detail {
+  min-height: 30px;
+  border-radius: 7px;
+}
+
+#page-chat .message-row.assistant .agent-task-capsule .agent-recovery-panel.compact {
+  margin-top: 2px;
+  padding: 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 76%, var(--surface-soft));
+}
+
+@media (max-width: 760px) {
+  #page-chat .message-row.assistant .agent-task-capsule-head {
+    min-height: 52px;
+    padding: 7px 9px;
+  }
+
+  #page-chat .message-row.assistant .agent-task-capsule-meta {
+    padding-inline: 4px;
+  }
+
+  #page-chat .message-row.assistant .agent-task-capsule-progress {
+    margin-inline: 9px;
+  }
+
+  #page-chat .message-row.assistant .agent-task-capsule.expanded .agent-task-capsule-body {
+    padding-inline: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .message-row.assistant .agent-task-capsule,
+  #page-chat .message-row.assistant .agent-task-capsule-progress > span {
+    transition: none !important;
+  }
+}
