@@ -7762,17 +7762,17 @@ body.sidebar-collapsed .sidebar {
   }
 
   #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
-    min-height: 184px !important;
+    min-height: 156px !important;
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
     align-items: center;
     column-gap: 16px;
     row-gap: 3px;
-    padding: 22px 24px !important;
-    border: 1px dashed var(--control-border);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--surface-soft) 58%, var(--surface));
+    padding: 20px 24px !important;
+    border: 1px solid var(--control-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-soft) 72%, var(--surface));
     text-align: left;
   }
 
@@ -7811,14 +7811,16 @@ body.sidebar-collapsed .sidebar {
   }
 
   #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
-    min-height: 148px;
+    min-height: 132px;
     display: grid;
     grid-template-columns: 38px minmax(0, 1fr);
     grid-template-rows: auto auto auto;
     align-content: center;
     justify-items: start;
     gap: 4px 10px;
-    padding: 16px 8px;
+    padding: 14px 10px;
+    border: 1px solid var(--control-border);
+    border-radius: 12px;
   }
 
   #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured .document-empty-icon {
