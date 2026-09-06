@@ -9438,3 +9438,289 @@ body.sidebar-collapsed .sidebar {
     opacity: 1;
   }
 }
+
+/* Management surfaces finish pass: keep the same quiet workbench rhythm
+   across knowledge, workspace, tools/MCP and memory pages. */
+:where(
+  #page-knowledge .knowledge-hero,
+  #page-tools .settings-header,
+  #page-memory .memory-header,
+  #page-workspace .workspace-browser-header
+) {
+  min-height: 64px !important;
+  padding: 0 clamp(16px, 2.6vw, 28px) !important;
+  border-bottom-color: var(--control-border) !important;
+  background: var(--workspace-bg) !important;
+}
+
+:where(
+  #page-tools .settings-header h1,
+  #page-memory .memory-header h1,
+  #page-workspace .workspace-browser-header h1
+) {
+  font-size: 22px !important;
+  font-weight: 680 !important;
+  letter-spacing: -0.025em !important;
+}
+
+:where(
+  #page-tools .tools-content,
+  #page-memory .memory-content,
+  #page-workspace .workspace-browser,
+  #page-knowledge .knowledge-workspace
+) {
+  min-width: 0;
+}
+
+#page-tools .tools-content {
+  width: min(1120px, calc(100% - 40px));
+  margin: 18px auto 32px;
+}
+
+#page-tools .tools-overview {
+  min-height: 62px;
+  border-radius: 12px;
+}
+
+#page-tools .tool-inventory.panel,
+#page-tools .tool-config-form,
+#page-tools .mcp-server-panel {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+#page-memory .memory-content {
+  width: min(980px, calc(100% - 40px));
+  margin: 18px auto 32px;
+}
+
+#page-workspace .workspace-browser {
+  padding: 0 clamp(16px, 2.6vw, 28px) 32px !important;
+}
+
+#page-workspace .workspace-browser-header {
+  margin-inline: calc(clamp(16px, 2.6vw, 28px) * -1);
+  padding-inline: clamp(16px, 2.6vw, 28px) !important;
+}
+
+#page-workspace .workspace-runtime-strip {
+  margin-top: 14px;
+  border-radius: 10px;
+}
+
+#page-knowledge .knowledge-shell {
+  width: min(1180px, calc(100% - 40px));
+  margin-inline: auto;
+}
+
+@media (max-width: 760px) {
+  :where(
+    #page-knowledge .knowledge-hero,
+    #page-tools .settings-header,
+    #page-memory .memory-header,
+    #page-workspace .workspace-browser-header
+  ) {
+    min-height: 56px !important;
+    padding-inline: 14px !important;
+  }
+
+  :where(
+    #page-tools .settings-header h1,
+    #page-memory .memory-header h1,
+    #page-workspace .workspace-browser-header h1
+  ) {
+    font-size: 19px !important;
+  }
+
+  #page-tools .tools-content,
+  #page-memory .memory-content,
+  #page-knowledge .knowledge-shell {
+    width: calc(100% - 24px);
+    margin-top: 12px;
+  }
+
+  #page-workspace .workspace-browser {
+    padding-inline: 12px !important;
+  }
+
+  #page-workspace .workspace-browser-header {
+    margin-inline: -12px;
+    padding-inline: 12px !important;
+  }
+}
+
+/* Sidebar visual correction: give the rail one continuous reading rhythm.
+   Keep history flexible, make the empty state explicit, and reserve the
+   darkest contrast for the actual active destination. */
+@media (min-width: 761px) {
+  .sidebar.sidebar-workbench {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    background: color-mix(in srgb, var(--rail-bg) 96%, var(--workspace-bg)) !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-brand {
+    min-height: 36px !important;
+    margin: 0 2px 12px !important;
+    gap: 8px !important;
+  }
+
+  .sidebar.sidebar-workbench .brand-mark {
+    width: 30px !important;
+    height: 30px !important;
+    flex-basis: 30px !important;
+    border-radius: 9px !important;
+    background: var(--rail-panel) !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar.sidebar-workbench .brand-copy strong {
+    font-size: 14px !important;
+    font-weight: 680 !important;
+    letter-spacing: -0.015em !important;
+  }
+
+  .sidebar.sidebar-workbench #sidebar-toggle {
+    width: 28px !important;
+    height: 28px !important;
+    margin-left: auto !important;
+    border-radius: 7px !important;
+  }
+
+  .sidebar.sidebar-workbench .new-chat-button {
+    min-height: 38px !important;
+    margin: 0 0 12px !important;
+    padding: 6px 9px !important;
+    border: 1px solid var(--control-border) !important;
+    border-radius: 9px !important;
+    background: var(--rail-panel) !important;
+    color: var(--rail-text) !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar.sidebar-workbench .new-chat-button:hover {
+    border-color: color-mix(in srgb, var(--rail-text) 22%, var(--control-border)) !important;
+    background: var(--rail-hover) !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-utility-tools {
+    gap: 1px !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-utility-tools .sidebar-section-label {
+    padding-bottom: 3px !important;
+  }
+
+  .sidebar.sidebar-workbench .command-palette-trigger,
+  .sidebar.sidebar-workbench .sidebar-tool {
+    min-height: 36px !important;
+    padding: 6px 8px !important;
+    border-color: transparent !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    font-weight: 520 !important;
+  }
+
+  .sidebar.sidebar-workbench .command-palette-trigger {
+    background: transparent !important;
+  }
+
+  .sidebar.sidebar-workbench .command-palette-trigger:hover,
+  .sidebar.sidebar-workbench .sidebar-tool:hover {
+    border-color: transparent !important;
+    background: var(--rail-hover) !important;
+  }
+
+  .sidebar.sidebar-workbench .command-palette-trigger kbd {
+    border-color: color-mix(in srgb, var(--control-border) 88%, transparent) !important;
+    background: transparent !important;
+  }
+
+  .sidebar.sidebar-workbench .chat-history-shell {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    min-height: 128px !important;
+    margin-top: 8px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid color-mix(in srgb, var(--control-border) 88%, transparent) !important;
+  }
+
+  .sidebar.sidebar-workbench .session-scope-tabs {
+    margin-bottom: 8px !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-search-row {
+    margin-bottom: 6px !important;
+  }
+
+  .sidebar.sidebar-workbench #session-list {
+    min-height: 72px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .sidebar.sidebar-workbench #session-list > .sidebar-history-empty {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    min-height: 54px !important;
+    margin: 4px 2px 0 !important;
+    padding: 10px 8px !important;
+    border: 1px dashed color-mix(in srgb, var(--control-border) 92%, transparent) !important;
+    border-radius: 8px !important;
+    color: var(--rail-muted) !important;
+    background: color-mix(in srgb, var(--rail-panel) 58%, transparent) !important;
+    font-size: 12px !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-bottom-tools {
+    flex: 0 0 auto !important;
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid color-mix(in srgb, var(--control-border) 88%, transparent) !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-tool.active {
+    border-color: transparent !important;
+    background: var(--rail-hover) !important;
+    font-weight: 650 !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-tool.active::before {
+    top: 7px !important;
+    bottom: 7px !important;
+    left: -10px !important;
+    width: 2px !important;
+  }
+
+  .sidebar.sidebar-workbench .sidebar-account-footer {
+    padding-top: 8px !important;
+  }
+
+  .sidebar.sidebar-workbench .user-menu-button {
+    min-height: 38px !important;
+    padding: 5px 7px !important;
+    border-radius: 8px !important;
+  }
+
+  .sidebar.sidebar-workbench .runtime-card {
+    min-height: 22px !important;
+    margin-top: 0 !important;
+    padding: 0 7px !important;
+    font-size: 10px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar.sidebar-workbench .new-chat-button {
+    border: 1px solid var(--control-border) !important;
+    background: var(--rail-panel) !important;
+    color: var(--rail-text) !important;
+  }
+
+  .sidebar.sidebar-workbench .chat-history-shell.mobile-history-open {
+    margin-top: 0 !important;
+    border-top: 0 !important;
+  }
+}
