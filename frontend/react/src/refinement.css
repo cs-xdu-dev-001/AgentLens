@@ -6728,6 +6728,12 @@ body.sidebar-collapsed .sidebar {
     padding-right: 40px !important;
   }
 
+  /* A disabled notification affordance is noise on a narrow task bar.
+     Keep the control available when it carries a real pending state. */
+  #page-chat .chat-notification-toggle.is-disabled {
+    display: none !important;
+  }
+
   #page-chat .chat-topbar-actions > :is(
     .chat-notification-toggle,
     .chat-workspace-toggle,
