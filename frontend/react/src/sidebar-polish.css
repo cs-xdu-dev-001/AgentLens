@@ -6,17 +6,17 @@
 :root {
   --sidebar-width: 272px;
   --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f0efeb;
+  --al-sidebar-bg: #f3f2ef;
   --al-sidebar-surface: #fbfaf7;
-  --al-sidebar-hover: #e7e5df;
-  --al-sidebar-active: #dedcd4;
-  --al-sidebar-divider: #d8d3c9;
+  --al-sidebar-hover: #e9e7e1;
+  --al-sidebar-active: #e2e0d8;
+  --al-sidebar-divider: #d8d5cd;
   --al-sidebar-text: #1b1c1a;
   --al-sidebar-muted: #686862;
   --al-sidebar-primary-bg: #20221f;
   --al-sidebar-primary-text: #fcfbf7;
   --al-sidebar-active-text: #1b1c1a;
-  --al-sidebar-nav-active: #e0ded7;
+  --al-sidebar-nav-active: #e2e0d8;
   --al-sidebar-nav-active-text: #1b1c1a;
   --al-sidebar-focus: #a9a79f;
 }
@@ -435,7 +435,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 12px 12px !important;
+    padding: 16px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 72%, transparent) !important;
@@ -443,20 +443,20 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 42px !important;
+    min-height: 40px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 10px !important;
-    padding: 0 4px !important;
-    gap: 10px !important;
+    margin: 0 0 12px !important;
+    padding: 0 6px !important;
+    gap: 9px !important;
     border-bottom: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 30px !important;
-    height: 30px !important;
-    flex: 0 0 30px !important;
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
@@ -466,6 +466,10 @@
     font-size: 16px !important;
     font-weight: 650 !important;
     letter-spacing: -0.02em !important;
+  }
+
+  #sidebar.sidebar-workbench .brand-copy span {
+    display: none !important;
   }
 
   #sidebar.sidebar-workbench #sidebar-toggle {
@@ -493,10 +497,10 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 38px !important;
-    height: 38px !important;
+    min-height: 36px !important;
+    height: 36px !important;
     margin: 0 !important;
-    padding: 0 10px !important;
+    padding: 0 9px !important;
     gap: 10px !important;
     border: 0 !important;
     border-radius: 10px !important;
@@ -512,11 +516,11 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 38px !important;
-    height: 38px !important;
-    margin: 0 0 6px !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    margin: 0 0 8px !important;
     border: 1px solid var(--al-sidebar-primary-bg) !important;
-    border-radius: 10px !important;
+    border-radius: 11px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
     box-shadow: none !important;
@@ -550,7 +554,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 0 !important;
+    gap: 2px !important;
     padding-bottom: 0 !important;
     border: 0 !important;
     border-bottom: 0 !important;
@@ -563,6 +567,34 @@
     margin: 0 !important;
     padding: 0 !important;
     border: 0 !important;
+  }
+
+  #sidebar.sidebar-workbench .pending-approvals-trigger {
+    border: 1px solid transparent !important;
+    background: transparent !important;
+  }
+
+  #sidebar.sidebar-workbench .pending-approvals-trigger[aria-expanded="true"] {
+    border-color: transparent !important;
+    background: var(--al-sidebar-active) !important;
+    color: var(--al-sidebar-text) !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench .pending-approvals-list {
+    position: relative !important;
+    margin: 3px 0 4px !important;
+    padding: 8px !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 10px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 86%, var(--al-sidebar-bg)) !important;
+    box-shadow: none !important;
+  }
+
+  #sidebar.sidebar-workbench .pending-approvals-list-heading {
+    min-height: 24px !important;
+    padding: 0 2px 6px !important;
+    border-bottom: 1px solid var(--al-sidebar-divider) !important;
   }
 
   #sidebar.sidebar-workbench .command-palette-trigger kbd {
@@ -582,8 +614,8 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 10px 0 0 !important;
-    padding: 10px 0 6px !important;
+    margin: 12px 0 0 !important;
+    padding: 10px 0 8px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
@@ -607,11 +639,11 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 10px 0 0 !important;
+    margin: 8px 0 0 !important;
     padding: 10px 0 0 !important;
-    gap: 0 !important;
+    gap: 2px !important;
     border: 0 !important;
-    border-top: 0 !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 86%, transparent) !important;
     order: 3 !important;
   }
 
@@ -622,11 +654,11 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 10px 8px !important;
+    margin: 0 9px 6px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 12px !important;
-    font-weight: 500 !important;
+    font-size: 11px !important;
+    font-weight: 650 !important;
     letter-spacing: 0 !important;
     line-height: 16px !important;
     text-transform: none !important;
@@ -668,15 +700,15 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
-    min-height: 34px !important;
-    height: 34px !important;
+    min-height: 36px !important;
+    height: 36px !important;
     font-size: 14px !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-account-footer {
     flex: 0 0 auto !important;
-    margin: 10px 0 0 !important;
-    padding: 10px 4px 2px !important;
+    margin: 8px 0 0 !important;
+    padding: 10px 4px 1px !important;
     border: 0 !important;
     border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 86%, transparent) !important;
     border-radius: 0 !important;
@@ -694,11 +726,11 @@
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 40px !important;
-    padding: 6px 8px !important;
+    min-height: 38px !important;
+    padding: 5px 8px !important;
     gap: 8px !important;
     border: 0 !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
@@ -708,7 +740,7 @@
     width: 26px !important;
     height: 26px !important;
     flex: 0 0 26px !important;
-    border: 0 !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 50% !important;
     background-color: var(--al-sidebar-active) !important;
     color: var(--al-sidebar-text) !important;
