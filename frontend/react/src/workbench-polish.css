@@ -1,0 +1,104 @@
+/*
+ * Management surfaces finish pass.
+ * These rules keep the real controls and data flow intact while making the
+ * mobile workbench read as a compact tool surface instead of a blank canvas.
+ */
+#page-knowledge .knowledge-shell:has(.kb-empty) {
+  min-height: 0 !important;
+  height: auto !important;
+  align-items: start !important;
+}
+
+#page-knowledge .knowledge-shell:has(.kb-empty) .knowledge-rail,
+#page-knowledge .knowledge-shell:has(.kb-empty) .knowledge-primary {
+  align-self: start !important;
+}
+
+#page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
+  margin-bottom: 0 !important;
+}
+
+#page-workspace .workspace-runtime-strip {
+  scroll-padding-inline: 14px;
+  overscroll-behavior-x: contain;
+}
+
+#page-workspace .workspace-runtime-strip span {
+  line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+  #page-knowledge .knowledge-shell {
+    margin-bottom: 0 !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured {
+    min-height: 126px !important;
+    margin-top: 4px !important;
+    padding: 13px 10px !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured h3 {
+    font-size: 14px !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.kb-empty) .document-empty.unconfigured p {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  #page-workspace .workspace-browser {
+    padding-top: 14px !important;
+    padding-bottom: 24px !important;
+  }
+
+  #page-workspace .workspace-browser-header {
+    min-height: 50px !important;
+    padding-bottom: 10px !important;
+  }
+
+  #page-workspace .workspace-browser-header h1 {
+    font-size: 20px !important;
+  }
+
+  #page-workspace .workspace-runtime-strip {
+    position: relative;
+    min-height: 38px !important;
+    margin-top: 8px !important;
+    padding: 6px 14px !important;
+    border-top: 1px solid var(--control-border);
+    border-bottom: 1px solid var(--control-border);
+    background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+    scroll-snap-type: x proximity;
+  }
+
+  #page-workspace .workspace-runtime-strip span {
+    scroll-snap-align: start;
+    padding-block: 3px !important;
+    font-size: 11px !important;
+  }
+
+  #page-workspace .workspace-boundary-card {
+    margin-top: 0 !important;
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+
+  #page-workspace .workspace-breadcrumb {
+    min-height: 34px !important;
+    padding-top: 5px !important;
+    padding-bottom: 5px !important;
+  }
+
+  #page-workspace .workspace-empty {
+    margin-top: 4px !important;
+    padding-top: 14px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-workspace .workspace-runtime-strip {
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+  }
+}
