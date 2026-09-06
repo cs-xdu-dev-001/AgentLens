@@ -730,17 +730,35 @@
   }
 
   #sidebar.sidebar-workbench.collapsed .sidebar-brand {
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    margin: 0 0 10px !important;
     padding: 0 !important;
+    gap: 6px !important;
+  }
+
+  #sidebar.sidebar-workbench.collapsed .brand-mark {
+    display: grid !important;
+    width: 30px !important;
+    height: 30px !important;
+    flex: 0 0 30px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench.collapsed #sidebar-toggle {
-    width: 48px !important;
-    height: 40px !important;
-    flex-basis: 40px !important;
+    width: 40px !important;
+    height: 32px !important;
+    flex-basis: 32px !important;
     margin: 0 !important;
   }
 
-  #sidebar.sidebar-workbench.collapsed :is(.brand-mark, .brand-copy, .chat-history-shell, .command-palette-trigger kbd, .new-chat-button strong, .sidebar-tool > span:not(.nav-icon, .pending-approvals-badge), .user-menu-button > span:not(.user-avatar), .user-menu-chevron, .runtime-card) {
+  #sidebar.sidebar-workbench.collapsed :is(.brand-copy, .chat-history-shell, .command-palette-trigger kbd, .new-chat-button strong, .sidebar-tool > span:not(.nav-icon, .pending-approvals-badge), .user-menu-button > span:not(.user-avatar), .user-menu-chevron, .runtime-card) {
     display: none !important;
   }
 
