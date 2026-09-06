@@ -9225,3 +9225,157 @@ body.sidebar-collapsed .sidebar {
     scroll-behavior: auto;
   }
 }
+
+/* Chat workbench terminal overrides. Keep these last so the final responsive
+   rhythm wins over the older refinement layers above. */
+#page-chat .chat-topbar {
+  padding-inline: 18px !important;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(48ch, 58vw);
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.012em;
+}
+
+#page-chat .chat-topbar-actions {
+  gap: 4px !important;
+}
+
+#page-chat.chat-empty .messages {
+  align-items: flex-end !important;
+  justify-content: center !important;
+  padding: 0 16px 112px !important;
+}
+
+#page-chat.chat-empty .welcome-card {
+  gap: 14px !important;
+  translate: 0 84px;
+  animation: none !important;
+}
+
+#page-chat.chat-empty .welcome-card h2 {
+  font-size: clamp(24px, 2vw, 30px) !important;
+  font-weight: 590 !important;
+}
+
+#page-chat.chat-empty .welcome-context {
+  min-height: 28px !important;
+  padding-block: 0 !important;
+  font-size: 13px !important;
+}
+
+#page-chat.chat-empty .welcome-actions {
+  gap: 8px !important;
+  margin-top: 2px !important;
+}
+
+#page-chat.chat-empty .welcome-action {
+  min-height: 48px !important;
+  padding-inline: 12px !important;
+  border: 1px solid color-mix(in srgb, var(--control-border) 88%, transparent) !important;
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--panel-bg) 92%, transparent) !important;
+  box-shadow: none !important;
+}
+
+#page-chat:not(.chat-empty) .messages {
+  padding-inline: clamp(18px, 4vw, 64px) !important;
+  padding-block: 20px 28px !important;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+
+#page-chat:not(.chat-empty) .message {
+  border-radius: 14px;
+}
+
+#page-chat:not(.chat-empty) .message.user {
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+#chat-form.composer .composer-shell {
+  min-width: 0;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 12px 34px rgba(0, 0, 0, 0.075) !important;
+  transition: border-color var(--kf-transition), box-shadow var(--kf-transition);
+}
+
+#chat-form.composer .composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--text) 26%, var(--control-border)) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 14px 38px rgba(0, 0, 0, 0.09) !important;
+}
+
+#chat-form.composer .composer-input-stack {
+  min-width: 0;
+}
+
+#chat-form.composer .composer-input-stack textarea {
+  max-height: 150px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    padding-inline: 10px 8px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: min(52vw, 210px);
+    font-size: 14px !important;
+  }
+
+  #page-chat.chat-empty .messages {
+    padding: 0 12px 106px !important;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    width: min(100%, 360px) !important;
+    gap: 12px !important;
+    translate: 0 142px;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    font-size: 23px !important;
+    line-height: 1.25 !important;
+  }
+
+  #page-chat.chat-empty .welcome-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #page-chat.chat-empty .welcome-action {
+    min-height: 46px !important;
+    padding-inline: 10px !important;
+    font-size: 13px !important;
+  }
+
+  #page-chat:not(.chat-empty) .messages {
+    padding: 14px 12px 120px !important;
+  }
+
+  #chat-form.composer .composer-shell {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.05),
+      0 8px 24px rgba(0, 0, 0, 0.08) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  #page-chat.chat-empty .welcome-card {
+    translate: 0 202px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #chat-form.composer .composer-shell {
+    transition: none !important;
+  }
+}
