@@ -1064,6 +1064,15 @@ export function ChatMessages({ workspaceState = { loading: true }, onEmptyStateC
       setMessages([]);
       setShowWelcome(Boolean(nextShowWelcome));
     });
+    // Session hydration clears the view before replaying persisted messages.
+    // If the session is genuinely empty, restore the task-first welcome surface
+    // after that synchronous replay window instead of leaving a blank workbench.
+    if (!nextShowWelcome) {
+      window.queueMicrotask?.(() => {
+        if (!mountedRef.current || messageStateRef.current.length) return;
+        setShowWelcome(true);
+      });
+    }
     scrollToBottom({ force: true });
     return messagesRef.current;
   };

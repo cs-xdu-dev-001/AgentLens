@@ -8614,3 +8614,174 @@ body.sidebar-collapsed .sidebar {
     display: none !important;
   }
 }
+
+/* Chat surface v5: keep narrow shells calm when the task title, live status,
+   and composer controls all compete for the same viewport. */
+#page-chat .chat-session-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#page-chat .chat-topbar-actions {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-workspace-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+) {
+  flex: 0 0 auto;
+}
+
+#page-chat #chat-form.composer {
+  min-width: 0;
+  overflow: visible;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  min-width: 0;
+}
+
+#page-chat #chat-form.composer .composer-input-stack,
+#page-chat #chat-form.composer .composer-control-strip {
+  min-width: 0;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea {
+  max-height: min(32vh, 150px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 480px) {
+  #page-chat .chat-topbar {
+    padding-inline: 8px 40px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: 100%;
+    font-size: 13px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 0 !important;
+    padding-right: 36px !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    #refresh-btn
+  ) {
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+  }
+
+  #page-chat .chat-run-toggle {
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 92px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding-inline: 0 !important;
+    justify-content: center;
+  }
+
+  #page-chat .chat-run-toggle:is(.is-running, .is-waiting, .is-failed) {
+    width: auto !important;
+    min-width: 40px !important;
+    max-width: 92px !important;
+    padding-inline: 7px !important;
+  }
+
+  #page-chat .chat-run-toggle:is(.is-running, .is-waiting, .is-failed) > span[aria-live="polite"] {
+    max-width: 36px;
+    font-size: 11px;
+  }
+
+  #page-chat .chat-run-toggle .chat-run-progress {
+    display: none !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    grid-template-rows: minmax(42px, auto) auto !important;
+    padding: 8px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-control-strip {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-inline: contain;
+  }
+
+  #page-chat #chat-form.composer .composer-control-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-chat #chat-form.composer :is(.composer-model-trigger, .composer-permission-trigger) {
+    max-width: 42vw;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    width: calc(100% - 24px) !important;
+  }
+
+  #page-chat.chat-empty .welcome-heading {
+    display: block !important;
+    padding-bottom: 12px !important;
+  }
+
+  #page-chat.chat-empty .welcome-card h2 {
+    margin-bottom: 8px !important;
+    font-size: 20px !important;
+  }
+
+  #page-chat.chat-empty .welcome-context {
+    display: block;
+    max-width: 100% !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat .chat-topbar {
+    padding-inline: 6px 36px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    font-size: 12px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    padding-right: 32px !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    #refresh-btn
+  ) {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+  }
+
+  #page-chat .chat-run-toggle,
+  #page-chat .chat-run-toggle:is(.is-running, .is-waiting, .is-failed) {
+    max-width: 76px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat #chat-form.composer .composer-input-stack textarea {
+    scroll-behavior: auto;
+  }
+}
