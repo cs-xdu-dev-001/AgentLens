@@ -39,6 +39,8 @@
 }
 
 #page-chat .chat-topbar-actions {
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
   gap: 6px !important;
 }
 
@@ -125,12 +127,40 @@
   }
 
   #page-chat .chat-session-heading h1 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     max-width: min(42vw, 168px);
     font-size: 14px !important;
   }
 
   #page-chat .chat-topbar-actions {
     gap: 2px !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    .chat-run-toggle,
+    #refresh-btn
+  ) {
+    width: 36px !important;
+    min-width: 36px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-workspace-toggle,
+    .chat-run-toggle
+  ) :is(.chat-workspace-label, .chat-run-progress, .chat-run-toggle > span[aria-live]) {
+    display: none !important;
+  }
+
+  #page-chat .chat-run-toggle .chat-run-dot {
+    margin: 0 !important;
   }
 
   #page-chat #chat-form.composer {
@@ -150,7 +180,7 @@
 
 @media (max-width: 390px) {
   #page-chat .chat-session-heading h1 {
-    max-width: 35vw;
+    max-width: 31vw;
   }
 
   #page-chat.chat-empty .welcome-card {
@@ -159,6 +189,23 @@
 
   #page-chat #chat-form.composer {
     padding-inline: 8px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat .chat-session-heading h1 {
+    max-width: 28vw;
+  }
+
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    .chat-run-toggle,
+    #refresh-btn
+  ) {
+    width: 32px !important;
+    min-width: 32px !important;
+    min-height: 34px !important;
   }
 }
 
