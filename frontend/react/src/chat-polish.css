@@ -103,6 +103,7 @@
 
 #page-chat.chat-empty .welcome-card {
   width: min(640px, calc(100% - 32px)) !important;
+  translate: 0 clamp(0px, 4vh, 40px) !important;
 }
 
 #page-chat.chat-empty .welcome-action {
@@ -143,12 +144,17 @@
 
   #page-chat.chat-empty .welcome-card {
     width: min(100%, calc(100% - 20px)) !important;
+    translate: 0 clamp(28px, 9vh, 72px) !important;
   }
 }
 
 @media (max-width: 390px) {
   #page-chat .chat-session-heading h1 {
     max-width: 35vw;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    translate: 0 clamp(32px, 10vh, 82px) !important;
   }
 
   #page-chat #chat-form.composer {
