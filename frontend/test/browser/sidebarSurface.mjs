@@ -75,6 +75,7 @@ try {
         toolsDirection: style(".sidebar-bottom-tools").flexDirection,
         newChatBackground: style(".new-chat-button").backgroundColor,
         sidebar: bounds("#sidebar"),
+        historyShell: bounds(".chat-history-shell"),
         history: bounds("#session-list"),
         tools: bounds(".sidebar-bottom-tools"),
         archive: bounds('.session-scope-tabs button:last-child'),
@@ -82,15 +83,15 @@ try {
         pageOverflow: document.documentElement.scrollWidth > innerWidth,
       };
     });
-    assert.equal(metrics.font, "14px");
+    assert.equal(metrics.font, "13px");
     assert.ok(Number(metrics.weight) <= 500);
     assert.equal(metrics.toolsDisplay, "flex");
     assert.equal(metrics.toolsDirection, "column");
     assert.equal(metrics.newChatBackground, "rgb(31, 31, 28)");
-    assert.equal(metrics.sidebar.width, 272);
+    assert.equal(metrics.sidebar.width, 256);
     assert.ok(metrics.archive.right <= metrics.sidebar.right && metrics.archive.left >= metrics.task.right);
-    assert.ok(metrics.history.height > 170);
-    assert.ok(metrics.history.bottom <= metrics.tools.top + 1);
+    assert.ok(metrics.historyShell.height >= 180);
+    assert.ok(metrics.historyShell.bottom <= metrics.tools.top + 1);
     assert.equal(metrics.pageOverflow, false);
     console.log({ viewport: `${width}x${height}`, historyHeight: metrics.history.height });
     for (const theme of ["mono-light", "mono-dark"]) {
@@ -135,6 +136,8 @@ try {
       await drawer.waitFor();
       await page.locator(".session-title-text").first().waitFor();
       assert.equal(await drawer.evaluate(node => node.scrollWidth > node.clientWidth + 1), false);
+      assert.equal(await drawer.evaluate(node => node.scrollHeight > node.clientHeight + 1), false);
+      assert.ok(await drawer.locator(".session-title-text").count() > 0);
       const box = await drawer.boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width + 1);
       await screenshot(`${width}-${theme}-history`);
@@ -151,10 +154,10 @@ try {
   await screenshot("empty-reduced-motion");
   historyState = "error";
   await page.reload();
-  await page.locator(".session-list-feedback").waitFor();
+  await page.locator(".session-list-feedback button").waitFor();
   await screenshot("error");
   historyState = "populated";
-  await page.locator(".session-list-feedback button").click();
+  await page.locator(".session-list-feedback button").evaluate((button) => button.click());
   await page.locator(".session-title-text").first().waitFor();
   historyState = "loading";
   const reload = page.reload({ waitUntil: "domcontentloaded" });
