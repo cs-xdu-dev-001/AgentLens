@@ -1379,7 +1379,10 @@ function SessionHistory({ mobileOpen = false, onMobileClose = null, onSessionInd
               </section>
             ))
         ) : (
-          <p className={"empty-state"}>{keyword ? "没有匹配的任务" : sessionScope === "archived" ? "归档的任务会显示在这里" : "新任务会显示在这里"}</p>
+          <p className={"empty-state sidebar-history-empty"}>
+            <MessageSquare size={15} strokeWidth={1.7} aria-hidden={"true"} />
+            <span>{keyword ? "没有匹配的任务" : sessionScope === "archived" ? "归档的任务会显示在这里" : "新任务会显示在这里"}</span>
+          </p>
         )}
       </div>
       <SessionMenuPopover
@@ -1840,11 +1843,6 @@ export function Sidebar({
         </Tooltip>
         <PendingApprovals collapsed={collapsed} />
       </div>
-      <SessionHistory
-        mobileOpen={mobileHistoryOpen}
-        onMobileClose={onMobileHistoryClose}
-        onSessionIndexChange={onSessionIndexChange}
-      />
       <div className={"sidebar-bottom-tools"} id={"sidebar-bottom-tools"}>
         <div className={"sidebar-section-label"} role={"heading"} aria-level={"2"} aria-hidden={collapsed ? "true" : undefined}>{"工作台"}</div>
         {sidebarTools.map((tool) => (
@@ -1872,6 +1870,11 @@ export function Sidebar({
           </Tooltip>
         ))}
       </div>
+      <SessionHistory
+        mobileOpen={mobileHistoryOpen}
+        onMobileClose={onMobileHistoryClose}
+        onSessionIndexChange={onSessionIndexChange}
+      />
       <div className={"sidebar-account-footer"}>
         <UserMenu />
         <RuntimeStatus />
