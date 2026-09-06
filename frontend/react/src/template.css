@@ -10443,3 +10443,170 @@ select:focus {
   text-overflow: clip !important;
   white-space: nowrap !important;
 }
+
+/* Workspace and knowledge finish: keep status, path and content on one
+   visual rhythm while reserving secondary surfaces for real detail. */
+#page-workspace .workspace-browser-header {
+  align-items: center !important;
+  gap: 16px !important;
+}
+
+#page-workspace .workspace-browser-actions {
+  gap: 8px !important;
+}
+
+#page-workspace .workspace-browser-actions button {
+  min-height: 36px !important;
+  padding-inline: 12px !important;
+  border-radius: 9px !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+#page-workspace .workspace-runtime-strip span {
+  color: var(--al-muted) !important;
+}
+
+#page-workspace .workspace-runtime-strip span.ready {
+  color: var(--al-success) !important;
+}
+
+#page-workspace .workspace-runtime-strip span.warning {
+  color: var(--al-accent-strong) !important;
+}
+
+#page-workspace .workspace-runtime-strip span.danger {
+  color: var(--al-danger) !important;
+}
+
+#page-workspace .workspace-file-row {
+  border-bottom-color: color-mix(in srgb, var(--al-line) 74%, transparent) !important;
+}
+
+#page-workspace .workspace-file-open strong,
+#page-workspace .workspace-preview-title strong,
+#page-workspace .workspace-preview-title span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#page-workspace .workspace-file-open span:last-child {
+  flex: 0 0 auto !important;
+  color: var(--al-muted) !important;
+}
+
+#page-knowledge .knowledge-hero {
+  min-height: 62px !important;
+  align-items: center !important;
+}
+
+#page-knowledge .knowledge-hero-copy {
+  min-width: 0 !important;
+}
+
+#page-knowledge .knowledge-hero-copy h1 {
+  line-height: 1.2 !important;
+}
+
+#page-knowledge .knowledge-summary {
+  min-height: 48px !important;
+  padding: 10px 14px !important;
+  border: 1px solid var(--al-line) !important;
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--al-surface) 76%, var(--al-canvas)) !important;
+  box-shadow: none !important;
+}
+
+#page-knowledge .knowledge-metrics {
+  gap: 14px !important;
+}
+
+#page-knowledge .knowledge-tabbar {
+  border-bottom-color: color-mix(in srgb, var(--al-line) 82%, transparent) !important;
+}
+
+#page-knowledge .knowledge-tab.active {
+  color: var(--al-ink) !important;
+  font-weight: 700 !important;
+}
+
+#page-knowledge .document-toolbar {
+  align-items: center !important;
+}
+
+#page-knowledge .document-toolbar h2 {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#page-knowledge .document-empty {
+  justify-items: start !important;
+  align-content: center !important;
+  text-align: left !important;
+}
+
+#page-knowledge .document-empty h3,
+#page-knowledge .document-empty p {
+  max-width: 52ch !important;
+}
+
+@media (max-width: 760px) {
+  #page-workspace .workspace-browser-header {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  #page-workspace .workspace-browser-actions {
+    width: 100% !important;
+  }
+
+  #page-workspace .workspace-browser-actions button {
+    flex: 1 1 0 !important;
+  }
+
+  #page-workspace .workspace-file-workarea {
+    display: block !important;
+  }
+
+  #page-workspace .workspace-file-preview {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-height: min(58vh, 520px) !important;
+    margin-top: 12px !important;
+    overflow: hidden !important;
+  }
+
+  #page-workspace .workspace-preview-content {
+    max-height: 42vh !important;
+  }
+
+  #page-knowledge .knowledge-hero {
+    min-height: 54px !important;
+  }
+
+  #page-knowledge .knowledge-summary {
+    margin-top: 8px !important;
+    padding: 9px 12px !important;
+  }
+
+  #page-knowledge .knowledge-metrics {
+    gap: 9px !important;
+  }
+
+  #page-knowledge .knowledge-metrics > div {
+    min-width: 0 !important;
+  }
+
+  #page-knowledge .knowledge-metrics strong {
+    max-width: 12ch !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+}
