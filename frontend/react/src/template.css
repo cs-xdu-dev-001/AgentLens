@@ -10287,3 +10287,11 @@ select:focus {
     -webkit-line-clamp: 2;
   }
 }
+
+/* Command values are short, stable affordances; never ellipsize them. */
+.command-palette-option > code {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}

@@ -6,11 +6,11 @@
 :root {
   --sidebar-width: 272px;
   --sidebar-collapsed-width: 62px;
-  --al-sidebar-bg: #f7f7f4;
-  --al-sidebar-surface: #ffffff;
-  --al-sidebar-hover: #ecece8;
-  --al-sidebar-active: #e7e7e2;
-  --al-sidebar-divider: #deded7;
+  --al-sidebar-bg: #efefeb;
+  --al-sidebar-surface: #fafaf7;
+  --al-sidebar-hover: #e5e5df;
+  --al-sidebar-active: #deded7;
+  --al-sidebar-divider: #d4d4cc;
   --al-sidebar-text: #171716;
   --al-sidebar-muted: #686862;
   --al-sidebar-primary-bg: #242421;
@@ -21,11 +21,11 @@
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #161715;
+  --al-sidebar-bg: #171816;
   --al-sidebar-surface: #20211f;
   --al-sidebar-hover: #292a27;
-  --al-sidebar-active: #2b2d29;
-  --al-sidebar-divider: #353732;
+  --al-sidebar-active: #30322e;
+  --al-sidebar-divider: #363832;
   --al-sidebar-text: #f0f0e9;
   --al-sidebar-muted: #aaa9a0;
   --al-sidebar-primary-bg: #f0f0e9;
@@ -417,7 +417,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 10px 10px !important;
+    padding: 12px 10px 10px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -427,7 +427,7 @@
   #sidebar.sidebar-workbench .sidebar-brand {
     min-height: 42px !important;
     flex: 0 0 auto !important;
-    margin: 0 2px 12px !important;
+    margin: 0 2px 10px !important;
     padding: 0 2px !important;
     gap: 9px !important;
     border: 0 !important;
@@ -487,9 +487,9 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 42px !important;
-    height: 42px !important;
-    margin: 0 2px 14px !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    margin: 0 2px 12px !important;
     border: 1px solid var(--al-sidebar-primary-bg) !important;
     border-radius: 10px !important;
     background: var(--al-sidebar-primary-bg) !important;
@@ -525,8 +525,10 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 2px !important;
+    gap: 1px !important;
+    padding-bottom: 8px !important;
     border: 0 !important;
+    border-bottom: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 0 !important;
     background: transparent !important;
   }
@@ -554,8 +556,8 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 12px 0 0 !important;
-    padding: 12px 0 6px !important;
+    margin: 8px 0 0 !important;
+    padding: 10px 0 6px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border: 0 !important;
@@ -571,9 +573,9 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 10px 0 0 !important;
+    margin: 8px 0 0 !important;
     padding: 10px 0 0 !important;
-    gap: 2px !important;
+    gap: 1px !important;
     border: 0 !important;
     border-top: 0 !important;
   }
@@ -626,8 +628,8 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
-    min-height: 34px !important;
-    height: 34px !important;
+    min-height: 35px !important;
+    height: 35px !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-account-footer {
@@ -648,7 +650,7 @@
     gap: 8px !important;
     border: 0 !important;
     border-radius: 9px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 62%, transparent) !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 78%, transparent) !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
   }
@@ -687,7 +689,7 @@
 
   #sidebar.sidebar-workbench.collapsed {
     width: var(--sidebar-collapsed-width) !important;
-    padding: 12px 10px !important;
+    padding: 10px 10px !important;
   }
 
   #sidebar.sidebar-workbench.collapsed .sidebar-brand {
