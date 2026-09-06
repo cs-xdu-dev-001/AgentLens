@@ -9379,3 +9379,62 @@ body.sidebar-collapsed .sidebar {
     transition: none !important;
   }
 }
+
+/* Transcript finish pass: preserve the process layer while making answers,
+   code and recovery controls read as one continuous working session. */
+#page-chat:not(.chat-empty) .message-row.assistant .agent-turn-answer {
+  min-width: 0;
+  max-width: 72ch;
+}
+
+#page-chat:not(.chat-empty) .message-row.assistant .agent-turn-run-block {
+  width: min(100%, 72ch);
+  max-width: 100%;
+  margin-bottom: 6px;
+}
+
+#page-chat:not(.chat-empty) .message-row.assistant .agent-task-capsule,
+#page-chat:not(.chat-empty) .message-row.assistant .agent-evidence-strip,
+#page-chat:not(.chat-empty) .message-row.assistant .agent-delivery-card {
+  max-width: 100%;
+}
+
+#page-chat .message-code-block {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+#page-chat .message-code-block pre {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+#page-chat .message-code-block code.hljs {
+  min-width: max-content;
+}
+
+#page-chat .message-streaming-placeholder {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  #page-chat:not(.chat-empty) .message-row.assistant .agent-turn-answer,
+  #page-chat:not(.chat-empty) .message-row.assistant .agent-turn-run-block {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #page-chat .message-row.assistant .message-code-block {
+    margin-inline: -2px;
+    border-radius: 10px;
+  }
+
+  #page-chat .message-row.assistant .message-code-block pre {
+    padding-inline: 12px !important;
+  }
+
+  #page-chat .message-actions {
+    opacity: 1;
+  }
+}
