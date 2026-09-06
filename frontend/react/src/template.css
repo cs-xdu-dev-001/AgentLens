@@ -10059,7 +10059,7 @@ select:focus {
   }
 
   #page-tools #tool-config-form .button-row .danger {
-    grid-column: 1 / -1 !important;
+    grid-column: auto !important;
   }
 }
 

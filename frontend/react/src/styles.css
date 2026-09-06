@@ -11189,13 +11189,18 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
   #page-tools #tool-config-form .button-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   #page-tools #tool-config-form .button-row button {
     width: 100%;
     min-width: 0;
     margin: 0;
+  }
+
+  #page-tools #tool-config-form .button-row > button[type="submit"] {
+    grid-column: 1 / -1;
   }
 
   #page-tools .mcp-panel-heading {
