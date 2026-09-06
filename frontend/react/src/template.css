@@ -9905,7 +9905,13 @@ select:focus {
 @media (max-width: 720px) {
   #page-workspace .workspace-empty {
     gap: 5px !important;
+    max-width: none !important;
+    margin: 10px 0 0 !important;
     padding: 16px 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    text-align: left !important;
   }
 
   #page-workspace .workspace-empty span {
