@@ -728,6 +728,43 @@ body {
   color: var(--muted);
 }
 
+@media (min-width: 761px) {
+  #page-tools .tools-content {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.82fr) minmax(420px, 1.18fr);
+    align-items: start;
+    column-gap: 16px;
+    row-gap: 12px;
+  }
+
+  #page-tools .tools-overview {
+    grid-column: 1 / -1;
+  }
+
+  #page-tools .tool-inventory,
+  #page-tools #tool-config-form {
+    grid-column: 1;
+  }
+
+  #page-tools .mcp-panel {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+  }
+
+  #page-tools #tool-config-form {
+    min-width: 0;
+    padding: 0 16px 16px;
+    border: 1px solid var(--control-border);
+    border-radius: 12px;
+    background: var(--panel-bg);
+  }
+
+  #page-tools #tool-config-form > .panel-title {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+}
+
 @media (hover: hover) {
   #page-skills .skills-list-row:hover,
   #page-memory .memory-item:hover,
