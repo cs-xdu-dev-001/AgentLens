@@ -2,6 +2,7 @@ import { Pencil, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { memoryApi } from "../api/client.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 
 function memoryTime(memory, timeZone = "") {
@@ -52,6 +53,7 @@ export function MemoryPage({ active = false }) {
   const [editingId, setEditingId] = useState("");
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+  const [confirmAction, setConfirmAction] = useState(null);
   const mountedRef = useRef(false);
   const interactionLocked = loading || memoriesLoading || Boolean(busy);
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
@@ -159,7 +161,6 @@ export function MemoryPage({ active = false }) {
 
   const handleDelete = async (memoryId) => {
     if (busy) return;
-    if (!window.confirm("删除这条长期记忆？此操作无法撤销。")) return;
     setBusy(String(memoryId));
     try {
       await memoryApi.delete(memoryId);
@@ -176,7 +177,6 @@ export function MemoryPage({ active = false }) {
 
   const handleClear = async () => {
     if (!memories.length || busy) return;
-    if (!window.confirm("清空全部长期记忆？此操作无法撤销。")) return;
     setBusy("clear");
     try {
       await memoryApi.clear();
@@ -189,6 +189,23 @@ export function MemoryPage({ active = false }) {
     } finally {
       setBusy("");
     }
+  };
+
+  const requestDelete = (memoryId) => {
+    if (busy) return;
+    setConfirmAction({ kind: "delete", memoryId });
+  };
+
+  const requestClear = () => {
+    if (!memories.length || busy) return;
+    setConfirmAction({ kind: "clear" });
+  };
+
+  const confirmPendingAction = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action?.kind === "delete") await handleDelete(action.memoryId);
+    if (action?.kind === "clear") await handleClear();
   };
 
   return (
@@ -320,7 +337,7 @@ export function MemoryPage({ active = false }) {
                     type={"button"}
                     aria-label={busy === "clear" ? "正在清空全部长期记忆" : "清空全部长期记忆"}
                     disabled={!memories.length || interactionLocked}
-                    onClick={handleClear}
+                    onClick={requestClear}
                   >
                     <Trash2 size={16} aria-hidden={"true"} />
                     <span>{busy === "clear" ? "清空中..." : "清空全部"}</span>
@@ -420,7 +437,7 @@ export function MemoryPage({ active = false }) {
                                 className={"danger"}
                                 type={"button"}
                                 disabled={interactionLocked}
-                                onClick={() => handleDelete(memoryId)}
+                                onClick={() => requestDelete(memoryId)}
                               >
                                 <Trash2 size={15} aria-hidden={"true"} />
                                 <span>{busy === memoryId ? "删除中..." : "删除"}</span>
@@ -436,6 +453,15 @@ export function MemoryPage({ active = false }) {
             </>
           ) : null}
         </div>
+        <ConfirmDialog
+          open={Boolean(confirmAction)}
+          danger={true}
+          title={confirmAction?.kind === "clear" ? "清空全部长期记忆？" : "删除这条长期记忆？"}
+          description={"此操作无法撤销，已删除的内容不会再参与后续对话。"}
+          confirmLabel={confirmAction?.kind === "clear" ? "清空全部" : "删除"}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={confirmPendingAction}
+        />
       </div>
     </section>
   );

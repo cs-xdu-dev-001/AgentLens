@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { mcpApi } from "../api/client.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { McpServerDialog } from "./McpServerDialog.jsx";
 import { McpToolDrawer } from "./McpToolDrawer.jsx";
 
@@ -27,6 +28,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingServer, setEditingServer] = useState(null);
   const [selectedServer, setSelectedServer] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const loadMcpServers = useCallback(async () => {
     setLoading(true);
@@ -149,7 +151,6 @@ export function McpServerPanel({ active = false, onServersChange }) {
   };
 
   const handleDelete = async (server) => {
-    if (!window.confirm(`删除“${server.name}”连接？`)) return;
     await runServerAction(
       server,
       () => mcpApi.delete(server.id),
@@ -339,7 +340,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
                       className={"danger"}
                       type={"button"}
                       disabled={busyId === String(server.id)}
-                      onClick={() => handleDelete(server)}
+                      onClick={() => setDeleteTarget(server)}
                     >
                       {"删除"}
                     </button>
@@ -367,6 +368,19 @@ export function McpServerPanel({ active = false, onServersChange }) {
         onUpdated={(updated) => {
           setSelectedServer(updated);
           loadMcpServers();
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        danger={true}
+        title={`删除“${deleteTarget?.name || "MCP连接"}”？`}
+        description={"删除后将移除该连接配置和已保存的工具授权。"}
+        confirmLabel={"删除连接"}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          if (target) await handleDelete(target);
         }}
       />
     </section>

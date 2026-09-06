@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { skillApi } from "../api/client.js";
 import { notifyToast } from "./errorFeedback.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 const dispatchSkillsUpdated = (skill = null) => {
   window.dispatchEvent(
@@ -49,6 +50,7 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
   const [contentLoading, setContentLoading] = useState(false);
   const [contentError, setContentError] = useState("");
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const drawerRef = useRef(null);
   const mountedRef = useRef(false);
   const openRef = useRef(Boolean(skill));
@@ -232,13 +234,6 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
     });
 
   const deleteSkill = async () => {
-    if (
-      !window.confirm(
-        `删除“${current.name || current.slug}”？此操作会移除个人Skill文件。`,
-      )
-    ) {
-      return;
-    }
     const deleted = await mutate(
       "delete",
       () => skillApi.delete(current.id),
@@ -373,7 +368,7 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
                       className={"danger"}
                       type={"button"}
                       disabled={Boolean(busyAction)}
-                      onClick={deleteSkill}
+                      onClick={() => setConfirmDelete(true)}
                     >
                       {busyAction === "delete" ? "正在删除..." : "删除"}
                     </button>
@@ -414,6 +409,18 @@ export function SkillDetailDrawer({ skill, onClose, onMutated }) {
             </>
           ) : null}
         </div>
+        <ConfirmDialog
+          open={confirmDelete}
+          danger={true}
+          title={`删除“${current.name || current.slug}”？`}
+          description={"此操作会移除个人Skill文件，且无法撤销。"}
+          confirmLabel={"删除Skill"}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            setConfirmDelete(false);
+            await deleteSkill();
+          }}
+        />
       </aside>
     </div>
   );

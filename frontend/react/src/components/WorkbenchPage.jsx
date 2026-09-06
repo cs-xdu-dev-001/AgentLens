@@ -6,6 +6,7 @@ import { copyTextToClipboard } from "../controller/clipboard.js";
 import { notifyError, notifyToast } from "./errorFeedback.js";
 import { workspaceGitPresentation } from "./workspaceGitPresentation.js";
 import { AgentArtifactList } from "./AgentArtifactList.jsx";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 
 function parentPath(path) {
@@ -106,6 +107,7 @@ export function WorkbenchPage({
   const previewTriggerRef = useRef(null);
   const previewRequestRef = useRef(0);
   const [runCardExpanded, setRunCardExpanded] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const runId = runIdOf(run);
   const runStatus = runStatusOf(run);
   const runArtifacts = runArtifactsOf(run);
@@ -220,7 +222,6 @@ export function WorkbenchPage({
   };
 
   const handleDelete = async (entry) => {
-    if (!window.confirm(`删除${entry.path}？`)) return;
     try {
       await workspaceApi.delete(entry.path);
       notifyToast("文件已删除");
@@ -437,7 +438,7 @@ export function WorkbenchPage({
                   {entry.kind === "file" ? (
                     <div className="workspace-file-actions">
                       <a href={workspaceApi.downloadUrl(entry.path)}>下载</a>
-                      <button className="workspace-file-delete" type="button" onClick={() => handleDelete(entry)} disabled={loading}>删除</button>
+                      <button className="workspace-file-delete" type="button" onClick={() => setDeleteTarget(entry)} disabled={loading}>删除</button>
                     </div>
                   ) : null}
                 </div>
@@ -500,6 +501,19 @@ export function WorkbenchPage({
           ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        danger={true}
+        title={`删除${deleteTarget?.path || "这个文件"}？`}
+        description={"删除后文件将从当前工作区移除，且无法撤销。"}
+        confirmLabel={"删除文件"}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          if (target) await handleDelete(target);
+        }}
+      />
     </section>
   );
 }
