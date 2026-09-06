@@ -8559,6 +8559,18 @@ select:focus {
   padding: 34px 20px !important;
 }
 
+/* When there is no space yet, the primary document surface owns the
+   explanation and creation action. Keep the rail as a compact launcher
+   instead of repeating the same empty state twice. */
+#page-knowledge .knowledge-shell:has(.document-empty.unconfigured) .kb-search-box,
+#page-knowledge .knowledge-shell:has(.document-empty.unconfigured) .kb-card-list .kb-empty {
+  display: none !important;
+}
+
+#page-knowledge .knowledge-shell:has(.document-empty.unconfigured) .knowledge-rail {
+  padding-bottom: 10px !important;
+}
+
 @media (max-width: 760px) {
   #page-knowledge .workspace-page {
     padding: 0 12px 18px !important;
@@ -8587,6 +8599,12 @@ select:focus {
     min-height: 28px !important;
     justify-content: flex-end !important;
     padding-bottom: 6px !important;
+  }
+
+  #page-knowledge .knowledge-shell:has(.document-empty.unconfigured) .knowledge-rail {
+    margin-bottom: 4px !important;
+    padding-bottom: 4px !important;
+    border-bottom: 0 !important;
   }
 
   #page-knowledge .knowledge-primary {
