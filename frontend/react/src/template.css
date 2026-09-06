@@ -9723,6 +9723,39 @@ select:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
+  #page-workspace .workspace-runtime-strip {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    min-height: 40px !important;
+    margin-inline: -14px !important;
+    padding: 8px 14px !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    white-space: nowrap !important;
+  }
+
+  #page-workspace .workspace-runtime-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  #page-workspace .workspace-runtime-strip span {
+    flex: 0 0 auto !important;
+    padding-block: 4px !important;
+  }
+
+  #page-workspace .workspace-boundary-head {
+    gap: 10px !important;
+  }
+
+  #page-workspace .workspace-boundary-head span {
+    max-width: 48%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   #page-workspace .workspace-empty {
     margin-top: 14px !important;
     padding: 18px 14px !important;
