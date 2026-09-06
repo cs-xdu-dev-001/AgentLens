@@ -10057,8 +10057,8 @@ select:focus {
   }
 }
 
-/* Final chat empty-state polish: keep the welcome surface flat and let the
-   task actions read as one navigable rail. This file loads after refinement. */
+/* Final chat empty-state polish: keep the welcome surface quiet while giving
+   task actions a tactile command-row surface. */
 #page-chat.chat-empty .welcome-card {
   width: min(680px, calc(100% - 32px)) !important;
   gap: 14px !important;
@@ -10100,18 +10100,16 @@ select:focus {
 
 #page-chat.chat-empty .welcome-actions {
   display: grid !important;
-  gap: 0 !important;
-  border-top: 0 !important;
-  border-bottom: 1px solid var(--control-border) !important;
+  gap: 8px !important;
+  border: 0 !important;
 }
 
 #page-chat.chat-empty .welcome-action {
-  min-height: 48px !important;
-  padding: 0 2px !important;
-  border: 0 !important;
-  border-top: 1px solid var(--control-border) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
+  min-height: 50px !important;
+  padding: 0 10px 0 12px !important;
+  border: 1px solid var(--control-border) !important;
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--control-bg-hover) 24%, var(--surface)) !important;
   color: var(--text) !important;
   box-shadow: none !important;
 }
@@ -10136,7 +10134,8 @@ select:focus {
 @media (hover: hover) {
   #page-chat.chat-empty .welcome-context:hover,
   #page-chat.chat-empty .welcome-action:hover {
-    background: color-mix(in srgb, var(--control-bg-hover) 74%, transparent) !important;
+    border-color: color-mix(in srgb, var(--text) 18%, var(--control-border)) !important;
+    background: var(--control-bg-hover) !important;
   }
 
   #page-chat.chat-empty .welcome-action:hover .welcome-action-arrow {
@@ -10171,7 +10170,7 @@ select:focus {
   }
 
   #page-chat.chat-empty .welcome-action {
-    min-height: 46px !important;
+    min-height: 48px !important;
   }
 
   #page-chat.chat-empty .welcome-shortcuts {
