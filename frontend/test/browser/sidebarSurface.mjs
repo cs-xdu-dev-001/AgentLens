@@ -91,7 +91,7 @@ try {
     assert.equal(metrics.sidebar.width, 256);
     assert.ok(metrics.archive.right <= metrics.sidebar.right && metrics.archive.left >= metrics.task.right);
     assert.ok(metrics.historyShell.height >= 180);
-    assert.ok(metrics.historyShell.bottom <= metrics.tools.top + 1);
+    assert.ok(metrics.tools.bottom <= metrics.historyShell.top + 1);
     assert.equal(metrics.pageOverflow, false);
     console.log({ viewport: `${width}x${height}`, historyHeight: metrics.history.height });
     for (const theme of ["mono-light", "mono-dark"]) {
