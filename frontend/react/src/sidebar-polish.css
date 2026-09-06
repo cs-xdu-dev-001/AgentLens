@@ -4,19 +4,19 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 272px;
+  --sidebar-width: 264px;
   --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f4f4f1;
+  --al-sidebar-bg: #f7f7f4;
   --al-sidebar-surface: #fbfbf9;
-  --al-sidebar-hover: #e8e8e3;
-  --al-sidebar-active: #e1e5df;
-  --al-sidebar-divider: #d6d6cf;
+  --al-sidebar-hover: #ecece7;
+  --al-sidebar-active: #e6ebe5;
+  --al-sidebar-divider: #deded7;
   --al-sidebar-text: #252522;
   --al-sidebar-muted: #72726c;
   --al-sidebar-primary-bg: #1f1f1c;
   --al-sidebar-primary-text: #fcfbf7;
   --al-sidebar-active-text: #252522;
-  --al-sidebar-nav-active: #e1e5df;
+  --al-sidebar-nav-active: #e6ebe5;
   --al-sidebar-nav-active-text: #252522;
   --al-sidebar-focus: #8b8b82;
 }
@@ -24,15 +24,15 @@
 :root[data-theme="mono-dark"] {
   --al-sidebar-bg: #1b1b1a;
   --al-sidebar-surface: #242422;
-  --al-sidebar-hover: #2b2b28;
-  --al-sidebar-active: #33332f;
-  --al-sidebar-divider: #3c3c37;
+  --al-sidebar-hover: #2a2a27;
+  --al-sidebar-active: #31342f;
+  --al-sidebar-divider: #3a3a35;
   --al-sidebar-text: #f0f0ea;
   --al-sidebar-muted: #aaa9a1;
   --al-sidebar-primary-bg: #f0f0e9;
   --al-sidebar-primary-text: #1b1d1a;
   --al-sidebar-active-text: #f0f0e9;
-  --al-sidebar-nav-active: #30312c;
+  --al-sidebar-nav-active: #31342f;
   --al-sidebar-nav-active-text: #f0f0e9;
   --al-sidebar-focus: #8f9188;
 }
@@ -59,12 +59,12 @@
   flex: 0 0 auto !important;
   align-items: center !important;
   justify-content: flex-start !important;
-  min-height: 34px !important;
-  margin: 0 0 9px !important;
+  min-height: 32px !important;
+  margin: 0 0 10px !important;
   padding: 0 !important;
   gap: 2px !important;
   border: 0 !important;
-  border-bottom: 1px solid var(--al-sidebar-divider) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 82%, transparent) !important;
   border-radius: 0 !important;
   background: transparent !important;
 }
@@ -73,14 +73,14 @@
   position: relative !important;
   flex: 0 0 auto !important;
   width: auto !important;
-  min-height: 34px !important;
+  min-height: 32px !important;
   margin: 0 !important;
-  padding: 0 9px !important;
+  padding: 0 8px !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   color: var(--al-sidebar-muted) !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 500 !important;
   box-shadow: none !important;
 }
@@ -136,12 +136,12 @@
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .sidebar-search input {
   box-sizing: border-box !important;
   width: 100% !important;
-  height: 32px !important;
-  min-height: 32px !important;
+  height: 34px !important;
+  min-height: 34px !important;
   padding: 5px 10px 5px 32px !important;
-  border: 1px solid var(--al-sidebar-divider) !important;
-  border-radius: 8px !important;
-  background: var(--al-sidebar-surface) !important;
+  border: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 86%, transparent) !important;
+  border-radius: 9px !important;
+  background: color-mix(in srgb, var(--al-sidebar-surface) 74%, transparent) !important;
   color: var(--al-sidebar-text) !important;
   font: inherit !important;
   box-shadow: none !important;
@@ -155,9 +155,9 @@
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .sidebar-refresh-button {
   width: 34px !important;
   min-width: 34px !important;
-  height: 32px !important;
+  height: 34px !important;
   border: 0 !important;
-  border-radius: 8px !important;
+  border-radius: 9px !important;
   background: transparent !important;
   color: var(--al-sidebar-muted) !important;
 }
@@ -374,18 +374,29 @@
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .sidebar-history-empty {
-  display: flex !important;
+  display: grid !important;
+  grid-template-columns: 24px minmax(0, 1fr) !important;
   align-items: center !important;
-  gap: 8px !important;
-  min-height: 34px !important;
-  padding: 8px 10px !important;
+  gap: 9px !important;
+  min-height: 56px !important;
+  margin: 6px 0 0 !important;
+  padding: 10px !important;
+  border: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 68%, transparent) !important;
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--al-sidebar-surface) 62%, transparent) !important;
   color: var(--al-sidebar-muted) !important;
   font-size: 12px !important;
+  line-height: 1.45 !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .sidebar-history-empty svg {
-  flex: 0 0 auto;
-  color: var(--al-sidebar-muted);
+  width: 16px !important;
+  height: 16px !important;
+  padding: 4px !important;
+  box-sizing: content-box !important;
+  border-radius: 7px !important;
+  background: var(--al-sidebar-hover) !important;
+  color: var(--al-sidebar-text);
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-list-feedback {
@@ -447,7 +458,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 14px 12px !important;
+    padding: 14px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -455,29 +466,29 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 38px !important;
+    min-height: 40px !important;
     flex: 0 0 auto !important;
-    margin: 0 0 12px !important;
-    padding: 0 2px 0 !important;
-    gap: 10px !important;
+    margin: 0 2px 14px !important;
+    padding: 0 !important;
+    gap: 9px !important;
     border-bottom: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 34px !important;
-    height: 34px !important;
-    flex: 0 0 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .brand-copy strong {
     color: var(--al-sidebar-text) !important;
-    font-size: 16px !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.02em !important;
+    font-size: 15px !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.015em !important;
   }
 
   #sidebar.sidebar-workbench .brand-copy span {
@@ -510,17 +521,17 @@
     justify-content: flex-start !important;
     flex: 0 0 auto !important;
     width: 100% !important;
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: 35px !important;
+    height: 35px !important;
     margin: 0 !important;
-    padding: 0 9px !important;
-    gap: 10px !important;
+    padding: 0 10px !important;
+    gap: 9px !important;
     border: 0 !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     font-size: 14px !important;
-    font-weight: 500 !important;
+    font-weight: 450 !important;
     text-align: left !important;
     box-shadow: none !important;
     transform: none !important;
@@ -529,14 +540,14 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 40px !important;
-    height: 40px !important;
-    margin: 0 0 10px !important;
-    border: 1px solid var(--al-sidebar-primary-bg) !important;
-    border-radius: 10px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin: 0 0 12px !important;
+    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, transparent) !important;
+    border-radius: 11px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
-    box-shadow: none !important;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08) !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
@@ -567,7 +578,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 1px !important;
+    gap: 3px !important;
     padding-bottom: 0 !important;
     border: 0 !important;
     border-bottom: 0 !important;
@@ -627,11 +638,11 @@
     flex: 1 1 0 !important;
     min-height: 0 !important;
     height: 0 !important;
-    margin: 12px 0 0 !important;
-    padding: 0 1px !important;
+    margin: 14px 0 0 !important;
+    padding: 12px 2px 0 !important;
     gap: 0 !important;
     overflow: hidden !important;
-    border: 0 !important;
+    border-top: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 78%, transparent) !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -641,7 +652,7 @@
   #sidebar.sidebar-workbench .chat-history-shell:has(.sidebar-history-empty, .empty-state, .session-list-feedback) {
     flex: 0 0 auto !important;
     height: auto !important;
-    max-height: 136px !important;
+    max-height: 164px !important;
     padding-bottom: 0 !important;
   }
 
@@ -651,8 +662,8 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 10px 0 0 !important;
-    padding: 10px 0 0 !important;
+    margin: 12px 0 0 !important;
+    padding: 12px 0 0 !important;
     gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
@@ -666,11 +677,11 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 9px 5px !important;
+    margin: 0 10px 6px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
     font-size: 11px !important;
-    font-weight: 650 !important;
+    font-weight: 600 !important;
     letter-spacing: 0 !important;
     line-height: 16px !important;
     text-transform: none !important;
@@ -682,7 +693,7 @@
     flex-basis: 20px !important;
     border-radius: 0 !important;
     background: transparent !important;
-    color: var(--al-sidebar-muted) !important;
+    color: color-mix(in srgb, var(--al-sidebar-text) 64%, var(--al-sidebar-muted)) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool.active .nav-icon {
@@ -697,7 +708,12 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-quick-label {
-    display: none !important;
+    display: block !important;
+    margin-top: 2px !important;
+    margin-bottom: 4px !important;
+    color: var(--al-sidebar-muted) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"]) {
@@ -709,14 +725,15 @@
 
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"])::before {
     position: absolute;
-    top: 50%;
-    left: 5px;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
+    top: 7px;
+    bottom: 7px;
+    left: 0;
+    width: 2px;
+    height: auto;
+    border-radius: 999px;
     background: currentColor;
     content: "";
-    transform: translateY(-50%);
+    transform: none;
   }
 
   #sidebar.sidebar-workbench .sidebar-utility-tools .sidebar-tool::before {
@@ -728,8 +745,8 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: 35px !important;
+    height: 35px !important;
     font-size: 14px !important;
   }
 
@@ -738,13 +755,13 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-tool .nav-icon {
-    color: var(--al-sidebar-muted) !important;
+    color: color-mix(in srgb, var(--al-sidebar-text) 64%, var(--al-sidebar-muted)) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-account-footer {
     flex: 0 0 auto !important;
-    margin: 9px 0 0 !important;
-    padding: 8px 2px 2px !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 2px 2px !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 0 !important;
@@ -762,11 +779,11 @@
   }
 
   #sidebar.sidebar-workbench .user-menu-button {
-    min-height: 38px !important;
-    padding: 5px 8px !important;
+    min-height: 40px !important;
+    padding: 6px 8px !important;
     gap: 8px !important;
     border: 0 !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
@@ -797,12 +814,13 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 18px !important;
     flex: 0 0 auto !important;
-    margin: 3px 8px 0 40px !important;
+    margin: 4px 8px 0 40px !important;
     padding: 0 0 1px !important;
     border: 0 !important;
     background: transparent !important;
     color: var(--al-sidebar-muted) !important;
     font-size: 11px !important;
+    line-height: 1.3 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: space-between !important;
