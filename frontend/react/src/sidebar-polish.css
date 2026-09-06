@@ -968,9 +968,9 @@
   body.sidebar-collapsed #sidebar.sidebar-workbench {
     box-sizing: border-box !important;
     width: 100% !important;
-    height: 56px !important;
-    min-height: 56px !important;
-    padding: 8px 10px !important;
+    height: calc(56px + env(safe-area-inset-top)) !important;
+    min-height: calc(56px + env(safe-area-inset-top)) !important;
+    padding: calc(8px + env(safe-area-inset-top)) 10px 8px !important;
     gap: 6px !important;
     overflow: visible !important;
     border: 0 !important;
