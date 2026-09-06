@@ -1,0 +1,170 @@
+/*
+ * Chat surface finish pass.
+ * Keep the existing information architecture and controls; this file only
+ * tightens the reading axis, topbar hierarchy, and composer ergonomics.
+ */
+#page-chat .chat-topbar {
+  min-height: 58px !important;
+  padding: 8px 18px 8px 24px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--control-border) 82%, transparent) !important;
+  background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+}
+
+#page-chat .chat-session-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#page-chat .chat-session-heading h1 {
+  max-width: min(48vw, 560px);
+  color: var(--text) !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em;
+}
+
+#page-chat .chat-session-switching {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--control-border) 84%, transparent);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#page-chat .chat-topbar-actions {
+  gap: 6px !important;
+}
+
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-workspace-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+) {
+  min-height: 38px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  transition: background-color var(--kf-transition), border-color var(--kf-transition), color var(--kf-transition);
+}
+
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-workspace-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+):hover,
+#page-chat .chat-topbar-actions > :is(
+  .chat-notification-toggle,
+  .chat-workspace-toggle,
+  .chat-run-toggle,
+  #refresh-btn
+):focus-visible {
+  border-color: var(--control-border) !important;
+  background: var(--surface-soft) !important;
+}
+
+#page-chat .chat-workspace-toggle.is-dirty,
+#page-chat .chat-workspace-toggle.is-behind,
+#page-chat .chat-workspace-toggle.is-conflict,
+#page-chat .chat-workspace-toggle.is-error,
+#page-chat .chat-run-toggle:is(.is-running, .is-waiting, .is-failed) {
+  border-color: color-mix(in srgb, currentColor 18%, var(--control-border)) !important;
+  background: color-mix(in srgb, currentColor 7%, var(--surface)) !important;
+}
+
+#page-chat #chat-form.composer {
+  width: min(100%, 900px) !important;
+  margin-inline: auto !important;
+  padding-inline: 20px !important;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  border-color: color-mix(in srgb, var(--control-border) 92%, var(--text)) !important;
+  background: var(--surface) !important;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--text) 7%, transparent) !important;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea {
+  color: var(--text) !important;
+  caret-color: var(--text) !important;
+}
+
+#page-chat #chat-form.composer .composer-input-stack textarea::placeholder {
+  color: var(--muted) !important;
+}
+
+#page-chat.chat-empty .welcome-card {
+  width: min(640px, calc(100% - 32px)) !important;
+}
+
+#page-chat.chat-empty .welcome-action {
+  min-height: 46px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--control-border) 72%, transparent);
+  border-radius: 0 !important;
+}
+
+#page-chat.chat-empty .welcome-action:last-child,
+#page-chat.chat-empty .welcome-action:nth-last-child(2) {
+  border-bottom-color: transparent;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    min-height: 48px !important;
+    height: 48px !important;
+    padding: 2px 8px 2px 12px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: min(42vw, 168px);
+    font-size: 14px !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    gap: 2px !important;
+  }
+
+  #page-chat #chat-form.composer {
+    width: 100% !important;
+    padding-inline: 12px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--text) 8%, transparent) !important;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    width: min(100%, calc(100% - 20px)) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  #page-chat .chat-session-heading h1 {
+    max-width: 35vw;
+  }
+
+  #page-chat #chat-form.composer {
+    padding-inline: 8px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-chat .chat-topbar-actions > :is(
+    .chat-notification-toggle,
+    .chat-workspace-toggle,
+    .chat-run-toggle,
+    #refresh-btn
+  ),
+  #page-chat #chat-form.composer .composer-shell {
+    transition: none !important;
+    box-shadow: none !important;
+  }
+}

@@ -8,6 +8,7 @@ import "./styles.css";
 import "./refinement.css";
 import "./template.css";
 import "./sidebar-polish.css";
+import "./chat-polish.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
