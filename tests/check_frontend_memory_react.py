@@ -98,15 +98,15 @@ def main() -> None:
     assert "清空全部" in page
     assert "长期记忆" in page
     assert "Mem0" in page
-    delete_guard = (
-        'if (!window.confirm("删除这条长期记忆？此操作无法撤销。")) '
-        "return;"
-    )
-    assert delete_guard in page
-    delete_handler = page[page.index("const handleDelete"):]
-    assert delete_handler.index(delete_guard) < delete_handler.index(
-        "await memoryApi.delete(memoryId)"
-    )
+    assert 'import { ConfirmDialog } from "./ConfirmDialog.jsx";' in page
+    assert 'const [confirmAction, setConfirmAction] = useState(null);' in page
+    assert 'setConfirmAction({ kind: "delete", memoryId });' in page
+    assert 'setConfirmAction({ kind: "clear" });' in page
+    assert 'open={Boolean(confirmAction)}' in page
+    assert 'title={confirmAction?.kind === "clear" ? "清空全部长期记忆？" : "删除这条长期记忆？"}' in page
+    assert 'onConfirm={confirmPendingAction}' in page
+    assert 'onClick={requestClear}' in page
+    assert 'onClick={() => requestDelete(memoryId)}' in page
     assert (
         "const interactionLocked = loading || memoriesLoading || Boolean(busy);"
         in page
