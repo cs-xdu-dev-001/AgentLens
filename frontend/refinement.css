@@ -4303,6 +4303,7 @@ body.sidebar-collapsed .sidebar .user-menu-button {
 
 .command-palette::backdrop {
   background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(2px);
 }
 
 .command-palette[open] {
@@ -4483,6 +4484,13 @@ body.sidebar-collapsed .sidebar .user-menu-button {
   color: var(--text-soft);
   font-size: 14px;
   line-height: 1.5;
+}
+
+.command-palette-footer > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .command-palette-footer kbd {

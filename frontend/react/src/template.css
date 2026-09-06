@@ -10414,9 +10414,10 @@ select:focus {
 }
 
 .toast-message {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: min(48ch, 62vw);
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 @media (max-width: 760px) {
@@ -10429,10 +10430,11 @@ select:focus {
   }
 
   .toast-message {
-    white-space: normal;
+    max-width: none;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+    overflow: hidden;
   }
 }
 
