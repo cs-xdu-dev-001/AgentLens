@@ -9251,7 +9251,7 @@ body.sidebar-collapsed .sidebar {
 
 #page-chat.chat-empty .welcome-card {
   gap: 14px !important;
-  translate: 0 84px;
+  translate: 0 clamp(0px, 8vh, 84px);
   animation: none !important;
 }
 
@@ -9338,7 +9338,7 @@ body.sidebar-collapsed .sidebar {
   #page-chat.chat-empty .welcome-card {
     width: min(100%, 360px) !important;
     gap: 12px !important;
-    translate: 0 142px;
+    translate: 0 clamp(72px, 17vh, 142px);
   }
 
   #page-chat.chat-empty .welcome-card h2 {
@@ -9366,11 +9366,35 @@ body.sidebar-collapsed .sidebar {
       0 1px 2px rgba(0, 0, 0, 0.05),
       0 8px 24px rgba(0, 0, 0, 0.08) !important;
   }
+
+  /* Keep message actions visually attached to their turn while preserving
+     comfortable touch targets. */
+  #page-chat .message-actions {
+    width: max-content !important;
+    max-width: 100%;
+    min-height: 36px !important;
+    margin-top: -6px !important;
+    margin-bottom: -2px !important;
+    padding: 0 !important;
+    gap: 1px !important;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  #page-chat .message-actions button {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+  }
 }
 
 @media (max-width: 520px) {
   #page-chat.chat-empty .welcome-card {
-    translate: 0 202px;
+    translate: 0 clamp(84px, 20vh, 178px);
   }
 }
 
