@@ -10088,6 +10088,98 @@ select:focus {
   }
 }
 
+/* Chat workbench v7: one reading axis, quieter idle chrome, and a composer
+   that remains attached to the conversation on narrow screens. */
+#page-chat .chat-topbar {
+  min-height: 56px !important;
+  padding-inline: clamp(16px, 2.4vw, 30px) !important;
+  background: color-mix(in srgb, var(--workspace-bg) 92%, var(--surface)) !important;
+}
+
+#page-chat .chat-topbar-actions > :is(.chat-notification-toggle, #refresh-btn) {
+  opacity: 0.78;
+}
+
+#page-chat .chat-topbar-actions > :is(.chat-notification-toggle, #refresh-btn):hover,
+#page-chat .chat-topbar-actions > :is(.chat-notification-toggle, #refresh-btn):focus-visible,
+#page-chat .chat-topbar-actions > .chat-notification-toggle[aria-pressed="true"] {
+  opacity: 1;
+}
+
+#page-chat .chat-workspace-toggle,
+#page-chat .chat-run-toggle {
+  max-width: min(240px, 26vw);
+}
+
+#page-chat .chat-workspace-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#page-chat .messages-virtualized .message-row {
+  width: min(var(--al-chat-column), calc(100% - 32px));
+  margin-inline: auto;
+}
+
+#page-chat .messages-virtualized .message-row.user {
+  width: min(var(--al-chat-column), calc(100% - 32px));
+}
+
+#page-chat #chat-form.composer {
+  padding-inline: clamp(12px, 2.4vw, 30px) !important;
+}
+
+#page-chat #chat-form.composer .composer-shell {
+  width: min(var(--al-chat-column), 100%) !important;
+  border-radius: 14px !important;
+}
+
+@media (max-width: 760px) {
+  #page-chat .chat-topbar {
+    padding-inline: 10px 8px !important;
+  }
+
+  #page-chat .chat-session-heading h1 {
+    max-width: calc(100vw - 218px) !important;
+    font-size: 13px !important;
+    font-weight: 650 !important;
+  }
+
+  #page-chat .chat-topbar-actions {
+    padding-right: 42px !important;
+  }
+
+  #page-chat .chat-workspace-toggle {
+    max-width: 44px !important;
+  }
+
+  #page-chat .messages-virtualized .message-row,
+  #page-chat .messages-virtualized .message-row.user {
+    width: calc(100% - 24px);
+  }
+
+  #page-chat #chat-form.composer {
+    padding-inline: 8px !important;
+  }
+
+  #page-chat #chat-form.composer .composer-shell {
+    width: 100% !important;
+    border-radius: 13px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  #page-chat .chat-session-heading h1 {
+    max-width: calc(100vw - 184px) !important;
+  }
+
+  #page-chat .messages-virtualized .message-row,
+  #page-chat .messages-virtualized .message-row.user {
+    width: calc(100% - 16px);
+  }
+}
+
 /* Tools mobile finish: keep the fixed tool identity compact, while leaving
    credentials and the real save/test actions fully reachable. */
 @media (max-width: 760px) {
