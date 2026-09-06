@@ -4,29 +4,29 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 280px;
+  --sidebar-width: 264px;
   --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f4f4f1;
-  --al-sidebar-surface: #fcfcfa;
-  --al-sidebar-hover: #e9eae5;
-  --al-sidebar-active: #e1e6df;
-  --al-sidebar-divider: #d9dad2;
-  --al-sidebar-text: #242421;
-  --al-sidebar-muted: #686861;
-  --al-sidebar-primary-bg: #1f1f1c;
-  --al-sidebar-primary-text: #fcfbf7;
-  --al-sidebar-active-text: #252522;
-  --al-sidebar-nav-active: #e9ede8;
-  --al-sidebar-nav-active-text: #252522;
-  --al-sidebar-focus: #8b8b82;
+  --al-sidebar-bg: #f7f7f4;
+  --al-sidebar-surface: #ffffff;
+  --al-sidebar-hover: #eceee9;
+  --al-sidebar-active: #e4e9e3;
+  --al-sidebar-divider: #dedfd8;
+  --al-sidebar-text: #242521;
+  --al-sidebar-muted: #777971;
+  --al-sidebar-primary-bg: #252723;
+  --al-sidebar-primary-text: #fbfbf8;
+  --al-sidebar-active-text: #20241f;
+  --al-sidebar-nav-active: #e7ebe5;
+  --al-sidebar-nav-active-text: #20241f;
+  --al-sidebar-focus: #777d73;
 }
 
 :root[data-theme="mono-dark"] {
-  --al-sidebar-bg: #1c1c1b;
-  --al-sidebar-surface: #242422;
-  --al-sidebar-hover: #292a27;
-  --al-sidebar-active: #30332f;
-  --al-sidebar-divider: #393a35;
+  --al-sidebar-bg: #1e201e;
+  --al-sidebar-surface: #252825;
+  --al-sidebar-hover: #2c302c;
+  --al-sidebar-active: #343a34;
+  --al-sidebar-divider: #3b403b;
   --al-sidebar-text: #f0f0ea;
   --al-sidebar-muted: #aaa9a1;
   --al-sidebar-primary-bg: #f0f0e9;
@@ -59,12 +59,12 @@
   flex: 0 0 auto !important;
   align-items: center !important;
   justify-content: flex-start !important;
-  min-height: 32px !important;
-  margin: 0 0 10px !important;
+  min-height: 30px !important;
+  margin: 0 0 8px !important;
   padding: 0 !important;
   gap: 2px !important;
   border: 0 !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 82%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 70%, transparent) !important;
   border-radius: 0 !important;
   background: transparent !important;
 }
@@ -73,20 +73,20 @@
   position: relative !important;
   flex: 0 0 auto !important;
   width: auto !important;
-  min-height: 32px !important;
+  min-height: 30px !important;
   margin: 0 !important;
-  padding: 0 8px !important;
+  padding: 0 7px !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   color: var(--al-sidebar-muted) !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
   box-shadow: none !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-scope-tabs button.active {
-  background: var(--al-sidebar-surface) !important;
+  background: transparent !important;
   color: var(--al-sidebar-text) !important;
   font-weight: 600 !important;
   box-shadow: inset 0 -2px 0 var(--al-sidebar-text) !important;
@@ -136,12 +136,12 @@
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .sidebar-search input {
   box-sizing: border-box !important;
   width: 100% !important;
-  height: 34px !important;
-  min-height: 34px !important;
+  height: 36px !important;
+  min-height: 36px !important;
   padding: 5px 10px 5px 32px !important;
   border: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 86%, transparent) !important;
-  border-radius: 9px !important;
-  background: color-mix(in srgb, var(--al-sidebar-surface) 74%, transparent) !important;
+  border-radius: 8px !important;
+  background: color-mix(in srgb, var(--al-sidebar-surface) 70%, transparent) !important;
   color: var(--al-sidebar-text) !important;
   font: inherit !important;
   box-shadow: none !important;
@@ -157,7 +157,7 @@
   min-width: 34px !important;
   height: 34px !important;
   border: 0 !important;
-  border-radius: 9px !important;
+  border-radius: 8px !important;
   background: transparent !important;
   color: var(--al-sidebar-muted) !important;
 }
@@ -199,14 +199,14 @@
   position: relative !important;
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) 32px !important;
-  min-height: 40px !important;
+  min-height: 42px !important;
   gap: 0 !important;
   margin: 1px 0 !important;
   border: 0 !important;
-  border-radius: 9px !important;
+  border-radius: 8px !important;
   background: transparent !important;
   box-shadow: none !important;
-  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease !important;
+  transition: background-color 150ms ease, box-shadow 150ms ease !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row:is(.active, .switching, .menu-open) {
@@ -215,14 +215,7 @@
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row.active::before {
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 0;
-  width: 2px;
-  border-radius: 999px;
-  background: var(--al-sidebar-text);
-  content: "";
+  display: none;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row .sidebar-list-item {
@@ -231,13 +224,13 @@
   align-items: stretch !important;
   justify-content: center !important;
   min-width: 0 !important;
-  min-height: 40px !important;
+  min-height: 42px !important;
   height: auto !important;
   margin: 0 !important;
   padding: 7px 10px !important;
   gap: 0 !important;
   border: 0 !important;
-  border-radius: 9px !important;
+  border-radius: 8px !important;
   background: transparent !important;
   color: var(--al-sidebar-text) !important;
   box-shadow: none !important;
@@ -258,7 +251,7 @@
   gap: 6px;
   color: var(--al-sidebar-text) !important;
   font-size: 13px !important;
-  font-weight: 500 !important;
+  font-weight: 520 !important;
   line-height: 1.5 !important;
 }
 
@@ -273,6 +266,10 @@
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row:is(.active, .switching, .menu-open) :is(.session-title, .session-pin-mark, .session-run-summary, .session-run-status, .session-run-meta, .session-menu-button) {
   color: var(--al-sidebar-active-text) !important;
+}
+
+:is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row.active .sidebar-list-item {
+  background: transparent !important;
 }
 
 :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .session-row:is(.active, .switching, .menu-open) .session-run-progress {
@@ -458,29 +455,29 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 14px 12px !important;
+    padding: 16px 12px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
-    border-right: 1px solid var(--al-sidebar-divider) !important;
+    border-right: 1px solid color-mix(in srgb, var(--al-sidebar-divider) 76%, transparent) !important;
     background: var(--al-sidebar-bg) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 42px !important;
+    min-height: 38px !important;
     flex: 0 0 auto !important;
-    margin: 0 1px 16px !important;
+    margin: 0 2px 18px !important;
     padding: 0 !important;
     gap: 9px !important;
     border-bottom: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 34px !important;
-    height: 34px !important;
-    flex: 0 0 34px !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 10px !important;
-    background: var(--al-sidebar-surface) !important;
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
+    border: 0 !important;
+    border-radius: 9px !important;
+    background: var(--al-sidebar-active) !important;
     box-shadow: none !important;
   }
 
@@ -540,14 +537,14 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 44px !important;
-    height: 44px !important;
-    margin: 0 0 14px !important;
-    border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, transparent) !important;
-    border-radius: 12px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    margin: 0 2px 12px !important;
+    border: 1px solid var(--al-sidebar-primary-bg) !important;
+    border-radius: 10px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 2px 5px rgba(20, 24, 20, 0.12) !important;
+    box-shadow: none !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
@@ -578,7 +575,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 4px !important;
+    gap: 2px !important;
     padding-bottom: 0 !important;
     border: 0 !important;
     border-bottom: 0 !important;
@@ -638,13 +635,14 @@
     flex: 1 1 220px !important;
     min-height: 180px !important;
     height: auto !important;
-    margin: 16px 0 0 !important;
-    padding: 12px 10px 10px !important;
+    margin: 14px 2px 0 !important;
+    padding: 10px 0 8px !important;
     gap: 0 !important;
     overflow: hidden !important;
-    border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 14px !important;
-    background: color-mix(in srgb, var(--al-sidebar-surface) 84%, transparent) !important;
+    border: 0 !important;
+    border-top: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
     box-shadow: none !important;
     order: 3 !important;
   }
@@ -681,11 +679,11 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 12px 0 0 !important;
-    padding: 10px 0 4px !important;
+    margin: 10px 0 0 !important;
+    padding: 10px 0 2px !important;
     gap: 2px !important;
     border: 0 !important;
-    border-top: 1px solid var(--al-sidebar-divider) !important;
+    border-top: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
     order: 2 !important;
@@ -702,12 +700,12 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 7px 7px !important;
+    margin: 0 8px 5px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 11px !important;
-    font-weight: 650 !important;
-    letter-spacing: 0.04em !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
     line-height: 16px !important;
     text-transform: none !important;
   }
@@ -745,20 +743,11 @@
     background: var(--al-sidebar-nav-active) !important;
     color: var(--al-sidebar-nav-active-text) !important;
     font-weight: 600 !important;
-    box-shadow: none !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--al-sidebar-divider) 70%, transparent) !important;
   }
 
   #sidebar.sidebar-workbench .sidebar-tool:is(.active, [aria-expanded="true"])::before {
-    position: absolute;
-    top: 7px;
-    bottom: 7px;
-    left: 0;
-    width: 3px;
-    height: auto;
-    border-radius: 999px;
-    background: currentColor;
-    content: "";
-    transform: none;
+    display: none;
   }
 
   #sidebar.sidebar-workbench .sidebar-utility-tools .sidebar-tool::before {
@@ -786,7 +775,7 @@
   #sidebar.sidebar-workbench .sidebar-account-footer {
     flex: 0 0 auto !important;
     margin: auto 0 0 !important;
-    padding: 10px 2px 2px !important;
+    padding: 10px 2px 0 !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 0 !important;
@@ -808,7 +797,7 @@
     padding: 6px 8px !important;
     gap: 8px !important;
     border: 0 !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: transparent !important;
     color: var(--al-sidebar-text) !important;
     box-shadow: none !important;
@@ -839,7 +828,7 @@
   #sidebar.sidebar-workbench .runtime-card {
     min-height: 18px !important;
     flex: 0 0 auto !important;
-    margin: 3px 8px 0 40px !important;
+    margin: 3px 8px 0 42px !important;
     padding: 0 0 1px !important;
     border: 0 !important;
     background: transparent !important;
