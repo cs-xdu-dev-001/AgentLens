@@ -4,13 +4,13 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 256px;
+  --sidebar-width: 280px;
   --sidebar-collapsed-width: 64px;
-  --al-sidebar-bg: #f7f7f4;
-  --al-sidebar-surface: #fbfbf9;
-  --al-sidebar-hover: #ecece7;
-  --al-sidebar-active: #e5e8e2;
-  --al-sidebar-divider: #deded6;
+  --al-sidebar-bg: #f4f4f1;
+  --al-sidebar-surface: #fcfcfa;
+  --al-sidebar-hover: #e9eae5;
+  --al-sidebar-active: #e1e6df;
+  --al-sidebar-divider: #d9dad2;
   --al-sidebar-text: #242421;
   --al-sidebar-muted: #686861;
   --al-sidebar-primary-bg: #1f1f1c;
@@ -458,7 +458,7 @@
     flex-direction: column !important;
     width: var(--sidebar-width) !important;
     min-width: 0 !important;
-    padding: 14px 12px 12px !important;
+    padding: 14px 14px 12px !important;
     gap: 0 !important;
     overflow: hidden !important;
     border-right: 1px solid var(--al-sidebar-divider) !important;
@@ -466,20 +466,20 @@
   }
 
   #sidebar.sidebar-workbench .sidebar-brand {
-    min-height: 40px !important;
+    min-height: 42px !important;
     flex: 0 0 auto !important;
-    margin: 0 2px 14px !important;
+    margin: 0 1px 16px !important;
     padding: 0 !important;
     gap: 9px !important;
     border-bottom: 0 !important;
   }
 
   #sidebar.sidebar-workbench .brand-mark {
-    width: 32px !important;
-    height: 32px !important;
-    flex: 0 0 32px !important;
+    width: 34px !important;
+    height: 34px !important;
+    flex: 0 0 34px !important;
     border: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 9px !important;
+    border-radius: 10px !important;
     background: var(--al-sidebar-surface) !important;
     box-shadow: none !important;
   }
@@ -540,14 +540,14 @@
   }
 
   #sidebar.sidebar-workbench .new-chat-button {
-    min-height: 42px !important;
-    height: 42px !important;
-    margin: 0 0 12px !important;
+    min-height: 44px !important;
+    height: 44px !important;
+    margin: 0 0 14px !important;
     border: 1px solid color-mix(in srgb, var(--al-sidebar-primary-bg) 88%, transparent) !important;
-    border-radius: 11px !important;
+    border-radius: 12px !important;
     background: var(--al-sidebar-primary-bg) !important;
     color: var(--al-sidebar-primary-text) !important;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 2px 5px rgba(20, 24, 20, 0.12) !important;
   }
 
   #sidebar.sidebar-workbench .new-chat-button strong {
@@ -578,7 +578,7 @@
     flex-direction: column !important;
     margin: 0 !important;
     padding: 0 !important;
-    gap: 3px !important;
+    gap: 4px !important;
     padding-bottom: 0 !important;
     border: 0 !important;
     border-bottom: 0 !important;
@@ -639,12 +639,12 @@
     min-height: 180px !important;
     height: auto !important;
     margin: 16px 0 0 !important;
-    padding: 14px 2px 0 !important;
+    padding: 12px 10px 10px !important;
     gap: 0 !important;
     overflow: hidden !important;
-    border-top: 1px solid var(--al-sidebar-divider) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
+    border: 1px solid var(--al-sidebar-divider) !important;
+    border-radius: 14px !important;
+    background: color-mix(in srgb, var(--al-sidebar-surface) 84%, transparent) !important;
     box-shadow: none !important;
     order: 3 !important;
   }
@@ -668,7 +668,7 @@
     padding-bottom: 0 !important;
   }
 
-  #sidebar.sidebar-workbench .chat-history-shell:not(:has(> .sidebar-history-empty)) {
+  #sidebar.sidebar-workbench .chat-history-shell:not(:has(.sidebar-history-empty, .session-list-feedback)) {
     flex: 1 1 220px !important;
     min-height: 180px !important;
     height: auto !important;
@@ -681,8 +681,8 @@
     flex: 0 0 auto !important;
     grid-template-columns: none !important;
     width: 100% !important;
-    margin: 12px 0 0 !important;
-    padding: 10px 0 4px !important;
+    margin: 14px 0 0 !important;
+    padding: 12px 0 4px !important;
     gap: 2px !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
@@ -702,12 +702,12 @@
   #sidebar.sidebar-workbench .sidebar-section-label {
     display: block !important;
     flex: 0 0 auto !important;
-    margin: 0 6px 7px !important;
+    margin: 0 7px 7px !important;
     padding: 0 !important;
     color: var(--al-sidebar-muted) !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     font-weight: 650 !important;
-    letter-spacing: -0.01em !important;
+    letter-spacing: 0.04em !important;
     line-height: 16px !important;
     text-transform: none !important;
   }
@@ -753,7 +753,7 @@
     top: 7px;
     bottom: 7px;
     left: 0;
-    width: 2px;
+    width: 3px;
     height: auto;
     border-radius: 999px;
     background: currentColor;
@@ -786,7 +786,7 @@
   #sidebar.sidebar-workbench .sidebar-account-footer {
     flex: 0 0 auto !important;
     margin: auto 0 0 !important;
-    padding: 8px 2px 2px !important;
+    padding: 10px 2px 2px !important;
     border: 0 !important;
     border-top: 1px solid var(--al-sidebar-divider) !important;
     border-radius: 0 !important;
@@ -850,6 +850,41 @@
     align-items: center !important;
     justify-content: space-between !important;
     gap: 8px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-tool,
+  #sidebar.sidebar-workbench .command-palette-trigger {
+    min-height: 38px !important;
+    height: 38px !important;
+    border-radius: 10px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-tool .nav-icon,
+  #sidebar.sidebar-workbench .new-chat-button > span {
+    width: 22px !important;
+    height: 22px !important;
+    flex-basis: 22px !important;
+  }
+
+  #sidebar.sidebar-workbench .sidebar-bottom-tools .sidebar-tool {
+    min-height: 40px !important;
+    height: 40px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell .session-scope-tabs {
+    margin-left: -2px !important;
+    margin-right: -2px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell .sidebar-search-row {
+    margin-left: -2px !important;
+    margin-right: -2px !important;
+  }
+
+  #sidebar.sidebar-workbench .chat-history-shell .sidebar-history-empty {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    background: var(--al-sidebar-bg) !important;
   }
 
   #sidebar.sidebar-workbench.collapsed {
