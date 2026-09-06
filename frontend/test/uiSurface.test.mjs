@@ -29,6 +29,12 @@ test("virtualized transcript tolerates a transient missing item", async () => {
   assert.match(source, /return message\?\.id \|\| `message-placeholder-\$\{_index\}`;/);
 });
 
+test("virtualized tool output tolerates a transient missing item", async () => {
+  const source = await readSource("components/ChatEvidenceDrawer.jsx");
+  assert.match(source, /return item\?\.id \|\| `tool-output-placeholder-\$\{_index\}`;/);
+  assert.match(source, /if \(!item \|\| typeof item !== "object"\) return null;/);
+});
+
 test("knowledge empty state keeps the rail secondary to the workspace action", async () => {
   const [rail, documents] = await Promise.all([
     readSource("components/KnowledgeRail.jsx"),

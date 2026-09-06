@@ -95,7 +95,7 @@ function formatOutputSize(lines, bytes) {
 }
 
 function toolOutputItemKey(_index, item) {
-  return item.id;
+  return item?.id || `tool-output-placeholder-${_index}`;
 }
 
 function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
@@ -234,6 +234,7 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
             skipAnimationFrameInResizeObserver={true}
             style={{ height: `${Math.min(174, Math.max(52, presentations.length * 50 + 4))}px` }}
             itemContent={(index, item) => {
+              if (!item || typeof item !== "object") return null;
               const active = item.id === selected?.id;
               const meta = [
                 item.latencyMs != null ? `${item.latencyMs}ms` : "",
