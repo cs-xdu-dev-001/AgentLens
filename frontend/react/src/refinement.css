@@ -8163,17 +8163,32 @@ body.sidebar-collapsed .sidebar {
   }
 
   #page-chat #chat-form.composer .attachment-tray {
+    display: flex !important;
+    flex-wrap: wrap;
     max-width: 100%;
     padding-bottom: 3px !important;
-    scrollbar-width: none;
-  }
-
-  #page-chat #chat-form.composer .attachment-tray::-webkit-scrollbar {
-    display: none;
+    overflow: visible;
   }
 
   #page-chat #chat-form.composer .attachment-pill {
-    max-width: min(260px, calc(100vw - 64px));
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+    max-width: none;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill:only-child {
+    flex-basis: 100%;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill > span:not(.attachment-thumb) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #page-chat #chat-form.composer .attachment-pill > button {
+    flex: 0 0 24px;
   }
 
   #page-chat #chat-form.composer .composer-control-strip {
