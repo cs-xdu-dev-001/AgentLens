@@ -7692,6 +7692,15 @@ body.sidebar-collapsed .sidebar {
     padding: 2px 0 0 !important;
   }
 
+  #page-tools #tool-config-form .button-row button,
+  #page-tools .mcp-server-card button {
+    min-height: 44px !important;
+  }
+
+  #page-tools #tool-config-form .button-row {
+    gap: 8px !important;
+  }
+
   #page-memory .memory-header {
     min-height: 58px !important;
   }
