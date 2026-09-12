@@ -360,10 +360,10 @@ export function WorkbenchPage({
         ) : null}
 
         <nav className="workspace-breadcrumb" aria-label="工作区路径">
-          <button type="button" onClick={() => navigateTo("")}>工作区</button>
+          <button aria-current={!path ? "page" : undefined} type="button" onClick={() => navigateTo("")}>工作区</button>
           {crumbs.map((part, index) => {
             const target = crumbs.slice(0, index + 1).join("/");
-            return <button type="button" key={target} onClick={() => navigateTo(target)}>{part}</button>;
+            return <button aria-current={index === crumbs.length - 1 ? "page" : undefined} type="button" key={target} onClick={() => navigateTo(target)}>{part}</button>;
           })}
         </nav>
 
