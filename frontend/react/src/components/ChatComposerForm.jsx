@@ -760,6 +760,7 @@ export function ChatComposerForm() {
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }
+    if (!question.trim() && !attachments.length) return;
     rememberComposerInput(question);
     const submitEvent = new CustomEvent("knowflow:react-chat-submit", {
       detail: { question: question.trim() },
@@ -1247,6 +1248,7 @@ export function ChatComposerForm() {
       window.requestAnimationFrame(() => resizeTextarea());
       return;
     }
+    if (!question.trim() && !attachments.length) return;
     rememberComposerInput(question);
     const submitEvent = new CustomEvent("knowflow:react-chat-enter-submit", {
       detail: { question: question.trim() },

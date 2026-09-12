@@ -51,6 +51,10 @@ try {
   await page.goto(baseUrl);
   await draft.waitFor({ state: "visible" });
 
+  await draft.press("Enter");
+  await page.waitForTimeout(80);
+  assert.deepEqual(writes, [], "empty Enter must not submit an empty task");
+
   const originalDraft = "保留这份未提交草稿";
   await draft.fill(originalDraft);
   await draft.evaluate((node) => node.setSelectionRange(2, 6));
