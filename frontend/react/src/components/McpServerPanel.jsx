@@ -180,6 +180,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
     if (server.status !== "connected") {
       return (
         <button
+          aria-label={`${server.status === "reauthorize" ? "重新授权" : server.status === "error" ? "重试" : "连接"}${server.name}`}
           className={"primary"}
           type={"button"}
           disabled={busy}
@@ -200,6 +201,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
     return (
       <>
         <button
+          aria-label={`测试${server.name}连接`}
           type={"button"}
           disabled={busy}
           onClick={() =>
@@ -215,6 +217,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
         {server.status === "connected" ? (
           <>
             <button
+              aria-label={`刷新${server.name}的工具列表`}
               type={"button"}
               disabled={busy}
               onClick={() =>
@@ -228,6 +231,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
               {"刷新工具"}
             </button>
             <button
+              aria-label={`停用${server.name}连接`}
               type={"button"}
               disabled={busy}
               onClick={() =>
@@ -306,6 +310,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
                   </span>
                 </div>
                 <button
+                  aria-label={`查看${server.name}的工具`}
                   className={"secondary-button"}
                   type={"button"}
                   onClick={() => setSelectedServer(server)}
@@ -327,6 +332,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
                 {!isNotion ? (
                   <>
                     <button
+                      aria-label={`编辑${server.name}连接`}
                       type={"button"}
                       disabled={busyId === String(server.id)}
                       onClick={() => {
@@ -337,6 +343,7 @@ export function McpServerPanel({ active = false, onServersChange }) {
                       {"编辑"}
                     </button>
                     <button
+                      aria-label={`删除${server.name}连接`}
                       className={"danger"}
                       type={"button"}
                       disabled={busyId === String(server.id)}
