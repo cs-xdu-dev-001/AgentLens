@@ -4,7 +4,7 @@
  * not successive sidebar variants.
  */
 :root {
-  --sidebar-width: 264px;
+  --sidebar-width: 256px;
   --sidebar-collapsed-width: 64px;
   --al-sidebar-bg: #f7f7f4;
   --al-sidebar-surface: #ffffff;
@@ -13,7 +13,7 @@
   --al-sidebar-divider: #dedfd8;
   --al-sidebar-text: #242521;
   --al-sidebar-muted: #777971;
-  --al-sidebar-primary-bg: #252723;
+  --al-sidebar-primary-bg: #1f1f1c;
   --al-sidebar-primary-text: #fbfbf8;
   --al-sidebar-active-text: #20241f;
   --al-sidebar-nav-active: #e7ebe5;
@@ -1160,5 +1160,11 @@
 
   #sidebar.sidebar-workbench button:active {
     transform: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  :is(#sidebar.sidebar-workbench, .mobile-session-history-layer) .chat-history-shell.mobile-history-open #session-list {
+    min-height: 360px !important;
   }
 }
