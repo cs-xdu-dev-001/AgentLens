@@ -43,7 +43,7 @@ export function Toast() {
   };
 
   return (
-    <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"} aria-atomic={"true"}>
+    <div className={className} id={"toast"} data-tone={normalizedTone} role={normalizedTone === "error" ? "alert" : "status"} aria-live={normalizedTone === "error" ? "assertive" : "polite"} aria-atomic={"true"} aria-hidden={!visible}>
       <ToneIcon className={"toast-icon"} size={16} strokeWidth={2} aria-hidden={"true"} />
       <span className={"toast-message"}>{message}</span>
       <button className={"toast-dismiss"} type={"button"} aria-label={"关闭提示"} onClick={dismiss}>
