@@ -34,7 +34,7 @@ export function ConfirmDialog({
       ref={dialogRef}
       className={`confirm-dialog${danger ? " is-danger" : ""}`}
       aria-labelledby="confirm-dialog-title"
-      aria-describedby="confirm-dialog-description"
+      aria-describedby={description ? "confirm-dialog-description" : undefined}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onCancel?.();
