@@ -229,7 +229,7 @@ def _confirm_default_workspace(workspace_root: Path) -> bool:
         return True
 
     console.print(f"[bold]进入当前工作目录？[/bold] [cyan]{workspace_root}[/cyan]")
-    if not typer.confirm("开始Chat", default=True):
+    if not typer.confirm("进入聊天", default=True):
         return False
 
     def remember(value: dict[str, Any]) -> None:
