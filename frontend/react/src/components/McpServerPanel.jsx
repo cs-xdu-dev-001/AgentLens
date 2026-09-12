@@ -251,11 +251,11 @@ export function McpServerPanel({ active = false, onServersChange }) {
   };
 
   return (
-    <section className={"mcp-panel panel"} aria-label={"MCP服务器"}>
+    <section className={"mcp-panel panel"} aria-busy={loading || Boolean(busyId)} aria-label={"MCP服务器"}>
       <div className={"mcp-panel-heading"}>
         <div>
           <h2>{"MCP服务器"}</h2>
-          <span>{loading ? "正在读取连接" : `${servers.length}个连接`}</span>
+          <span aria-live={"polite"} role={"status"}>{loading ? "正在读取连接" : `${servers.length}个连接`}</span>
         </div>
         <button
           className={"primary"}
@@ -297,13 +297,13 @@ export function McpServerPanel({ active = false, onServersChange }) {
             server.slug === "notion" ||
             server.url === "https://mcp.notion.com/mcp";
           return (
-            <article className={"mcp-server-card"} key={server.id}>
+            <article aria-labelledby={`mcp-server-${server.id}`} className={"mcp-server-card"} key={server.id}>
               <div className={"mcp-server-card-head"}>
                 <div className={"mcp-server-mark"} aria-hidden={"true"}>
                   {isNotion ? "N" : server.name.slice(0, 1).toUpperCase()}
                 </div>
                 <div>
-                  <strong>{server.name}</strong>
+                  <strong id={`mcp-server-${server.id}`}>{server.name}</strong>
                   <span className={`mcp-status ${server.status}`}>
                     <i aria-hidden={"true"} />
                     {statusCopy[server.status] || "状态未知"}
