@@ -426,6 +426,7 @@ export function MemoryPage({ active = false }) {
                             <span>{memoryTime(memory) || "时间未知"}</span>
                             <div className={"memory-item-actions"}>
                               <button
+                                aria-label={`编辑记忆：${String(memory.memory || "空记忆").slice(0, 80)}`}
                                 type={"button"}
                                 disabled={interactionLocked}
                                 onClick={() => beginEdit(memory)}
@@ -434,6 +435,7 @@ export function MemoryPage({ active = false }) {
                                 <span>{"编辑"}</span>
                               </button>
                               <button
+                                aria-label={`删除记忆：${String(memory.memory || "空记忆").slice(0, 80)}`}
                                 className={"danger"}
                                 type={"button"}
                                 disabled={interactionLocked}
