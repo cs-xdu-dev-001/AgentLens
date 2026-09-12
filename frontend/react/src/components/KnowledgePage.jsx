@@ -13,10 +13,35 @@ const knowledgeTabs = [
 ];
 
 function KnowledgeTabBar({ activeTab, onTabChange }) {
+  const handleKeyDown = (event, index) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? knowledgeTabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + knowledgeTabs.length) % knowledgeTabs.length;
+    const nextTab = knowledgeTabs[nextIndex];
+    onTabChange(nextTab.key);
+    window.requestAnimationFrame(() => document.getElementById(`knowledge-tab-${nextTab.key}`)?.focus());
+  };
+
   return (
-    <div className={"knowledge-tabbar"} id={"knowledge-tabbar"}>
+    <div className={"knowledge-tabbar"} id={"knowledge-tabbar"} role={"tablist"} aria-label={"知识库视图"}>
       {knowledgeTabs.map((tab) => (
-        <button className={activeTab === tab.key ? "knowledge-tab active" : "knowledge-tab"} key={tab.key} type={"button"} data-kb-tab={tab.key} onClick={() => onTabChange(tab.key)}>
+        <button
+          aria-controls={`knowledge-${tab.key}-panel`}
+          aria-selected={activeTab === tab.key}
+          className={activeTab === tab.key ? "knowledge-tab active" : "knowledge-tab"}
+          id={`knowledge-tab-${tab.key}`}
+          key={tab.key}
+          role={"tab"}
+          tabIndex={activeTab === tab.key ? 0 : -1}
+          type={"button"}
+          data-kb-tab={tab.key}
+          onKeyDown={(event) => handleKeyDown(event, knowledgeTabs.indexOf(tab))}
+          onClick={() => onTabChange(tab.key)}
+        >
           {tab.label}
         </button>
       ))}
@@ -26,7 +51,7 @@ function KnowledgeTabBar({ activeTab, onTabChange }) {
 
 function KnowledgeSettingsPanel({ active, onTabChange, onOpenKnowledgeBaseModal }) {
   return (
-    <section className={active ? "knowledge-tab-panel knowledge-settings-panel active" : "knowledge-tab-panel knowledge-settings-panel"} id={"knowledge-settings-panel"} data-kb-tab-panel={"settings"}>
+    <section aria-labelledby={"knowledge-tab-settings"} className={active ? "knowledge-tab-panel knowledge-settings-panel active" : "knowledge-tab-panel knowledge-settings-panel"} id={"knowledge-settings-panel"} role={"tabpanel"} data-kb-tab-panel={"settings"}>
       <div className={"settings-panel-card"}>
         <h2>{"知识库设置"}</h2>
         <div className={"knowledge-settings-actions"}>
@@ -58,14 +83,14 @@ export function KnowledgePage({ active = false }) {
           />
           <div className={"knowledge-primary"}>
             <KnowledgeTabBar activeTab={activeTab} onTabChange={setActiveTab} />
-            <div className={activeTab === "documents" ? "knowledge-tab-panel documents-tab-panel active" : "knowledge-tab-panel documents-tab-panel"} data-kb-tab-panel={"documents"}>
+            <div aria-labelledby={"knowledge-tab-documents"} className={activeTab === "documents" ? "knowledge-tab-panel documents-tab-panel active" : "knowledge-tab-panel documents-tab-panel"} id={"knowledge-documents-panel"} role={"tabpanel"} data-kb-tab-panel={"documents"}>
               <KnowledgeDocuments
                 uploadModalOpen={uploadModalOpen}
                 setUploadModalOpen={setUploadModalOpen}
                 onCreateKnowledgeBase={handleOpenKnowledgeBaseModal}
               />
             </div>
-            <div className={activeTab === "retrieval" ? "knowledge-tab-panel retrieval-tab-panel active" : "knowledge-tab-panel retrieval-tab-panel"} data-kb-tab-panel={"retrieval"}>
+            <div aria-labelledby={"knowledge-tab-retrieval"} className={activeTab === "retrieval" ? "knowledge-tab-panel retrieval-tab-panel active" : "knowledge-tab-panel retrieval-tab-panel"} id={"knowledge-retrieval-panel"} role={"tabpanel"} data-kb-tab-panel={"retrieval"}>
               <KnowledgeRetrievalDrawer active={activeTab === "retrieval"} panel={true} onClose={handleCloseRetrievalDrawer} />
             </div>
             <KnowledgeSettingsPanel active={activeTab === "settings"} onTabChange={setActiveTab} onOpenKnowledgeBaseModal={handleOpenKnowledgeBaseModal} />
