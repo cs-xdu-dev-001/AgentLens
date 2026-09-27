@@ -50,6 +50,8 @@ const checkViewport = layout => {
   assert.ok(layout.form.x >= 0 && layout.form.x + layout.form.width <= layout.width, evidence);
   assert.ok(layout.form.bottom <= layout.height && layout.send.bottom <= layout.height, evidence);
   assert.ok(Math.abs(layout.topbar.y - layout.panel.y) < 1, "task header stays pinned: " + evidence);
+  assert.ok(layout.messages.y >= layout.topbar.bottom - 1, "launcher stays below task header: " + evidence);
+  assert.ok(layout.messages.bottom <= layout.form.y + 1, "launcher and composer must not overlap: " + evidence);
 };
 
 try {
@@ -61,6 +63,7 @@ try {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const viewport of [
     { width: 1440, height: 960 }, { width: 1280, height: 800 },
+    { width: 1024, height: 500 },
     { width: 390, height: 844 }, { width: 375, height: 812 },
     { width: 375, height: 460 }, { width: 320, height: 568 },
   ]) {
@@ -80,6 +83,13 @@ try {
         }
         assert.ok(layout.welcome.y >= layout.messages.y, JSON.stringify(layout));
         assert.ok(viewport.height - layout.form.bottom <= 16, "composer stays at the bottom");
+      } else {
+        assert.ok(Math.abs(layout.welcome.x - layout.form.x) < 1 && Math.abs(layout.welcome.width - layout.form.width) < 1,
+          "desktop launcher and composer share one axis: " + JSON.stringify(layout));
+        if (!layout.launcherScrolls) {
+          const gap = layout.form.y - layout.welcome.bottom;
+          assert.ok(gap >= 16 && gap <= 32, "desktop task group stays together: " + JSON.stringify(layout));
+        }
       }
       await shot(`${viewport.width}-${viewport.height}-${theme}`);
       if (theme === "dark") await page.getByRole("button", { name: "切换到日间模式", exact: true }).click();
@@ -88,26 +98,49 @@ try {
 
   // A growing draft plus a long filename must reflow the launcher instead of
   // covering it. In a short viewport, every action remains scroll-reachable.
-  await page.setViewportSize({ width: 375, height: 460 });
   await input.fill(Array.from({ length: 12 }, (_, index) => `第${index + 1}行：检查长草稿和附件布局`).join("\n"));
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", {
     detail: { attachments: [{ attachmentId: "layout-test", filename: "AgentLens-一个非常长的工作区文件名称-用于布局回归测试.md", fileType: "text", mimeType: "text/markdown", content: "notes" }] },
   })));
   await page.locator(".attachment-pill").waitFor();
-  await settle();
-  const expanded = await geometry();
-  checkViewport(expanded);
-  assert.ok(expanded.form.height > 200, JSON.stringify(expanded));
-  assert.ok(expanded.messages.height > 0 && expanded.messages.bottom <= expanded.form.y + 1, JSON.stringify(expanded));
-  for (const action of await page.locator(".welcome-action").all()) {
-    await action.focus();
-    await action.scrollIntoViewIfNeeded();
-    assert.ok(await action.evaluate(node => {
-      const bounds = node.getBoundingClientRect();
-      return node.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
-    }), "each launcher action remains reachable above the expanded composer");
+  for (const viewport of [
+    { width: 1440, height: 960 }, { width: 1280, height: 800 },
+    { width: 1024, height: 500 }, { width: 375, height: 460 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await settle();
+    await shot(`${viewport.width}-${viewport.height}-expanded-composer`);
+    const expanded = await geometry();
+    checkViewport(expanded);
+    assert.ok(expanded.form.height > 200, JSON.stringify(expanded));
+    assert.ok(expanded.messages.height > 0 && expanded.messages.bottom <= expanded.form.y + 1,
+      "a growing composer must not cover the launcher: " + JSON.stringify(expanded));
+    for (const action of await page.locator(".welcome-action").all()) {
+      await action.focus();
+      await action.scrollIntoViewIfNeeded();
+      assert.ok(await action.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        return node.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+      }), "each launcher action remains reachable above the expanded composer");
+    }
   }
-  await shot("short-viewport-expanded-composer");
+
+  // The same layout must follow the resizable center panel, not viewport width.
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-drawer-open", { detail: { focus: false } })));
+  await page.locator('.chat-layout[data-drawer-collapsed="false"]').waitFor();
+  const divider = page.getByRole("separator", { name: "调整运行面板宽度" });
+  await divider.focus();
+  await page.keyboard.press("Home");
+  await settle();
+  const narrow = await geometry();
+  checkViewport(narrow);
+  assert.ok(narrow.panel.width < 800, "drawer must genuinely narrow the center panel");
+  assert.ok(narrow.welcome.x >= narrow.panel.x && narrow.welcome.x + narrow.welcome.width <= narrow.panel.x + narrow.panel.width);
+  assert.ok(Math.abs(narrow.welcome.width - narrow.form.width) < 1);
+  await shot("narrow-panel-expanded-composer");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-drawer-close", { detail: { restoreFocus: false } })));
+  await page.locator('.chat-layout[data-drawer-collapsed="true"]').waitFor();
 
   await input.fill("");
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("knowflow:react-attachments-replace", { detail: { attachments: [] } })));
@@ -127,7 +160,7 @@ try {
   await settle();
   checkViewport(await geometry());
   assert.deepEqual(errors, []);
-  console.log("chat empty layout checks passed: 6 viewports, both themes, long draft/filename, scroll reachability, task seeding, transcript reset");
+  console.log("chat empty layout checks passed: 7 viewports, both themes, desktop/mobile long draft and filename, scroll reachability, task seeding, transcript reset");
 } finally {
   await browser.close();
 }

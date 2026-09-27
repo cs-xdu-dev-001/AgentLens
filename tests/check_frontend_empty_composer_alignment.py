@@ -44,11 +44,6 @@ def main() -> None:
         )
         require(
             source,
-            "--kf-empty-chat-column: min(860px, calc(100% - 32px));",
-            "shared empty-state column",
-        )
-        require(
-            source,
             "background: var(--workspace-bg) !important;",
             "themed chat surface",
         )
@@ -76,16 +71,6 @@ def main() -> None:
             source,
             "transform: none !important;",
             "welcome title transform reset",
-        )
-        require(
-            source,
-            "inset: 64px 0 144px !important;",
-            "welcome content centering area",
-        )
-        require(
-            source,
-            "bottom: 18px !important;",
-            "composer bottom anchor",
         )
         require(
             source,
@@ -117,6 +102,24 @@ def main() -> None:
             "@media (prefers-reduced-motion: reduce)",
             "reduced motion contract",
         )
+
+    # chat-polish.css owns the final layout. Legacy absolute offsets above are
+    # not the runtime contract; browser geometry verifies the actual cascade.
+    polish = read("frontend/react/src/chat-polish.css")
+    desktop = polish.split("@media (min-width: 761px)", 1)[1].split(
+        "@media (max-width: 760px)", 1
+    )[0]
+    for needle, label in (
+        ("display: flex !important;", "flow-based empty panel"),
+        ("position: static !important;", "in-flow launcher"),
+        ("flex: 0 1 auto !important;", "shrinkable launcher"),
+        ("overflow-y: auto !important;", "short-screen launcher scrolling"),
+        ("width: min(720px, 100%) !important;", "desktop welcome content axis"),
+        ("width: min(720px, calc(100% - 48px)) !important;", "matching composer axis"),
+        ("margin: 0 auto auto !important;", "content-sized group centering"),
+        ("transform: none !important;", "no absolute composer translation"),
+    ):
+        require(desktop, needle, label)
     print("empty welcome and composer share one calm visual axis")
 
 

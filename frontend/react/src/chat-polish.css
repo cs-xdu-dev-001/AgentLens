@@ -164,18 +164,83 @@
 
 #page-chat.chat-empty .welcome-card {
   width: min(640px, calc(100% - 32px)) !important;
-  translate: 0 clamp(0px, 4vh, 40px) !important;
+  flex-shrink: 0;
+  top: auto;
+  translate: none !important;
 }
 
 #page-chat.chat-empty .welcome-action {
   min-height: 46px !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--control-border) 72%, transparent);
-  border-radius: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
 }
 
-#page-chat.chat-empty .welcome-action:last-child,
-#page-chat.chat-empty .welcome-action:nth-last-child(2) {
-  border-bottom-color: transparent;
+#page-chat.chat-empty .welcome-heading {
+  flex-wrap: wrap;
+  align-items: center !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+
+#page-chat.chat-empty .welcome-heading h2 {
+  width: auto !important;
+  text-align: left !important;
+}
+
+#page-chat.chat-empty .welcome-context {
+  margin: 0;
+  max-width: 100% !important;
+}
+
+@media (hover: hover) {
+  #page-chat.chat-empty .welcome-action:hover {
+    background: var(--surface-hover) !important;
+  }
+}
+
+@media (min-width: 761px) {
+  /* One content-sized group, centered in the remaining panel. Auto margins
+     collapse on short screens; only the launcher scrolls as the draft grows. */
+  #page-chat.chat-empty .chat-panel {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start !important;
+  }
+
+  #page-chat.chat-empty .chat-topbar {
+    flex: 0 0 auto;
+  }
+
+  #page-chat.chat-empty .messages {
+    position: static !important;
+    inset: auto !important;
+    flex: 0 1 auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin-block: auto 0 !important;
+    padding: 24px 24px 20px !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+
+  #page-chat.chat-empty .welcome-card {
+    width: min(720px, 100%) !important;
+    margin: 0 auto !important;
+  }
+
+  #page-chat.chat-empty #chat-form.composer {
+    position: relative !important;
+    inset: auto !important;
+    flex: 0 0 auto;
+    width: min(720px, calc(100% - 48px)) !important;
+    margin: 0 auto auto !important;
+    padding: 0 0 24px !important;
+    transform: none !important;
+  }
 }
 
 @media (max-width: 760px) {
