@@ -58,10 +58,11 @@ const markdown = [
 try {
   await page.goto(baseUrl);
   await page.getByRole("textbox", { name: "消息", exact: true }).waitFor({ state: "visible" });
-  await page.evaluate((rawContent) => {
+  const messageId = await page.evaluate((rawContent) => {
     const detail = { role: "assistant", rawContent, thinking: false, streaming: false };
     window.dispatchEvent(new CustomEvent("knowflow:react-message-append", { detail }));
     if (!detail.handled || !detail.messageId) throw new Error("assistant code message was not accepted");
+    return detail.messageId;
   }, markdown);
 
   const block = page.locator(".message-code-block");
@@ -89,9 +90,114 @@ try {
   assert.ok((blockBounds?.x || 0) >= 0 && (blockBounds?.x || 0) + (blockBounds?.width || 0) <= 390, JSON.stringify(blockBounds));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await screenshot("mobile.png");
+
+  const longCode = Array.from({ length: 100 }, (_, i) => (
+    `const result${i} = "${"long-workspace-path/".repeat(12)}";`
+  )).join("\n");
+  let streamContent = `正在检查代码：\n\n\`\`\`js\n${longCode}\n\`\`\`\n`;
+  async function updateContent(rawContent, streaming = true) {
+    await page.evaluate((detail) => {
+      window.dispatchEvent(new CustomEvent("knowflow:react-message-content", { detail }));
+      if (!detail.handled) throw new Error("stream content update was not accepted");
+    }, { messageId, rawContent, streaming });
+    await page.waitForFunction((expected) => (
+      document.querySelector(".message.assistant")?.dataset.rawContent === expected
+    ), rawContent);
+  }
+  await updateContent(streamContent);
+  const pre = block.locator("pre");
+  await pre.evaluate((node) => { node.scrollLeft = 200; });
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 200);
+  streamContent += "\n继续分析，不应打断代码阅读。";
+  await updateContent(streamContent);
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 200, "streaming must preserve horizontal code reading position");
+
+  for (const [width, height, theme] of [
+    [1440, 960, "mono-light"], [1280, 800, "mono-dark"],
+    [390, 844, "mono-dark"], [375, 812, "mono-light"], [320, 568, "mono-light"],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await pre.scrollIntoViewIfNeeded();
+    const bounds = await pre.boundingBox();
+    assert.ok(bounds && bounds.height <= Math.min(height / 2, 480) + 1, JSON.stringify(bounds));
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width, JSON.stringify(bounds));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await pre.focus();
+    await pre.evaluate((node) => { node.scrollLeft = 200; node.scrollTop = 120; });
+    streamContent += `\n已完成第${width}项检查。`;
+    await updateContent(streamContent);
+    assert.deepEqual(await pre.evaluate((node) => ({
+      left: node.scrollLeft, top: node.scrollTop, focused: document.activeElement === node,
+    })), { left: 200, top: 120, focused: true });
+    await screenshot(`code-long-${width}-${theme}.png`);
+  }
+  await pre.press("Control+Home");
+  await page.waitForFunction(() => document.querySelector(".message-code-block pre").scrollTop === 0);
+  await pre.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector(".message-code-block pre").scrollLeft > 0);
+
+  // The copy control must keep keyboard focus too, but an unrelated composer
+  // focus must never be reclaimed when the stream replaces its HTML.
+  await copy.focus();
+  streamContent += "\n复制入口仍可操作。";
+  await updateContent(streamContent);
+  assert.equal(await copy.evaluate((node) => document.activeElement === node), true);
+  const composer = page.getByRole("textbox", { name: "消息", exact: true });
+  await composer.focus();
+  streamContent += "\n继续输出，不抢输入焦点。";
+  await updateContent(streamContent);
+  assert.equal(await composer.evaluate((node) => document.activeElement === node), true);
+
+  const headings = Array.from({ length: 12 }, (_, i) => `字段_column_${i}`);
+  const tableContent = [
+    `| ${headings.join(" | ")} |`,
+    `| ${headings.map(() => "---").join(" | ")} |`,
+    `| ${headings.map((_, i) => `value_${i}`).join(" | ")} |`,
+  ].join("\n");
+  streamContent += `\n\n${tableContent}\n`;
+  await updateContent(streamContent);
+  const table = page.getByRole("region", { name: "表格", exact: true });
+  await table.focus();
+  await table.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector(".message-table-scroll").scrollLeft > 0);
+  // Let the browser's native key-scroll animation finish before setting the
+  // exact reading position used by the stream regression assertion.
+  await page.waitForTimeout(200);
+  await table.evaluate((node) => { node.scrollLeft = 180; });
+  streamContent += `| ${headings.map((_, i) => `next_${i}`).join(" | ")} |\n`;
+  await updateContent(streamContent);
+  assert.equal(await table.evaluate((node) => node.scrollLeft), 180);
+  assert.equal(await table.evaluate((node) => document.activeElement === node), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await screenshot("table-streaming-mobile.png");
+
+  // Completing a stream keeps reading position while deferred highlighting
+  // upgrades the code. A genuine content replacement starts a fresh context.
+  await pre.focus();
+  await pre.evaluate((node) => { node.scrollLeft = 200; node.scrollTop = 120; });
+  await updateContent(streamContent, false);
+  await code.locator(".hljs-keyword").first().waitFor();
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 200);
+  assert.equal(await pre.evaluate((node) => node.scrollTop), 120);
+  await updateContent(`\`\`\`js\n${longCode}\n// replacement\n\`\`\``, false);
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 0);
+  assert.equal(await pre.evaluate((node) => node.scrollTop), 0);
+  streamContent = `\`\`\`js\n${longCode}`;
+  await updateContent(streamContent);
+  await pre.focus();
+  await pre.evaluate((node) => { node.scrollLeft = 200; node.scrollTop = 120; });
+  streamContent += "\nconst streamedLastLine = 101;";
+  await updateContent(streamContent);
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 200);
+  assert.equal(await pre.evaluate((node) => node.scrollTop), 120);
+  await updateContent(`${streamContent}\n\`\`\``, false);
+  await code.locator(".hljs-keyword").first().waitFor();
+  assert.equal(await pre.evaluate((node) => node.scrollLeft), 200);
+  assert.equal(await pre.evaluate((node) => document.activeElement === node), true);
   assert.deepEqual(writes, []);
   assert.deepEqual(errors, []);
-  console.log("message code block browser checks passed: language label, highlight.js tokens, redacted copy state, mobile bounds and touch target");
+  console.log("message code block browser checks passed: highlighting, redacted copy, bounded long code, keyboard scrolling, stream scroll/focus preservation, wide tables and replacement reset");
 } catch (error) {
   console.error({ errors, page: (await page.locator("body").innerText()).slice(0, 1400) });
   throw error;

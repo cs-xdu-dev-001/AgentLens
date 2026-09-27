@@ -108,7 +108,7 @@ function renderCodeFence(tokens, index) {
     `<span class="message-code-language">${escapeHtml(label)}</span>`,
     `<button type="button" data-message-code-copy="true" aria-label="${buttonLabel}" title="${buttonLabel}">复制</button>`,
     "</div>",
-    `<pre><code class="hljs${languageClass}">${escapeHtml(source)}</code></pre>`,
+    `<pre tabindex="0" role="region" aria-label="${escapeHtml(label)}代码" data-markdown-scroll="code-${token.map?.[0] ?? index}"><code class="hljs${languageClass}">${escapeHtml(source)}</code></pre>`,
     "</div>",
   ].join("");
 }
@@ -164,8 +164,8 @@ markdownRenderer.renderer.rules.heading_close = (tokens, index) => {
 
 // The renderer owns the table scroll wrapper so wide assistant tables remain
 // usable on narrow viewports without post-processing generated HTML.
-markdownRenderer.renderer.rules.table_open = () => (
-  '<div class="message-table-scroll"><table>'
+markdownRenderer.renderer.rules.table_open = (tokens, index) => (
+  `<div class="message-table-scroll" tabindex="0" role="region" aria-label="表格" data-markdown-scroll="table-${tokens[index].map?.[0] ?? index}"><table>`
 );
 markdownRenderer.renderer.rules.table_close = () => "</table></div>";
 markdownRenderer.renderer.rules.th_open = () => '<th scope="col">';

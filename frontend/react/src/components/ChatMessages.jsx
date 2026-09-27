@@ -15,7 +15,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRef, forwardRef, memo, PureComponent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { memoryApi } from "../api/client.js";
 import { redactEmailAddresses, renderMarkdown } from "../controller/markdown.js";
@@ -406,37 +406,86 @@ const AgentTurnRunBlock = memo(function AgentTurnRunBlock({
   );
 });
 
-const MessageMarkdown = memo(function MessageMarkdown({ rawContent, streaming }) {
-  const rootRef = useRef(null);
-  const html = useMemo(
-    () => renderMarkdown(redactEmailAddresses(rawContent)),
-    [rawContent],
-  );
+// Markdown-it owns the HTML, so a stream commit replaces its descendants.
+// React's before-mutation snapshot preserves reader-owned scroll/focus without
+// a second Markdown parser or render-phase DOM reads.
+class MessageMarkdown extends PureComponent {
+  rootRef = createRef();
+  highlightGeneration = 0;
+  renderedContent = null;
+  html = "";
 
-  useEffect(() => {
-    const root = rootRef.current;
+  highlightCode() {
+    const generation = ++this.highlightGeneration;
+    const { streaming } = this.props;
+    const root = this.rootRef.current;
     if (streaming || !root?.querySelector("[data-message-code-block]")) {
-      return undefined;
+      return;
     }
-    let active = true;
     loadCodeHighlighter()
       .then(({ highlightMessageCodeBlocks }) => {
-        if (active && root.isConnected) highlightMessageCodeBlocks(root);
+        if (generation === this.highlightGeneration && root.isConnected) {
+          highlightMessageCodeBlocks(root);
+        }
       })
       .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [html, streaming]);
+  }
 
-  return (
-    <div
-      ref={rootRef}
-      className={"message-markdown"}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-});
+  componentDidMount() {
+    this.highlightCode();
+  }
+
+  getSnapshotBeforeUpdate(previousProps) {
+    const previous = String(previousProps.rawContent || "");
+    const next = String(this.props.rawContent || "");
+    // Edits/replacements are a new reading context, not a continuation.
+    if (previous === next || !next.startsWith(previous)) return null;
+    const active = document.activeElement;
+    return Array.from(this.rootRef.current.querySelectorAll("[data-markdown-scroll]"))
+      .map((node) => ({
+        key: node.dataset.markdownScroll,
+        text: node.textContent,
+        left: node.scrollLeft,
+        top: node.scrollTop,
+        focused: node === active,
+        copyFocused: node.closest("[data-message-code-block]")?.querySelector("[data-message-code-copy]") === active,
+      }))
+      .filter((item) => item.left || item.top || item.focused || item.copyFocused);
+  }
+
+  componentDidUpdate(_previousProps, _previousState, snapshot) {
+    for (const item of snapshot || []) {
+      const node = this.rootRef.current.querySelector(`[data-markdown-scroll="${item.key}"]`);
+      if (!node?.textContent.startsWith(item.text)) continue;
+      node.scrollLeft = item.left;
+      node.scrollTop = item.top;
+      if (item.focused) node.focus({ preventScroll: true });
+      if (item.copyFocused) {
+        node.closest("[data-message-code-block]")?.querySelector("[data-message-code-copy]")?.focus({ preventScroll: true });
+      }
+    }
+    this.highlightCode();
+  }
+
+  componentWillUnmount() {
+    this.highlightGeneration += 1;
+  }
+
+  render() {
+    const { rawContent } = this.props;
+    if (this.renderedContent !== rawContent) {
+      this.renderedContent = rawContent;
+      this.html = renderMarkdown(redactEmailAddresses(rawContent));
+    }
+    return (
+      <div
+        ref={this.rootRef}
+        className={"message-markdown"}
+        dangerouslySetInnerHTML={{ __html: this.html }}
+      />
+    );
+  }
+}
 
 function MessageBubble({ interactionOwner, message, pendingInteractionCount = 0 }) {
   const pendingInteractions = pendingAgentInteractions(message);

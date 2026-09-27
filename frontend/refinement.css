@@ -5988,6 +5988,7 @@ body.sidebar-collapsed .sidebar {
 #page-chat .message-code-block pre,
 #page-chat .message-code-block pre:last-child {
   max-width: 100%;
+  max-height: min(50dvh, 480px);
   margin: 0 !important;
   padding: 14px 16px !important;
   overflow: auto;
@@ -5997,6 +5998,16 @@ body.sidebar-collapsed .sidebar {
   background: #111315;
   box-shadow: none;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+#page-chat .message-code-block pre:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: -3px;
+}
+
+#page-chat .message-table-scroll:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -3px;
 }
 
 #page-chat .message-code-block code.hljs {
