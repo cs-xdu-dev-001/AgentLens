@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import {
   COMPOSER_PERMISSION_BEHAVIORS,
   COMPOSER_PERMISSION_MODES,
@@ -28,7 +29,6 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
   const [ruleBehavior, setRuleBehavior] = useState("allow");
   const [ruleDraft, setRuleDraft] = useState("");
   const [ruleError, setRuleError] = useState("");
-  const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const listboxRef = useRef(null);
   const ruleInputRef = useRef(null);
@@ -54,14 +54,6 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
 
   useEffect(() => subscribeComposerPermissionMode(setMode), []);
   useEffect(() => subscribeComposerPermissionRules(setRules), []);
-
-  useEffect(() => {
-    const handleOutsidePointer = (event) => {
-      if (!rootRef.current?.contains(event.target)) closePicker();
-    };
-    document.addEventListener("pointerdown", handleOutsidePointer);
-    return () => document.removeEventListener("pointerdown", handleOutsidePointer);
-  }, [closePicker]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,6 +136,8 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
 
   const addRule = (event) => {
     event.preventDefault();
+    // Portals escape the DOM form, but React submit events still bubble.
+    event.stopPropagation();
     const normalized = normalizeComposerPermissionRule(ruleDraft);
     if (!normalized) {
       setRuleError("输入有效工具名，例如web_search或workspace.*");
@@ -164,9 +158,9 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
     if (disabled) return;
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       if (page === "rules") {
         setPage("modes");
-        triggerRef.current?.focus();
         return;
       }
       closePicker();
@@ -202,7 +196,16 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
     ? "composer-permission-rules-entry"
     : `composer-permission-option-${COMPOSER_PERMISSION_MODES[activeIndex].id}`;
 
+  useEffect(() => {
+    if (!open || page !== "modes") return;
+    listboxRef.current?.querySelector(`#${activePermissionItemId}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activePermissionItemId, open, page]);
+
   return (
+    <Popover.Root open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) closePicker();
+    }}>
     <div
       className={[
         "composer-model-picker",
@@ -210,9 +213,9 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
         open ? "open" : "",
         `mode-${mode}`,
       ].filter(Boolean).join(" ")}
-      ref={rootRef}
       onKeyDown={handleKeyDown}
     >
+      <Popover.Anchor asChild>
       <button
         className={"composer-model-trigger composer-permission-trigger"}
         ref={triggerRef}
@@ -220,12 +223,8 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
         disabled={disabled}
         aria-label={`切换权限模式，当前为${selectedMode.label}`}
         aria-expanded={open}
-        aria-controls={open
-          ? page === "modes"
-            ? "composer-permission-listbox"
-            : "composer-permission-rules"
-          : undefined}
-        aria-haspopup={"listbox"}
+        aria-controls={open ? "composer-permission-popover" : undefined}
+        aria-haspopup={"dialog"}
         title={`${selectedMode.description} · Shift+Tab切换`}
         onClick={() => {
           if (open) closePicker();
@@ -246,9 +245,22 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
           <path d={"m4 6 4 4 4-4"} />
         </svg>
       </button>
+      </Popover.Anchor>
 
       {open ? (
-        <div className={"composer-model-popover composer-permission-popover"}>
+        <Popover.Portal>
+        <Popover.Content
+          id={"composer-permission-popover"}
+          className={"composer-model-popover composer-permission-popover"}
+          aria-label={"权限与工具规则"}
+          side={"top"}
+          align={"end"}
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+        >
           {page === "modes" ? (
             <>
               <div className={"composer-permission-heading"}>
@@ -388,8 +400,10 @@ export function ComposerPermissionPicker({ disabled = false, inputRef = null }) 
               {ruleError ? <div className={"composer-permission-rule-error"} role={"alert"}>{ruleError}</div> : null}
             </div>
           )}
-        </div>
+        </Popover.Content>
+        </Popover.Portal>
       ) : null}
     </div>
+    </Popover.Root>
   );
 }

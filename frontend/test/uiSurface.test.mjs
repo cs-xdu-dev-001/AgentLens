@@ -69,6 +69,7 @@ test("distributed Radix and Floating UI licenses match their installed packages"
   for (const [dependency, license] of [
     ["@radix-ui/react-tooltip", "radix-ui"],
     ["@radix-ui/react-dropdown-menu", "radix-ui"],
+    ["@radix-ui/react-popover", "radix-ui"],
     ["@floating-ui/react-dom", "floating-ui"],
   ]) {
     const [upstream, distributed] = await Promise.all([

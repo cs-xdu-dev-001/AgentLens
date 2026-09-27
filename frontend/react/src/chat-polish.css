@@ -103,6 +103,65 @@
   color: var(--muted) !important;
 }
 
+/* Radix positions its outer wrapper in a body portal. Reset legacy offsets on
+   the INNER surface only; the wrapper keeps its fixed position and transform.
+   Scroll the whole surface when search/settings exceed the available space. */
+#composer-model-popover,
+#composer-permission-popover {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 80;
+  box-sizing: border-box;
+  width: min(370px, calc(100vw - 24px));
+  max-width: var(--radix-popover-content-available-width);
+  max-height: var(--radix-popover-content-available-height);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  transform: none;
+  animation: none;
+}
+
+#composer-model-popover .composer-model-list {
+  max-height: min(260px, 40dvh);
+}
+
+#composer-model-popover .composer-model-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+#composer-model-popover .composer-context-compact {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#composer-model-popover .composer-context-compact:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+#composer-model-popover .composer-context-compact:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+#composer-model-popover .composer-context-compact:disabled {
+  color: var(--muted);
+  cursor: wait;
+}
+
 #page-chat.chat-empty .welcome-card {
   width: min(640px, calc(100% - 32px)) !important;
   translate: 0 clamp(0px, 4vh, 40px) !important;

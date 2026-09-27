@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import Fuse from "fuse.js";
+import * as Popover from "@radix-ui/react-popover";
 
 
 const valueOf = (value) => (
@@ -86,7 +87,7 @@ export function ComposerModelPicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const rootRef = useRef(null);
+  const contentRef = useRef(null);
   const triggerRef = useRef(null);
   const searchRef = useRef(null);
   const reasoningButtonRefs = useRef([]);
@@ -217,17 +218,6 @@ export function ComposerModelPicker({
   }, []);
 
   useEffect(() => {
-    const handleOutsidePointer = (event) => {
-      if (!rootRef.current?.contains(event.target)) closePicker();
-    };
-    document.addEventListener("pointerdown", handleOutsidePointer);
-    return () => document.removeEventListener(
-      "pointerdown",
-      handleOutsidePointer,
-    );
-  }, [closePicker]);
-
-  useEffect(() => {
     if (disabled && open) closePicker();
   }, [closePicker, disabled, open]);
 
@@ -249,7 +239,7 @@ export function ComposerModelPicker({
         reasoning: ".composer-reasoning-section",
       }[event.detail?.focus];
       if (focusTarget) {
-        window.requestAnimationFrame(() => rootRef.current
+        window.requestAnimationFrame(() => contentRef.current
           ?.querySelector(focusTarget)
           ?.scrollIntoView({ block: "nearest" }));
       }
@@ -300,13 +290,19 @@ export function ComposerModelPicker({
         searchRef.current?.focus();
       }
       if (focusTarget === "context") {
-        rootRef.current
+        contentRef.current
           ?.querySelector(".composer-context-section")
           ?.scrollIntoView({ block: "nearest" });
       }
       pickerFocusRef.current = "model";
     });
   }, [open, selectedModelId, visibleModels]);
+
+  useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    contentRef.current?.querySelector(`#composer-model-option-${activeIndex}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
 
   const selectModel = (model) => {
     const value = valueOf(model?.id);
@@ -348,6 +344,7 @@ export function ComposerModelPicker({
     if (event.key === "Escape") {
       if (!open) return;
       event.preventDefault();
+      event.stopPropagation();
       closePicker();
       triggerRef.current?.focus();
       return;
@@ -395,11 +392,14 @@ export function ComposerModelPicker({
     : undefined;
 
   return (
+    <Popover.Root open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) closePicker();
+    }}>
     <div
       className={open ? "composer-model-picker open" : "composer-model-picker"}
-      ref={rootRef}
       onKeyDown={handleKeyDown}
     >
+      <Popover.Anchor asChild>
       <button
         className={"composer-model-trigger"}
         ref={triggerRef}
@@ -407,8 +407,8 @@ export function ComposerModelPicker({
         disabled={disabled}
         aria-label={selectedModel ? `切换模型，当前为${selectedModel.name}` : "配置聊天模型"}
         aria-expanded={open}
-        aria-controls={open ? "composer-model-listbox" : undefined}
-        aria-haspopup={"listbox"}
+        aria-controls={open ? "composer-model-popover" : undefined}
+        aria-haspopup={"dialog"}
         aria-keyshortcuts={"Alt+P"}
         title={"切换模型（Alt+P） · 推理强度（Alt+R）"}
         onClick={togglePicker}
@@ -433,9 +433,23 @@ export function ComposerModelPicker({
           <path d={"m4 6 4 4 4-4"} />
         </svg>
       </button>
+      </Popover.Anchor>
 
       {open ? (
-        <div className={"composer-model-popover"}>
+        <Popover.Portal>
+        <Popover.Content
+          id={"composer-model-popover"}
+          className={"composer-model-popover"}
+          ref={contentRef}
+          aria-label={"模型与上下文"}
+          side={"top"}
+          align={"end"}
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+        >
           <div className={"composer-model-search"}>
             <svg viewBox={"0 0 20 20"} aria-hidden={"true"} focusable={"false"}>
               <circle cx={"8.5"} cy={"8.5"} r={"5.5"} />
@@ -565,8 +579,10 @@ export function ComposerModelPicker({
             <span>{"管理模型"}</span>
             <span aria-hidden={"true"}>{"↗"}</span>
           </button>
-        </div>
+        </Popover.Content>
+        </Popover.Portal>
       ) : null}
     </div>
+    </Popover.Root>
   );
 }
