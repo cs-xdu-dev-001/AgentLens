@@ -83,9 +83,22 @@ try {
   const search = page.getByRole("combobox", { name: "搜索聊天模型" });
   await search.waitFor();
   await search.fill("模型18");
+  await settle();
+  assert.equal(await search.getAttribute("aria-activedescendant"), "composer-model-option-0",
+    "search must activate its best result, not the previously selected fuzzy match");
+  assert.match(await page.locator("#composer-model-option-0").innerText(), /^模型18/);
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "切换模型，当前为模型18", exact: true }).waitFor();
   assert.equal(await draft.evaluate(node => node === document.activeElement), true);
+  await page.keyboard.press("Alt+p");
+  await search.waitFor();
+  await search.fill("zzzz-no-such-model-xxxx");
+  await page.getByRole("status").filter({ hasText: "没有匹配" }).waitFor();
+  assert.equal(await search.getAttribute("aria-activedescendant"), null);
+  await search.fill("");
+  await settle();
+  assert.equal(await page.locator("#composer-model-option-0").getAttribute("aria-selected"), "true");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Alt+r");
   await page.getByRole("radio", { name: "自动", exact: true }).waitFor();
   await page.keyboard.press("End");

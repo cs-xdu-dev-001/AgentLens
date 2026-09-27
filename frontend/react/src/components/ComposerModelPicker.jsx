@@ -277,7 +277,9 @@ export function ComposerModelPicker({
     const selectedIndex = visibleModels.findIndex(
       (model) => valueOf(model.id) === selectedModelId,
     );
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    // Search ranks by relevance. Keeping the previous selection active can
+    // make Enter choose a lower-ranked fuzzy match instead of the first result.
+    setActiveIndex(visibleModels.length ? (query.trim() ? 0 : Math.max(0, selectedIndex)) : -1);
     window.requestAnimationFrame(() => {
       const focusTarget = pickerFocusRef.current;
       if (focusTarget === "reasoning") {
@@ -296,7 +298,7 @@ export function ComposerModelPicker({
       }
       pickerFocusRef.current = "model";
     });
-  }, [open, selectedModelId, visibleModels]);
+  }, [open, query, selectedModelId, visibleModels]);
 
   useEffect(() => {
     if (!open || activeIndex < 0) return;
@@ -465,7 +467,10 @@ export function ComposerModelPicker({
               aria-controls={"composer-model-listbox"}
               aria-expanded={true}
               aria-activedescendant={activeOptionId}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActiveIndex(0);
+              }}
             />
             <kbd>{"Alt P"}</kbd>
           </div>
