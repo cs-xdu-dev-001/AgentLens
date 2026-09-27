@@ -69,10 +69,33 @@ async function assertCompactConsole() {
   assert.ok(closeIcon && closeIcon.width <= 20 && closeIcon.height <= 20, JSON.stringify(closeIcon));
 }
 
+async function assertOutputFits() {
+  const layout = await page.locator("#agent-output-panel").evaluate((panel) => {
+    const bounds = panel.getBoundingClientRect();
+    const items = [".agent-tool-output-list", ".agent-tool-console-header", ".agent-tool-console-footer"];
+    return {
+      viewport: [innerWidth, innerHeight],
+      height: panel.clientHeight,
+      scrollHeight: panel.scrollHeight,
+      outputHeight: panel.querySelector(".agent-tool-console-scroll").clientHeight,
+      parts: Object.fromEntries([...items, ".agent-tool-console-command"].map((selector) => [
+        selector, panel.querySelector(selector)?.getBoundingClientRect().height,
+      ])),
+      contained: items.every((selector) => {
+        const rect = panel.querySelector(selector).getBoundingClientRect();
+        return rect.top >= bounds.top - 1 && rect.bottom <= Math.min(bounds.bottom, innerHeight) + 1;
+      }),
+    };
+  });
+  assert.ok(layout.scrollHeight <= layout.height + 1, `only the log and history should scroll: ${JSON.stringify(layout)}`);
+  assert.ok(layout.contained, `history, actions and exit status must stay visible: ${JSON.stringify(layout)}`);
+  assert.ok(layout.outputHeight >= 64, `log needs a usable reading area: ${JSON.stringify(layout)}`);
+}
+
 async function updateToolOutput(call) {
   await page.evaluate((toolCall) => {
     window.dispatchEvent(new CustomEvent("knowflow:react-tool-timeline-updated", {
-      detail: { messageId: "message-tool-output", toolCalls: toolCall ? [toolCall] : [] },
+      detail: { messageId: "message-tool-output", toolCalls: toolCall ? [toolCall].flat() : [] },
     }));
   }, call);
 }
@@ -214,6 +237,7 @@ try {
     };
     await updateToolOutput(longTool);
     await waitForConsoleText("line-400:");
+    await assertOutputFits();
     const scroll = page.locator(".agent-tool-console-scroll");
     await page.waitForFunction(() => {
       const node = document.querySelector(".agent-tool-console-scroll");
@@ -248,6 +272,58 @@ try {
     assert.match(copied, /line-401:/);
     assert.match(copied, /\$ node scripts\/check-workspace.mjs/);
     assert.doesNotMatch(copied, /SECRET_FIXTURE_VALUE/);
+
+    // A populated history and a long result must share the available panel,
+    // including short screens; testing a single tool alone misses that pressure.
+    const history = Array.from({ length: 999 }, (_, index) => ({
+      toolCallId: `history-${index}`,
+      toolName: "read_workspace_file",
+      status: "completed",
+      output: `历史输出 ${index}`,
+    }));
+    await updateToolOutput([...history, longTool]);
+    await page.getByRole("tab", { name: "输出 1000", exact: true }).waitFor();
+    for (const [width, height, theme] of [
+      [1440, 960, "mono-light"], [1280, 800, "mono-dark"],
+      [390, 844, "mono-dark"], [375, 812, "mono-light"],
+      [375, 600, "mono-dark"], [320, 568, "mono-light"], [844, 500, "mono-light"],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+      await page.waitForTimeout(100);
+      await assertOutputFits();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      assert.ok(await toolList.locator('[data-workbench-item="tool"]').count() < 120);
+      await screenshot(`tool-output-long-${width}-${height}-${theme}.png`);
+    }
+    await page.setViewportSize({ width: 375, height: 812 });
+    const command = page.getByRole("region", { name: "执行命令", exact: true });
+    assert.equal(await command.innerText(), longTool.arguments.command);
+    await command.focus();
+    await command.press("ArrowRight");
+    await page.waitForFunction(() => document.querySelector(".agent-tool-console-command code").scrollLeft > 0);
+    assert.equal(await command.evaluate((node) => document.activeElement === node), true);
+    // Commands may also contain newlines. They remain fully available in a
+    // bounded, keyboard-scrollable command area instead of starving the log.
+    await updateToolOutput([...history, {
+      ...longTool,
+      arguments: { command: Array.from({ length: 12 }, (_, i) => `echo command-${i}`).join("\n") },
+    }]);
+    await page.waitForFunction(() => document.querySelector(".agent-tool-console-command code").textContent.includes("command-11"));
+    await assertOutputFits();
+    await command.focus();
+    await command.press("Control+End");
+    await page.waitForFunction(() => {
+      const node = document.querySelector(".agent-tool-console-command code");
+      return node.scrollTop > 0 && node.scrollHeight - node.scrollTop - node.clientHeight < 2;
+    });
+    const outputTab = page.getByRole("tab", { name: "输出 1000", exact: true });
+    await outputTab.focus();
+    await outputTab.press("ArrowRight");
+    await page.getByRole("tabpanel", { name: "引用 0", exact: true }).waitFor();
+    await page.keyboard.press("ArrowLeft");
+    await outputPanel.waitFor();
+    await assertOutputFits();
 
     await updateToolOutput({ toolCallId: "waiting", toolName: "run_sandbox_command", status: "running" });
     await page.getByText("等待输出", { exact: true }).waitFor();

@@ -295,7 +295,7 @@ function ToolOutputPanel({ focusStepId = "", toolCalls = [] }) {
             {selected?.command ? (
               <div className={"agent-tool-console-command"}>
                 <span aria-hidden={"true"}>{"$"}</span>
-                <code>{selected.command}</code>
+                <code tabIndex={0} role={"region"} aria-label={"执行命令"}>{selected.command}</code>
               </div>
             ) : null}
             <div

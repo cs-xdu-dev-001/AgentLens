@@ -5400,17 +5400,6 @@ select:focus {
     min-height: 0 !important;
   }
 
-  #page-chat .agent-output-section {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
-  }
-
-  #page-chat .agent-tool-output-list {
-    max-height: 174px !important;
-  }
-
   .agent-recovery-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5484,6 +5473,17 @@ select:focus {
   }
 }
 
+
+/* Short mobile/landscape windows need the space below navigation for work,
+   not an inset above and below the run drawer. */
+@media (max-width: 1180px) and (max-height: 640px) {
+  #page-chat .chat-layout-resizable > [data-panel]#evidence-panel {
+    top: 56px !important;
+    bottom: 0 !important;
+    height: calc(100dvh - 56px) !important;
+    min-height: 0 !important;
+  }
+}
 
 /* Chat polish v2: stabilize the shell, protect the reading axis from the
    sticky composer, and make live run state visible without adding chrome. */
