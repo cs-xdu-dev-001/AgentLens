@@ -120,6 +120,41 @@
 }
 
 @media (max-width: 760px) {
+  /* Keep the task launcher and composer in one flow. The available space
+     follows multiline drafts/attachments instead of a fixed bottom inset. */
+  #page-chat.chat-empty .chat-panel {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start !important;
+  }
+
+  #page-chat.chat-empty .chat-topbar {
+    flex: 0 0 auto;
+  }
+
+  #page-chat.chat-empty .messages {
+    position: static !important;
+    inset: auto !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    padding: 16px 12px 20px !important;
+    justify-content: flex-start !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+
+  #page-chat.chat-empty #chat-form.composer {
+    position: relative !important;
+    inset: auto !important;
+    flex: 0 0 auto;
+    width: calc(100% - 24px) !important;
+    margin: 0 12px max(12px, env(safe-area-inset-bottom)) !important;
+    padding: 0 !important;
+    transform: none !important;
+  }
+
   #page-chat .chat-topbar {
     min-height: 48px !important;
     height: 48px !important;
@@ -174,17 +209,16 @@
 
   #page-chat.chat-empty .welcome-card {
     width: min(100%, calc(100% - 20px)) !important;
-    translate: 0 clamp(28px, 9vh, 72px) !important;
+    flex-shrink: 0;
+    top: auto;
+    margin-block: auto 0 !important;
+    translate: none !important;
   }
 }
 
 @media (max-width: 390px) {
   #page-chat .chat-session-heading h1 {
     max-width: 31vw;
-  }
-
-  #page-chat.chat-empty .welcome-card {
-    translate: 0 clamp(32px, 10vh, 82px) !important;
   }
 
   #page-chat #chat-form.composer {
